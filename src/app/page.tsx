@@ -321,18 +321,18 @@ function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: {
                 {item.label}
               </button>
             ))}
-            {admin ? (
-              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 rounded-lg hover:bg-blue-50/80 transition-all duration-200 flex items-center gap-1.5">
-                <Shield className="w-4 h-4" />Dashboard
-              </button>
-            ) : (
-              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
-                <Shield className="w-4 h-4" />Admin
-              </button>
-            )}
           </nav>
 
           <div className="flex items-center gap-1">
+            {admin ? (
+              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-blue-500/25">
+                <Shield className="w-4 h-4" />Dashboard
+              </button>
+            ) : (
+              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
+                <Shield className="w-4 h-4" />Admin
+              </button>
+            )}
             <button onClick={() => setSearchOpen(!searchOpen)} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
               <Search className="w-[18px] h-[18px]" />
             </button>
@@ -495,9 +495,6 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
           <div className="flex flex-wrap gap-3">
             <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-11 px-6 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
               <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
-            </Button>
-            <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 rounded-xl h-11 px-6 transition-colors" onClick={() => onNavigate('/compare')}>
-              <GitCompare className="w-4 h-4 mr-2" /> Compare
             </Button>
           </div>
           <div className="flex flex-wrap gap-5 mt-8 text-xs sm:text-sm text-gray-400">
