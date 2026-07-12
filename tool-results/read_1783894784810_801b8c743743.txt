@@ -1,0 +1,594 @@
+     1→     1→import { NextRequest, NextResponse } from 'next/server';
+     2→     2→import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog } from '@/lib/models';
+     3→     3→import connectDB, { connectDBSafe } from '@/lib/mongodb';
+     4→     4→import { compare } from 'bcryptjs';
+     5→     5→import { Types } from 'mongoose';
+     6→     6→
+     7→     7→// ============ SIMPLE RATE LIMITER (in-memory, per-process) ============
+     8→     8→const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+     9→     9→const RATE_LIMIT_WINDOW = 60_000; // 1 minute
+    10→    10→const RATE_LIMIT_MAX = 60; // requests per window
+    11→    11→
+    12→    12→// Cleanup expired entries every 5 minutes to prevent memory leak
+    13→    13→setInterval(() => {
+    14→    14→  const now = Date.now();
+    15→    15→  for (const [key, entry] of rateLimitMap) {
+    16→    16→    if (now > entry.resetAt) rateLimitMap.delete(key);
+    17→    17→  }
+    18→    18→}, 300_000).unref();
+    19→    19→
+    20→    20→function checkRateLimit(ip: string): boolean {
+    21→    21→  const now = Date.now();
+    22→    22→  const entry = rateLimitMap.get(ip);
+    23→    23→  if (!entry || now > entry.resetAt) {
+    24→    24→    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    25→    25→    return true;
+    26→    26→  }
+    27→    27→  entry.count++;
+    28→    28→  return entry.count <= RATE_LIMIT_MAX;
+    29→    29→}
+    30→    30→
+    31→    31→// ============ TOKEN STORE ============
+    32→    32→const activeTokens = new Set<string>();
+    33→    33→
+    34→    34→function generateToken(): string {
+    35→    35→  return Buffer.from(`${Date.now()}_${Math.random().toString(36).slice(2)}_${crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10)}`).toString('base64');
+    36→    36→}
+    37→    37→
+    38→    38→function verifyAdmin(req: NextRequest): boolean {
+    39→    39→  const auth = req.headers.get('authorization');
+    40→    40→  if (!auth || !auth.startsWith('Bearer ')) return false;
+    41→    41→  const token = auth.slice(7);
+    42→    42→  return activeTokens.has(token);
+    43→    43→}
+    44→    44→
+    45→    45→function cacheHeaders(maxAge = 60) {
+    46→    46→  return { 'Cache-Control': `public, s-maxage=${maxAge}, stale-while-revalidate=${maxAge * 2}` };
+    47→    47→}
+    48→    48→
+    49→    49→// ============ SECURITY HELPERS ============
+    50→    50→function sanitizeRegex(input: string): string {
+    51→    51→  // Remove regex special chars that could cause ReDoS or NoSQL injection
+    52→    52→  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    53→    53→}
+    54→    54→
+    55→    55→function getClientIp(req: NextRequest): string {
+    56→    56→  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+    57→    57→}
+    58→    58→
+    59→    59→// ============ HELPERS ============
+    60→    60→// Map MongoDB _id to id for lean docs (frontend expects 'id')
+    61→    61→function mapId(doc: any): any {
+    62→    62→  if (!doc) return doc;
+    63→    63→  if (Array.isArray(doc)) return doc.map(mapId);
+    64→    64→  if (doc._id) doc.id = doc._id.toString();
+    65→    65→  return doc;
+    66→    66→}
+    67→    67→
+    68→    68→// Batch-attach brands to lean phone docs (single query)
+    69→    69→async function attachBrands(phones: any[]): Promise<void> {
+    70→    70→  const brandIds = [...new Set(phones.map((p: any) => p.brandId).filter(Boolean).map((id: any) => new Types.ObjectId(id)))];
+    71→    71→  if (brandIds.length === 0) return;
+    72→    72→  const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo country').lean();
+    73→    73→  const brandMap = new Map(brands.map((b: any) => [b._id.toString(), mapId(b)]));
+    74→    74→  for (const phone of phones) {
+    75→    75→    (phone as any).brand = brandMap.get(phone.brandId?.toString()) || null;
+    76→    76→  }
+    77→    77→}
+    78→    78→
+    79→    79→// Batch-attach specs and benchmarks (2 queries total instead of 2N)
+    80→    80→async function attachPhoneExtras(phones: any[]): Promise<void> {
+    81→    81→  if (phones.length === 0) return;
+    82→    82→  const phoneIds = phones.map((p: any) => p._id);
+    83→    83→  const [allSpecs, allBenchmarks] = await Promise.all([
+    84→    84→    PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean(),
+    85→    85→    PhoneBenchmark.find({ phoneId: { $in: phoneIds } }).lean(),
+    86→    86→  ]);
+    87→    87→  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), mapId(s)]));
+    88→    88→  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), mapId(b)]));
+    89→    89→  for (const phone of phones) {
+    90→    90→    (phone as any).specs = specsMap.get(phone._id?.toString()) || null;
+    91→    91→    (phone as any).benchmarks = benchmarksMap.get(phone._id?.toString()) || null;
+    92→    92→  }
+    93→    93→}
+    94→    94→
+    95→    95→// ============ AUTH ============
+    96→    96→async function handleAuth(req: NextRequest, action: string) {
+    97→    97→  if (req.method === 'POST' && action === 'login') {
+    98→    98→    try {
+    99→    99→      await connectDB();
+   100→   100→      const { email, password } = await req.json();
+   101→   101→      if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
+   102→   102→      // Sanitize email to prevent NoSQL injection
+   103→   103→      const admin = await Admin.findOne({ email: String(email).trim() });
+   104→   104→      if (!admin || !admin.active) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+   105→   105→      const valid = await compare(password, admin.password);
+   106→   106→      if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+   107→   107→      await Admin.findByIdAndUpdate(admin._id, { lastLogin: new Date() });
+   108→   108→      const token = generateToken();
+   109→   109→      activeTokens.add(token);
+   110→   110→      await ActivityLog.create({ adminId: admin._id, action: 'login', details: `Admin ${admin.email} logged in`, entityType: 'admin' });
+   111→   111→      return NextResponse.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name, role: admin.role } });
+   112→   112→    } catch {
+   113→   113→      return NextResponse.json({ error: 'Server error' }, { status: 500 });
+   114→   114→    }
+   115→   115→  }
+   116→   116→  return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   117→   117→}
+   118→   118→
+   119→   119→// ============ PHONES ============
+   120→   120→async function handlePhones(req: NextRequest, pathParts: string[]) {
+   121→   121→  if (req.method === 'GET' && pathParts.length <= 1) {
+   122→   122→    await connectDB();
+   123→   123→    const { searchParams } = new URL(req.url);
+   124→   124→    const brand = searchParams.get('brand');
+   125→   125→    const search = searchParams.get('search');
+   126→   126→    const minPrice = searchParams.get('minPrice');
+   127→   127→    const maxPrice = searchParams.get('maxPrice');
+   128→   128→    const featured = searchParams.get('featured');
+   129→   129→    const trending = searchParams.get('trending');
+   130→   130→    const upcoming = searchParams.get('upcoming');
+   131→   131→    const sort = searchParams.get('sort') || 'latest';
+   132→   132→    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+   133→   133→    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
+   134→   134→
+   135→   135→    const where: any = { active: true, status: 'published' };
+   136→   136→    if (brand && Types.ObjectId.isValid(brand)) where.brandId = new Types.ObjectId(brand);
+   137→   137→    if (featured === 'true') where.featured = true;
+   138→   138→    if (trending === 'true') where.trending = true;
+   139→   139→    if (upcoming === 'true') where.upcoming = true;
+   140→   140→    if (search) {
+   141→   141→      const safe = sanitizeRegex(search);
+   142→   142→      where.$or = [
+   143→   143→        { modelName: { $regex: safe, $options: 'i' } },
+   144→   144→        { description: { $regex: safe, $options: 'i' } },
+   145→   145→      ];
+   146→   146→    }
+   147→   147→    if (minPrice || maxPrice) {
+   148→   148→      where.pricePKR = {};
+   149→   149→      const min = parseInt(minPrice || '0');
+   150→   150→      const max = parseInt(maxPrice || '999999999');
+   151→   151→      if (!isNaN(min)) where.pricePKR.$gte = min;
+   152→   152→      if (!isNaN(max)) where.pricePKR.$lte = max;
+   153→   153→    }
+   154→   154→
+   155→   155→    const sortObj: any = { createdAt: -1 };
+   156→   156→    if (sort === 'price-asc') sortObj.pricePKR = 1;
+   157→   157→    else if (sort === 'price-desc') sortObj.pricePKR = -1;
+   158→   158→    else if (sort === 'rating') sortObj.overallRating = -1;
+   159→   159→    else if (sort === 'name') sortObj.modelName = 1;
+   160→   160→    else if (sort === 'views') sortObj.views = -1;
+   161→   161→
+   162→   162→    const [phones, total] = await Promise.all([
+   163→   163→      Phone.find(where).sort(sortObj).skip((page - 1) * limit).limit(limit).lean(),
+   164→   164→      Phone.countDocuments(where),
+   165→   165→    ]);
+   166→   166→
+   167→   167→    phones.forEach(mapId);
+   168→   168→    await attachBrands(phones);
+   169→   169→    await attachPhoneExtras(phones);
+   170→   170→
+   171→   171→    return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) }, { headers: cacheHeaders(60) });
+   172→   172→  }
+   173→   173→
+   174→   174→  if (req.method === 'POST') {
+   175→   175→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   176→   176→    try {
+   177→   177→      await connectDB();
+   178→   178→      const data = await req.json();
+   179→   179→      const phone = await Phone.create(data);
+   180→   180→      return NextResponse.json({ phone }, { status: 201 });
+   181→   181→    } catch (e: any) {
+   182→   182→      return NextResponse.json({ error: e.message || 'Create failed' }, { status: 400 });
+   183→   183→    }
+   184→   184→  }
+   185→   185→
+   186→   186→  return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   187→   187→}
+   188→   188→
+   189→   189→// ============ PHONE DETAIL ============
+   190→   190→async function handlePhoneDetail(req: NextRequest, slug: string) {
+   191→   191→  if (req.method === 'GET') {
+   192→   192→    await connectDB();
+   193→   193→    // Sanitize slug to prevent NoSQL injection
+   194→   194→    const safeSlug = String(slug).replace(/[^a-z0-9\-]/gi, '');
+   195→   195→    const phone = await Phone.findOne({ slug: safeSlug }).lean();
+   196→   196→    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+   197→   197→    mapId(phone);
+   198→   198→    await attachBrands([phone]);
+   199→   199→    // Increment views (fire and forget)
+   200→   200→    Phone.findOneAndUpdate({ slug: safeSlug }, { $inc: { views: 1 } }).catch(() => {});
+   201→   201→    // Fetch related data
+   202→   202→    const [specs, benchmarks, images, reviews, prices] = await Promise.all([
+   203→   203→      PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+   204→   204→      PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+   205→   205→      PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
+   206→   206→      Review.find({ phoneId: phone._id, published: true }).lean(),
+   207→   207→      PhonePrice.find({ phoneId: phone._id }).sort({ price: 1 }).lean(),
+   208→   208→    ]);
+   209→   209→    [specs, benchmarks, ...images, ...reviews, ...prices].forEach(mapId);
+   210→   210→    const phoneWithDetails = { ...phone, specs: specs || null, benchmarks: benchmarks || null, images, reviews, prices };
+   211→   211→    const related = await Phone.find({ brandId: phone.brandId, _id: { $ne: phone._id }, active: true, status: 'published' })
+   212→   212→      .sort({ overallRating: -1 }).limit(6).lean();
+   213→   213→    related.forEach(mapId);
+   214→   214→    await attachBrands(related);
+   215→   215→    return NextResponse.json({ phone: phoneWithDetails, related }, { headers: cacheHeaders(30) });
+   216→   216→  }
+   217→   217→  if (req.method === 'PUT') {
+   218→   218→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   219→   219→    try {
+   220→   220→      await connectDB();
+   221→   221→      const data = await req.json();
+   222→   222→      const phone = await Phone.findOneAndUpdate({ slug }, data, { new: true });
+   223→   223→      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+   224→   224→      return NextResponse.json({ phone });
+   225→   225→    } catch (e: any) {
+   226→   226→      return NextResponse.json({ error: e.message }, { status: 400 });
+   227→   227→    }
+   228→   228→  }
+   229→   229→  if (req.method === 'DELETE') {
+   230→   230→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   231→   231→    await connectDB();
+   232→   232→    await Phone.findOneAndDelete({ slug });
+   233→   233→    return NextResponse.json({ success: true });
+   234→   234→  }
+   235→   235→  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+   236→   236→}
+   237→   237→
+   238→   238→// ============ BEST PHONES BY CATEGORY ============
+   239→   239→async function handleBestPhones(req: NextRequest, category: string) {
+   240→   240→  await connectDB();
+   241→   241→  let where: any = { active: true, status: 'published' };
+   242→   242→  if (category === 'camera') where.cameraScore = { $gte: 85 };
+   243→   243→  else if (category === 'gaming') where.performanceScore = { $gte: 88 };
+   244→   244→  else if (category === 'battery') where.batteryScore = { $gte: 85 };
+   245→   245→  else if (category === 'flagship') where.pricePKR = { $gte: 150000 };
+   246→   246→  else if (category === 'budget') where.pricePKR = { $lte: 40000 };
+   247→   247→  else if (category === 'display') where.displayScore = { $gte: 90 };
+   248→   248→
+   249→   249→  const phones = await Phone.find(where)
+   250→   250→    .sort({ overallRating: -1 }).limit(20).lean();
+   251→   251→  phones.forEach(mapId);
+   252→   252→  await attachBrands(phones);
+   253→   253→  await attachPhoneExtras(phones);
+   254→   254→  return NextResponse.json({ phones, category }, { headers: cacheHeaders(120) });
+   255→   255→}
+   256→   256→
+   257→   257→// ============ BRANDS ============
+   258→   258→async function handleBrands(req: NextRequest) {
+   259→   259→  if (req.method === 'GET') {
+   260→   260→    await connectDB();
+   261→   261→    const brands = await Brand.aggregate([
+   262→   262→      { $match: { active: true } },
+   263→   263→      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+   264→   264→      { $addFields: { phoneCount: { $size: '$_phones' } } },
+   265→   265→      { $unset: '_phones' },
+   266→   266→      { $sort: { sortOrder: 1 } },
+   267→   267→    ]);
+   268→   268→    brands.forEach((b: any) => { b.id = b._id.toString(); });
+   269→   269→    return NextResponse.json({ brands }, { headers: cacheHeaders(300) });
+   270→   270→  }
+   271→   271→  if (req.method === 'POST') {
+   272→   272→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   273→   273→    try {
+   274→   274→      await connectDB();
+   275→   275→      const data = await req.json();
+   276→   276→      const brand = await Brand.create(data);
+   277→   277→      return NextResponse.json({ brand }, { status: 201 });
+   278→   278→    } catch (e: any) {
+   279→   279→      return NextResponse.json({ error: e.message }, { status: 400 });
+   280→   280→    }
+   281→   281→  }
+   282→   282→  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+   283→   283→}
+   284→   284→
+   285→   285→// ============ COMPARE ============
+   286→   286→async function handleCompare(req: NextRequest) {
+   287→   287→  if (req.method === 'GET') {
+   288→   288→    await connectDB();
+   289→   289→    const { searchParams } = new URL(req.url);
+   290→   290→    const ids = searchParams.get('ids')?.split(',').filter(Boolean).map(id => id.trim()) || [];
+   291→   291→    if (ids.length < 2) return NextResponse.json({ error: 'Provide at least 2 phone IDs' }, { status: 400 });
+   292→   292→    if (ids.length > 4) return NextResponse.json({ error: 'Max 4 phones' }, { status: 400 });
+   293→   293→    // Validate all IDs are valid ObjectIds
+   294→   294→    const validIds = ids.filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id));
+   295→   295→    if (validIds.length < 2) return NextResponse.json({ error: 'Invalid phone IDs' }, { status: 400 });
+   296→   296→    const phones = await Phone.find({ _id: { $in: validIds } }).lean();
+   297→   297→    phones.forEach(mapId);
+   298→   298→    await attachBrands(phones);
+   299→   299→    await attachPhoneExtras(phones);
+   300→   300→    return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
+   301→   301→  }
+   302→   302→  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+   303→   303→}
+   304→   304→
+   305→   305→// ============ SEARCH ============
+   306→   306→async function handleSearch(req: NextRequest) {
+   307→   307→  await connectDB();
+   308→   308→  const { searchParams } = new URL(req.url);
+   309→   309→  const q = searchParams.get('q') || '';
+   310→   310→  if (!q.trim()) return NextResponse.json({ results: [], total: 0 });
+   311→   311→  const safe = sanitizeRegex(q.trim());
+   312→   312→  const [phones, brandsRaw] = await Promise.all([
+   313→   313→    Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: safe, $options: 'i' } }, { description: { $regex: safe, $options: 'i' } }] })
+   314→   314→      .sort({ overallRating: -1 }).limit(20).lean(),
+   315→   315→    Brand.aggregate([
+   316→   316→      { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
+   317→   317→      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+   318→   318→      { $addFields: { phoneCount: { $size: '$_phones' } } },
+   319→   319→      { $unset: '_phones' },
+   320→   320→    ]),
+   321→   321→  ]);
+   322→   322→  phones.forEach(mapId);
+   323→   323→  brandsRaw.forEach((b: any) => { b.id = b._id.toString(); });
+   324→   324→  await attachBrands(phones);
+   325→   325→  return NextResponse.json({ phones, brands: brandsRaw, total: phones.length + brandsRaw.length }, { headers: cacheHeaders(30) });
+   326→   326→}
+   327→   327→
+   328→   328→// ============ NEWS ============
+   329→   329→async function handleNews(req: NextRequest) {
+   330→   330→  if (req.method === 'GET') {
+   331→   331→    await connectDB();
+   332→   332→    const { searchParams } = new URL(req.url);
+   333→   333→    const published = searchParams.get('published') !== 'false';
+   334→   334→    const category = searchParams.get('category');
+   335→   335→    const where: any = { published };
+   336→   336→    if (published) where.status = 'published';
+   337→   337→    if (category) where.category = category;
+   338→   338→    const news = await News.find(where).sort({ createdAt: -1 }).limit(20).lean();
+   339→   339→    news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
+   340→   340→    return NextResponse.json({ news }, { headers: cacheHeaders(60) });
+   341→   341→  }
+   342→   342→  if (req.method === 'POST') {
+   343→   343→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   344→   344→    try {
+   345→   345→      await connectDB();
+   346→   346→      const data = await req.json();
+   347→   347→      const news = await News.create(data);
+   348→   348→      return NextResponse.json({ news }, { status: 201 });
+   349→   349→    } catch (e: any) {
+   350→   350→      return NextResponse.json({ error: e.message }, { status: 400 });
+   351→   351→    }
+   352→   352→  }
+   353→   353→  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+   354→   354→}
+   355→   355→
+   356→   356→// ============ SPONSORS ============
+   357→   357→async function handleSponsors(req: NextRequest) {
+   358→   358→  if (req.method === 'GET') {
+   359→   359→    await connectDB();
+   360→   360→    const position = new URL(req.url).searchParams.get('position');
+   361→   361→    const where: any = { active: true };
+   362→   362→    if (position) where.position = position;
+   363→   363→    const sponsors = await Sponsor.find(where).sort({ createdAt: -1 }).lean();
+   364→   364→    sponsors.forEach((s: any) => { s.id = s._id.toString(); });
+   365→   365→    return NextResponse.json({ sponsors }, { headers: cacheHeaders(300) });
+   366→   366→  }
+   367→   367→  if (req.method === 'POST') {
+   368→   368→    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   369→   369→    try {
+   370→   370→      await connectDB();
+   371→   371→      const data = await req.json();
+   372→   372→      const sponsor = await Sponsor.create(data);
+   373→   373→      return NextResponse.json({ sponsor }, { status: 201 });
+   374→   374→    } catch (e: any) {
+   375→   375→      return NextResponse.json({ error: e.message }, { status: 400 });
+   376→   376→    }
+   377→   377→  }
+   378→   378→  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+   379→   379→}
+   380→   380→
+   381→   381→// ============ STATS ============
+   382→   382→async function handleStats() {
+   383→   383→  await connectDB();
+   384→   384→  const [totalPhones, totalBrands, totalReviews, totalNews, avgResult, trending, featured, upcoming, under20k, price20to40, price40to60, price60to100, above100k] = await Promise.all([
+   385→   385→    Phone.countDocuments({ active: true, status: 'published' }),
+   386→   386→    Brand.countDocuments({ active: true }),
+   387→   387→    Review.countDocuments(),
+   388→   388→    News.countDocuments({ published: true }),
+   389→   389→    Phone.aggregate([{ $match: { active: true, status: 'published' } }, { $group: { _id: null, avgPrice: { $avg: '$pricePKR' } } }]),
+   390→   390→    Phone.countDocuments({ trending: true, active: true }),
+   391→   391→    Phone.countDocuments({ featured: true, active: true }),
+   392→   392→    Phone.countDocuments({ upcoming: true, active: true }),
+   393→   393→    Phone.countDocuments({ active: true, pricePKR: { $lte: 20000 } }),
+   394→   394→    Phone.countDocuments({ active: true, pricePKR: { $gt: 20000, $lte: 40000 } }),
+   395→   395→    Phone.countDocuments({ active: true, pricePKR: { $gt: 40000, $lte: 60000 } }),
+   396→   396→    Phone.countDocuments({ active: true, pricePKR: { $gt: 60000, $lte: 100000 } }),
+   397→   397→    Phone.countDocuments({ active: true, pricePKR: { $gt: 100000 } }),
+   398→   398→  ]);
+   399→   399→  return NextResponse.json({
+   400→   400→    totalPhones, totalBrands, totalReviews, totalNews,
+   401→   401→    avgPrice: avgResult[0]?.avgPrice || 0,
+   402→   402→    trending, featured, upcoming,
+   403→   403→    priceDistribution: [
+   404→   404→      { range: 'under20k', count: under20k },
+   405→   405→      { range: 'price20to40', count: price20to40 },
+   406→   406→      { range: 'price40to60', count: price40to60 },
+   407→   407→      { range: 'price60to100', count: price60to100 },
+   408→   408→      { range: 'above100k', count: above100k },
+   409→   409→    ],
+   410→   410→  });
+   411→   411→}
+   412→   412→
+   413→   413→// ============ SEO SITEMAP (Safe - won't crash if DB is down) ============
+   414→   414→async function handleSitemap() {
+   415→   415→  const conn = await connectDBSafe();
+   416→   416→  if (!conn) {
+   417→   417→    // Return static sitemap data when DB is unavailable
+   418→   418→    return NextResponse.json({
+   419→   419→      phones: [],
+   420→   420→      brands: [{ slug: 'samsung' }, { slug: 'apple' }, { slug: 'xiaomi' }, { slug: 'oneplus' }],
+   421→   421→      news: [],
+   422→   422→    }, { headers: cacheHeaders(3600) });
+   423→   423→  }
+   424→   424→  const [phoneDocs, brands, news] = await Promise.all([
+   425→   425→    Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').lean(),
+   426→   426→    Brand.find({ active: true }).select('slug').lean(),
+   427→   427→    News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
+   428→   428→  ]);
+   429→   429→  await attachBrands(phoneDocs);
+   430→   430→  const phones = phoneDocs.map((p: any) => ({ slug: p.slug, updatedAt: p.updatedAt, brand: p.brand ? { slug: p.brand.slug } : null }));
+   431→   431→  return NextResponse.json({ phones, brands, news }, { headers: cacheHeaders(3600) });
+   432→   432→}
+   433→   433→
+   434→   434→// ============ MAIN ROUTER ============
+   435→   435→export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   436→   436→  const { path } = await params;
+   437→   437→  return routeRequest(req, 'GET', path);
+   438→   438→}
+   439→   439→export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   440→   440→  const { path } = await params;
+   441→   441→  return routeRequest(req, 'POST', path);
+   442→   442→}
+   443→   443→export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   444→   444→  const { path } = await params;
+   445→   445→  return routeRequest(req, 'PUT', path);
+   446→   446→}
+   447→   447→export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   448→   448→  const { path } = await params;
+   449→   449→  return routeRequest(req, 'DELETE', path);
+   450→   450→}
+   451→   451→
+   452→   452→async function routeRequest(req: NextRequest, method: string, pathParts: string[]) {
+   453→   453→  // Rate limiting
+   454→   454→  const ip = getClientIp(req);
+   455→   455→  if (!checkRateLimit(ip)) {
+   456→   456→    return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+   457→   457→  }
+   458→   458→
+   459→   459→  if (method === 'OPTIONS') {
+   460→   460→    return new NextResponse(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' } });
+   461→   461→  }
+   462→   462→
+   463→   463→  // Security headers for all responses
+   464→   464→  const securityHeaders = {
+   465→   465→    'X-Content-Type-Options': 'nosniff',
+   466→   466→    'X-Frame-Options': 'DENY',
+   467→   467→    'X-XSS-Protection': '1; mode=block',
+   468→   468→    'Referrer-Policy': 'strict-origin-when-cross-origin',
+   469→   469→  };
+   470→   470→
+   471→   471→  try {
+   472→   472→    const seg0 = pathParts[0] || '';
+   473→   473→
+   474→   474→    if (seg0 === 'auth') return handleAuth(req, pathParts[1] || '');
+   475→   475→    // FIX: Also handle login at /api/admin/login (frontend calls this path)
+   476→   476→    if (seg0 === 'admin' && pathParts[1] === 'login' && req.method === 'POST') return handleAuth(req, 'login');
+   477→   477→    if (seg0 === 'stats') return handleStats();
+   478→   478→    if (seg0 === 'sponsors') return handleSponsors(req);
+   479→   479→    if (seg0 === 'seo' && pathParts[1] === 'sitemap') return handleSitemap();
+   480→   480→
+   481→   481→    if (seg0 === 'phones') {
+   482→   482→      if (pathParts.length <= 1) return handlePhones(req, pathParts);
+   483→   483→      if (pathParts[1] === 'best' && pathParts[2]) return handleBestPhones(req, pathParts[2]);
+   484→   484→      if (pathParts.length === 2) return handlePhoneDetail(req, pathParts[1]);
+   485→   485→    }
+   486→   486→
+   487→   487→    if (seg0 === 'brands' && pathParts.length <= 1) return handleBrands(req);
+   488→   488→    if (seg0 === 'brands' && pathParts.length === 2) {
+   489→   489→      await connectDB();
+   490→   490→      const safeSlug = String(pathParts[1]).replace(/[^a-z0-9\-]/gi, '');
+   491→   491→      const brand = await Brand.findOne({ slug: safeSlug }).lean();
+   492→   492→      if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+   493→   493→      (brand as any).id = (brand as any)._id.toString();
+   494→   494→      const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
+   495→   495→      phones.forEach(mapId);
+   496→   496→      await attachBrands(phones);
+   497→   497→      await attachPhoneExtras(phones);
+   498→   498→      const brandWithPhones = { ...brand, phones };
+   499→   499→      return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
+   500→   500→    }
+   501→   501→
+   502→   502→    if (seg0 === 'compare') return handleCompare(req);
+   503→   503→    if (seg0 === 'search') return handleSearch(req);
+   504→   504→    if (seg0 === 'news') return handleNews(req);
+   505→   505→
+   506→   506→    // ============ ADMIN ROUTES ============
+   507→   507→    if (seg0 === 'admin') {
+   508→   508→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   509→   509→      await connectDB();
+   510→   510→
+   511→   511→      if (pathParts[1] === 'phones' && method === 'GET') {
+   512→   512→        const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
+   513→   513→        phones.forEach(mapId);
+   514→   514→        await attachBrands(phones);
+   515→   515→        return NextResponse.json({ phones });
+   516→   516→      }
+   517→   517→      if (pathParts[1] === 'brands' && method === 'GET') {
+   518→   518→        const brands = await Brand.aggregate([
+   519→   519→          { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+   520→   520→          { $addFields: { phoneCount: { $size: '$_phones' } } },
+   521→   521→          { $unset: '_phones' },
+   522→   522→          { $sort: { sortOrder: 1 } },
+   523→   523→        ]);
+   524→   524→        brands.forEach((b: any) => { b.id = b._id.toString(); });
+   525→   525→        return NextResponse.json({ brands });
+   526→   526→      }
+   527→   527→      if (pathParts[1] === 'news' && method === 'GET') {
+   528→   528→        const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
+   529→   529→        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
+   530→   530→        return NextResponse.json({ news });
+   531→   531→      }
+   532→   532→      if (pathParts[1] === 'sponsors' && method === 'GET') {
+   533→   533→        const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
+   534→   534→        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
+   535→   535→        return NextResponse.json({ sponsors });
+   536→   536→      }
+   537→   537→      // FIX: Support both 'activity' and 'activity-logs' paths
+   538→   538→      if ((pathParts[1] === 'activity-logs' || pathParts[1] === 'activity') && method === 'GET') {
+   539→   539→        const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
+   540→   540→        logs.forEach((l: any) => { l.id = l._id.toString(); });
+   541→   541→        return NextResponse.json({ logs });
+   542→   542→      }
+   543→   543→      if (pathParts[1] === 'stats') return handleStats();
+   544→   544→    }
+   545→   545→
+   546→   546→    // ============ HOME ============
+   547→   547→    if (seg0 === 'home') {
+   548→   548→      try {
+   549→   549→        await connectDB();
+   550→   550→        const allPhones = await Phone.find({ active: true, status: 'published' })
+   551→   551→          .sort({ overallRating: -1 }).lean();
+   552→   552→        allPhones.forEach(mapId);
+   553→   553→        await attachBrands(allPhones);
+   554→   554→        await attachPhoneExtras(allPhones);
+   555→   555→        const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
+   556→   556→        const featured = p(x => x.featured, 8);
+   557→   557→        const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
+   558→   558→        const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
+   559→   559→        upcoming.forEach(mapId);
+   560→   560→        await attachBrands(upcoming);
+   561→   561→        const bestCamera = p(x => x.cameraScore >= 85, 6);
+   562→   562→        const bestGaming = p(x => x.performanceScore >= 88, 6);
+   563→   563→        const bestBattery = p(x => x.batteryScore >= 85, 6);
+   564→   564→        const flagship = p(x => x.pricePKR >= 150000, 6);
+   565→   565→        const budget = p(x => x.pricePKR <= 40000, 6);
+   566→   566→        const latest = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
+   567→   567→        const [news, sponsors] = await Promise.all([
+   568→   568→          News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
+   569→   569→          Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
+   570→   570→        ]);
+   571→   571→        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
+   572→   572→        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
+   573→   573→        return NextResponse.json({
+   574→   574→          featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
+   575→   575→          priceCategories: {
+   576→   576→            under20k: p(x => x.pricePKR <= 20000, 6),
+   577→   577→            price20to40: p(x => x.pricePKR > 20000 && x.pricePKR <= 40000, 6),
+   578→   578→            price40to60: p(x => x.pricePKR > 40000 && x.pricePKR <= 60000, 6),
+   579→   579→            price60to100: p(x => x.pricePKR > 60000 && x.pricePKR <= 100000, 6),
+   580→   580→            above100k: p(x => x.pricePKR > 100000, 6),
+   581→   581→          },
+   582→   582→        }, { headers: cacheHeaders(60) });
+   583→   583→      } catch (e: any) {
+   584→   584→        console.error('Home API error:', e.message);
+   585→   585→        return NextResponse.json({ error: 'Failed to load home data' }, { status: 500 });
+   586→   586→      }
+   587→   587→    }
+   588→   588→
+   589→   589→    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   590→   590→  } catch (e: any) {
+   591→   591→    console.error('API Error:', e.message);
+   592→   592→    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+   593→   593→  }
+   594→   594→}

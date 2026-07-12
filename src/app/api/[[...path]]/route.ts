@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog } from '@/lib/models';
+import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog, ImportHistory, SyncJob } from '@/lib/models';
 import connectDB, { connectDBSafe } from '@/lib/mongodb';
 import { compare } from 'bcryptjs';
 import { Types } from 'mongoose';
+import { parseFile, detectFileType, validatePhoneRecord, importPhones, rollbackImport, getImportStats } from '@/lib/import';
 
 // ============ SIMPLE RATE LIMITER (in-memory, per-process) ============
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -502,6 +503,17 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     if (seg0 === 'compare') return handleCompare(req);
     if (seg0 === 'search') return handleSearch(req);
     if (seg0 === 'news') return handleNews(req);
+    if (seg0 === 'import' && method === 'POST') return handleImport(req);
+    if (seg0 === 'import' && method === 'GET' && pathParts[1] === 'history') return handleImportHistory(req);
+    if (seg0 === 'import' && method === 'GET' && pathParts[1] === 'stats') return handleImportStats(req);
+    if (seg0 === 'import' && method === 'POST' && pathParts[1] === 'validate') return handleValidate(req);
+    if (seg0 === 'import' && method === 'POST' && pathParts[1] === 'rollback') return handleRollback(req);
+    if (seg0 === 'sync' && method === 'GET') return handleSyncStatus(req);
+    if (seg0 === 'sync' && method === 'POST') return handleSyncAction(req);
+    if (seg0 === 'sync' && method === 'DELETE') return handleSyncDelete(req);
+
+    // ============ IMPORT ROUTES (Admin-protected via verifyAdmin in handler) ============
+    // Already handled above for /api/import, /api/sync
 
     // ============ ADMIN ROUTES ============
     if (seg0 === 'admin') {
@@ -590,5 +602,243 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
   } catch (e: any) {
     console.error('API Error:', e.message);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// ============ IMPORT HANDLER ============
+async function handleImport(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+
+    if (file.size > 50 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File too large (max 50MB)' }, { status: 400 });
+    }
+
+    const fileType = detectFileType(file.name, file.type);
+    if (!fileType) return NextResponse.json({ error: 'Unsupported file type. Use .json, .csv, or .xlsx' }, { status: 400 });
+
+    const content = await file.arrayBuffer();
+    const records = await parseFile(content, fileType);
+
+    if (!records || records.length === 0) {
+      return NextResponse.json({ error: 'No valid phone records found in file' }, { status: 400 });
+    }
+
+    const autoCategorize = formData.get('autoCategorize') === 'true';
+    const autoSEO = formData.get('autoSEO') === 'true';
+    const autoReview = formData.get('autoReview') === 'true';
+    const skipExisting = formData.get('skipExisting') === 'true';
+
+    const result = await importPhones(records, {
+      filename: file.name,
+      fileType,
+      autoCategorize,
+      autoSEO,
+      autoReview,
+      skipExisting,
+    });
+
+    await ActivityLog.create({
+      action: 'import',
+      details: `Imported ${result.inserted} phones, updated ${result.updated}, failed ${result.failed} from ${file.name}`,
+      entityType: 'import',
+    });
+
+    return NextResponse.json({ success: true, ...result });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Import failed' }, { status: 500 });
+  }
+}
+
+// ============ VALIDATE HANDLER ============
+async function handleValidate(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+
+    const fileType = detectFileType(file.name, file.type);
+    if (!fileType) return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
+
+    const content = await file.arrayBuffer();
+    const records = await parseFile(content, fileType);
+
+    if (!records || records.length === 0) {
+      return NextResponse.json({ error: 'No records found' }, { status: 400 });
+    }
+
+    const existingSlugs = new Set<string>();
+    const existingPhones = await Phone.find({}, { slug: 1 }).lean();
+    for (const p of existingPhones) existingSlugs.add((p as any).slug);
+
+    const results = records.map((record, idx) => validatePhoneRecord(record, idx + 1, existingSlugs));
+    const validCount = results.filter(r => r.valid).length;
+    const errorCount = results.filter(r => !r.valid).length;
+    const allErrors = results.flatMap(r => r.errors);
+    const allWarnings = results.flatMap(r => r.warnings);
+
+    // Preview: first 5 valid records
+    const preview = results.filter(r => r.valid).slice(0, 5).map(r => r.phone);
+
+    return NextResponse.json({
+      totalRecords: records.length,
+      validCount,
+      errorCount,
+      errors: allErrors,
+      warnings: allWarnings,
+      preview,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Validation failed' }, { status: 500 });
+  }
+}
+
+// ============ ROLLBACK HANDLER ============
+async function handleRollback(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { historyId } = await req.json();
+    if (!historyId) return NextResponse.json({ error: 'historyId is required' }, { status: 400 });
+    const result = await rollbackImport(historyId);
+    await ActivityLog.create({ action: 'rollback', details: `Rolled back import ${historyId}`, entityType: 'import' });
+    return NextResponse.json(result);
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Rollback failed' }, { status: 500 });
+  }
+}
+
+// ============ IMPORT HISTORY HANDLER ============
+async function handleImportHistory(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const history = await ImportHistory.find().sort({ createdAt: -1 }).limit(50).lean();
+  history.forEach((h: any) => { h.id = h._id.toString(); });
+  return NextResponse.json({ history });
+}
+
+// ============ IMPORT STATS HANDLER ============
+async function handleImportStats(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    const stats = await getImportStats();
+    return NextResponse.json({ stats });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+// ============ SYNC STATUS HANDLER ============
+async function handleSyncStatus(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const jobs = await SyncJob.find().sort({ createdAt: -1 }).limit(20).lean();
+  jobs.forEach((j: any) => { j.id = j._id.toString(); });
+  return NextResponse.json({ jobs });
+}
+
+// ============ SYNC ACTION HANDLER ============
+async function handleSyncAction(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { action, source } = await req.json();
+    if (!action || !['start', 'pause', 'resume'].includes(action)) {
+      return NextResponse.json({ error: 'Invalid action. Use start, pause, or resume' }, { status: 400 });
+    }
+
+    if (action === 'start') {
+      if (!source) return NextResponse.json({ error: 'Source URL is required for sync start' }, { status: 400 });
+      const job = await SyncJob.create({
+        status: 'running',
+        source,
+        startedAt: new Date(),
+      });
+      // Run sync in background (fire and forget for Vercel compatibility)
+      runSyncJob((job as any)._id.toString(), source).catch(e => console.error('Sync job error:', e.message));
+      return NextResponse.json({ success: true, jobId: (job as any)._id.toString(), message: 'Sync job started' });
+    }
+
+    if (action === 'pause') {
+      const running = await SyncJob.findOneAndUpdate({ status: 'running' }, { $set: { status: 'paused' } }, { sort: { createdAt: -1 } });
+      if (!running) return NextResponse.json({ error: 'No running sync job found' }, { status: 404 });
+      return NextResponse.json({ success: true, message: 'Sync paused' });
+    }
+
+    if (action === 'resume') {
+      const paused = await SyncJob.findOneAndUpdate({ status: 'paused' }, { $set: { status: 'running' } }, { sort: { createdAt: -1 } });
+      if (!paused) return NextResponse.json({ error: 'No paused sync job found' }, { status: 404 });
+      return NextResponse.json({ success: true, message: 'Sync resumed' });
+    }
+
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'Sync action failed' }, { status: 500 });
+  }
+}
+
+// ============ SYNC DELETE HANDLER ============
+async function handleSyncDelete(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { jobId } = await req.json();
+    if (!jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+    await SyncJob.findByIdAndDelete(jobId);
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+// ============ SYNC JOB WORKER ============
+async function runSyncJob(jobId: string, source: string) {
+  try {
+    const job = await SyncJob.findById(jobId);
+    if (!job) return;
+
+    // Simulate sync from source URL (real implementation would fetch from the source)
+    // For now, this demonstrates the architecture — the admin can extend the source handlers
+    const response = await fetch(source, { signal: AbortSignal.timeout(30000) }).catch(() => null);
+    if (!response?.ok) {
+      await SyncJob.updateOne({ _id: jobId }, { $set: { status: 'failed', completedAt: new Date(), errorLog: [`Failed to fetch source: ${source}`] } });
+      return;
+    }
+
+    const data = await response.json() as any[];
+    const records = Array.isArray(data) ? data : (data.phones || data.data || data.records || [data]);
+
+    await SyncJob.updateOne({ _id: jobId }, { $set: { totalPhones: records.length } });
+
+    const result = await importPhones(records, { filename: `sync-${source.split('/').pop() || 'unknown'}`, fileType: 'json', autoSEO: true, autoReview: true });
+
+    await SyncJob.updateOne({ _id: jobId }, {
+      $set: {
+        status: 'completed',
+        processed: result.total,
+        inserted: result.inserted,
+        updated: result.updated,
+        errorCount: result.failed,
+        completedAt: new Date(),
+      },
+    });
+
+    await ActivityLog.create({
+      action: 'sync',
+      details: `Sync job ${jobId} completed: ${result.inserted} inserted, ${result.updated} updated, ${result.failed} failed`,
+      entityType: 'sync',
+      entityId: jobId,
+    });
+  } catch (e: any) {
+    await SyncJob.updateOne(
+      { _id: jobId },
+      { $set: { status: 'failed', completedAt: new Date() }, $push: { errorLog: e.message || 'Unknown sync error' } }
+    );
   }
 }

@@ -9,7 +9,8 @@ import {
   LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
   ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
   Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
-  AlertTriangle
+  AlertTriangle, Upload, Download, RefreshCw, FileJson, FileSpreadsheet, RotateCcw, History, Database,
+  UploadCloud, Pause, CheckCircle, XCircle, AlertCircle, FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +39,7 @@ interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; best
 interface AdminUser { id: string; email: string; name: string; role: string; }
 
 // ============ ROUTER ============
-type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity';
+type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync';
 
 function useHashRouter() {
   const [view, setView] = useState<View>('home');
@@ -62,6 +63,8 @@ function useHashRouter() {
       if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'import') { setView('admin-import'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'sync') { setView('admin-sync'); setParams({}); return; }
       if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
       setView('home'); setParams({});
     };
@@ -222,6 +225,8 @@ function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: Adm
     { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
     { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
     { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
+    { label: 'Import', hash: '/admin/import', icon: Upload, view: 'admin-import' },
+    { label: 'Sync', hash: '/admin/sync', icon: RefreshCw, view: 'admin-sync' },
   ];
 
   return (
@@ -1555,12 +1560,12 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
   ];
 
   const quickActions = [
+    { label: 'Import', icon: Upload, hash: '/admin/import' },
+    { label: 'Sync', icon: RefreshCw, hash: '/admin/sync' },
     { label: 'Phones', icon: Smartphone, hash: '/admin/phones' },
     { label: 'Brands', icon: Layers, hash: '/admin/brands' },
     { label: 'News', icon: Newspaper, hash: '/admin/news' },
     { label: 'Sponsors', icon: Star, hash: '/admin/sponsors' },
-    { label: 'SEO', icon: Settings, hash: '/admin/dashboard' },
-    { label: 'Images', icon: ImageIcon, hash: '/admin/dashboard' },
   ];
 
   const priceDist = stats.priceDistribution || [
@@ -1894,6 +1899,466 @@ function AdminActivityPage({ token }: { token: string | null }) {
   );
 }
 
+// ============ ADMIN IMPORT PAGE ============
+function AdminImportPage({ token }: { token: string | null }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [validation, setValidation] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('upload');
+  const [autoSEO, setAutoSEO] = useState(true);
+  const [autoReview, setAutoReview] = useState(true);
+  const [skipExisting, setSkipExisting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
+    fetch('/api/import/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setStats(d.stats || {})).catch(() => {});
+  }, [token, result]);
+
+  const handleFile = (f: File) => {
+    const ext = f.name.split('.').pop()?.toLowerCase();
+    if (!['json', 'csv', 'xlsx', 'xls'].includes(ext || '')) { alert('Please upload a .json, .csv, or .xlsx file'); return; }
+    setFile(f); setResult(null); setValidation(null); setActiveTab('upload');
+  };
+
+  const handleValidate = async () => {
+    if (!file || !token) return;
+    setValidating(true);
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch('/api/import/validate', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+      const data = await res.json();
+      setValidation(data); setActiveTab('preview');
+    } catch (e: any) { setValidation({ errors: [{ message: e.message }] }); }
+    setValidating(false);
+  };
+
+  const handleImport = async () => {
+    if (!file || !token) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (autoSEO) fd.append('autoSEO', 'true');
+      if (autoReview) fd.append('autoReview', 'true');
+      if (skipExisting) fd.append('skipExisting', 'true');
+      const res = await fetch('/api/import', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+      const data = await res.json();
+      setResult(data); setActiveTab('results');
+      // Refresh history
+      fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
+      fetch('/api/import/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setStats(d.stats || {})).catch(() => {});
+    } catch (e: any) { setResult({ error: e.message }); }
+    setUploading(false);
+  };
+
+  const handleRollback = async (historyId: string) => {
+    if (!token || !confirm('Rollback this import? Phones created during this import will be deleted.')) return;
+    try {
+      const res = await fetch('/api/import/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ historyId }) });
+      const data = await res.json();
+      alert(data.message || (data.success ? 'Rollback completed' : 'Rollback failed'));
+      if (data.success) {
+        fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
+      }
+    } catch (e: any) { alert('Rollback failed: ' + e.message); }
+  };
+
+  const downloadErrorReport = () => {
+    if (!result?.errors?.length) return;
+    const csv = 'Row,Model,Error\n' + result.errors.map((e: any) => `${e.row},"${(e.model || '').replace(/"/g, '""')}","${e.error.replace(/"/g, '""')}"`).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'import-errors.csv'; a.click(); URL.revokeObjectURL(url);
+  };
+
+  const statusColor = (s: string) => s === 'completed' ? 'text-emerald-600 bg-emerald-50' : s === 'partial' ? 'text-amber-600 bg-amber-50' : s === 'failed' ? 'text-red-600 bg-red-50' : s === 'rolled_back' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 bg-gray-50';
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-extrabold text-gray-900">Phone Import</h1>
+          <p className="text-xs text-muted-foreground mt-1">Upload JSON, CSV, or XLSX files to bulk import phones</p>
+        </div>
+      </div>
+
+      {/* Stats Row */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Imported Today', value: stats.importedToday, icon: Upload, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Updated Today', value: stats.updatedToday, icon: RefreshCw, color: 'text-blue-600 bg-blue-50' },
+            { label: 'Failed Today', value: stats.failedToday, icon: XCircle, color: 'text-red-600 bg-red-50' },
+            { label: 'Missing Images', value: stats.missingImages, icon: ImageIcon, color: 'text-amber-600 bg-amber-50' },
+          ].map(s => (
+            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
+              <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
+              <p className="text-lg font-bold text-gray-900">{s.value}</p>
+              <p className="text-[10px] text-muted-foreground">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-gray-100">
+          <TabsTrigger value="upload"><Upload className="w-3.5 h-3.5 mr-1.5" />Upload</TabsTrigger>
+          <TabsTrigger value="preview" disabled={!validation}><FileText className="w-3.5 h-3.5 mr-1.5" />Preview</TabsTrigger>
+          <TabsTrigger value="results" disabled={!result}><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Results</TabsTrigger>
+          <TabsTrigger value="history"><History className="w-3.5 h-3.5 mr-1.5" />History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="upload" className="mt-4">
+          <Card className="border-gray-100">
+            <CardContent className="p-6">
+              {/* Drop Zone */}
+              <div
+                className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 cursor-pointer ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50/50'}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
+                onClick={() => fileRef.current?.click()}
+              >
+                <input ref={fileRef} type="file" accept=".json,.csv,.xlsx,.xls" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <UploadCloud className="w-7 h-7 text-blue-500" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Drop your file here or click to browse</p>
+                <p className="text-xs text-muted-foreground mt-1">Supports JSON, CSV, XLSX (max 50MB)</p>
+                {file && (
+                  <div className="mt-3 inline-flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-gray-100 shadow-sm">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-medium text-gray-900">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
+                    <button onClick={e => { e.stopPropagation(); setFile(null); setValidation(null); setResult(null); }} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+              </div>
+
+              {/* Options */}
+              {file && (
+                <div className="mt-5 flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={autoSEO} onChange={e => setAutoSEO(e.target.checked)} className="rounded" /> Auto-generate SEO</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={autoReview} onChange={e => setAutoReview(e.target.checked)} className="rounded" /> Auto-generate Reviews</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={skipExisting} onChange={e => setSkipExisting(e.target.checked)} className="rounded" /> Skip Existing Phones</label>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="mt-5 flex gap-3">
+                <Button onClick={handleValidate} disabled={!file || validating} variant="outline" className="gap-1.5">
+                  {validating ? <span className="animate-spin">...</span> : <AlertCircle className="w-4 h-4" />}
+                  Validate First
+                </Button>
+                <Button onClick={handleImport} disabled={!file || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                  {uploading ? <span className="animate-spin">...</span> : <Upload className="w-4 h-4" />}
+                  Import Now
+                </Button>
+              </div>
+
+              {/* Sample Format */}
+              <div className="mt-5 bg-gray-50 rounded-xl p-4">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Expected Format (JSON example):</p>
+                <pre className="text-[11px] text-gray-600 overflow-x-auto">{JSON.stringify([
+                  { brand: "Samsung", model: "Galaxy S25 Ultra", pricePKR: 385000, ptaStatus: "PTA Approved", ram: "12 GB", storage: "256 GB", chipset: "Snapdragon 8 Elite", display: "6.9\" Dynamic AMOLED", battery: "5000 mAh", mainCamera: "200 MP", thumbnail: "https://example.com/image.jpg" }
+                ], null, 2)}</pre>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="preview" className="mt-4">
+          {validation && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid Records</p></div>
+                <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
+                <div className="bg-amber-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-amber-700">{validation.warnings?.length || 0}</p><p className="text-[10px] text-amber-600">Warnings</p></div>
+              </div>
+              {validation.preview?.length > 0 && (
+                <Card className="border-gray-100">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Preview (first {validation.preview.length} valid records)</CardTitle></CardHeader>
+                  <CardContent className="p-4 pt-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b border-gray-100">
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Slug</th>
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price</th>
+                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Image</th>
+                        </tr></thead>
+                        <tbody>
+                          {validation.preview.map((r: any, i: number) => (
+                            <tr key={i} className="border-b border-gray-50">
+                              <td className="py-1.5 px-2 text-gray-900">{r.brand || '-'}</td>
+                              <td className="py-1.5 px-2 font-medium text-gray-900">{r.modelName || r.model || '-'}</td>
+                              <td className="py-1.5 px-2 text-gray-500">{r.slug || '-'}</td>
+                              <td className="py-1.5 px-2">{r.pricePKR ? `PKR ${Number(r.pricePKR).toLocaleString()}` : '-'}</td>
+                              <td className="py-1.5 px-2">{r.thumbnail ? <Check className="w-3.5 h-3.5 text-emerald-500 inline" /> : <X className="w-3.5 h-3.5 text-red-400 inline" />}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {validation.errors?.length > 0 && (
+                <Card className="border-red-100">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Errors</CardTitle></CardHeader>
+                  <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
+                    {validation.errors.map((e: any, i: number) => (
+                      <div key={i} className="text-xs py-1 border-b border-gray-50 flex gap-3">
+                        <span className="text-red-500 font-mono shrink-0">Row {e.row}</span>
+                        <span className="text-gray-600">{e.field}: {e.message}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+              <Button onClick={handleImport} disabled={!file || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                {uploading ? <span className="animate-spin">...</span> : <Upload className="w-4 h-4" />}
+                Proceed with Import
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="results" className="mt-4">
+          {result && (
+            <div className="space-y-4">
+              {result.error ? (
+                <Card className="border-red-100"><CardContent className="p-6 text-center"><XCircle className="w-10 h-10 text-red-400 mx-auto mb-2" /><p className="text-sm font-medium text-red-700">{result.error}</p></CardContent></Card>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Total', value: result.total, color: 'text-gray-900 bg-gray-50' },
+                      { label: 'Inserted', value: result.inserted, color: 'text-emerald-700 bg-emerald-50' },
+                      { label: 'Updated', value: result.updated, color: 'text-blue-700 bg-blue-50' },
+                      { label: 'Skipped', value: result.skipped, color: 'text-amber-700 bg-amber-50' },
+                      { label: 'Failed', value: result.failed, color: 'text-red-700 bg-red-50' },
+                    ].map(s => (
+                      <div key={s.label} className={`rounded-xl p-3 text-center ${s.color}`}>
+                        <p className="text-xl font-bold">{s.value}</p>
+                        <p className="text-[10px] font-medium">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>
+                  {result.errors?.length > 0 && (
+                    <Card className="border-red-100">
+                      <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-sm text-red-700">Errors ({result.errors.length})</CardTitle>
+                        <Button size="sm" variant="outline" onClick={downloadErrorReport} className="gap-1 text-xs"><Download className="w-3 h-3" />Download Report</Button>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
+                        {result.errors.map((e: any, i: number) => (
+                          <div key={i} className="text-xs py-1 border-b border-gray-50 flex gap-3">
+                            <span className="text-red-500 font-mono shrink-0">Row {e.row}</span>
+                            <span className="text-gray-500">{e.model}</span>
+                            <span className="text-gray-700">{e.error}</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {result.warnings?.length > 0 && (
+                    <Card className="border-amber-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm text-amber-700">Warnings ({result.warnings.length})</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0 max-h-40 overflow-y-auto">
+                        {result.warnings.slice(0, 20).map((w: string, i: number) => (
+                          <p key={i} className="text-xs text-amber-600 py-0.5">{w}</p>
+                        ))}
+                        {result.warnings.length > 20 && <p className="text-xs text-muted-foreground">...and {result.warnings.length - 20} more</p>}
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-4">
+          {history.length > 0 ? (
+            <div className="space-y-2">
+              {history.map((h: any) => (
+                <div key={h.id} className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+                      {h.fileType === 'json' ? <FileJson className="w-4 h-4 text-gray-500" /> : h.fileType === 'csv' ? <FileText className="w-4 h-4 text-gray-500" /> : <FileSpreadsheet className="w-4 h-4 text-gray-500" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{h.filename}</p>
+                      <p className="text-[10px] text-muted-foreground">{h.totalRecords} records | Inserted: {h.inserted} | Updated: {h.updated} | Failed: {h.failed} | {(h.duration / 1000).toFixed(1)}s</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className={`text-[10px] ${statusColor(h.status)}`}>{h.status}</Badge>
+                    <span className="text-[10px] text-muted-foreground">{h.createdAt ? new Date(h.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                    {h.status !== 'rolled_back' && (
+                      <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRollback(h.id)}><RotateCcw className="w-3 h-3 mr-1" />Rollback</Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16 text-muted-foreground"><History className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No import history yet</p></div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ============ ADMIN SYNC PAGE ============
+function AdminSyncPage({ token }: { token: string | null }) {
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [source, setSource] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchJobs = useCallback(() => {
+    if (!token) return;
+    fetch('/api/sync', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); }).catch(() => setLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    fetchJobs();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [fetchJobs]);
+
+  // Auto-poll when there's a running job
+  useEffect(() => {
+    const hasRunning = jobs.some(j => j.status === 'running');
+    if (hasRunning) {
+      pollRef.current = setInterval(fetchJobs, 3000);
+    } else if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [jobs, fetchJobs]);
+
+  const handleAction = async (action: string) => {
+    if (!token) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ action, source: action === 'start' ? source : undefined }) });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Action failed'); }
+      else { fetchJobs(); if (action === 'start') setSource(''); }
+    } catch (e: any) { alert('Failed: ' + e.message); }
+    setSubmitting(false);
+  };
+
+  const handleDelete = async (jobId: string) => {
+    if (!token || !confirm('Delete this sync job record?')) return;
+    await fetch('/api/sync', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ jobId }) });
+    fetchJobs();
+  };
+
+  const statusBadge = (s: string) => {
+    const map: Record<string, { icon: any; cls: string }> = {
+      pending: { icon: Clock, cls: 'text-gray-600 bg-gray-50' },
+      running: { icon: RefreshCw, cls: 'text-blue-600 bg-blue-50' },
+      paused: { icon: Pause, cls: 'text-amber-600 bg-amber-50' },
+      completed: { icon: CheckCircle, cls: 'text-emerald-600 bg-emerald-50' },
+      failed: { icon: XCircle, cls: 'text-red-600 bg-red-50' },
+    };
+    const cfg = map[s] || map.pending;
+    return <Badge variant="secondary" className={`text-[10px] gap-1 ${cfg.cls}`}><cfg.icon className="w-3 h-3" />{s}</Badge>;
+  };
+
+  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-extrabold text-gray-900">Data Sync</h1>
+        <p className="text-xs text-muted-foreground mt-1">Synchronize phone data from external JSON API sources</p>
+      </div>
+
+      {/* New Sync */}
+      <Card className="border-gray-100">
+        <CardContent className="p-5">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Input placeholder="Enter JSON API source URL..." value={source} onChange={e => setSource(e.target.value)} className="flex-1" />
+            <div className="flex gap-2">
+              <Button onClick={() => handleAction('start')} disabled={!source || submitting} className="bg-blue-500 hover:bg-blue-600 gap-1.5"><Play className="w-4 h-4" />Start Sync</Button>
+              <Button onClick={() => handleAction('pause')} disabled={submitting || !jobs.some(j => j.status === 'running')} variant="outline" className="gap-1.5"><Pause className="w-4 h-4" />Pause</Button>
+              <Button onClick={() => handleAction('resume')} disabled={submitting || !jobs.some(j => j.status === 'paused')} variant="outline" className="gap-1.5"><Play className="w-4 h-4" />Resume</Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Jobs List */}
+      {jobs.length > 0 ? (
+        <div className="space-y-3">
+          {jobs.map((job: any) => (
+            <Card key={job.id} className="border-gray-100">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                      <Database className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{job.source || 'Unknown source'}</p>
+                      <p className="text-[10px] text-muted-foreground">{job.createdAt ? new Date(job.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {statusBadge(job.status)}
+                    <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(job.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </div>
+                {/* Progress */}
+                {job.totalPhones > 0 && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                      <span>Progress: {job.processed || 0} / {job.totalPhones}</span>
+                      <span>Inserted: {job.inserted || 0} | Updated: {job.updated || 0} | Errors: {job.errorCount || 0}</span>
+                    </div>
+                    <Progress value={job.totalPhones > 0 ? ((job.processed || 0) / job.totalPhones) * 100 : 0} className="h-1.5" />
+                  </div>
+                )}
+                {/* Error Log */}
+                {job.errorLog?.length > 0 && (
+                  <div className="mt-2 bg-red-50 rounded-lg p-2 max-h-24 overflow-y-auto">
+                    {job.errorLog.map((err: string, i: number) => (
+                      <p key={i} className="text-[10px] text-red-600">{err}</p>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-16 text-muted-foreground">
+          <RefreshCw className="w-10 h-10 mx-auto mb-3 opacity-20" />
+          <p className="text-sm">No sync jobs yet</p>
+          <p className="text-xs mt-1">Enter a JSON API URL above to start syncing</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ ERROR BOUNDARY ============
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
   state = { hasError: false, error: undefined as Error | undefined };
@@ -1963,6 +2428,8 @@ export default function PhoneDockApp() {
                   {view === 'admin-news' && <AdminNewsPage token={token} />}
                   {view === 'admin-sponsors' && <AdminSponsorsPage token={token} />}
                   {view === 'admin-activity' && <AdminActivityPage token={token} />}
+                  {view === 'admin-import' && <AdminImportPage token={token} />}
+                  {view === 'admin-sync' && <AdminSyncPage token={token} />}
                 </div>
               </div>
             </div>
