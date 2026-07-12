@@ -1896,7 +1896,7 @@ export default function PhoneDockApp() {
   useEffect(() => {
     if (!mounted) return;
     let cancelled = false;
-    fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { setHomeData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+    fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { if (d.error) { console.warn('Home API error:', d.error); setHomeData(null); } else { setHomeData(d); } setLoading(false); } }).catch(() => { if (!cancelled) { console.warn('Home fetch failed'); setLoading(false); } });
     return () => { cancelled = true; };
   }, [mounted]);
 
