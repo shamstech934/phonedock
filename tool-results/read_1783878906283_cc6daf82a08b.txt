@@ -1,0 +1,1105 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import React, { useState, useEffect, useCallback, useRef } from 'react';
+     4→     4→import { useTheme } from 'next-themes';
+     5→     5→import Image from 'next/image';
+     6→     6→import {
+     7→     7→  Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
+     8→     8→  TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
+     9→     9→  LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
+    10→    10→  ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
+    11→    11→  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon
+    12→    12→} from 'lucide-react';
+    13→    13→import { Button } from '@/components/ui/button';
+    14→    14→import { Input } from '@/components/ui/input';
+    15→    15→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    16→    16→import { Badge } from '@/components/ui/badge';
+    17→    17→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    18→    18→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+    19→    19→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    20→    20→import { Skeleton } from '@/components/ui/skeleton';
+    21→    21→import { Progress } from '@/components/ui/progress';
+    22→    22→import { ScrollArea } from '@/components/ui/scroll-area';
+    23→    23→import { Separator } from '@/components/ui/separator';
+    24→    24→import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+    25→    25→
+    26→    26→// ============ TYPES ============
+    27→    27→interface Brand { id: string; name: string; slug: string; logo: string; country: string; description: string; _count?: { phones: number } }
+    28→    28→interface PhoneSpecs { display?: string; displayType?: string; resolution?: string; refreshRate?: string; protection?: string; brightness?: string; chipset?: string; cpu?: string; gpu?: string; process?: string; ram?: string; ramType?: string; storage?: string; cardSlot?: string; mainCamera?: string; mainCameraSensor?: string; aperture?: string; ois?: string; eis?: string; ultrawide?: string; telephoto?: string; zoom?: string; cameraFeatures?: string; videoRecording?: string; selfieCamera?: string; selfieSensor?: string; selfieVideo?: string; battery?: string; charging?: string; chargingSpeed?: string; wirelessCharge?: string; wirelessSpeed?: string; reverseCharge?: string; weight?: string; dimensions?: string; build?: string; sim?: string; ipRating?: string; network?: string; fiveG?: string; wifi?: string; bluetooth?: string; nfc?: string; usb?: string; fingerprint?: string; faceUnlock?: string; sensors?: string; colors?: string; os?: string; osVersion?: string; osUI?: string; updatePolicy?: string; specialFeatures?: string; }
+    29→    29→interface PhoneBenchmark { antutu: number; geekbenchSingle: number; geekbenchMulti: number; gamingScore: number; pubgFps?: string; codMobileFps?: string; genshinFps?: string; videoPlayback?: string; gamingBattery?: string; browsingBattery?: string; }
+    30→    30→interface PhoneImage { id: string; url: string; altText: string; sortOrder: number; }
+    31→    31→interface PhonePrice { id: string; storeName: string; price: number; url: string; inStock: boolean; }
+    32→    32→interface Phone { id: string; modelName: string; slug: string; brandId: string; brand?: Brand; thumbnail: string; pricePKR: number; description: string; overallRating: number; cameraScore: number; performanceScore: number; batteryScore: number; displayScore: number; valueScore: number; ptaStatus: string; ptaApproved: boolean; releaseDate: string; trending: boolean; upcoming: boolean; featured: boolean; specs?: PhoneSpecs; benchmarks?: PhoneBenchmark; images?: PhoneImage[]; prices?: PhonePrice[]; pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string; published?: boolean; }
+    33→    33→interface NewsItem { id: string; title: string; slug: string; excerpt: string; content: string; category: string; author: string; imageUrl: string; published: boolean; createdAt: string; }
+    34→    34→interface Sponsor { id: string; name: string; image: string; url: string; position: string; active: boolean; }
+    35→    35→interface ActivityLog { id: string; action: string; details: string; entityType: string; createdAt: string; admin?: { name: string; email: string }; }
+    36→    36→interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; bestCamera: Phone[]; bestGaming: Phone[]; bestBattery: Phone[]; upcoming: Phone[]; news: NewsItem[]; priceCategories: { above100k: Phone[]; price60to100: Phone[]; price40to60: Phone[]; price20to40: Phone[]; under20k: Phone[] }; brands: Brand[]; sponsors?: Sponsor[]; }
+    37→    37→interface AdminUser { id: string; email: string; name: string; role: string; }
+    38→    38→
+    39→    39→// ============ ROUTER ============
+    40→    40→type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity';
+    41→    41→
+    42→    42→function useHashRouter() {
+    43→    43→  const [view, setView] = useState<View>('home');
+    44→    44→  const [params, setParams] = useState<Record<string, string>>({});
+    45→    45→
+    46→    46→  useEffect(() => {
+    47→    47→    const parseHash = () => {
+    48→    48→      const hash = window.location.hash.slice(1) || '/';
+    49→    49→      const parts = hash.split('/').filter(Boolean);
+    50→    50→      if (parts.length === 0) { setView('home'); setParams({}); return; }
+    51→    51→      if (parts[0] === 'phone' && parts[1]) { setView('phone'); setParams({ slug: parts[1] }); return; }
+    52→    52→      if (parts[0] === 'compare') { setView('compare'); setParams(Object.fromEntries(new URLSearchParams(parts.slice(1).join('/')))); return; }
+    53→    53→      if (parts[0] === 'brand' && parts[1]) { setView('brand'); setParams({ slug: parts[1] }); return; }
+    54→    54→      if (parts[0] === 'search') { setView('search'); setParams({ q: parts.slice(1).join('/') }); return; }
+    55→    55→      if (parts[0] === 'brands') { setView('brands'); setParams({}); return; }
+    56→    56→      if (parts[0] === 'news') { setView('news'); setParams({}); return; }
+    57→    57→      if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
+    58→    58→      if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
+    59→    59→      if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
+    60→    60→      if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
+    61→    61→      if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
+    62→    62→      if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
+    63→    63→      if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
+    64→    64→      if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
+    65→    65→      setView('home'); setParams({});
+    66→    66→    };
+    67→    67→    parseHash();
+    68→    68→    window.addEventListener('hashchange', parseHash);
+    69→    69→    return () => window.removeEventListener('hashchange', parseHash);
+    70→    70→  }, []);
+    71→    71→
+    72→    72→  const navigate = useCallback((path: string) => {
+    73→    73→    window.location.hash = path;
+    74→    74→  }, []);
+    75→    75→
+    76→    76→  return { view, params, navigate };
+    77→    77→}
+    78→    78→
+    79→    79→// ============ HELPERS ============
+    80→    80→function formatPrice(price: number): string {
+    81→    81→  return 'PKR ' + price.toLocaleString('en-PK');
+    82→    82→}
+    83→    83→
+    84→    84→// ============ SCORE BAR ============
+    85→    85→function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
+    86→    86→  if (mini) {
+    87→    87→    return (
+    88→    88→      <div className="flex items-center gap-2">
+    89→    89→        <span className="text-xs text-muted-foreground w-14 shrink-0">{label}</span>
+    90→    90→        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+    91→    91→          <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+    92→    92→        </div>
+    93→    93→        <span className="text-xs font-bold w-8 text-right">{score}</span>
+    94→    94→      </div>
+    95→    95→    );
+    96→    96→  }
+    97→    97→  return (
+    98→    98→    <div className="space-y-1.5">
+    99→    99→      <div className="flex justify-between text-sm">
+   100→   100→        <span className="text-muted-foreground">{label}</span>
+   101→   101→        <span className="font-semibold">{score}/100</span>
+   102→   102→      </div>
+   103→   103→      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+   104→   104→        <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+   105→   105→      </div>
+   106→   106→    </div>
+   107→   107→  );
+   108→   108→}
+   109→   109→
+   110→   110→// ============ PHONE CARD ============
+   111→   111→function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
+   112→   112→  const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
+   113→   113→  return (
+   114→   114→    <div className="phone-card bg-white rounded-2xl border border-gray-100 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={nav}>
+   115→   115→      <div className="p-3 sm:p-4">
+   116→   116→        <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
+   117→   117→          {phone.thumbnail ? (
+   118→   118→            <Image src={phone.thumbnail} alt={phone.modelName} width={200} height={200} className="object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500 ease-out" unoptimized />
+   119→   119→          ) : (
+   120→   120→            <Smartphone className="w-16 h-16 text-gray-300" />
+   121→   121→          )}
+   122→   122→          {phone.ptaApproved && (
+   123→   123→            <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
+   124→   124→              <Shield className="w-3 h-3 mr-0.5" /> PTA
+   125→   125→            </Badge>
+   126→   126→          )}
+   127→   127→          {phone.overallRating >= 8 && !phone.upcoming && (
+   128→   128→            <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-semibold shadow-sm shadow-blue-500/30">
+   129→   129→              <Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}
+   130→   130→            </Badge>
+   131→   131→          )}
+   132→   132→          {phone.upcoming && (
+   133→   133→            <Badge className="absolute top-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
+   134→   134→              <Clock className="w-3 h-3 mr-0.5" /> Upcoming
+   135→   135→            </Badge>
+   136→   136→          )}
+   137→   137→          {phone.trending && (
+   138→   138→            <Badge className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
+   139→   139→              <TrendingUp className="w-3 h-3 mr-0.5" /> Hot
+   140→   140→            </Badge>
+   141→   141→          )}
+   142→   142→        </div>
+   143→   143→        <div className="space-y-1.5">
+   144→   144→          <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
+   145→   145→          <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
+   146→   146→          <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
+   147→   147→          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+   148→   148→            {phone.specs?.ram && (
+   149→   149→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   150→   150→                <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
+   151→   151→              </span>
+   152→   152→            )}
+   153→   153→            {phone.specs?.storage && (
+   154→   154→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   155→   155→                <Layers className="w-2.5 h-2.5" />{phone.specs.storage}
+   156→   156→              </span>
+   157→   157→            )}
+   158→   158→            {phone.specs?.chipset && (
+   159→   159→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md hidden sm:flex items-center gap-0.5">
+   160→   160→                <Cpu className="w-2.5 h-2.5" />{phone.specs.chipset.split(' ').slice(0, 2).join(' ')}
+   161→   161→              </span>
+   162→   162→            )}
+   163→   163→            {phone.specs?.battery && (
+   164→   164→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   165→   165→                <Battery className="w-2.5 h-2.5" />{phone.specs.battery}
+   166→   166→              </span>
+   167→   167→            )}
+   168→   168→          </div>
+   169→   169→        </div>
+   170→   170→        <Button className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg h-9 text-xs font-semibold transition-colors">
+   171→   171→          View Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
+   172→   172→        </Button>
+   173→   173→      </div>
+   174→   174→    </div>
+   175→   175→  );
+   176→   176→}
+   177→   177→
+   178→   178→// ============ PHONE CARD SKELETON ============
+   179→   179→function PhoneCardSkeleton() {
+   180→   180→  return (
+   181→   181→    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   182→   182→      <div className="p-3 sm:p-4">
+   183→   183→        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
+   184→   184→        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
+   185→   185→        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
+   186→   186→        <div className="skeleton-shimmer h-4 w-3/4 mb-2 rounded-md" />
+   187→   187→        <div className="skeleton-shimmer h-3 w-20 mb-1 rounded-md" />
+   188→   188→        <div className="skeleton-shimmer h-3 w-16 mb-3 rounded-md" />
+   189→   189→        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
+   190→   190→      </div>
+   191→   191→    </div>
+   192→   192→  );
+   193→   193→}
+   194→   194→
+   195→   195→// ============ SECTION HEADER ============
+   196→   196→function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   197→   197→  return (
+   198→   198→    <div className="flex items-center justify-between mb-5">
+   199→   199→      <div className="flex items-center gap-3">
+   200→   200→        {Icon && <Icon className="w-5 h-5 text-blue-500" />}
+   201→   201→        <h2 className="text-lg sm:text-xl font-bold text-gray-900 relative">
+   202→   202→          {title}
+   203→   203→          <span className="absolute -bottom-1.5 left-0 h-[3px] w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
+   204→   204→        </h2>
+   205→   205→      </div>
+   206→   206→      {link && (
+   207→   207→        <button onClick={() => { window.location.hash = link; }} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
+   208→   208→          {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
+   209→   209→        </button>
+   210→   210→      )}
+   211→   211→    </div>
+   212→   212→  );
+   213→   213→}
+   214→   214→
+   215→   215→// ============ ADMIN SIDEBAR ============
+   216→   216→function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
+   217→   217→  const adminLinks = [
+   218→   218→    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
+   219→   219→    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
+   220→   220→    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
+   221→   221→    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
+   222→   222→    { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
+   223→   223→    { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
+   224→   224→  ];
+   225→   225→
+   226→   226→  return (
+   227→   227→    <>
+   228→   228→      {/* Desktop Sidebar */}
+   229→   229→      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-100 min-h-[calc(100vh-3.5rem)] sticky top-14">
+   230→   230→        <div className="p-4 border-b border-gray-50">
+   231→   231→          <div className="flex items-center gap-3">
+   232→   232→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
+   233→   233→              <Shield className="w-5 h-5 text-white" />
+   234→   234→            </div>
+   235→   235→            <div className="min-w-0">
+   236→   236→              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
+   237→   237→              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
+   238→   238→            </div>
+   239→   239→          </div>
+   240→   240→        </div>
+   241→   241→        <nav className="flex-1 p-3 space-y-1">
+   242→   242→          {adminLinks.map(link => {
+   243→   243→            const isActive = currentView === link.view;
+   244→   244→            return (
+   245→   245→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive ? 'bg-blue-50 text-blue-600 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+   246→   246→                <link.icon className="w-4 h-4" />{link.label}
+   247→   247→              </button>
+   248→   248→            );
+   249→   249→          })}
+   250→   250→        </nav>
+   251→   251→        <div className="p-3 border-t border-gray-50">
+   252→   252→          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all duration-200 mb-1">
+   253→   253→            <Eye className="w-4 h-4" />View Site
+   254→   254→          </button>
+   255→   255→          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200">
+   256→   256→            <LogOut className="w-4 h-4" />Logout
+   257→   257→          </button>
+   258→   258→        </div>
+   259→   259→      </aside>
+   260→   260→
+   261→   261→      {/* Mobile horizontal pill tabs */}
+   262→   262→      <div className="lg:hidden border-b border-gray-100 bg-white">
+   263→   263→        <div className="flex items-center justify-between px-4 py-2">
+   264→   264→          <div className="flex items-center gap-2">
+   265→   265→            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+   266→   266→              <Shield className="w-3.5 h-3.5 text-white" />
+   267→   267→            </div>
+   268→   268→            <span className="text-xs font-semibold text-gray-900">{admin.name || admin.email}</span>
+   269→   269→          </div>
+   270→   270→          <div className="flex items-center gap-1">
+   271→   271→            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
+   272→   272→            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
+   273→   273→          </div>
+   274→   274→        </div>
+   275→   275→        <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
+   276→   276→          {adminLinks.map(link => {
+   277→   277→            const isActive = currentView === link.view;
+   278→   278→            return (
+   279→   279→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${isActive ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
+   280→   280→                <link.icon className="w-3 h-3" />{link.label}
+   281→   281→              </button>
+   282→   282→            );
+   283→   283→          })}
+   284→   284→        </div>
+   285→   285→      </div>
+   286→   286→    </>
+   287→   287→  );
+   288→   288→}
+   289→   289→
+   290→   290→// ============ HEADER (LIQUID GLASS) ============
+   291→   291→function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
+   292→   292→  const [mobileOpen, setMobileOpen] = useState(false);
+   293→   293→  const [searchOpen, setSearchOpen] = useState(false);
+   294→   294→  const [searchQ, setSearchQ] = useState('');
+   295→   295→  const searchRef = useRef<HTMLInputElement>(null);
+   296→   296→
+   297→   297→  useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
+   298→   298→  useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [location?.hash]);
+   299→   299→
+   300→   300→  const doSearch = () => { if (searchQ.trim()) { onSearch(searchQ.trim()); setSearchOpen(false); setSearchQ(''); } };
+   301→   301→
+   302→   302→  return (
+   303→   303→    <header className="glass-nav sticky top-0 z-50">
+   304→   304→      <div className="max-w-7xl mx-auto px-4">
+   305→   305→        <div className="flex items-center justify-between h-14 sm:h-16">
+   306→   306→          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('/')}>
+   307→   307→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
+   308→   308→              <Smartphone className="w-5 h-5 text-white" />
+   309→   309→            </div>
+   310→   310→            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-500">Dock</span></span>
+   311→   311→          </div>
+   312→   312→
+   313→   313→          {/* Desktop Nav */}
+   314→   314→          <nav className="hidden md:flex items-center gap-1">
+   315→   315→            {[
+   316→   316→              { label: 'Home', hash: '/' }, { label: 'Brands', hash: '/brands' },
+   317→   317→              { label: 'Compare', hash: '/compare' }, { label: 'News', hash: '/news' },
+   318→   318→            ].map(item => (
+   319→   319→              <button key={item.hash} onClick={() => onNavigate(item.hash)} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200">
+   320→   320→                {item.label}
+   321→   321→              </button>
+   322→   322→            ))}
+   323→   323→            {admin ? (
+   324→   324→              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 rounded-lg hover:bg-blue-50/80 transition-all duration-200 flex items-center gap-1.5">
+   325→   325→                <Shield className="w-4 h-4" />Dashboard
+   326→   326→              </button>
+   327→   327→            ) : (
+   328→   328→              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
+   329→   329→                <Shield className="w-4 h-4" />Admin
+   330→   330→              </button>
+   331→   331→            )}
+   332→   332→          </nav>
+   333→   333→
+   334→   334→          <div className="flex items-center gap-1">
+   335→   335→            <button onClick={() => setSearchOpen(!searchOpen)} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   336→   336→              <Search className="w-[18px] h-[18px]" />
+   337→   337→            </button>
+   338→   338→            <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   339→   339→              {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+   340→   340→            </button>
+   341→   341→            <button className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200 md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
+   342→   342→              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+   343→   343→            </button>
+   344→   344→          </div>
+   345→   345→        </div>
+   346→   346→
+   347→   347→        {/* Search overlay */}
+   348→   348→        {searchOpen && (
+   349→   349→          <div className="pb-3 flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+   350→   350→            <div className="relative flex-1">
+   351→   351→              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+   352→   352→              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" autoFocus />
+   353→   353→            </div>
+   354→   354→            <button onClick={doSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-11 px-5 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+   355→   355→              Search
+   356→   356→            </button>
+   357→   357→          </div>
+   358→   358→        )}
+   359→   359→      </div>
+   360→   360→
+   361→   361→      {/* Mobile Drawer */}
+   362→   362→      {mobileOpen && (
+   363→   363→        <div className="md:hidden glass-modal border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200">
+   364→   364→          <nav className="flex flex-col p-4 gap-1">
+   365→   365→            {[
+   366→   366→              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
+   367→   367→              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
+   368→   368→            ].map(item => (
+   369→   369→              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   370→   370→                <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+   371→   371→              </button>
+   372→   372→            ))}
+   373→   373→            {admin ? (
+   374→   374→              <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 bg-blue-50/80">
+   375→   375→                <Shield className="w-4 h-4" />Dashboard
+   376→   376→              </button>
+   377→   377→            ) : (
+   378→   378→              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   379→   379→                <Shield className="w-4 h-4 text-gray-400" />Admin
+   380→   380→              </button>
+   381→   381→            )}
+   382→   382→          </nav>
+   383→   383→        </div>
+   384→   384→      )}
+   385→   385→    </header>
+   386→   386→  );
+   387→   387→}
+   388→   388→
+   389→   389→// ============ FOOTER ============
+   390→   390→function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
+   391→   391→  return (
+   392→   392→    <footer className="bg-[#0F172A] text-gray-400 mt-auto">
+   393→   393→      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
+   394→   394→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+   395→   395→          <div className="col-span-2 sm:col-span-1">
+   396→   396→            <div className="flex items-center gap-2.5 mb-4">
+   397→   397→              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center">
+   398→   398→                <Smartphone className="w-5 h-5 text-white" />
+   399→   399→              </div>
+   400→   400→              <span className="font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+   401→   401→            </div>
+   402→   402→            <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+   403→   403→          </div>
+   404→   404→          <div>
+   405→   405→            <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
+   406→   406→            <div className="space-y-2.5 text-sm">
+   407→   407→              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+   408→   408→                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</button>
+   409→   409→              ))}
+   410→   410→            </div>
+   411→   411→          </div>
+   412→   412→          <div>
+   413→   413→            <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
+   414→   414→            <div className="space-y-2.5 text-sm">
+   415→   415→              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/' }, { l: 'Best Gaming', h: '/' }, { l: 'Best Battery', h: '/' }].map(item => (
+   416→   416→                <button key={item.l} onClick={() => onNavigate(item.h)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</button>
+   417→   417→              ))}
+   418→   418→            </div>
+   419→   419→          </div>
+   420→   420→          <div>
+   421→   421→            <h4 className="font-semibold text-white mb-4 text-sm">Price Ranges (PKR)</h4>
+   422→   422→            <div className="space-y-2.5 text-sm text-gray-500">
+   423→   423→              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
+   424→   424→                <span key={r} className="block">{r}</span>
+   425→   425→              ))}
+   426→   426→            </div>
+   427→   427→          </div>
+   428→   428→        </div>
+   429→   429→        <Separator className="bg-gray-800 mb-6" />
+   430→   430→        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
+   431→   431→          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+   432→   432→          <p className="text-cyan-400/80 font-medium">Phone prices may vary. Check with retailers.</p>
+   433→   433→        </div>
+   434→   434→      </div>
+   435→   435→    </footer>
+   436→   436→  );
+   437→   437→}
+   438→   438→
+   439→   439→// ============ PHONE SECTION (reusable) ============
+   440→   440→function PhoneSection({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   441→   441→  if (!phones.length) return null;
+   442→   442→  return (
+   443→   443→    <section className="space-y-4">
+   444→   444→      <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   445→   445→      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   446→   446→        {phones.map(p => (
+   447→   447→          <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   448→   448→            <PhoneCard phone={p} />
+   449→   449→          </div>
+   450→   450→        ))}
+   451→   451→      </div>
+   452→   452→    </section>
+   453→   453→  );
+   454→   454→}
+   455→   455→
+   456→   456→// ============ HOME PAGE ============
+   457→   457→function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
+   458→   458→  const [homeSearchQ, setHomeSearchQ] = useState('');
+   459→   459→
+   460→   460→  if (loading || !data) {
+   461→   461→    return (
+   462→   462→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+   463→   463→        <div className="skeleton-shimmer h-72 sm:h-96 rounded-3xl" />
+   464→   464→        <div className="skeleton-shimmer h-14 rounded-2xl max-w-2xl mx-auto" />
+   465→   465→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+   466→   466→      </div>
+   467→   467→    );
+   468→   468→  }
+   469→   469→
+   470→   470→  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
+   471→   471→  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
+   472→   472→
+   473→   473→  const handleHomeSearch = () => {
+   474→   474→    if (homeSearchQ.trim()) {
+   475→   475→      window.location.hash = `/search/${encodeURIComponent(homeSearchQ.trim())}`;
+   476→   476→    }
+   477→   477→  };
+   478→   478→
+   479→   479→  return (
+   480→   480→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14">
+   481→   481→      {/* Hero */}
+   482→   482→      <section className="rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #2563EB 100%)' }}>
+   483→   483→        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-400/15 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl" />
+   484→   484→        <div className="absolute bottom-0 left-0 w-60 h-60 bg-purple-500/10 rounded-full translate-y-1/2 -translate-x-1/3 blur-3xl" />
+   485→   485→        <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-cyan-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+   486→   486→        <div className="relative z-10 max-w-2xl">
+   487→   487→          <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+   488→   488→            <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
+   489→   489→          </Badge>
+   490→   490→          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight">
+   491→   491→            Find Your Perfect <span className="text-blue-400">Smartphone</span>
+   492→   492→          </h1>
+   493→   493→          <p className="text-gray-400 text-sm sm:text-base mb-8 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+   494→   494→          <div className="flex flex-wrap gap-3">
+   495→   495→            <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-11 px-6 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
+   496→   496→              <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+   497→   497→            </Button>
+   498→   498→            <Button variant="outline" className="border-white/20 text-white hover:bg-white/10 rounded-xl h-11 px-6 transition-colors" onClick={() => onNavigate('/compare')}>
+   499→   499→              <GitCompare className="w-4 h-4 mr-2" /> Compare
+   500→   500→            </Button>
+   501→   501→          </div>
+   502→   502→          <div className="flex flex-wrap gap-5 mt-8 text-xs sm:text-sm text-gray-400">
+   503→   503→            <span className="flex items-center gap-1.5"><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
+   504→   504→            <span className="flex items-center gap-1.5"><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
+   505→   505→            <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+   506→   506→          </div>
+   507→   507→        </div>
+   508→   508→      </section>
+   509→   509→
+   510→   510→      {/* Glass Search Bar */}
+   511→   511→      <section>
+   512→   512→        <div className="relative max-w-2xl mx-auto -mt-8 z-10">
+   513→   513→          <div className="flex gap-2">
+   514→   514→            <div className="relative flex-1">
+   515→   515→              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+   516→   516→              <input placeholder="Search phones, brands, processors..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="glass-search w-full pl-12 pr-4 h-14 text-base rounded-2xl bg-white/80 backdrop-blur-xl border border-white/60 shadow-lg shadow-black/5 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" />
+   517→   517→            </div>
+   518→   518→            <button onClick={handleHomeSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-14 px-7 rounded-2xl text-sm font-semibold transition-colors shadow-lg shadow-blue-500/25">
+   519→   519→              <Search className="w-5 h-5" />
+   520→   520→            </button>
+   521→   521→          </div>
+   522→   522→        </div>
+   523→   523→      </section>
+   524→   524→
+   525→   525→      {/* Featured Phones */}
+   526→   526→      <section className="space-y-4">
+   527→   527→        <SectionHeader title="Featured Phones" icon={Star} link="/brands" linkText="All Phones" />
+   528→   528→        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   529→   529→          {data.featured.slice(0, 8).map(p => (
+   530→   530→            <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   531→   531→              <PhoneCard phone={p} />
+   532→   532→            </div>
+   533→   533→          ))}
+   534→   534→        </div>
+   535→   535→      </section>
+   536→   536→
+   537→   537→      {/* Phones by Price */}
+   538→   538→      {data.priceCategories.above100k.length > 0 && (
+   539→   539→        <section className="space-y-5">
+   540→   540→          <SectionHeader title="Phones by Price" icon={Tag} />
+   541→   541→          <Tabs defaultValue="above100k" className="w-full">
+   542→   542→            <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 bg-gray-100 p-1.5 rounded-2xl">
+   543→   543→              {[
+   544→   544→                { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
+   545→   545→                { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
+   546→   546→                { key: 'under20k', label: 'Under 20K' },
+   547→   547→              ].map(tab => (
+   548→   548→                <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl">{tab.label}</TabsTrigger>
+   549→   549→              ))}
+   550→   550→            </TabsList>
+   551→   551→            {['above100k', 'price60to100', 'price40to60', 'price20to40', 'under20k'].map(key => (
+   552→   552→              <TabsContent key={key} value={key}>
+   553→   553→                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:overflow-visible">
+   554→   554→                  {(data.priceCategories as Record<string, Phone[]>)[key]?.length > 0 ? (data.priceCategories as Record<string, Phone[]>)[key].map((p: Phone) => (
+   555→   555→                    <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto"><PhoneCard phone={p} /></div>
+   556→   556→                  )) : (
+   557→   557→                    <div className="col-span-full text-center py-16 text-muted-foreground">
+   558→   558→                      <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
+   559→   559→                      <p className="text-sm">No phones in this range yet</p>
+   560→   560→                    </div>
+   561→   561→                  )}
+   562→   562→                </div>
+   563→   563→              </TabsContent>
+   564→   564→            ))}
+   565→   565→          </Tabs>
+   566→   566→        </section>
+   567→   567→      )}
+   568→   568→
+   569→   569→      {/* Trending Now */}
+   570→   570→      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" />
+   571→   571→
+   572→   572→      {/* Best in Category */}
+   573→   573→      <section className="space-y-5">
+   574→   574→        <SectionHeader title="Best in Category" icon={Trophy} />
+   575→   575→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   576→   576→          {[
+   577→   577→            { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, gradient: 'from-violet-500 to-purple-600' },
+   578→   578→            { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, gradient: 'from-blue-500 to-cyan-500' },
+   579→   579→            { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, gradient: 'from-emerald-500 to-green-600' },
+   580→   580→            { phones: flagshipPhones, title: 'Flagship Phones', icon: Star, gradient: 'from-amber-500 to-orange-500' },
+   581→   581→            { phones: budgetPhones, title: 'Budget Phones', icon: Tag, gradient: 'from-green-500 to-emerald-600' },
+   582→   582→            { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, gradient: 'from-indigo-500 to-violet-600' },
+   583→   583→          ].map(cat => (
+   584→   584→            <div key={cat.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
+   585→   585→              <div className={`bg-gradient-to-br ${cat.gradient} p-4 text-white`}>
+   586→   586→                <div className="flex items-center gap-2"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
+   587→   587→              </div>
+   588→   588→              <div className="p-3 space-y-1.5">
+   589→   589→                {cat.phones.length > 0 ? cat.phones.slice(0, 3).map((p, i) => (
+   590→   590→                  <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors" onClick={() => onNavigate(`/phone/${p.slug}`)}>
+   591→   591→                    <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
+   592→   592→                    <div className="flex-1 min-w-0">
+   593→   593→                      <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
+   594→   594→                      <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
+   595→   595→                    </div>
+   596→   596→                    <p className="text-xs font-bold text-blue-600">{formatPrice(p.pricePKR)}</p>
+   597→   597→                  </div>
+   598→   598→                )) : (
+   599→   599→                  <div className="text-center py-5 text-xs text-muted-foreground">No phones yet</div>
+   600→   600→                )}
+   601→   601→              </div>
+   602→   602→            </div>
+   603→   603→          ))}
+   604→   604→        </div>
+   605→   605→      </section>
+   606→   606→
+   607→   607→      {/* Latest Additions */}
+   608→   608→      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" />
+   609→   609→
+   610→   610→      {/* Latest News */}
+   611→   611→      {data.news.length > 0 && (
+   612→   612→        <section className="space-y-5">
+   613→   613→          <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+   614→   614→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   615→   615→            {data.news.slice(0, 4).map(n => (
+   616→   616→              <div key={n.id} className="bg-white rounded-2xl border border-gray-100 p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => onNavigate('/news')}>
+   617→   617→                <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
+   618→   618→                <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
+   619→   619→                <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
+   620→   620→                <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+   621→   621→              </div>
+   622→   622→            ))}
+   623→   623→          </div>
+   624→   624→        </section>
+   625→   625→      )}
+   626→   626→
+   627→   627→      {/* Sponsor Banner */}
+   628→   628→      {data.sponsors && data.sponsors.length > 0 && (
+   629→   629→        <section>
+   630→   630→          <div className="rounded-2xl overflow-hidden">
+   631→   631→            <div className="flex items-center gap-4 p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, #111827, #1F2937)' }}>
+   632→   632→              <div className="flex-1 min-w-0">
+   633→   633→                <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30 mb-2 text-[10px] font-medium">Sponsored</Badge>
+   634→   634→                <div className="flex items-center gap-3">
+   635→   635→                  {data.sponsors[0].image ? (
+   636→   636→                    <Image src={data.sponsors[0].image} alt={data.sponsors[0].name} width={60} height={60} className="rounded-xl object-contain bg-white/10 p-1.5" unoptimized />
+   637→   637→                  ) : (
+   638→   638→                    <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center"><Star className="w-7 h-7 text-blue-400" /></div>
+   639→   639→                  )}
+   640→   640→                  <div>
+   641→   641→                    <h3 className="font-bold text-sm sm:text-base text-white">{data.sponsors[0].name}</h3>
+   642→   642→                    <p className="text-xs text-gray-500">{data.sponsors[0].position || 'Featured Partner'}</p>
+   643→   643→                  </div>
+   644→   644→                </div>
+   645→   645→              </div>
+   646→   646→              {data.sponsors[0].url && (
+   647→   647→                <a href={data.sponsors[0].url} target="_blank" rel="noopener noreferrer">
+   648→   648→                  <Button variant="outline" size="sm" className="border-white/15 text-white hover:bg-white/10 rounded-xl">
+   649→   649→                    Visit <ExternalLink className="w-3 h-3 ml-1" />
+   650→   650→                  </Button>
+   651→   651→                </a>
+   652→   652→              )}
+   653→   653→            </div>
+   654→   654→          </div>
+   655→   655→        </section>
+   656→   656→      )}
+   657→   657→
+   658→   658→      {/* Upcoming Phones */}
+   659→   659→      {data.upcoming.length > 0 && <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} />}
+   660→   660→    </div>
+   661→   661→  );
+   662→   662→}
+   663→   663→
+   664→   664→// ============ PHONE DETAIL PAGE ============
+   665→   665→function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   666→   666→  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
+   667→   667→  const [loading, setLoading] = useState(true);
+   668→   668→  const [activeTab, setActiveTab] = useState('specs');
+   669→   669→
+   670→   670→  useEffect(() => {
+   671→   671→    let cancelled = false;
+   672→   672→    setLoading(true);
+   673→   673→    fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+   674→   674→    return () => { cancelled = true; };
+   675→   675→  }, [slug]);
+   676→   676→
+   677→   677→  if (loading) {
+   678→   678→    return (
+   679→   679→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+   680→   680→        <div className="skeleton-shimmer h-6 w-64 rounded-lg" />
+   681→   681→        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   682→   682→          <div className="space-y-4">
+   683→   683→            <div className="skeleton-shimmer aspect-square rounded-2xl" />
+   684→   684→            <div className="skeleton-shimmer h-48 rounded-2xl" />
+   685→   685→          </div>
+   686→   686→          <div className="lg:col-span-2 space-y-4">
+   687→   687→            <div className="skeleton-shimmer h-8 w-3/4 rounded-lg" />
+   688→   688→            <div className="skeleton-shimmer h-4 w-full rounded-lg" />
+   689→   689→            <div className="skeleton-shimmer h-32 rounded-2xl" />
+   690→   690→            <div className="skeleton-shimmer h-64 rounded-2xl" />
+   691→   691→          </div>
+   692→   692→        </div>
+   693→   693→      </div>
+   694→   694→    );
+   695→   695→  }
+   696→   696→
+   697→   697→  if (!data?.phone) {
+   698→   698→    return (
+   699→   699→      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+   700→   700→        <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mx-auto mb-5">
+   701→   701→          <Smartphone className="w-10 h-10 text-gray-300" />
+   702→   702→        </div>
+   703→   703→        <h2 className="text-xl font-bold text-gray-900">Phone not found</h2>
+   704→   704→        <p className="text-sm text-muted-foreground mt-2">The phone you&apos;re looking for doesn&apos;t exist.</p>
+   705→   705→        <Button variant="outline" className="mt-6 rounded-xl" onClick={() => onNavigate('/')}>Go Home</Button>
+   706→   706→      </div>
+   707→   707→    );
+   708→   708→  }
+   709→   709→
+   710→   710→  const { phone, related } = data;
+   711→   711→  const p = phone;
+   712→   712→
+   713→   713→  const specGroups = [
+   714→   714→    { title: 'Display & Design', icon: Monitor, specs: [
+   715→   715→      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
+   716→   716→      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
+   717→   717→      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
+   718→   718→      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
+   719→   719→    ]},
+   720→   720→    { title: 'Performance', icon: Cpu, specs: [
+   721→   721→      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
+   722→   722→      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
+   723→   723→      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
+   724→   724→    ]},
+   725→   725→    { title: 'Camera', icon: Camera, specs: [
+   726→   726→      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
+   727→   727→      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
+   728→   728→      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
+   729→   729→      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
+   730→   730→    ]},
+   731→   731→    { title: 'Battery & Charging', icon: Battery, specs: [
+   732→   732→      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   733→   733→      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   734→   734→    ]},
+   735→   735→    { title: 'Connectivity', icon: Wifi, specs: [
+   736→   736→      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
+   737→   737→      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
+   738→   738→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   739→   739→    ]},
+   740→   740→    { title: 'Features & OS', icon: Smartphone, specs: [
+   741→   741→      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
+   742→   742→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   743→   743→      { label: 'Special Features', value: p.specs?.specialFeatures },
+   744→   744→    ]},
+   745→   745→  ];
+   746→   746→
+   747→   747→  const cameraTiles = [
+   748→   748→    { label: 'Sensor', value: p.specs?.mainCameraSensor },
+   749→   749→    { label: 'Aperture', value: p.specs?.aperture },
+   750→   750→    { label: 'OIS', value: p.specs?.ois },
+   751→   751→    { label: 'EIS', value: p.specs?.eis },
+   752→   752→    { label: 'Zoom', value: p.specs?.zoom },
+   753→   753→    { label: 'Video', value: p.specs?.videoRecording },
+   754→   754→    { label: 'Features', value: p.specs?.cameraFeatures },
+   755→   755→  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
+   756→   756→
+   757→   757→  const perfTiles = [
+   758→   758→    { label: 'Process Node', value: p.specs?.process, span: '' },
+   759→   759→    { label: 'Chipset', value: p.specs?.chipset, span: 'sm:col-span-2' },
+   760→   760→    { label: 'CPU', value: p.specs?.cpu, span: 'sm:col-span-2' },
+   761→   761→    { label: 'GPU', value: p.specs?.gpu, span: 'sm:col-span-2' },
+   762→   762→    { label: 'RAM', value: p.specs?.ram, span: '' },
+   763→   763→    { label: 'RAM Type', value: p.specs?.ramType, span: '' },
+   764→   764→    { label: 'Storage', value: p.specs?.storage, span: '' },
+   765→   765→  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
+   766→   766→
+   767→   767→  const batteryTiles = [
+   768→   768→    { label: 'Capacity', value: p.specs?.battery },
+   769→   769→    { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   770→   770→    { label: 'Wireless Charging', value: p.specs?.wirelessCharge },
+   771→   771→    { label: 'Wireless Speed', value: p.specs?.wirelessSpeed },
+   772→   772→    { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   773→   773→  ];
+   774→   774→  if (p.benchmarks?.videoPlayback) batteryTiles.push({ label: 'Video Playback', value: p.benchmarks.videoPlayback });
+   775→   775→  if (p.benchmarks?.gamingBattery) batteryTiles.push({ label: 'Gaming Battery', value: p.benchmarks.gamingBattery });
+   776→   776→  if (p.benchmarks?.browsingBattery) batteryTiles.push({ label: 'Browsing Battery', value: p.benchmarks.browsingBattery });
+   777→   777→
+   778→   778→  return (
+   779→   779→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+   780→   780→      {/* Breadcrumb */}
+   781→   781→      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
+   782→   782→        <button onClick={() => onNavigate('/')} className="hover:text-blue-500 transition-colors">Home</button>
+   783→   783→        <ChevronRight className="w-3.5 h-3.5" />
+   784→   784→        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-blue-500 transition-colors">{p.brand?.name}</button>
+   785→   785→        <ChevronRight className="w-3.5 h-3.5" />
+   786→   786→        <span className="font-medium text-gray-900">{p.modelName}</span>
+   787→   787→      </div>
+   788→   788→
+   789→   789→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   790→   790→        {/* Left Sidebar */}
+   791→   791→        <div className="lg:col-span-1 space-y-4">
+   792→   792→          {/* Image Card */}
+   793→   793→          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   794→   794→            <div className="bg-[#F8FAFC] aspect-square flex items-center justify-center p-8">
+   795→   795→              {p.thumbnail ? (
+   796→   796→                <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized />
+   797→   797→              ) : (
+   798→   798→                <div className="w-32 h-32 rounded-3xl bg-gray-100 flex items-center justify-center">
+   799→   799→                  <Smartphone className="w-16 h-16 text-gray-300" />
+   800→   800→                </div>
+   801→   801→              )}
+   802→   802→            </div>
+   803→   803→          </div>
+   804→   804→
+   805→   805→          {/* Quick Info Card */}
+   806→   806→          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+   807→   807→            <div className="flex items-center justify-between">
+   808→   808→              <span className="text-sm text-muted-foreground">Price in Pakistan</span>
+   809→   809→              <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
+   810→   810→            </div>
+   811→   811→            <Separator className="bg-gray-100" />
+   812→   812→            <div className="flex items-center justify-between">
+   813→   813→              <span className="text-sm text-muted-foreground">PTA Status</span>
+   814→   814→              <Badge className={p.ptaApproved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50 font-medium' : 'bg-gray-100 text-gray-600 font-medium'}>
+   815→   815→                <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
+   816→   816→              </Badge>
+   817→   817→            </div>
+   818→   818→            <Separator className="bg-gray-100" />
+   819→   819→            <div className="flex items-center justify-between">
+   820→   820→              <span className="text-sm text-muted-foreground">Release Date</span>
+   821→   821→              <span className="text-sm font-medium text-gray-900">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
+   822→   822→            </div>
+   823→   823→            {p.specs?.colors && (
+   824→   824→              <>
+   825→   825→                <Separator className="bg-gray-100" />
+   826→   826→                <div>
+   827→   827→                  <span className="text-sm text-muted-foreground">Colors</span>
+   828→   828→                  <p className="text-sm mt-1 font-medium text-gray-900">{p.specs.colors}</p>
+   829→   829→                </div>
+   830→   830→              </>
+   831→   831→            )}
+   832→   832→            <Separator className="bg-gray-100" />
+   833→   833→            <button className="w-full bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
+   834→   834→              <GitCompare className="w-4 h-4" /> Add to Compare
+   835→   835→            </button>
+   836→   836→          </div>
+   837→   837→
+   838→   838→          {/* Store Prices */}
+   839→   839→          {p.prices && p.prices.length > 0 && (
+   840→   840→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   841→   841→              <h3 className="text-sm font-semibold text-gray-900 mb-3">Best Prices</h3>
+   842→   842→              <div className="space-y-2">
+   843→   843→                {p.prices.map(pr => (
+   844→   844→                  <div key={pr.id} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC]">
+   845→   845→                    <div>
+   846→   846→                      <p className="text-sm font-medium text-gray-900">{pr.storeName}</p>
+   847→   847→                      <p className="text-[10px] mt-0.5 flex items-center gap-1">
+   848→   848→                        <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
+   849→   849→                        <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
+   850→   850→                      </p>
+   851→   851→                    </div>
+   852→   852→                    <span className="font-bold text-sm text-blue-600">{formatPrice(pr.price)}</span>
+   853→   853→                  </div>
+   854→   854→                ))}
+   855→   855→              </div>
+   856→   856→            </div>
+   857→   857→          )}
+   858→   858→        </div>
+   859→   859→
+   860→   860→        {/* Right Content */}
+   861→   861→        <div className="lg:col-span-2 space-y-5">
+   862→   862→          <div>
+   863→   863→            <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
+   864→   864→            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
+   865→   865→            {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
+   866→   866→          </div>
+   867→   867→
+   868→   868→          {/* Quick Verdict Card */}
+   869→   869→          {p.reviewVerdict && (
+   870→   870→            <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+   871→   871→              <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+   872→   872→              <div className="p-4 sm:p-6">
+   873→   873→                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   874→   874→                  <div className="flex items-center gap-4">
+   875→   875→                    <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/25">
+   876→   876→                      <div className="text-center">
+   877→   877→                        <span className="text-xl font-extrabold">{p.overallRating}</span>
+   878→   878→                        <span className="text-[10px] block opacity-70">/ 10</span>
+   879→   879→                      </div>
+   880→   880→                    </div>
+   881→   881→                    <div>
+   882→   882→                      <div className="flex items-center gap-1.5 mb-1">
+   883→   883→                        <Trophy className="w-4 h-4 text-blue-500" />
+   884→   884→                        <h3 className="font-bold text-sm sm:text-base text-gray-900">Quick Verdict</h3>
+   885→   885→                      </div>
+   886→   886→                      <p className="text-sm text-muted-foreground leading-relaxed">{p.reviewVerdict}</p>
+   887→   887→                    </div>
+   888→   888→                  </div>
+   889→   889→                  <div className="sm:ml-auto sm:w-64 space-y-2">
+   890→   890→                    <ScoreBar score={p.cameraScore} label="Camera" mini />
+   891→   891→                    <ScoreBar score={p.performanceScore} label="Performance" mini />
+   892→   892→                    <ScoreBar score={p.displayScore} label="Display" mini />
+   893→   893→                    <ScoreBar score={p.batteryScore} label="Battery" mini />
+   894→   894→                    <ScoreBar score={p.valueScore} label="Value" mini />
+   895→   895→                  </div>
+   896→   896→                </div>
+   897→   897→              </div>
+   898→   898→            </div>
+   899→   899→          )}
+   900→   900→
+   901→   901→          {/* Camera Details */}
+   902→   902→          {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
+   903→   903→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   904→   904→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   905→   905→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Camera className="w-4 h-4 text-blue-600" /></div>
+   906→   906→                Camera Details
+   907→   907→              </h3>
+   908→   908→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   909→   909→                {cameraTiles.map(tile => (
+   910→   910→                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.label === 'Features' ? 'col-span-2 sm:col-span-3' : ''}`}>
+   911→   911→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   912→   912→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   913→   913→                  </div>
+   914→   914→                ))}
+   915→   915→              </div>
+   916→   916→            </div>
+   917→   917→          )}
+   918→   918→
+   919→   919→          {/* Performance Section */}
+   920→   920→          {(p.specs?.chipset || p.specs?.cpu) && (
+   921→   921→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   922→   922→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   923→   923→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Cpu className="w-4 h-4 text-blue-600" /></div>
+   924→   924→                Performance
+   925→   925→              </h3>
+   926→   926→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   927→   927→                {perfTiles.map(tile => (
+   928→   928→                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.span}`}>
+   929→   929→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   930→   930→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   931→   931→                  </div>
+   932→   932→                ))}
+   933→   933→              </div>
+   934→   934→            </div>
+   935→   935→          )}
+   936→   936→
+   937→   937→          {/* Battery & Charging */}
+   938→   938→          {p.specs?.battery && (
+   939→   939→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   940→   940→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   941→   941→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Battery className="w-4 h-4 text-blue-600" /></div>
+   942→   942→                Battery & Charging
+   943→   943→              </h3>
+   944→   944→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   945→   945→                {batteryTiles.filter(t => t.value && t.value !== 'No' && t.value !== '').map(tile => (
+   946→   946→                  <div key={tile.label} className="p-3 rounded-xl bg-[#F8FAFC]">
+   947→   947→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   948→   948→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   949→   949→                  </div>
+   950→   950→                ))}
+   951→   951→              </div>
+   952→   952→            </div>
+   953→   953→          )}
+   954→   954→
+   955→   955→          {/* Ratings & Scores */}
+   956→   956→          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+   957→   957→            <div className="flex items-center justify-between mb-4">
+   958→   958→              <h3 className="font-bold text-gray-900">Ratings & Scores</h3>
+   959→   959→              <div className="flex items-center gap-1.5">
+   960→   960→                <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+   961→   961→                <span className="text-2xl font-extrabold text-gray-900">{p.overallRating}</span>
+   962→   962→                <span className="text-sm text-muted-foreground">/ 10</span>
+   963→   963→              </div>
+   964→   964→            </div>
+   965→   965→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+   966→   966→              <ScoreBar score={p.performanceScore} label="Performance" />
+   967→   967→              <ScoreBar score={p.cameraScore} label="Camera" />
+   968→   968→              <ScoreBar score={p.batteryScore} label="Battery" />
+   969→   969→              <ScoreBar score={p.displayScore} label="Display" />
+   970→   970→              <ScoreBar score={p.valueScore} label="Value" />
+   971→   971→            </div>
+   972→   972→          </div>
+   973→   973→
+   974→   974→          {/* Tabs: Specs / Benchmarks / Review */}
+   975→   975→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   976→   976→            <TabsList className="glass-filter w-full justify-start bg-gray-100 rounded-2xl p-1.5 h-auto">
+   977→   977→              <TabsTrigger value="specs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Specifications</TabsTrigger>
+   978→   978→              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Benchmarks</TabsTrigger>
+   979→   979→              <TabsTrigger value="review" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Review</TabsTrigger>
+   980→   980→            </TabsList>
+   981→   981→
+   982→   982→            {/* Specs Tab */}
+   983→   983→            <TabsContent value="specs" className="mt-5 space-y-4">
+   984→   984→              {specGroups.map(group => (
+   985→   985→                <div key={group.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   986→   986→                  <div className="px-4 py-3 flex items-center gap-2.5 border-b border-gray-50">
+   987→   987→                    <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
+   988→   988→                      <group.icon className="w-4 h-4 text-white" />
+   989→   989→                    </div>
+   990→   990→                    <h3 className="text-sm font-semibold text-gray-900">{group.title}</h3>
+   991→   991→                  </div>
+   992→   992→                  <div className="divide-y divide-gray-50 px-4 py-1">
+   993→   993→                    {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
+   994→   994→                      <div key={s.label} className="flex justify-between py-3 text-sm">
+   995→   995→                        <span className="text-muted-foreground">{s.label}</span>
+   996→   996→                        <span className="font-medium text-right max-w-[60%] text-gray-900">{s.value}</span>
+   997→   997→                      </div>
+   998→   998→                    ))}
+   999→   999→                  </div>
+  1000→  1000→                </div>
+  1001→  1001→              ))}
+  1002→  1002→            </TabsContent>
+  1003→  1003→
+  1004→  1004→            {/* Benchmarks Tab */}
+  1005→  1005→            <TabsContent value="benchmarks" className="mt-5">
+  1006→  1006→              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-6">
+  1007→  1007→                {p.benchmarks ? (<>
+  1008→  1008→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+  1009→  1009→                    {[
+  1010→  1010→                      { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'from-blue-500 to-blue-600' },
+  1011→  1011→                      { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'from-emerald-500 to-green-600' },
+  1012→  1012→                      { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'from-violet-500 to-purple-600' },
+  1013→  1013→                    ].map(b => (
+  1014→  1014→                      <div key={b.label} className="text-center p-5 rounded-2xl bg-[#F8FAFC] border border-gray-100">
+  1015→  1015→                        <p className="text-xs text-muted-foreground mb-2 font-medium">{b.label}</p>
+  1016→  1016→                        <p className="text-3xl font-extrabold text-gray-900">{b.value}</p>
+  1017→  1017→                        <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+  1018→  1018→                          <div className={`h-full rounded-full bg-gradient-to-r ${b.color} transition-all duration-700`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
+  1019→  1019→                        </div>
+  1020→  1020→                      </div>
+  1021→  1021→                    ))}
+  1022→  1022→                  </div>
+  1023→  1023→
+  1024→  1024→                  <div>
+  1025→  1025→                    <h4 className="font-semibold text-gray-900 mb-3">Gaming Performance</h4>
+  1026→  1026→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1027→  1027→                      {[
+  1028→  1028→                        { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
+  1029→  1029→                        { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
+  1030→  1030→                        { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
+  1031→  1031→                      ].map(g => (
+  1032→  1032→                        <div key={g.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
+  1033→  1033→                          <p className="text-xs text-muted-foreground font-medium">{g.label}</p>
+  1034→  1034→                          <p className="text-lg font-bold mt-1.5 text-gray-900">{g.value || 'N/A'}</p>
+  1035→  1035→                        </div>
+  1036→  1036→                      ))}
+  1037→  1037→                    </div>
+  1038→  1038→                  </div>
+  1039→  1039→
+  1040→  1040→                  <div>
+  1041→  1041→                    <h4 className="font-semibold text-gray-900 mb-3">Battery Tests</h4>
+  1042→  1042→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1043→  1043→                      {[
+  1044→  1044→                        { label: 'Video Playback', value: p.benchmarks.videoPlayback },
+  1045→  1045→                        { label: 'Gaming', value: p.benchmarks.gamingBattery },
+  1046→  1046→                        { label: 'Browsing', value: p.benchmarks.browsingBattery },
+  1047→  1047→                      ].map(b => (
+  1048→  1048→                        <div key={b.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
+  1049→  1049→                          <p className="text-xs text-muted-foreground font-medium">{b.label}</p>
+  1050→  1050→                          <p className="text-lg font-bold mt-1.5 text-gray-900">{b.value || 'N/A'}</p>
+  1051→  1051→                        </div>
+  1052→  1052→                      ))}
+  1053→  1053→                    </div>
+  1054→  1054→                  </div>
+  1055→  1055→                </>) : (
+  1056→  1056→                  <div className="text-center py-16 text-muted-foreground">
+  1057→  1057→                    <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-20" />
+  1058→  1058→                    <p className="text-sm">No benchmark data available</p>
+  1059→  1059→                  </div>
+  1060→  1060→                )}
+  1061→  1061→              </div>
+  1062→  1062→            </TabsContent>
+  1063→  1063→
+  1064→  1064→            {/* Review Tab */}
+  1065→  1065→            <TabsContent value="review" className="mt-5 space-y-4">
+  1066→  1066→              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-5">
+  1067→  1067→                {p.reviewSummary && <p className="text-sm leading-relaxed text-gray-700">{p.reviewSummary}</p>}
+  1068→  1068→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1069→  1069→                  {p.pros && (
+  1070→  1070→                    <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100">
+  1071→  1071→                      <h4 className="font-semibold text-emerald-700 text-sm mb-3 flex items-center gap-2">
+  1072→  1072→                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/25"><Check className="w-3.5 h-3.5 text-white" /></div>
+  1073→  1073→                        Pros
+  1074→  1074→                      </h4>
+  1075→  1075→                      <ul className="space-y-2">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-emerald-700 flex items-start gap-2"><Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />{pro.trim()}</li>)}</ul>
+  1076→  1076→                    </div>
+  1077→  1077→                  )}
+  1078→  1078→                  {p.cons && (
+  1079→  1079→                    <div className="p-5 rounded-2xl bg-red-50 border border-red-100">
+  1080→  1080→                      <h4 className="font-semibold text-red-700 text-sm mb-3 flex items-center gap-2">
+  1081→  1081→                        <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm shadow-red-500/25"><Minus className="w-3.5 h-3.5 text-white" /></div>
+  1082→  1082→                        Cons
+  1083→  1083→                      </h4>
+  1084→  1084→                      <ul className="space-y-2">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-700 flex items-start gap-2"><Minus className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />{con.trim()}</li>)}</ul>
+  1085→  1085→                    </div>
+  1086→  1086→                  )}
+  1087→  1087→                </div>
+  1088→  1088→              </div>
+  1089→  1089→            </TabsContent>
+  1090→  1090→          </Tabs>
+  1091→  1091→
+  1092→  1092→          {/* Related Phones */}
+  1093→  1093→          {related.length > 0 && (
+  1094→  1094→            <section className="space-y-5 pt-4">
+  1095→  1095→              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
+  1096→  1096→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  1097→  1097→                {related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}
+  1098→  1098→              </div>
+  1099→  1099→            </section>
+  1100→  1100→          )}
+  1101→  1101→        </div>
+  1102→  1102→      </div>
+  1103→  1103→    </div>
+  1104→  1104→  );
+  1105→  1105→}

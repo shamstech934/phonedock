@@ -1,0 +1,501 @@
+  1500→    { label: 'SEO Settings', desc: 'Meta tags, sitemap', hash: '/admin/dashboard', icon: Settings, color: 'text-cyan-600 bg-cyan-100 dark:bg-cyan-900/30' },
+  1501→    { label: 'Image Management', desc: 'Phone images, thumbnails', hash: '/admin/phones', icon: ImageIcon, color: 'text-rose-600 bg-rose-100 dark:bg-rose-900/30' },
+  1502→  ];
+  1503→
+  1504→  return (
+  1505→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1506→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1507→        <div>
+  1508→          <h1 className="text-2xl font-extrabold">Dashboard</h1>
+  1509→          <p className="text-sm text-muted-foreground">Welcome back, {admin.name || admin.email}</p>
+  1510→        </div>
+  1511→        <Button variant="outline" size="sm" onClick={() => { window.location.hash = '/'; }}><Eye className="w-4 h-4 mr-2" />View Site</Button>
+  1512→      </div>
+  1513→
+  1514→      {/* Stat Cards - 2x3 grid */}
+  1515→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+  1516→        {[
+  1517→          { label: 'Total Phones', value: stats?.totalPhones || 0, icon: Smartphone, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+  1518→          { label: 'Brands', value: stats?.totalBrands || 0, icon: Layers, color: 'text-green-600 bg-green-100 dark:bg-green-900/30' },
+  1519→          { label: 'Trending', value: stats?.trending || 0, icon: TrendingUp, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
+  1520→          { label: 'Featured', value: stats?.featured || 0, icon: Star, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
+  1521→          { label: 'Avg Price', value: stats?.avgPrice ? formatPrice(Math.round(stats.avgPrice)) : 'N/A', icon: Tag, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
+  1522→          { label: 'News Articles', value: stats?.totalNews || 0, icon: Newspaper, color: 'text-cyan-600 bg-cyan-100 dark:bg-cyan-900/30' },
+  1523→        ].map(s => (
+  1524→          <Card key={s.label}>
+  1525→            <CardContent className="p-3 sm:p-4 flex flex-col items-center gap-2 text-center">
+  1526→              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${s.color}`}><s.icon className="w-4 h-4" /></div>
+  1527→              <div>
+  1528→                <p className="text-lg sm:text-2xl font-extrabold">{typeof s.value === 'number' ? s.value : s.value}</p>
+  1529→                <p className="text-[10px] sm:text-xs text-muted-foreground">{s.label}</p>
+  1530→              </div>
+  1531→            </CardContent>
+  1532→          </Card>
+  1533→        ))}
+  1534→      </div>
+  1535→
+  1536→      {/* Price Distribution */}
+  1537→      <Card>
+  1538→        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Price Distribution</CardTitle></CardHeader>
+  1539→        <CardContent className="p-4 pt-0 space-y-3">
+  1540→          {priceDistribution.map(range => (
+  1541→            <div key={range.label} className="flex items-center gap-3">
+  1542→              <span className="text-xs text-muted-foreground w-20 shrink-0 text-right">{range.label}</span>
+  1543→              <div className="flex-1 h-6 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+  1544→                <div className={`h-full ${range.color} rounded-lg flex items-center px-2 transition-all duration-500`} style={{ width: `${(range.count / maxCount) * 100}%`, minWidth: range.count > 0 ? '2rem' : '0' }}>
+  1545→                  {range.count > 0 && <span className="text-[10px] font-bold text-white">{range.count}</span>}
+  1546→                </div>
+  1547→              </div>
+  1548→            </div>
+  1549→          ))}
+  1550→        </CardContent>
+  1551→      </Card>
+  1552→
+  1553→      {/* Quick Actions - 2x3 grid */}
+  1554→      <div>
+  1555→        <h3 className="font-semibold text-sm mb-3">Quick Actions</h3>
+  1556→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1557→          {quickActions.map(action => (
+  1558→            <Card key={action.label} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate(action.hash)}>
+  1559→              <CardContent className="p-4 flex items-center gap-3">
+  1560→                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}><action.icon className="w-5 h-5" /></div>
+  1561→                <div className="min-w-0">
+  1562→                  <p className="font-semibold text-sm">{action.label}</p>
+  1563→                  <p className="text-xs text-muted-foreground">{action.desc}</p>
+  1564→                </div>
+  1565→                <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground shrink-0" />
+  1566→              </CardContent>
+  1567→            </Card>
+  1568→          ))}
+  1569→        </div>
+  1570→      </div>
+  1571→
+  1572→      {/* Activity Log */}
+  1573→      <Card>
+  1574→        <CardHeader className="pb-2">
+  1575→          <div className="flex items-center justify-between">
+  1576→            <CardTitle className="text-sm font-semibold flex items-center gap-2"><Activity className="w-4 h-4 text-blue-600" /> Recent Activity</CardTitle>
+  1577→            <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400 text-xs" onClick={() => onNavigate('/admin/activity')}>View All</Button>
+  1578→          </div>
+  1579→        </CardHeader>
+  1580→        <CardContent className="p-4 pt-0">
+  1581→          {activityLogs.length > 0 ? (
+  1582→            <div className="max-h-72 overflow-y-auto space-y-1">
+  1583→              {activityLogs.slice(0, 10).map(log => (
+  1584→                <div key={log.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+  1585→                  <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+  1586→                  <div className="flex-1 min-w-0">
+  1587→                    <div className="flex items-center gap-2">
+  1588→                      <p className="text-xs font-medium">{log.action}</p>
+  1589→                      <span className="text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+  1590→                    </div>
+  1591→                    <p className="text-xs text-muted-foreground truncate">{log.details}</p>
+  1592→                  </div>
+  1593→                </div>
+  1594→              ))}
+  1595→            </div>
+  1596→          ) : (
+  1597→            <p className="text-sm text-muted-foreground text-center py-6">No recent activity</p>
+  1598→          )}
+  1599→        </CardContent>
+  1600→      </Card>
+  1601→    </div>
+  1602→  );
+  1603→}
+  1604→
+  1605→// ============ ADMIN PHONES ============
+  1606→function AdminPhones({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1607→  const [phones, setPhones] = useState<Phone[]>([]);
+  1608→  const [loading, setLoading] = useState(true);
+  1609→  const [filterQ, setFilterQ] = useState('');
+  1610→  const [addOpen, setAddOpen] = useState(false);
+  1611→  const [brands, setBrands] = useState<Brand[]>([]);
+  1612→  const [newPhone, setNewPhone] = useState({ modelName: '', brandId: '', pricePKR: '', ptaStatus: 'Unknown' });
+  1613→
+  1614→  useEffect(() => {
+  1615→    fetch('/api/admin/phones', { headers: { Authorization: 'Bearer token' } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setLoading(false); });
+  1616→    fetch('/api/brands').then(r => r.json()).then(d => setBrands(d.brands || []));
+  1617→  }, []);
+  1618→
+  1619→  const filteredPhones = filterQ ? phones.filter(p => p.modelName.toLowerCase().includes(filterQ.toLowerCase()) || p.brand?.name.toLowerCase().includes(filterQ.toLowerCase())) : phones;
+  1620→
+  1621→  return (
+  1622→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1623→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1624→        <div className="flex items-center gap-2">
+  1625→          <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button>
+  1626→          <h1 className="text-xl font-extrabold">Manage Phones ({phones.length})</h1>
+  1627→        </div>
+  1628→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1629→          <DialogTrigger asChild>
+  1630→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Phone</Button>
+  1631→          </DialogTrigger>
+  1632→          <DialogContent>
+  1633→            <DialogHeader><DialogTitle>Add New Phone</DialogTitle></DialogHeader>
+  1634→            <div className="space-y-4 pt-2">
+  1635→              <div><label className="text-sm font-medium mb-1 block">Model Name</label><Input value={newPhone.modelName} onChange={e => setNewPhone({ ...newPhone, modelName: e.target.value })} placeholder="e.g., Galaxy S24 Ultra" /></div>
+  1636→              <div><label className="text-sm font-medium mb-1 block">Brand</label>
+  1637→                <Select value={newPhone.brandId} onValueChange={v => setNewPhone({ ...newPhone, brandId: v })}>
+  1638→                  <SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
+  1639→                  <SelectContent>{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+  1640→                </Select>
+  1641→              </div>
+  1642→              <div><label className="text-sm font-medium mb-1 block">Price (PKR)</label><Input type="number" value={newPhone.pricePKR} onChange={e => setNewPhone({ ...newPhone, pricePKR: e.target.value })} placeholder="e.g., 250000" /></div>
+  1643→              <div><label className="text-sm font-medium mb-1 block">PTA Status</label>
+  1644→                <Select value={newPhone.ptaStatus} onValueChange={v => setNewPhone({ ...newPhone, ptaStatus: v })}>
+  1645→                  <SelectTrigger><SelectValue /></SelectTrigger>
+  1646→                  <SelectContent><SelectItem value="PTA Approved">PTA Approved</SelectItem><SelectItem value="Not Approved">Not Approved</SelectItem><SelectItem value="Unknown">Unknown</SelectItem></SelectContent>
+  1647→                </Select>
+  1648→              </div>
+  1649→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewPhone({ modelName: '', brandId: '', pricePKR: '', ptaStatus: 'Unknown' }); }}>Save Phone</Button>
+  1650→            </div>
+  1651→          </DialogContent>
+  1652→        </Dialog>
+  1653→      </div>
+  1654→      <Input placeholder="Filter phones..." value={filterQ} onChange={e => setFilterQ(e.target.value)} className="max-w-sm" />
+  1655→      {loading ? <div className="space-y-2">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div> : (
+  1656→        <Card>
+  1657→          <div className="overflow-x-auto">
+  1658→            <table className="w-full text-sm">
+  1659→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1660→                <th className="text-left p-3 font-medium">Phone</th>
+  1661→                <th className="text-left p-3 font-medium">Brand</th>
+  1662→                <th className="text-left p-3 font-medium">Price (PKR)</th>
+  1663→                <th className="text-left p-3 font-medium">Rating</th>
+  1664→                <th className="text-left p-3 font-medium">PTA</th>
+  1665→                <th className="text-left p-3 font-medium">Status</th>
+  1666→                <th className="text-right p-3 font-medium">Actions</th>
+  1667→              </tr></thead>
+  1668→              <tbody>
+  1669→                {filteredPhones.map(p => (
+  1670→                  <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1671→                    <td className="p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0">{p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="object-contain" unoptimized /> : <Smartphone className="w-5 h-5 text-gray-400" />}</div><span className="font-medium truncate max-w-[200px] block">{p.modelName}</span></div></td>
+  1672→                    <td className="p-3 text-muted-foreground">{p.brand?.name}</td>
+  1673→                    <td className="p-3 font-medium">{formatPrice(p.pricePKR)}</td>
+  1674→                    <td className="p-3"><span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" />{p.overallRating}</span></td>
+  1675→                    <td className="p-3"><Badge className={p.ptaApproved ? 'pta-approved text-[10px]' : 'pta-unknown text-[10px]'}>{p.ptaStatus}</Badge></td>
+  1676→                    <td className="p-3"><Badge className={`text-[10px] ${p.published !== false ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{p.published !== false ? 'Published' : 'Draft'}</Badge></td>
+  1677→                    <td className="p-3 text-right">
+  1678→                      <div className="flex items-center justify-end gap-1">
+  1679→                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onNavigate(`/phone/${p.slug}`)}><Eye className="w-3.5 h-3.5" /></Button>
+  1680→                        <Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+  1681→                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+  1682→                      </div>
+  1683→                    </td>
+  1684→                  </tr>
+  1685→                ))}
+  1686→              </tbody>
+  1687→            </table>
+  1688→          </div>
+  1689→        </Card>
+  1690→      )}
+  1691→    </div>
+  1692→  );
+  1693→}
+  1694→
+  1695→// ============ ADMIN BRANDS ============
+  1696→function AdminBrands({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1697→  const [brands, setBrands] = useState<Brand[]>([]);
+  1698→  const [loading, setLoading] = useState(true);
+  1699→  const [addOpen, setAddOpen] = useState(false);
+  1700→  const [newBrand, setNewBrand] = useState({ name: '', country: '', description: '' });
+  1701→
+  1702→  useEffect(() => { fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }); }, []);
+  1703→
+  1704→  return (
+  1705→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1706→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1707→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage Brands ({brands.length})</h1></div>
+  1708→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1709→          <DialogTrigger asChild>
+  1710→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Brand</Button>
+  1711→          </DialogTrigger>
+  1712→          <DialogContent>
+  1713→            <DialogHeader><DialogTitle>Add New Brand</DialogTitle></DialogHeader>
+  1714→            <div className="space-y-4 pt-2">
+  1715→              <div><label className="text-sm font-medium mb-1 block">Brand Name</label><Input value={newBrand.name} onChange={e => setNewBrand({ ...newBrand, name: e.target.value })} placeholder="e.g., Samsung" /></div>
+  1716→              <div><label className="text-sm font-medium mb-1 block">Country</label><Input value={newBrand.country} onChange={e => setNewBrand({ ...newBrand, country: e.target.value })} placeholder="e.g., South Korea" /></div>
+  1717→              <div><label className="text-sm font-medium mb-1 block">Description</label><Input value={newBrand.description} onChange={e => setNewBrand({ ...newBrand, description: e.target.value })} placeholder="Brief description" /></div>
+  1718→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewBrand({ name: '', country: '', description: '' }); }}>Save Brand</Button>
+  1719→            </div>
+  1720→          </DialogContent>
+  1721→        </Dialog>
+  1722→      </div>
+  1723→      {loading ? <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div> : (
+  1724→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1725→          {brands.map(b => (
+  1726→            <Card key={b.id}>
+  1727→              <CardContent className="p-4 flex items-center justify-between">
+  1728→                <div className="flex items-center gap-3">
+  1729→                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center"><Smartphone className="w-6 h-6 text-gray-400" /></div>
+  1730→                  <div><p className="font-semibold text-sm">{b.name}</p><p className="text-xs text-muted-foreground">{b.country} &middot; {b._count?.phones || 0} phones</p></div>
+  1731→                </div>
+  1732→                <div className="flex gap-1"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1733→              </CardContent>
+  1734→            </Card>
+  1735→          ))}
+  1736→        </div>
+  1737→      )}
+  1738→    </div>
+  1739→  );
+  1740→}
+  1741→
+  1742→// ============ ADMIN NEWS ============
+  1743→function AdminNews({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1744→  const [news, setNews] = useState<NewsItem[]>([]);
+  1745→  const [loading, setLoading] = useState(true);
+  1746→  const [addOpen, setAddOpen] = useState(false);
+  1747→  const [newArticle, setNewArticle] = useState({ title: '', category: 'News', excerpt: '', content: '' });
+  1748→
+  1749→  useEffect(() => { fetch('/api/news?published=false').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }); }, []);
+  1750→
+  1751→  return (
+  1752→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1753→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1754→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage News ({news.length})</h1></div>
+  1755→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1756→          <DialogTrigger asChild>
+  1757→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Article</Button>
+  1758→          </DialogTrigger>
+  1759→          <DialogContent>
+  1760→            <DialogHeader><DialogTitle>Add New Article</DialogTitle></DialogHeader>
+  1761→            <div className="space-y-4 pt-2">
+  1762→              <div><label className="text-sm font-medium mb-1 block">Title</label><Input value={newArticle.title} onChange={e => setNewArticle({ ...newArticle, title: e.target.value })} placeholder="Article title" /></div>
+  1763→              <div><label className="text-sm font-medium mb-1 block">Category</label>
+  1764→                <Select value={newArticle.category} onValueChange={v => setNewArticle({ ...newArticle, category: v })}>
+  1765→                  <SelectTrigger><SelectValue /></SelectTrigger>
+  1766→                  <SelectContent><SelectItem value="News">News</SelectItem><SelectItem value="Review">Review</SelectItem><SelectItem value="Comparison">Comparison</SelectItem><SelectItem value="Guide">Guide</SelectItem></SelectContent>
+  1767→                </Select>
+  1768→              </div>
+  1769→              <div><label className="text-sm font-medium mb-1 block">Excerpt</label><Input value={newArticle.excerpt} onChange={e => setNewArticle({ ...newArticle, excerpt: e.target.value })} placeholder="Brief summary" /></div>
+  1770→              <div><label className="text-sm font-medium mb-1 block">Content</label><Input value={newArticle.content} onChange={e => setNewArticle({ ...newArticle, content: e.target.value })} placeholder="Article content" /></div>
+  1771→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewArticle({ title: '', category: 'News', excerpt: '', content: '' }); }}>Save Article</Button>
+  1772→            </div>
+  1773→          </DialogContent>
+  1774→        </Dialog>
+  1775→      </div>
+  1776→      {loading ? <div className="space-y-2">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div> : (
+  1777→        <div className="space-y-2">
+  1778→          {news.map(n => (
+  1779→            <Card key={n.id}>
+  1780→              <CardContent className="p-4 flex items-center justify-between gap-4">
+  1781→                <div className="min-w-0">
+  1782→                  <div className="flex items-center gap-2 mb-1">
+  1783→                    <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+  1784→                    <Badge className={`text-[10px] ${n.published ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{n.published ? 'Published' : 'Draft'}</Badge>
+  1785→                  </div>
+  1786→                  <p className="font-semibold text-sm truncate">{n.title}</p>
+  1787→                  <p className="text-xs text-muted-foreground">{n.author} &middot; {new Date(n.createdAt).toLocaleDateString()}</p>
+  1788→                </div>
+  1789→                <div className="flex gap-1 shrink-0"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1790→              </CardContent>
+  1791→            </Card>
+  1792→          ))}
+  1793→        </div>
+  1794→      )}
+  1795→    </div>
+  1796→  );
+  1797→}
+  1798→
+  1799→// ============ ADMIN SPONSORS ============
+  1800→function AdminSponsors({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1801→  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  1802→  const [loading, setLoading] = useState(true);
+  1803→  const [addOpen, setAddOpen] = useState(false);
+  1804→  const [newSponsor, setNewSponsor] = useState({ name: '', image: '', url: '', position: '' });
+  1805→
+  1806→  useEffect(() => { fetch('/api/sponsors').then(r => r.json()).then(d => { setSponsors(d.sponsors || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  1807→
+  1808→  return (
+  1809→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1810→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1811→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage Sponsors ({sponsors.length})</h1></div>
+  1812→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1813→          <DialogTrigger asChild>
+  1814→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Sponsor</Button>
+  1815→          </DialogTrigger>
+  1816→          <DialogContent>
+  1817→            <DialogHeader><DialogTitle>Add New Sponsor</DialogTitle></DialogHeader>
+  1818→            <div className="space-y-4 pt-2">
+  1819→              <div><label className="text-sm font-medium mb-1 block">Name</label><Input value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} placeholder="Sponsor name" /></div>
+  1820→              <div><label className="text-sm font-medium mb-1 block">Image URL</label><Input value={newSponsor.image} onChange={e => setNewSponsor({ ...newSponsor, image: e.target.value })} placeholder="https://..." /></div>
+  1821→              <div><label className="text-sm font-medium mb-1 block">Website URL</label><Input value={newSponsor.url} onChange={e => setNewSponsor({ ...newSponsor, url: e.target.value })} placeholder="https://..." /></div>
+  1822→              <div><label className="text-sm font-medium mb-1 block">Position</label><Input value={newSponsor.position} onChange={e => setNewSponsor({ ...newSponsor, position: e.target.value })} placeholder="e.g., Homepage Banner" /></div>
+  1823→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewSponsor({ name: '', image: '', url: '', position: '' }); }}>Save Sponsor</Button>
+  1824→            </div>
+  1825→          </DialogContent>
+  1826→        </Dialog>
+  1827→      </div>
+  1828→      {loading ? <div className="space-y-2">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div> : (
+  1829→        <Card>
+  1830→          <div className="overflow-x-auto">
+  1831→            <table className="w-full text-sm">
+  1832→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1833→                <th className="text-left p-3 font-medium">Sponsor</th>
+  1834→                <th className="text-left p-3 font-medium">Position</th>
+  1835→                <th className="text-left p-3 font-medium">Status</th>
+  1836→                <th className="text-right p-3 font-medium">Actions</th>
+  1837→              </tr></thead>
+  1838→              <tbody>
+  1839→                {sponsors.map(s => (
+  1840→                  <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1841→                    <td className="p-3">
+  1842→                      <div className="flex items-center gap-3">
+  1843→                        <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0">
+  1844→                          {s.image ? <Image src={s.image} alt={s.name} width={40} height={40} className="object-contain rounded" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
+  1845→                        </div>
+  1846→                        <div>
+  1847→                          <p className="font-medium">{s.name}</p>
+  1848→                          {s.url && <p className="text-xs text-blue-600 truncate max-w-[200px]">{s.url}</p>}
+  1849→                        </div>
+  1850→                      </div>
+  1851→                    </td>
+  1852→                    <td className="p-3 text-muted-foreground">{s.position || '-'}</td>
+  1853→                    <td className="p-3"><Badge className={`text-[10px] ${s.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{s.active ? 'Active' : 'Inactive'}</Badge></td>
+  1854→                    <td className="p-3 text-right">
+  1855→                      <div className="flex items-center justify-end gap-1">
+  1856→                        <Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+  1857→                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+  1858→                      </div>
+  1859→                    </td>
+  1860→                  </tr>
+  1861→                ))}
+  1862→              </tbody>
+  1863→            </table>
+  1864→          </div>
+  1865→          {sponsors.length === 0 && <div className="text-center py-10 text-muted-foreground text-sm">No sponsors yet. Add your first sponsor above.</div>}
+  1866→        </Card>
+  1867→      )}
+  1868→    </div>
+  1869→  );
+  1870→}
+  1871→
+  1872→// ============ ADMIN ACTIVITY ============
+  1873→function AdminActivity({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1874→  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  1875→  const [loading, setLoading] = useState(true);
+  1876→
+  1877→  useEffect(() => { fetch('/api/admin/activity-logs').then(r => r.json()).then(d => { setLogs(d.logs || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  1878→
+  1879→  return (
+  1880→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1881→      <div className="flex items-center gap-2">
+  1882→        <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button>
+  1883→        <h1 className="text-xl font-extrabold">Activity Logs</h1>
+  1884→      </div>
+  1885→      {loading ? <div className="space-y-2">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div> : (
+  1886→        <Card>
+  1887→          <div className="overflow-x-auto">
+  1888→            <table className="w-full text-sm">
+  1889→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1890→                <th className="text-left p-3 font-medium">Action</th>
+  1891→                <th className="text-left p-3 font-medium">Details</th>
+  1892→                <th className="text-left p-3 font-medium">Type</th>
+  1893→                <th className="text-left p-3 font-medium">Admin</th>
+  1894→                <th className="text-left p-3 font-medium">Date</th>
+  1895→              </tr></thead>
+  1896→              <tbody>
+  1897→                {logs.map(log => (
+  1898→                  <tr key={log.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1899→                    <td className="p-3 font-medium">{log.action}</td>
+  1900→                    <td className="p-3 text-muted-foreground max-w-[300px] truncate">{log.details}</td>
+  1901→                    <td className="p-3"><Badge variant="secondary" className="text-[10px]">{log.entityType}</Badge></td>
+  1902→                    <td className="p-3 text-muted-foreground">{log.admin?.name || '-'}</td>
+  1903→                    <td className="p-3 text-muted-foreground whitespace-nowrap">{new Date(log.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+  1904→                  </tr>
+  1905→                ))}
+  1906→              </tbody>
+  1907→            </table>
+  1908→          </div>
+  1909→          {logs.length === 0 && <div className="text-center py-10 text-muted-foreground text-sm">No activity logs found.</div>}
+  1910→        </Card>
+  1911→      )}
+  1912→    </div>
+  1913→  );
+  1914→}
+  1915→
+  1916→// ============ MAIN APP ============
+  1917→export default function PhoneDockApp() {
+  1918→  const { view, params, navigate } = useHashRouter();
+  1919→  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  1920→  const [homeLoading, setHomeLoading] = useState(true);
+  1921→  const [admin, setAdmin] = useState<AdminUser | null>(() => {
+  1922→    if (typeof window === 'undefined') return null;
+  1923→    const saved = localStorage.getItem('phonedock_admin');
+  1924→    if (saved) { try { const a = JSON.parse(saved); return a.admin; } catch { return null; } }
+  1925→    return null;
+  1926→  });
+  1927→  const [adminToken, setAdminToken] = useState<string | null>(() => {
+  1928→    if (typeof window === 'undefined') return null;
+  1929→    const saved = localStorage.getItem('phonedock_admin');
+  1930→    if (saved) { try { const a = JSON.parse(saved); return a.token; } catch { return null; } }
+  1931→    return null;
+  1932→  });
+  1933→  const { theme, setTheme } = useTheme();
+  1934→
+  1935→  useEffect(() => {
+  1936→    const savedTheme = localStorage.getItem('phonedock_theme');
+  1937→    if (savedTheme) { queueMicrotask(() => setTheme(savedTheme)); }
+  1938→  }, []);
+  1939→
+  1940→  useEffect(() => {
+  1941→    if (view === 'home') {
+  1942→      let cancelled = false;
+  1943→      fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { setHomeData(d); setHomeLoading(false); } }).catch(() => { if (!cancelled) setHomeLoading(false); });
+  1944→      return () => { cancelled = true; };
+  1945→    }
+  1946→  }, [view]);
+  1947→
+  1948→  const handleLogin = (a: AdminUser, token: string) => {
+  1949→    setAdmin(a); setAdminToken(token);
+  1950→    localStorage.setItem('phonedock_admin', JSON.stringify({ admin: a, token }));
+  1951→  };
+  1952→
+  1953→  const toggleTheme = () => {
+  1954→    const newTheme = theme === 'dark' ? 'light' : 'dark';
+  1955→    setTheme(newTheme);
+  1956→    localStorage.setItem('phonedock_theme', newTheme);
+  1957→  };
+  1958→
+  1959→  const handleSearch = (q: string) => { navigate(`/search/${encodeURIComponent(q)}`); };
+  1960→  const nav = (path: string) => { if (path === '/' || path === '') window.location.hash = '/'; else if (!path.startsWith('#')) window.location.hash = path; };
+  1961→
+  1962→  const handleLogout = () => {
+  1963→    setAdmin(null); setAdminToken(null);
+  1964→    localStorage.removeItem('phonedock_admin');
+  1965→    nav('/');
+  1966→  };
+  1967→
+  1968→  const isAdminView = view.startsWith('admin') && view !== 'admin-login';
+  1969→  const showAdminSidebar = isAdminView && admin;
+  1970→
+  1971→  return (
+  1972→    <div className="min-h-screen flex flex-col bg-background text-foreground">
+  1973→      <Header onNavigate={nav} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
+  1974→
+  1975→      <div className="flex flex-1">
+  1976→        {showAdminSidebar && <AdminSidebar admin={admin!} onNavigate={nav} onLogout={handleLogout} currentView={view} />}
+  1977→        <main className="flex-1 min-w-0">
+  1978→          {view === 'home' && <HomePage data={homeData} loading={homeLoading} onNavigate={nav} />}
+  1979→          {view === 'phone' && <PhoneDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+  1980→          {view === 'compare' && <ComparePage onNavigate={nav} />}
+  1981→          {view === 'brands' && <BrandsPage onNavigate={nav} />}
+  1982→          {view === 'brand' && <BrandDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+  1983→          {view === 'search' && <SearchPage key={params.q} query={params.q || ''} onNavigate={nav} />}
+  1984→          {view === 'news' && <NewsPage onNavigate={nav} />}
+  1985→          {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
+  1986→          {view === 'admin-dashboard' && admin && <AdminDashboard admin={admin} onNavigate={nav} />}
+  1987→          {view === 'admin-phones' && admin && <AdminPhones onNavigate={nav} />}
+  1988→          {view === 'admin-brands' && admin && <AdminBrands onNavigate={nav} />}
+  1989→          {view === 'admin-news' && admin && <AdminNews onNavigate={nav} />}
+  1990→          {view === 'admin-sponsors' && admin && <AdminSponsors onNavigate={nav} />}
+  1991→          {view === 'admin-activity' && admin && <AdminActivity onNavigate={nav} />}
+  1992→          {view === 'admin' && !admin && <AdminLoginPage onLogin={handleLogin} />}
+  1993→        </main>
+  1994→      </div>
+  1995→
+  1996→      {!isAdminView && <Footer onNavigate={nav} />}
+  1997→    </div>
+  1998→  );
+
+[showing lines 1500-1998 of 1999; use offset=1999 with limit to continue reading]

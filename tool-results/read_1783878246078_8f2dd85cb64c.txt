@@ -1,0 +1,502 @@
+   598→   598→// ============ PHONE DETAIL PAGE ============
+   599→   599→function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   600→   600→  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
+   601→   601→  const [loading, setLoading] = useState(true);
+   602→   602→  const [activeTab, setActiveTab] = useState('specs');
+   603→   603→
+   604→   604→  useEffect(() => { let cancelled = false; fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [slug]);
+   605→   605→
+   606→   606→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><Skeleton className="h-96 rounded-2xl" /><div className="mt-6 space-y-4">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div></div>;
+   607→   607→  if (!data?.phone) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><Smartphone className="w-16 h-16 mx-auto text-gray-300 mb-4" /><h2 className="text-xl font-bold">Phone not found</h2><Button variant="outline" className="mt-4" onClick={() => onNavigate('/')}>Go Home</Button></div>;
+   608→   608→
+   609→   609→  const { phone, related } = data;
+   610→   610→  const p = phone;
+   611→   611→
+   612→   612→  const specGroups = [
+   613→   613→    { title: 'Display & Design', icon: Monitor, specs: [
+   614→   614→      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
+   615→   615→      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
+   616→   616→      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
+   617→   617→      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
+   618→   618→    ]},
+   619→   619→    { title: 'Performance', icon: Cpu, specs: [
+   620→   620→      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
+   621→   621→      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
+   622→   622→      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
+   623→   623→    ]},
+   624→   624→    { title: 'Camera', icon: Camera, specs: [
+   625→   625→      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
+   626→   626→      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
+   627→   627→      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
+   628→   628→      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
+   629→   629→    ]},
+   630→   630→    { title: 'Battery & Charging', icon: Battery, specs: [
+   631→   631→      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   632→   632→      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   633→   633→    ]},
+   634→   634→    { title: 'Connectivity', icon: Wifi, specs: [
+   635→   635→      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
+   636→   636→      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
+   637→   637→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   638→   638→    ]},
+   639→   639→    { title: 'Features & OS', icon: Smartphone, specs: [
+   640→   640→      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
+   641→   641→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   642→   642→      { label: 'Special Features', value: p.specs?.specialFeatures },
+   643→   643→    ]},
+   644→   644→  ];
+   645→   645→
+   646→   646→  return (
+   647→   647→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+   648→   648→      {/* Breadcrumb */}
+   649→   649→      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 flex-wrap">
+   650→   650→        <button onClick={() => onNavigate('/')} className="hover:text-blue-600">Home</button>
+   651→   651→        <ChevronRight className="w-3 h-3" />
+   652→   652→        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-blue-600">{p.brand?.name}</button>
+   653→   653→        <ChevronRight className="w-3 h-3" />
+   654→   654→        <span className="font-medium text-foreground">{p.modelName}</span>
+   655→   655→      </div>
+   656→   656→
+   657→   657→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   658→   658→        {/* Left: Image + Quick Info */}
+   659→   659→        <div className="lg:col-span-1 space-y-4">
+   660→   660→          <Card className="overflow-hidden">
+   661→   661→            <div className="bg-gray-50 dark:bg-gray-800 aspect-square flex items-center justify-center p-8">
+   662→   662→              {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized /> : <Smartphone className="w-32 h-32 text-gray-300" />}
+   663→   663→            </div>
+   664→   664→          </Card>
+   665→   665→          <Card>
+   666→   666→            <CardContent className="p-4 space-y-3">
+   667→   667→              <div className="flex items-center justify-between">
+   668→   668→                <span className="text-sm text-muted-foreground">Price in Pakistan</span>
+   669→   669→                <span className="text-xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(p.pricePKR)}</span>
+   670→   670→              </div>
+   671→   671→              <Separator />
+   672→   672→              <div className="flex items-center justify-between">
+   673→   673→                <span className="text-sm text-muted-foreground">PTA Status</span>
+   674→   674→                <Badge className={p.ptaApproved ? 'pta-approved' : 'pta-unknown'}>
+   675→   675→                  <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
+   676→   676→                </Badge>
+   677→   677→              </div>
+   678→   678→              <Separator />
+   679→   679→              <div className="flex items-center justify-between">
+   680→   680→                <span className="text-sm text-muted-foreground">Release Date</span>
+   681→   681→                <span className="text-sm font-medium">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
+   682→   682→              </div>
+   683→   683→              {p.specs?.colors && <><Separator /><div><span className="text-sm text-muted-foreground">Colors</span><p className="text-sm mt-1">{p.specs.colors}</p></div></>}
+   684→   684→              <Separator />
+   685→   685→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
+   686→   686→                <GitCompare className="w-4 h-4 mr-2" /> Add to Compare
+   687→   687→              </Button>
+   688→   688→            </CardContent>
+   689→   689→          </Card>
+   690→   690→          {/* Store prices */}
+   691→   691→          {p.prices && p.prices.length > 0 && (
+   692→   692→            <Card>
+   693→   693→              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Best Prices</CardTitle></CardHeader>
+   694→   694→              <CardContent className="p-4 pt-0 space-y-2">
+   695→   695→                {p.prices.map(pr => (
+   696→   696→                  <div key={pr.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+   697→   697→                    <div>
+   698→   698→                      <p className="text-sm font-medium">{pr.storeName}</p>
+   699→   699→                      <p className="text-[10px] text-green-600">{pr.inStock ? 'In Stock' : 'Out of Stock'}</p>
+   700→   700→                    </div>
+   701→   701→                    <span className="font-bold text-sm text-blue-700 dark:text-blue-400">{formatPrice(pr.price)}</span>
+   702→   702→                  </div>
+   703→   703→                ))}
+   704→   704→              </CardContent>
+   705→   705→            </Card>
+   706→   706→          )}
+   707→   707→        </div>
+   708→   708→
+   709→   709→        {/* Right: Details */}
+   710→   710→        <div className="lg:col-span-2 space-y-4">
+   711→   711→          <div>
+   712→   712→            <p className="text-sm text-muted-foreground mb-1">{p.brand?.name}</p>
+   713→   713→            <h1 className="text-2xl sm:text-3xl font-extrabold">{p.modelName}</h1>
+   714→   714→            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{p.description}</p>
+   715→   715→          </div>
+   716→   716→
+   717→   717→          {/* Quick Verdict Card */}
+   718→   718→          {p.reviewVerdict && (
+   719→   719→            <Card className="border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20">
+   720→   720→              <CardContent className="p-4 sm:p-6">
+   721→   721→                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   722→   722→                  <div className="flex items-center gap-4">
+   723→   723→                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+   724→   724→                      <div className="text-center">
+   725→   725→                        <span className="text-xl sm:text-2xl font-extrabold">{p.overallRating}</span>
+   726→   726→                        <span className="text-[10px] sm:text-xs block opacity-70">/ 10</span>
+   727→   727→                      </div>
+   728→   728→                    </div>
+   729→   729→                    <div>
+   730→   730→                      <div className="flex items-center gap-1 mb-1">
+   731→   731→                        <Trophy className="w-4 h-4 text-blue-600" />
+   732→   732→                        <h3 className="font-bold text-sm sm:text-base">Quick Verdict</h3>
+   733→   733→                      </div>
+   734→   734→                      <p className="text-sm text-muted-foreground">{p.reviewVerdict}</p>
+   735→   735→                    </div>
+   736→   736→                  </div>
+   737→   737→                  <div className="sm:ml-auto sm:w-64 space-y-1.5">
+   738→   738→                    <ScoreBar score={p.cameraScore} label="Camera" mini />
+   739→   739→                    <ScoreBar score={p.performanceScore} label="Performance" mini />
+   740→   740→                    <ScoreBar score={p.displayScore} label="Display" mini />
+   741→   741→                    <ScoreBar score={p.batteryScore} label="Battery" mini />
+   742→   742→                    <ScoreBar score={p.valueScore} label="Value" mini />
+   743→   743→                  </div>
+   744→   744→                </div>
+   745→   745→              </CardContent>
+   746→   746→            </Card>
+   747→   747→          )}
+   748→   748→
+   749→   749→          {/* Camera Section */}
+   750→   750→          {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
+   751→   751→            <Card>
+   752→   752→              <CardHeader className="pb-2">
+   753→   753→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   754→   754→                  <Camera className="w-4 h-4 text-blue-600" /> Camera Details
+   755→   755→                </CardTitle>
+   756→   756→              </CardHeader>
+   757→   757→              <CardContent className="p-4 pt-0">
+   758→   758→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   759→   759→                  {p.specs.mainCameraSensor && (
+   760→   760→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   761→   761→                      <p className="text-xs text-muted-foreground">Sensor</p>
+   762→   762→                      <p className="text-sm font-semibold mt-0.5">{p.specs.mainCameraSensor}</p>
+   763→   763→                    </div>
+   764→   764→                  )}
+   765→   765→                  {p.specs.aperture && (
+   766→   766→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   767→   767→                      <p className="text-xs text-muted-foreground">Aperture</p>
+   768→   768→                      <p className="text-sm font-semibold mt-0.5">{p.specs.aperture}</p>
+   769→   769→                    </div>
+   770→   770→                  )}
+   771→   771→                  {p.specs.ois && (
+   772→   772→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   773→   773→                      <p className="text-xs text-muted-foreground">OIS</p>
+   774→   774→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ois}</p>
+   775→   775→                    </div>
+   776→   776→                  )}
+   777→   777→                  {p.specs.eis && (
+   778→   778→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   779→   779→                      <p className="text-xs text-muted-foreground">EIS</p>
+   780→   780→                      <p className="text-sm font-semibold mt-0.5">{p.specs.eis}</p>
+   781→   781→                    </div>
+   782→   782→                  )}
+   783→   783→                  {p.specs.zoom && (
+   784→   784→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   785→   785→                      <p className="text-xs text-muted-foreground">Zoom</p>
+   786→   786→                      <p className="text-sm font-semibold mt-0.5">{p.specs.zoom}</p>
+   787→   787→                    </div>
+   788→   788→                  )}
+   789→   789→                  {p.specs.videoRecording && (
+   790→   790→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   791→   791→                      <p className="text-xs text-muted-foreground">Video</p>
+   792→   792→                      <p className="text-sm font-semibold mt-0.5">{p.specs.videoRecording}</p>
+   793→   793→                    </div>
+   794→   794→                  )}
+   795→   795→                  {p.specs.cameraFeatures && (
+   796→   796→                    <div className="col-span-2 sm:col-span-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   797→   797→                      <p className="text-xs text-muted-foreground">Camera Features</p>
+   798→   798→                      <p className="text-sm font-semibold mt-0.5">{p.specs.cameraFeatures}</p>
+   799→   799→                    </div>
+   800→   800→                  )}
+   801→   801→                </div>
+   802→   802→              </CardContent>
+   803→   803→            </Card>
+   804→   804→          )}
+   805→   805→
+   806→   806→          {/* Performance Section */}
+   807→   807→          {(p.specs?.chipset || p.specs?.cpu) && (
+   808→   808→            <Card>
+   809→   809→              <CardHeader className="pb-2">
+   810→   810→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   811→   811→                  <Cpu className="w-4 h-4 text-blue-600" /> Performance
+   812→   812→                </CardTitle>
+   813→   813→              </CardHeader>
+   814→   814→              <CardContent className="p-4 pt-0">
+   815→   815→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   816→   816→                  {p.specs.process && (
+   817→   817→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   818→   818→                      <p className="text-xs text-muted-foreground">Process Node</p>
+   819→   819→                      <p className="text-sm font-semibold mt-0.5">{p.specs.process}</p>
+   820→   820→                    </div>
+   821→   821→                  )}
+   822→   822→                  {p.specs.chipset && (
+   823→   823→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   824→   824→                      <p className="text-xs text-muted-foreground">Chipset</p>
+   825→   825→                      <p className="text-sm font-semibold mt-0.5">{p.specs.chipset}</p>
+   826→   826→                    </div>
+   827→   827→                  )}
+   828→   828→                  {p.specs.cpu && (
+   829→   829→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   830→   830→                      <p className="text-xs text-muted-foreground">CPU</p>
+   831→   831→                      <p className="text-sm font-semibold mt-0.5">{p.specs.cpu}</p>
+   832→   832→                    </div>
+   833→   833→                  )}
+   834→   834→                  {p.specs.gpu && (
+   835→   835→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   836→   836→                      <p className="text-xs text-muted-foreground">GPU</p>
+   837→   837→                      <p className="text-sm font-semibold mt-0.5">{p.specs.gpu}</p>
+   838→   838→                    </div>
+   839→   839→                  )}
+   840→   840→                  {p.specs.ram && (
+   841→   841→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   842→   842→                      <p className="text-xs text-muted-foreground">RAM</p>
+   843→   843→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ram}</p>
+   844→   844→                    </div>
+   845→   845→                  )}
+   846→   846→                  {p.specs.ramType && (
+   847→   847→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   848→   848→                      <p className="text-xs text-muted-foreground">RAM Type</p>
+   849→   849→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ramType}</p>
+   850→   850→                    </div>
+   851→   851→                  )}
+   852→   852→                </div>
+   853→   853→              </CardContent>
+   854→   854→            </Card>
+   855→   855→          )}
+   856→   856→
+   857→   857→          {/* Battery Section */}
+   858→   858→          {p.specs?.battery && (
+   859→   859→            <Card>
+   860→   860→              <CardHeader className="pb-2">
+   861→   861→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   862→   862→                  <Battery className="w-4 h-4 text-blue-600" /> Battery & Charging
+   863→   863→                </CardTitle>
+   864→   864→              </CardHeader>
+   865→   865→              <CardContent className="p-4 pt-0">
+   866→   866→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   867→   867→                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   868→   868→                    <p className="text-xs text-muted-foreground">Capacity</p>
+   869→   869→                    <p className="text-sm font-semibold mt-0.5">{p.specs.battery}</p>
+   870→   870→                  </div>
+   871→   871→                  {p.specs.chargingSpeed && (
+   872→   872→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   873→   873→                      <p className="text-xs text-muted-foreground">Charging Speed</p>
+   874→   874→                      <p className="text-sm font-semibold mt-0.5">{p.specs.chargingSpeed}</p>
+   875→   875→                    </div>
+   876→   876→                  )}
+   877→   877→                  {p.specs.wirelessCharge && (
+   878→   878→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   879→   879→                      <p className="text-xs text-muted-foreground">Wireless Charging</p>
+   880→   880→                      <p className="text-sm font-semibold mt-0.5">{p.specs.wirelessCharge}</p>
+   881→   881→                    </div>
+   882→   882→                  )}
+   883→   883→                  {p.specs.wirelessSpeed && (
+   884→   884→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   885→   885→                      <p className="text-xs text-muted-foreground">Wireless Speed</p>
+   886→   886→                      <p className="text-sm font-semibold mt-0.5">{p.specs.wirelessSpeed}</p>
+   887→   887→                    </div>
+   888→   888→                  )}
+   889→   889→                  {p.specs.reverseCharge && (
+   890→   890→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   891→   891→                      <p className="text-xs text-muted-foreground">Reverse Charge</p>
+   892→   892→                      <p className="text-sm font-semibold mt-0.5">{p.specs.reverseCharge}</p>
+   893→   893→                    </div>
+   894→   894→                  )}
+   895→   895→                  {p.benchmarks && (
+   896→   896→                    <>
+   897→   897→                      {p.benchmarks.videoPlayback && (
+   898→   898→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   899→   899→                          <p className="text-xs text-muted-foreground">Video Playback</p>
+   900→   900→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.videoPlayback}</p>
+   901→   901→                        </div>
+   902→   902→                      )}
+   903→   903→                      {p.benchmarks.gamingBattery && (
+   904→   904→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   905→   905→                          <p className="text-xs text-muted-foreground">Gaming Battery</p>
+   906→   906→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.gamingBattery}</p>
+   907→   907→                        </div>
+   908→   908→                      )}
+   909→   909→                      {p.benchmarks.browsingBattery && (
+   910→   910→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   911→   911→                          <p className="text-xs text-muted-foreground">Browsing Battery</p>
+   912→   912→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.browsingBattery}</p>
+   913→   913→                        </div>
+   914→   914→                      )}
+   915→   915→                    </>
+   916→   916→                  )}
+   917→   917→                </div>
+   918→   918→              </CardContent>
+   919→   919→            </Card>
+   920→   920→          )}
+   921→   921→
+   922→   922→          {/* Rating Scores */}
+   923→   923→          <Card>
+   924→   924→            <CardContent className="p-4 space-y-3">
+   925→   925→              <div className="flex items-center justify-between mb-2">
+   926→   926→                <h3 className="font-bold">Ratings & Scores</h3>
+   927→   927→                <div className="flex items-center gap-1">
+   928→   928→                  <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+   929→   929→                  <span className="text-2xl font-extrabold">{p.overallRating}</span>
+   930→   930→                  <span className="text-sm text-muted-foreground">/ 10</span>
+   931→   931→                </div>
+   932→   932→              </div>
+   933→   933→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+   934→   934→                <ScoreBar score={p.performanceScore} label="Performance" />
+   935→   935→                <ScoreBar score={p.cameraScore} label="Camera" />
+   936→   936→                <ScoreBar score={p.batteryScore} label="Battery" />
+   937→   937→                <ScoreBar score={p.displayScore} label="Display" />
+   938→   938→                <ScoreBar score={p.valueScore} label="Value" />
+   939→   939→              </div>
+   940→   940→            </CardContent>
+   941→   941→          </Card>
+   942→   942→
+   943→   943→          {/* Tabs: Specs / Benchmarks / Review */}
+   944→   944→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   945→   945→            <TabsList className="w-full justify-start bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+   946→   946→              <TabsTrigger value="specs" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Specifications</TabsTrigger>
+   947→   947→              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Benchmarks</TabsTrigger>
+   948→   948→              <TabsTrigger value="review" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Review</TabsTrigger>
+   949→   949→            </TabsList>
+   950→   950→
+   951→   951→            <TabsContent value="specs" className="mt-4 space-y-4">
+   952→   952→              {specGroups.map(group => (
+   953→   953→                <Card key={group.title}>
+   954→   954→                  <CardHeader className="py-3 px-4">
+   955→   955→                    <div className="flex items-center gap-2">
+   956→   956→                      <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center"><group.icon className="w-4 h-4 text-white" /></div>
+   957→   957→                      <CardTitle className="text-sm font-semibold">{group.title}</CardTitle>
+   958→   958→                    </div>
+   959→   959→                  </CardHeader>
+   960→   960→                  <CardContent className="px-4 pb-4 pt-0">
+   961→   961→                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+   962→   962→                      {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
+   963→   963→                        <div key={s.label} className="spec-row flex justify-between py-2.5 px-2 rounded text-sm">
+   964→   964→                          <span className="text-muted-foreground">{s.label}</span>
+   965→   965→                          <span className="font-medium text-right max-w-[60%]">{s.value}</span>
+   966→   966→                        </div>
+   967→   967→                      ))}
+   968→   968→                    </div>
+   969→   969→                  </CardContent>
+   970→   970→                </Card>
+   971→   971→              ))}
+   972→   972→            </TabsContent>
+   973→   973→
+   974→   974→            <TabsContent value="benchmarks" className="mt-4">
+   975→   975→              <Card>
+   976→   976→                <CardContent className="p-4 space-y-6">
+   977→   977→                  {p.benchmarks ? (<>
+   978→   978→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   979→   979→                      {[
+   980→   980→                        { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'bg-blue-500' },
+   981→   981→                        { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'bg-green-500' },
+   982→   982→                        { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'bg-purple-500' },
+   983→   983→                      ].map(b => (
+   984→   984→                        <div key={b.label} className="text-center p-4 rounded-xl bg-gray-50 dark:bg-gray-800">
+   985→   985→                          <p className="text-xs text-muted-foreground mb-1">{b.label}</p>
+   986→   986→                          <p className="text-2xl font-extrabold">{b.value}</p>
+   987→   987→                          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+   988→   988→                            <div className={`h-full rounded-full ${b.color}`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
+   989→   989→                          </div>
+   990→   990→                        </div>
+   991→   991→                      ))}
+   992→   992→                    </div>
+   993→   993→                    <div>
+   994→   994→                      <h4 className="font-semibold mb-3">Gaming Performance</h4>
+   995→   995→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   996→   996→                        {[
+   997→   997→                          { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
+   998→   998→                          { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
+   999→   999→                          { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
+  1000→  1000→                        ].map(g => (
+  1001→  1001→                          <div key={g.label} className="p-3 rounded-lg border text-center">
+  1002→  1002→                            <p className="text-xs text-muted-foreground mt-1">{g.label}</p>
+  1003→  1003→                            <p className="text-sm font-bold mt-0.5">{g.value || 'N/A'}</p>
+  1004→  1004→                          </div>
+  1005→  1005→                        ))}
+  1006→  1006→                      </div>
+  1007→  1007→                    </div>
+  1008→  1008→                    <div>
+  1009→  1009→                      <h4 className="font-semibold mb-3">Battery Tests</h4>
+  1010→  1010→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1011→  1011→                        {[
+  1012→  1012→                          { label: 'Video Playback', value: p.benchmarks.videoPlayback },
+  1013→  1013→                          { label: 'Gaming', value: p.benchmarks.gamingBattery },
+  1014→  1014→                          { label: 'Browsing', value: p.benchmarks.browsingBattery },
+  1015→  1015→                        ].map(b => (
+  1016→  1016→                          <div key={b.label} className="p-3 rounded-lg border text-center">
+  1017→  1017→                            <p className="text-xs text-muted-foreground mt-1">{b.label}</p>
+  1018→  1018→                            <p className="text-sm font-bold mt-0.5">{b.value || 'N/A'}</p>
+  1019→  1019→                          </div>
+  1020→  1020→                        ))}
+  1021→  1021→                      </div>
+  1022→  1022→                    </div>
+  1023→  1023→                  </>) : <p className="text-muted-foreground text-center py-8">No benchmark data available</p>}
+  1024→  1024→                </CardContent>
+  1025→  1025→              </Card>
+  1026→  1026→            </TabsContent>
+  1027→  1027→
+  1028→  1028→            <TabsContent value="review" className="mt-4 space-y-4">
+  1029→  1029→              <Card>
+  1030→  1030→                <CardContent className="p-4 space-y-4">
+  1031→  1031→                  {p.reviewSummary && <p className="text-sm leading-relaxed">{p.reviewSummary}</p>}
+  1032→  1032→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1033→  1033→                    {p.pros && (
+  1034→  1034→                      <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+  1035→  1035→                        <h4 className="font-semibold text-green-700 dark:text-green-400 text-sm mb-3 flex items-center gap-1.5">
+  1036→  1036→                          <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center"><Check className="w-3.5 h-3.5 text-white" /></div>
+  1037→  1037→                          Pros
+  1038→  1038→                        </h4>
+  1039→  1039→                        <ul className="space-y-2">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-green-600 dark:text-green-300 flex items-start gap-2"><Check className="w-4 h-4 mt-0.5 shrink-0 text-green-500" />{pro.trim()}</li>)}</ul>
+  1040→  1040→                      </div>
+  1041→  1041→                    )}
+  1042→  1042→                    {p.cons && (
+  1043→  1043→                      <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+  1044→  1044→                        <h4 className="font-semibold text-red-700 dark:text-red-400 text-sm mb-3 flex items-center gap-1.5">
+  1045→  1045→                          <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center"><Minus className="w-3.5 h-3.5 text-white" /></div>
+  1046→  1046→                          Cons
+  1047→  1047→                        </h4>
+  1048→  1048→                        <ul className="space-y-2">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-600 dark:text-red-300 flex items-start gap-2"><Minus className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />{con.trim()}</li>)}</ul>
+  1049→  1049→                      </div>
+  1050→  1050→                    )}
+  1051→  1051→                  </div>
+  1052→  1052→                </CardContent>
+  1053→  1053→              </Card>
+  1054→  1054→            </TabsContent>
+  1055→  1055→          </Tabs>
+  1056→  1056→
+  1057→  1057→          {/* Related Phones */}
+  1058→  1058→          {related.length > 0 && (
+  1059→  1059→            <section className="space-y-4 pt-4">
+  1060→  1060→              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
+  1061→  1061→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}</div>
+  1062→  1062→            </section>
+  1063→  1063→          )}
+  1064→  1064→        </div>
+  1065→  1065→      </div>
+  1066→  1066→    </div>
+  1067→  1067→  );
+  1068→  1068→}
+  1069→  1069→
+  1070→  1070→// ============ COMPARE PAGE ============
+  1071→  1071→function ComparePage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1072→  1072→  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  1073→  1073→  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  1074→  1074→  const [compareData, setCompareData] = useState<Phone[]>([]);
+  1075→  1075→  const [loading, setLoading] = useState(false);
+  1076→  1076→  const [searchQ, setSearchQ] = useState('');
+  1077→  1077→  const [showPicker, setShowPicker] = useState(true);
+  1078→  1078→
+  1079→  1079→  useEffect(() => { fetch('/api/phones?limit=50').then(r => r.json()).then(d => setAllPhones(d.phones || [])); }, []);
+  1080→  1080→
+  1081→  1081→  const doCompare = async () => {
+  1082→  1082→    if (selectedIds.length < 2) return;
+  1083→  1083→    setLoading(true);
+  1084→  1084→    setShowPicker(false);
+  1085→  1085→    try {
+  1086→  1086→      const res = await fetch(`/api/compare?ids=${selectedIds.join(',')}`);
+  1087→  1087→      const d = await res.json();
+  1088→  1088→      setCompareData(d.phones || []);
+  1089→  1089→    } catch { /* empty */ }
+  1090→  1090→    setLoading(false);
+  1091→  1091→  };
+  1092→  1092→
+  1093→  1093→  const addToCompare = (id: string) => {
+  1094→  1094→    if (selectedIds.includes(id)) { setSelectedIds(selectedIds.filter(x => x !== id)); }
+  1095→  1095→    else if (selectedIds.length < 4) { setSelectedIds([...selectedIds, id]); }
+  1096→  1096→  };
+  1097→  1097→
+
+[showing lines 598-1097 of 1999; use offset=1098 with limit to continue reading]
