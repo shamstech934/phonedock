@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Brand {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  logo        String  @default("")
+  country     String  @default("")
+  description String  @default("")
+  sortOrder   Int     @default(0)
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  phones Phone[]
+}
+
+model Phone {
+  id           String  @id @default(cuid())
+  brandId      String
+  modelName    String
+  slug         String  @unique
+  releaseDate  String  @default("")
+  pricePKR     Int     @default(0)
+  ptaStatus    String  @default("Unknown")
+  ptaApproved  Boolean @default(false)
+  featured     Boolean @default(false)
+  trending     Boolean @default(false)
+  upcoming     Boolean @default(false)
+  thumbnail    String  @default("")
+  description  String  @default("")
+  cameraScore  Int     @default(0)
+  performanceScore Int @default(0)
+  batteryScore Int   @default(0)
+  displayScore Int   @default(0)
+  valueScore   Int   @default(0)
+  overallRating Float @default(0)
+  sortOrder    Int   @default(0)
+  active       Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brand     Brand        @relation(fields: [brandId], references: [id])
+  specs     PhoneSpecs?
+  images    PhoneImage[]
+  benchmarks PhoneBenchmark?
+  reviews   Review[]
+  prices    PhonePrice[]
+}
+
+model PhoneSpecs {
+  id             String  @id @default(cuid())
+  phoneId        String  @unique
+  display        String  @default("")
+  resolution     String  @default("")
+  refreshRate    String  @default("")
+  protection     String  @default("")
+  chipset        String  @default("")
+  cpu            String  @default("")
+  gpu            String  @default("")
+  ram            String  @default("")
+  storage        String  @default("")
+  mainCamera     String  @default("")
+  selfieCamera   String  @default("")
+  videoRecording String  @default("")
+  battery        String  @default("")
+  charging       String  @default("")
+  wirelessCharge String  @default("No")
+  weight         String  @default("")
+  dimensions     String  @default("")
+  network        String  @default("")
+  wifi           String  @default("")
+  bluetooth      String  @default("")
+  nfc            String  @default("No")
+  usb            String  @default("")
+  fingerprint    String  @default("")
+  faceUnlock     String  @default("No")
+  colors         String  @default("")
+  os             String  @default("")
+
+  phone Phone @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+}
+
+model PhoneImage {
+  id       String  @id @default(cuid())
+  phoneId  String
+  url      String
+  altText  String  @default("")
+  sortOrder Int    @default(0)
+
+  phone Phone @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+}
+
+model PhoneBenchmark {
+  id       String  @id @default(cuid())
+  phoneId  String  @unique
+  antutu   Int     @default(0)
+  geekbenchSingle Int @default(0)
+  geekbenchMulti  Int @default(0)
+  gamingScore     Int @default(0)
+
+  phone Phone @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  phoneId     String
+  rating      Float    @default(0)
+  pros        String   @default("")
+  cons        String   @default("")
+  content     String   @default("")
+  author      String   @default("")
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  phone Phone @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+}
+
+model PhonePrice {
+  id        String   @id @default(cuid())
+  phoneId   String
+  storeName String   @default("")
+  price     Int      @default(0)
+  url       String   @default("")
+  inStock   Boolean  @default(true)
+  updatedAt DateTime @default(now())
+
+  phone Phone @relation(fields: [phoneId], references: [id], onDelete: Cascade)
+}
+
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   @default("")
+  excerpt     String   @default("")
+  category    String   @default("General")
+  image       String   @default("")
+  author      String   @default("")
+  published   Boolean  @default(false)
+  featured    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Sponsor {
+  id         String  @id @default(cuid())
+  name       String
+  image      String  @default("")
+  url        String  @default("")
+  position   String  @default("homepage_banner")
+  active     Boolean @default(true)
+  clicks     Int     @default(0)
+  impressions Int    @default(0)
+  startDate  String  @default("")
+  endDate    String  @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String   @default("")
+  role      String   @default("admin")
+  active    Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
