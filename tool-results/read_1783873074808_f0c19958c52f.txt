@@ -1,0 +1,1999 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { useTheme } from 'next-themes';
+     5→import Image from 'next/image';
+     6→import {
+     7→  Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
+     8→  TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
+     9→  LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
+    10→  ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
+    11→  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon
+    12→} from 'lucide-react';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Input } from '@/components/ui/input';
+    15→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    16→import { Badge } from '@/components/ui/badge';
+    17→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    18→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+    19→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    20→import { Skeleton } from '@/components/ui/skeleton';
+    21→import { Progress } from '@/components/ui/progress';
+    22→import { ScrollArea } from '@/components/ui/scroll-area';
+    23→import { Separator } from '@/components/ui/separator';
+    24→import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+    25→
+    26→// ============ TYPES ============
+    27→interface Brand { id: string; name: string; slug: string; logo: string; country: string; description: string; _count?: { phones: number } }
+    28→interface PhoneSpecs { display?: string; displayType?: string; resolution?: string; refreshRate?: string; protection?: string; brightness?: string; chipset?: string; cpu?: string; gpu?: string; process?: string; ram?: string; ramType?: string; storage?: string; cardSlot?: string; mainCamera?: string; mainCameraSensor?: string; aperture?: string; ois?: string; eis?: string; ultrawide?: string; telephoto?: string; zoom?: string; cameraFeatures?: string; videoRecording?: string; selfieCamera?: string; selfieSensor?: string; selfieVideo?: string; battery?: string; charging?: string; chargingSpeed?: string; wirelessCharge?: string; wirelessSpeed?: string; reverseCharge?: string; weight?: string; dimensions?: string; build?: string; sim?: string; ipRating?: string; network?: string; fiveG?: string; wifi?: string; bluetooth?: string; nfc?: string; usb?: string; fingerprint?: string; faceUnlock?: string; sensors?: string; colors?: string; os?: string; osVersion?: string; osUI?: string; updatePolicy?: string; specialFeatures?: string; }
+    29→interface PhoneBenchmark { antutu: number; geekbenchSingle: number; geekbenchMulti: number; gamingScore: number; pubgFps?: string; codMobileFps?: string; genshinFps?: string; videoPlayback?: string; gamingBattery?: string; browsingBattery?: string; }
+    30→interface PhoneImage { id: string; url: string; altText: string; sortOrder: number; }
+    31→interface PhonePrice { id: string; storeName: string; price: number; url: string; inStock: boolean; }
+    32→interface Phone { id: string; modelName: string; slug: string; brandId: string; brand?: Brand; thumbnail: string; pricePKR: number; description: string; overallRating: number; cameraScore: number; performanceScore: number; batteryScore: number; displayScore: number; valueScore: number; ptaStatus: string; ptaApproved: boolean; releaseDate: string; trending: boolean; upcoming: boolean; featured: boolean; specs?: PhoneSpecs; benchmarks?: PhoneBenchmark; images?: PhoneImage[]; prices?: PhonePrice[]; pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string; published?: boolean; }
+    33→interface NewsItem { id: string; title: string; slug: string; excerpt: string; content: string; category: string; author: string; imageUrl: string; published: boolean; createdAt: string; }
+    34→interface Sponsor { id: string; name: string; image: string; url: string; position: string; active: boolean; }
+    35→interface ActivityLog { id: string; action: string; details: string; entityType: string; createdAt: string; admin?: { name: string; email: string }; }
+    36→interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; bestCamera: Phone[]; bestGaming: Phone[]; bestBattery: Phone[]; upcoming: Phone[]; news: NewsItem[]; priceCategories: { above100k: Phone[]; price60to100: Phone[]; price40to60: Phone[]; price20to40: Phone[]; under20k: Phone[] }; brands: Brand[]; sponsors?: Sponsor[]; }
+    37→interface AdminUser { id: string; email: string; name: string; role: string; }
+    38→
+    39→// ============ ROUTER ============
+    40→type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity';
+    41→
+    42→function useHashRouter() {
+    43→  const [view, setView] = useState<View>('home');
+    44→  const [params, setParams] = useState<Record<string, string>>({});
+    45→
+    46→  useEffect(() => {
+    47→    const parseHash = () => {
+    48→      const hash = window.location.hash.slice(1) || '/';
+    49→      const parts = hash.split('/').filter(Boolean);
+    50→      if (parts.length === 0) { setView('home'); setParams({}); return; }
+    51→      if (parts[0] === 'phone' && parts[1]) { setView('phone'); setParams({ slug: parts[1] }); return; }
+    52→      if (parts[0] === 'compare') { setView('compare'); setParams(Object.fromEntries(new URLSearchParams(parts.slice(1).join('/')))); return; }
+    53→      if (parts[0] === 'brand' && parts[1]) { setView('brand'); setParams({ slug: parts[1] }); return; }
+    54→      if (parts[0] === 'search') { setView('search'); setParams({ q: parts.slice(1).join('/') }); return; }
+    55→      if (parts[0] === 'brands') { setView('brands'); setParams({}); return; }
+    56→      if (parts[0] === 'news') { setView('news'); setParams({}); return; }
+    57→      if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
+    58→      if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
+    59→      if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
+    60→      if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
+    61→      if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
+    62→      if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
+    63→      if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
+    64→      if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
+    65→      setView('home'); setParams({});
+    66→    };
+    67→    parseHash();
+    68→    window.addEventListener('hashchange', parseHash);
+    69→    return () => window.removeEventListener('hashchange', parseHash);
+    70→  }, []);
+    71→
+    72→  const navigate = useCallback((path: string) => {
+    73→    window.location.hash = path;
+    74→  }, []);
+    75→
+    76→  return { view, params, navigate };
+    77→}
+    78→
+    79→// ============ HELPERS ============
+    80→function formatPrice(price: number): string {
+    81→  return 'PKR ' + price.toLocaleString('en-PK');
+    82→}
+    83→
+    84→function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
+    85→  if (mini) {
+    86→    return (
+    87→      <div className="flex items-center gap-2">
+    88→        <span className="text-xs text-muted-foreground w-14 shrink-0">{label}</span>
+    89→        <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+    90→          <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" style={{ width: `${score}%` }} />
+    91→        </div>
+    92→        <span className="text-xs font-bold w-8 text-right">{score}</span>
+    93→      </div>
+    94→    );
+    95→  }
+    96→  return (
+    97→    <div className="space-y-1">
+    98→      <div className="flex justify-between text-sm">
+    99→        <span className="text-muted-foreground">{label}</span>
+   100→        <span className="font-semibold">{score}/100</span>
+   101→      </div>
+   102→      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+   103→        <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" style={{ width: `${score}%` }} />
+   104→      </div>
+   105→    </div>
+   106→  );
+   107→}
+   108→
+   109→function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
+   110→  const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
+   111→  return (
+   112→    <Card className="phone-card cursor-pointer border hover:border-blue-600/50 group" onClick={nav}>
+   113→      <CardContent className="p-3 sm:p-4">
+   114→        <div className="relative aspect-square bg-gray-50 dark:bg-gray-800 rounded-lg mb-3 overflow-hidden flex items-center justify-center">
+   115→          {phone.thumbnail ? (
+   116→            <Image src={phone.thumbnail} alt={phone.modelName} width={200} height={200} className="object-contain p-4 group-hover:scale-105 transition-transform duration-300" unoptimized />
+   117→          ) : (
+   118→            <Smartphone className="w-16 h-16 text-gray-300 dark:text-gray-600" />
+   119→          )}
+   120→          {phone.ptaApproved && (
+   121→            <Badge className="absolute top-2 left-2 text-[10px] pta-approved"><Shield className="w-3 h-3 mr-0.5" /> PTA</Badge>
+   122→          )}
+   123→          {phone.overallRating >= 8 && !phone.upcoming && (
+   124→            <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px]"><Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}</Badge>
+   125→          )}
+   126→          {phone.upcoming && (
+   127→            <Badge className="absolute top-2 right-2 bg-indigo-600 text-white text-[10px]"><Clock className="w-3 h-3 mr-0.5" /> Upcoming</Badge>
+   128→          )}
+   129→          <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+   130→        </div>
+   131→        <div className="space-y-1">
+   132→          <p className="text-xs text-muted-foreground">{phone.brand?.name}</p>
+   133→          <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{phone.modelName}</h3>
+   134→          <div className="flex items-center justify-between pt-1">
+   135→            <p className="font-bold text-blue-700 dark:text-blue-400 text-sm">{formatPrice(phone.pricePKR)}</p>
+   136→            {phone.trending && <Badge variant="secondary" className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Trending</Badge>}
+   137→          </div>
+   138→        </div>
+   139→      </CardContent>
+   140→    </Card>
+   141→  );
+   142→}
+   143→
+   144→function PhoneCardSkeleton() {
+   145→  return (
+   146→    <Card><CardContent className="p-4">
+   147→      <Skeleton className="aspect-square rounded-lg mb-3" />
+   148→      <Skeleton className="h-3 w-16 mb-1" />
+   149→      <Skeleton className="h-4 w-full mb-1" />
+   150→      <Skeleton className="h-3 w-24 mb-1" />
+   151→      <Skeleton className="h-4 w-20" />
+   152→    </CardContent></Card>
+   153→  );
+   154→}
+   155→
+   156→function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   157→  return (
+   158→    <div className="flex items-center justify-between mb-4">
+   159→      <div className="flex items-center gap-2">
+   160→        <div className="w-1 h-6 bg-blue-600 rounded-full" />
+   161→        <h2 className="text-lg sm:text-xl font-bold section-title">{title}</h2>
+   162→      </div>
+   163→      {link && <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400" onClick={() => { window.location.hash = link; }}>
+   164→        {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
+   165→      </Button>}
+   166→    </div>
+   167→  );
+   168→}
+   169→
+   170→// ============ ADMIN SIDEBAR ============
+   171→function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
+   172→  const adminLinks = [
+   173→    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
+   174→    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
+   175→    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
+   176→    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
+   177→    { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
+   178→    { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
+   179→  ];
+   180→
+   181→  return (
+   182→    <>
+   183→      {/* Desktop Sidebar */}
+   184→      <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 min-h-[calc(100vh-3.5rem)] sticky top-14">
+   185→        <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+   186→          <div className="flex items-center gap-3">
+   187→            <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center"><Shield className="w-5 h-5 text-white" /></div>
+   188→            <div className="min-w-0">
+   189→              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
+   190→              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
+   191→            </div>
+   192→          </div>
+   193→        </div>
+   194→        <nav className="flex-1 p-3 space-y-1">
+   195→          {adminLinks.map(link => {
+   196→            const isActive = currentView === link.view;
+   197→            return (
+   198→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+   199→                <link.icon className="w-4 h-4" />{link.label}
+   200→              </button>
+   201→            );
+   202→          })}
+   203→        </nav>
+   204→        <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+   205→          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mb-1">
+   206→            <Eye className="w-4 h-4" />View Site
+   207→          </button>
+   208→          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+   209→            <LogOut className="w-4 h-4" />Logout
+   210→          </button>
+   211→        </div>
+   212→      </aside>
+   213→
+   214→      {/* Mobile top bar for admin */}
+   215→      <div className="lg:hidden border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+   216→        <div className="flex items-center justify-between px-4 py-2">
+   217→          <div className="flex items-center gap-2">
+   218→            <Shield className="w-4 h-4 text-blue-500" />
+   219→            <span className="text-xs font-semibold">Admin: {admin.name || admin.email}</span>
+   220→          </div>
+   221→          <div className="flex items-center gap-1">
+   222→            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
+   223→            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
+   224→          </div>
+   225→        </div>
+   226→        <div className="flex overflow-x-auto no-scrollbar px-3 pb-2 gap-1">
+   227→          {adminLinks.map(link => {
+   228→            const isActive = currentView === link.view;
+   229→            return (
+   230→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+   231→                <link.icon className="w-3 h-3" />{link.label}
+   232→              </button>
+   233→            );
+   234→          })}
+   235→        </div>
+   236→      </div>
+   237→    </>
+   238→  );
+   239→}
+   240→
+   241→// ============ HEADER ============
+   242→function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
+   243→  const [mobileOpen, setMobileOpen] = useState(false);
+   244→  const [searchOpen, setSearchOpen] = useState(false);
+   245→  const [searchQ, setSearchQ] = useState('');
+   246→  const searchRef = useRef<HTMLInputElement>(null);
+   247→
+   248→  useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
+   249→
+   250→  const doSearch = () => { if (searchQ.trim()) { onSearch(searchQ.trim()); setSearchOpen(false); setSearchQ(''); } };
+   251→  return (
+   252→    <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-950/95 backdrop-blur border-b border-gray-200 dark:border-gray-800">
+   253→      <div className="max-w-7xl mx-auto px-4">
+   254→        <div className="flex items-center justify-between h-14 sm:h-16">
+   255→          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('/')}>
+   256→            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+   257→              <Smartphone className="w-5 h-5 text-white" />
+   258→            </div>
+   259→            <span className="font-extrabold text-lg hidden sm:block">Phone<span className="text-blue-600">Dock</span></span>
+   260→          </div>
+   261→
+   262→          {/* Desktop Nav */}
+   263→          <nav className="hidden md:flex items-center gap-1">
+   264→            {[
+   265→              { label: 'Home', hash: '/' }, { label: 'Brands', hash: '/brands' },
+   266→              { label: 'Compare', hash: '/compare' }, { label: 'News', hash: '/news' },
+   267→            ].map(item => (
+   268→              <Button key={item.hash} variant="ghost" size="sm" className="text-sm" onClick={() => onNavigate(item.hash)}>
+   269→                {item.label}
+   270→              </Button>
+   271→            ))}
+   272→            {admin ? (
+   273→              <Button variant="ghost" size="sm" className="text-sm text-blue-600 dark:text-blue-400" onClick={() => onNavigate('/admin/dashboard')}>
+   274→                <Shield className="w-4 h-4 mr-1.5" />Dashboard
+   275→              </Button>
+   276→            ) : (
+   277→              <Button variant="ghost" size="sm" className="text-sm" onClick={() => onNavigate('/admin/login')}>
+   278→                <Shield className="w-4 h-4 mr-1.5" />Admin
+   279→              </Button>
+   280→            )}
+   281→          </nav>
+   282→
+   283→          <div className="flex items-center gap-1">
+   284→            <Button variant="ghost" size="icon" onClick={() => setSearchOpen(!searchOpen)}>
+   285→              <Search className="w-4 h-4" />
+   286→            </Button>
+   287→            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+   288→              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+   289→            </Button>
+   290→            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
+   291→              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+   292→            </Button>
+   293→          </div>
+   294→        </div>
+   295→
+   296→        {/* Search bar */}
+   297→        {searchOpen && (
+   298→          <div className="pb-3 flex gap-2 animate-in slide-in-from-top-2 duration-200">
+   299→            <Input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="flex-1" autoFocus />
+   300→            <Button onClick={doSearch} className="bg-blue-600 text-white hover:bg-blue-700">Search</Button>
+   301→          </div>
+   302→        )}
+   303→      </div>
+   304→
+   305→      {/* Mobile menu */}
+   306→      {mobileOpen && (
+   307→        <div className="md:hidden border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 animate-in slide-in-from-top-2">
+   308→          <nav className="flex flex-col p-4 gap-1">
+   309→            {[
+   310→              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
+   311→              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
+   312→            ].map(item => (
+   313→              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+   314→                <item.icon className="w-4 h-4" />{item.label}
+   315→              </button>
+   316→            ))}
+   317→            {admin ? (
+   318→              <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
+   319→                <Shield className="w-4 h-4" />Dashboard
+   320→              </button>
+   321→            ) : (
+   322→              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+   323→                <Shield className="w-4 h-4" />Admin
+   324→              </button>
+   325→            )}
+   326→          </nav>
+   327→        </div>
+   328→      )}
+   329→    </header>
+   330→  );
+   331→}
+   332→
+   333→// ============ FOOTER ============
+   334→function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
+   335→  return (
+   336→    <footer className="bg-gray-950 text-gray-400 mt-auto">
+   337→      <div className="max-w-7xl mx-auto px-4 py-10 sm:py-14">
+   338→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+   339→          <div className="col-span-2 sm:col-span-1">
+   340→            <div className="flex items-center gap-2 mb-3">
+   341→              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center"><Smartphone className="w-5 h-5 text-white" /></div>
+   342→              <span className="font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+   343→            </div>
+   344→            <p className="text-sm leading-relaxed">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+   345→          </div>
+   346→          <div>
+   347→            <h4 className="font-semibold text-white mb-3 text-sm">Popular Brands</h4>
+   348→            <div className="space-y-2 text-sm">
+   349→              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+   350→                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block hover:text-blue-400 transition-colors">{b}</button>
+   351→              ))}
+   352→            </div>
+   353→          </div>
+   354→          <div>
+   355→            <h4 className="font-semibold text-white mb-3 text-sm">Quick Links</h4>
+   356→            <div className="space-y-2 text-sm">
+   357→              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/' }, { l: 'Best Gaming', h: '/' }, { l: 'Best Battery', h: '/' }].map(item => (
+   358→                <button key={item.l} onClick={() => onNavigate(item.h)} className="block hover:text-blue-400 transition-colors">{item.l}</button>
+   359→              ))}
+   360→            </div>
+   361→          </div>
+   362→          <div>
+   363→            <h4 className="font-semibold text-white mb-3 text-sm">Price Ranges (PKR)</h4>
+   364→            <div className="space-y-2 text-sm">
+   365→              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
+   366→                <span key={r} className="block">{r}</span>
+   367→              ))}
+   368→            </div>
+   369→          </div>
+   370→        </div>
+   371→        <Separator className="bg-gray-800 mb-6" />
+   372→        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
+   373→          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+   374→          <p className="text-cyan-400 font-medium">Phone prices may vary. Check with retailers.</p>
+   375→        </div>
+   376→      </div>
+   377→    </footer>
+   378→  );
+   379→}
+   380→
+   381→// ============ PHONE SECTION (reusable) ============
+   382→function PhoneSection({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   383→  if (!phones.length) return null;
+   384→  return (
+   385→    <section className="space-y-4">
+   386→      <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   387→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   388→        {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+   389→      </div>
+   390→    </section>
+   391→  );
+   392→}
+   393→
+   394→// ============ HOME PAGE ============
+   395→function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
+   396→  const [homeSearchQ, setHomeSearchQ] = useState('');
+   397→
+   398→  if (loading || !data) {
+   399→    return (
+   400→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+   401→        <Skeleton className="h-64 sm:h-80 rounded-2xl" />
+   402→        <Skeleton className="h-14 rounded-xl" />
+   403→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+   404→      </div>
+   405→    );
+   406→  }
+   407→
+   408→  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
+   409→  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
+   410→
+   411→  const handleHomeSearch = () => {
+   412→    if (homeSearchQ.trim()) {
+   413→      window.location.hash = `/search/${encodeURIComponent(homeSearchQ.trim())}`;
+   414→    }
+   415→  };
+   416→
+   417→  return (
+   418→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-8 sm:space-y-10">
+   419→      {/* Hero */}
+   420→      <section className="hero-gradient rounded-2xl p-6 sm:p-10 text-white relative overflow-hidden">
+   421→        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-400/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+   422→        <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl" />
+   423→        <div className="relative z-10 max-w-2xl">
+   424→          <Badge className="bg-blue-600 text-white mb-4">Pakistan&apos;s #1 Phone Database</Badge>
+   425→          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3 leading-tight">
+   426→            Find Your Perfect <span className="text-blue-400">Smartphone</span>
+   427→          </h1>
+   428→          <p className="text-gray-300 text-sm sm:text-base mb-6 leading-relaxed">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+   429→          <div className="flex flex-wrap gap-2">
+   430→            <Button className="bg-blue-600 text-white hover:bg-blue-700 font-semibold" onClick={() => onNavigate('/brands')}>
+   431→              <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+   432→            </Button>
+   433→            <Button variant="outline" className="border-gray-600 text-white hover:bg-white/10" onClick={() => onNavigate('/compare')}>
+   434→              <GitCompare className="w-4 h-4 mr-2" /> Compare
+   435→            </Button>
+   436→          </div>
+   437→          <div className="flex flex-wrap gap-4 mt-6 text-xs sm:text-sm text-gray-400">
+   438→            <span className="flex items-center gap-1"><Shield className="w-4 h-4 text-green-400" /> PTA Status</span>
+   439→            <span className="flex items-center gap-1"><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
+   440→            <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+   441→          </div>
+   442→        </div>
+   443→      </section>
+   444→
+   445→      {/* Smart Search Bar */}
+   446→      <section>
+   447→        <div className="relative max-w-2xl mx-auto">
+   448→          <div className="flex gap-2">
+   449→            <div className="relative flex-1">
+   450→              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+   451→              <Input placeholder="Search phones, brands, processors..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="pl-10 h-12 text-base rounded-xl" />
+   452→            </div>
+   453→            <Button onClick={handleHomeSearch} className="bg-blue-600 text-white hover:bg-blue-700 h-12 px-6 rounded-xl">
+   454→              <Search className="w-5 h-5" />
+   455→            </Button>
+   456→          </div>
+   457→        </div>
+   458→      </section>
+   459→
+   460→      {/* Featured Phones */}
+   461→      <section className="space-y-4">
+   462→        <SectionHeader title="Featured Phones" icon={Star} />
+   463→        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   464→          {data.featured.slice(0, 8).map(p => (
+   465→            <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   466→              <PhoneCard phone={p} />
+   467→            </div>
+   468→          ))}
+   469→        </div>
+   470→      </section>
+   471→
+   472→      {/* Price Categories */}
+   473→      {data.priceCategories.above100k.length > 0 && (
+   474→        <section className="space-y-4">
+   475→          <SectionHeader title="Phones by Price" icon={Tag} />
+   476→          <Tabs defaultValue="above100k" className="w-full">
+   477→            <TabsList className="h-auto flex flex-wrap gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+   478→              {[
+   479→                { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
+   480→                { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
+   481→                { key: 'under20k', label: 'Under 20K' },
+   482→              ].map(tab => (
+   483→                <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-blue-600 data-[state=active]:text-white">{tab.label}</TabsTrigger>
+   484→              ))}
+   485→            </TabsList>
+   486→            {['above100k', 'price60to100', 'price40to60', 'price20to40', 'under20k'].map(key => (
+   487→              <TabsContent key={key} value={key}>
+   488→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+   489→                  {(data.priceCategories as Record<string, Phone[]>)[key]?.length > 0 ? (data.priceCategories as Record<string, Phone[]>)[key].map((p: Phone) => <PhoneCard key={p.id} phone={p} />) : (
+   490→                    <div className="col-span-full text-center py-10 text-muted-foreground"><Smartphone className="w-10 h-10 mx-auto mb-2 opacity-30" /><p>No phones in this range yet</p></div>
+   491→                  )}
+   492→                </div>
+   493→              </TabsContent>
+   494→            ))}
+   495→          </Tabs>
+   496→        </section>
+   497→      )}
+   498→
+   499→      {/* Trending */}
+   500→      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" />
+   501→
+   502→      {/* Best Categories Grid - 6 cards in 2x3 grid */}
+   503→      <section className="space-y-4">
+   504→        <SectionHeader title="Best in Category" icon={Trophy} />
+   505→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   506→          {[
+   507→            { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, color: 'from-violet-500 to-purple-600' },
+   508→            { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, color: 'from-blue-500 to-cyan-600' },
+   509→            { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, color: 'from-emerald-500 to-teal-600' },
+   510→            { phones: flagshipPhones, title: 'Flagship Phones', icon: Star, color: 'from-amber-500 to-orange-600' },
+   511→            { phones: budgetPhones, title: 'Budget Phones', icon: Tag, color: 'from-green-500 to-emerald-600' },
+   512→            { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, color: 'from-indigo-500 to-purple-600' },
+   513→          ].map(cat => (
+   514→            <Card key={cat.title} className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-shadow">
+   515→              <div className={`bg-gradient-to-br ${cat.color} p-4 text-white`}>
+   516→                <div className="flex items-center gap-2 mb-1"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
+   517→              </div>
+   518→              <CardContent className="p-3 space-y-2">
+   519→                {cat.phones.length > 0 ? cat.phones.slice(0, 3).map((p, i) => (
+   520→                  <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg p-1.5 -m-1.5" onClick={() => onNavigate(`/phone/${p.slug}`)}>
+   521→                    <span className="text-xs font-bold text-muted-foreground w-4">#{i + 1}</span>
+   522→                    <div className="flex-1 min-w-0">
+   523→                      <p className="text-xs text-muted-foreground">{p.brand?.name}</p>
+   524→                      <p className="text-sm font-semibold truncate">{p.modelName}</p>
+   525→                    </div>
+   526→                    <p className="text-xs font-bold text-blue-700 dark:text-blue-400">{formatPrice(p.pricePKR)}</p>
+   527→                  </div>
+   528→                )) : (
+   529→                  <div className="text-center py-4 text-xs text-muted-foreground">No phones yet</div>
+   530→                )}
+   531→              </CardContent>
+   532→            </Card>
+   533→          ))}
+   534→        </div>
+   535→      </section>
+   536→
+   537→      {/* Latest */}
+   538→      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" />
+   539→
+   540→      {/* Latest News */}
+   541→      {data.news.length > 0 && (
+   542→        <section className="space-y-4">
+   543→          <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+   544→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+   545→            {data.news.slice(0, 4).map(n => (
+   546→              <Card key={n.id} className="cursor-pointer phone-card border hover:border-blue-600/50" onClick={() => onNavigate('/news')}>
+   547→                <CardContent className="p-4">
+   548→                  <Badge variant="secondary" className="text-[10px] mb-2">{n.category}</Badge>
+   549→                  <h3 className="font-semibold text-sm line-clamp-2 mb-2">{n.title}</h3>
+   550→                  <p className="text-xs text-muted-foreground line-clamp-2">{n.excerpt}</p>
+   551→                  <p className="text-[10px] text-muted-foreground mt-2">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+   552→                </CardContent>
+   553→              </Card>
+   554→            ))}
+   555→          </div>
+   556→        </section>
+   557→      )}
+   558→
+   559→      {/* Sponsor Banner */}
+   560→      {data.sponsors && data.sponsors.length > 0 && (
+   561→        <section>
+   562→          <Card className="overflow-hidden border-0 shadow-lg">
+   563→            <CardContent className="p-0">
+   564→              <div className="flex items-center gap-4 p-4 sm:p-6 bg-gradient-to-r from-gray-900 to-gray-800 text-white">
+   565→                <div className="flex-1 min-w-0">
+   566→                  <Badge className="bg-blue-600 text-white mb-2 text-[10px]">Sponsored</Badge>
+   567→                  <div className="flex items-center gap-3">
+   568→                    {data.sponsors[0].image ? (
+   569→                      <Image src={data.sponsors[0].image} alt={data.sponsors[0].name} width={60} height={60} className="rounded-lg object-contain bg-white/10 p-1" unoptimized />
+   570→                    ) : (
+   571→                      <div className="w-14 h-14 rounded-lg bg-white/10 flex items-center justify-center"><Star className="w-7 h-7 text-blue-400" /></div>
+   572→                    )}
+   573→                    <div>
+   574→                      <h3 className="font-bold text-sm sm:text-base">{data.sponsors[0].name}</h3>
+   575→                      <p className="text-xs text-gray-400">{data.sponsors[0].position || 'Featured Partner'}</p>
+   576→                    </div>
+   577→                  </div>
+   578→                </div>
+   579→                {data.sponsors[0].url && (
+   580→                  <a href={data.sponsors[0].url} target="_blank" rel="noopener noreferrer">
+   581→                    <Button variant="outline" size="sm" className="border-gray-600 text-white hover:bg-white/10">
+   582→                      Visit <ExternalLink className="w-3 h-3 ml-1" />
+   583→                    </Button>
+   584→                  </a>
+   585→                )}
+   586→              </div>
+   587→            </CardContent>
+   588→          </Card>
+   589→        </section>
+   590→      )}
+   591→
+   592→      {/* Upcoming */}
+   593→      {data.upcoming.length > 0 && <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} />}
+   594→    </div>
+   595→  );
+   596→}
+   597→
+   598→// ============ PHONE DETAIL PAGE ============
+   599→function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   600→  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
+   601→  const [loading, setLoading] = useState(true);
+   602→  const [activeTab, setActiveTab] = useState('specs');
+   603→
+   604→  useEffect(() => { let cancelled = false; fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [slug]);
+   605→
+   606→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><Skeleton className="h-96 rounded-2xl" /><div className="mt-6 space-y-4">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div></div>;
+   607→  if (!data?.phone) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><Smartphone className="w-16 h-16 mx-auto text-gray-300 mb-4" /><h2 className="text-xl font-bold">Phone not found</h2><Button variant="outline" className="mt-4" onClick={() => onNavigate('/')}>Go Home</Button></div>;
+   608→
+   609→  const { phone, related } = data;
+   610→  const p = phone;
+   611→
+   612→  const specGroups = [
+   613→    { title: 'Display & Design', icon: Monitor, specs: [
+   614→      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
+   615→      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
+   616→      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
+   617→      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
+   618→    ]},
+   619→    { title: 'Performance', icon: Cpu, specs: [
+   620→      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
+   621→      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
+   622→      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
+   623→    ]},
+   624→    { title: 'Camera', icon: Camera, specs: [
+   625→      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
+   626→      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
+   627→      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
+   628→      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
+   629→    ]},
+   630→    { title: 'Battery & Charging', icon: Battery, specs: [
+   631→      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   632→      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   633→    ]},
+   634→    { title: 'Connectivity', icon: Wifi, specs: [
+   635→      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
+   636→      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
+   637→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   638→    ]},
+   639→    { title: 'Features & OS', icon: Smartphone, specs: [
+   640→      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
+   641→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   642→      { label: 'Special Features', value: p.specs?.specialFeatures },
+   643→    ]},
+   644→  ];
+   645→
+   646→  return (
+   647→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+   648→      {/* Breadcrumb */}
+   649→      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 flex-wrap">
+   650→        <button onClick={() => onNavigate('/')} className="hover:text-blue-600">Home</button>
+   651→        <ChevronRight className="w-3 h-3" />
+   652→        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-blue-600">{p.brand?.name}</button>
+   653→        <ChevronRight className="w-3 h-3" />
+   654→        <span className="font-medium text-foreground">{p.modelName}</span>
+   655→      </div>
+   656→
+   657→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   658→        {/* Left: Image + Quick Info */}
+   659→        <div className="lg:col-span-1 space-y-4">
+   660→          <Card className="overflow-hidden">
+   661→            <div className="bg-gray-50 dark:bg-gray-800 aspect-square flex items-center justify-center p-8">
+   662→              {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized /> : <Smartphone className="w-32 h-32 text-gray-300" />}
+   663→            </div>
+   664→          </Card>
+   665→          <Card>
+   666→            <CardContent className="p-4 space-y-3">
+   667→              <div className="flex items-center justify-between">
+   668→                <span className="text-sm text-muted-foreground">Price in Pakistan</span>
+   669→                <span className="text-xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(p.pricePKR)}</span>
+   670→              </div>
+   671→              <Separator />
+   672→              <div className="flex items-center justify-between">
+   673→                <span className="text-sm text-muted-foreground">PTA Status</span>
+   674→                <Badge className={p.ptaApproved ? 'pta-approved' : 'pta-unknown'}>
+   675→                  <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
+   676→                </Badge>
+   677→              </div>
+   678→              <Separator />
+   679→              <div className="flex items-center justify-between">
+   680→                <span className="text-sm text-muted-foreground">Release Date</span>
+   681→                <span className="text-sm font-medium">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
+   682→              </div>
+   683→              {p.specs?.colors && <><Separator /><div><span className="text-sm text-muted-foreground">Colors</span><p className="text-sm mt-1">{p.specs.colors}</p></div></>}
+   684→              <Separator />
+   685→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
+   686→                <GitCompare className="w-4 h-4 mr-2" /> Add to Compare
+   687→              </Button>
+   688→            </CardContent>
+   689→          </Card>
+   690→          {/* Store prices */}
+   691→          {p.prices && p.prices.length > 0 && (
+   692→            <Card>
+   693→              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Best Prices</CardTitle></CardHeader>
+   694→              <CardContent className="p-4 pt-0 space-y-2">
+   695→                {p.prices.map(pr => (
+   696→                  <div key={pr.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+   697→                    <div>
+   698→                      <p className="text-sm font-medium">{pr.storeName}</p>
+   699→                      <p className="text-[10px] text-green-600">{pr.inStock ? 'In Stock' : 'Out of Stock'}</p>
+   700→                    </div>
+   701→                    <span className="font-bold text-sm text-blue-700 dark:text-blue-400">{formatPrice(pr.price)}</span>
+   702→                  </div>
+   703→                ))}
+   704→              </CardContent>
+   705→            </Card>
+   706→          )}
+   707→        </div>
+   708→
+   709→        {/* Right: Details */}
+   710→        <div className="lg:col-span-2 space-y-4">
+   711→          <div>
+   712→            <p className="text-sm text-muted-foreground mb-1">{p.brand?.name}</p>
+   713→            <h1 className="text-2xl sm:text-3xl font-extrabold">{p.modelName}</h1>
+   714→            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{p.description}</p>
+   715→          </div>
+   716→
+   717→          {/* Quick Verdict Card */}
+   718→          {p.reviewVerdict && (
+   719→            <Card className="border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20">
+   720→              <CardContent className="p-4 sm:p-6">
+   721→                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   722→                  <div className="flex items-center gap-4">
+   723→                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+   724→                      <div className="text-center">
+   725→                        <span className="text-xl sm:text-2xl font-extrabold">{p.overallRating}</span>
+   726→                        <span className="text-[10px] sm:text-xs block opacity-70">/ 10</span>
+   727→                      </div>
+   728→                    </div>
+   729→                    <div>
+   730→                      <div className="flex items-center gap-1 mb-1">
+   731→                        <Trophy className="w-4 h-4 text-blue-600" />
+   732→                        <h3 className="font-bold text-sm sm:text-base">Quick Verdict</h3>
+   733→                      </div>
+   734→                      <p className="text-sm text-muted-foreground">{p.reviewVerdict}</p>
+   735→                    </div>
+   736→                  </div>
+   737→                  <div className="sm:ml-auto sm:w-64 space-y-1.5">
+   738→                    <ScoreBar score={p.cameraScore} label="Camera" mini />
+   739→                    <ScoreBar score={p.performanceScore} label="Performance" mini />
+   740→                    <ScoreBar score={p.displayScore} label="Display" mini />
+   741→                    <ScoreBar score={p.batteryScore} label="Battery" mini />
+   742→                    <ScoreBar score={p.valueScore} label="Value" mini />
+   743→                  </div>
+   744→                </div>
+   745→              </CardContent>
+   746→            </Card>
+   747→          )}
+   748→
+   749→          {/* Camera Section */}
+   750→          {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
+   751→            <Card>
+   752→              <CardHeader className="pb-2">
+   753→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   754→                  <Camera className="w-4 h-4 text-blue-600" /> Camera Details
+   755→                </CardTitle>
+   756→              </CardHeader>
+   757→              <CardContent className="p-4 pt-0">
+   758→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   759→                  {p.specs.mainCameraSensor && (
+   760→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   761→                      <p className="text-xs text-muted-foreground">Sensor</p>
+   762→                      <p className="text-sm font-semibold mt-0.5">{p.specs.mainCameraSensor}</p>
+   763→                    </div>
+   764→                  )}
+   765→                  {p.specs.aperture && (
+   766→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   767→                      <p className="text-xs text-muted-foreground">Aperture</p>
+   768→                      <p className="text-sm font-semibold mt-0.5">{p.specs.aperture}</p>
+   769→                    </div>
+   770→                  )}
+   771→                  {p.specs.ois && (
+   772→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   773→                      <p className="text-xs text-muted-foreground">OIS</p>
+   774→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ois}</p>
+   775→                    </div>
+   776→                  )}
+   777→                  {p.specs.eis && (
+   778→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   779→                      <p className="text-xs text-muted-foreground">EIS</p>
+   780→                      <p className="text-sm font-semibold mt-0.5">{p.specs.eis}</p>
+   781→                    </div>
+   782→                  )}
+   783→                  {p.specs.zoom && (
+   784→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   785→                      <p className="text-xs text-muted-foreground">Zoom</p>
+   786→                      <p className="text-sm font-semibold mt-0.5">{p.specs.zoom}</p>
+   787→                    </div>
+   788→                  )}
+   789→                  {p.specs.videoRecording && (
+   790→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   791→                      <p className="text-xs text-muted-foreground">Video</p>
+   792→                      <p className="text-sm font-semibold mt-0.5">{p.specs.videoRecording}</p>
+   793→                    </div>
+   794→                  )}
+   795→                  {p.specs.cameraFeatures && (
+   796→                    <div className="col-span-2 sm:col-span-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   797→                      <p className="text-xs text-muted-foreground">Camera Features</p>
+   798→                      <p className="text-sm font-semibold mt-0.5">{p.specs.cameraFeatures}</p>
+   799→                    </div>
+   800→                  )}
+   801→                </div>
+   802→              </CardContent>
+   803→            </Card>
+   804→          )}
+   805→
+   806→          {/* Performance Section */}
+   807→          {(p.specs?.chipset || p.specs?.cpu) && (
+   808→            <Card>
+   809→              <CardHeader className="pb-2">
+   810→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   811→                  <Cpu className="w-4 h-4 text-blue-600" /> Performance
+   812→                </CardTitle>
+   813→              </CardHeader>
+   814→              <CardContent className="p-4 pt-0">
+   815→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   816→                  {p.specs.process && (
+   817→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   818→                      <p className="text-xs text-muted-foreground">Process Node</p>
+   819→                      <p className="text-sm font-semibold mt-0.5">{p.specs.process}</p>
+   820→                    </div>
+   821→                  )}
+   822→                  {p.specs.chipset && (
+   823→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   824→                      <p className="text-xs text-muted-foreground">Chipset</p>
+   825→                      <p className="text-sm font-semibold mt-0.5">{p.specs.chipset}</p>
+   826→                    </div>
+   827→                  )}
+   828→                  {p.specs.cpu && (
+   829→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   830→                      <p className="text-xs text-muted-foreground">CPU</p>
+   831→                      <p className="text-sm font-semibold mt-0.5">{p.specs.cpu}</p>
+   832→                    </div>
+   833→                  )}
+   834→                  {p.specs.gpu && (
+   835→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 col-span-2">
+   836→                      <p className="text-xs text-muted-foreground">GPU</p>
+   837→                      <p className="text-sm font-semibold mt-0.5">{p.specs.gpu}</p>
+   838→                    </div>
+   839→                  )}
+   840→                  {p.specs.ram && (
+   841→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   842→                      <p className="text-xs text-muted-foreground">RAM</p>
+   843→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ram}</p>
+   844→                    </div>
+   845→                  )}
+   846→                  {p.specs.ramType && (
+   847→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   848→                      <p className="text-xs text-muted-foreground">RAM Type</p>
+   849→                      <p className="text-sm font-semibold mt-0.5">{p.specs.ramType}</p>
+   850→                    </div>
+   851→                  )}
+   852→                </div>
+   853→              </CardContent>
+   854→            </Card>
+   855→          )}
+   856→
+   857→          {/* Battery Section */}
+   858→          {p.specs?.battery && (
+   859→            <Card>
+   860→              <CardHeader className="pb-2">
+   861→                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+   862→                  <Battery className="w-4 h-4 text-blue-600" /> Battery & Charging
+   863→                </CardTitle>
+   864→              </CardHeader>
+   865→              <CardContent className="p-4 pt-0">
+   866→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   867→                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   868→                    <p className="text-xs text-muted-foreground">Capacity</p>
+   869→                    <p className="text-sm font-semibold mt-0.5">{p.specs.battery}</p>
+   870→                  </div>
+   871→                  {p.specs.chargingSpeed && (
+   872→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   873→                      <p className="text-xs text-muted-foreground">Charging Speed</p>
+   874→                      <p className="text-sm font-semibold mt-0.5">{p.specs.chargingSpeed}</p>
+   875→                    </div>
+   876→                  )}
+   877→                  {p.specs.wirelessCharge && (
+   878→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   879→                      <p className="text-xs text-muted-foreground">Wireless Charging</p>
+   880→                      <p className="text-sm font-semibold mt-0.5">{p.specs.wirelessCharge}</p>
+   881→                    </div>
+   882→                  )}
+   883→                  {p.specs.wirelessSpeed && (
+   884→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   885→                      <p className="text-xs text-muted-foreground">Wireless Speed</p>
+   886→                      <p className="text-sm font-semibold mt-0.5">{p.specs.wirelessSpeed}</p>
+   887→                    </div>
+   888→                  )}
+   889→                  {p.specs.reverseCharge && (
+   890→                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   891→                      <p className="text-xs text-muted-foreground">Reverse Charge</p>
+   892→                      <p className="text-sm font-semibold mt-0.5">{p.specs.reverseCharge}</p>
+   893→                    </div>
+   894→                  )}
+   895→                  {p.benchmarks && (
+   896→                    <>
+   897→                      {p.benchmarks.videoPlayback && (
+   898→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   899→                          <p className="text-xs text-muted-foreground">Video Playback</p>
+   900→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.videoPlayback}</p>
+   901→                        </div>
+   902→                      )}
+   903→                      {p.benchmarks.gamingBattery && (
+   904→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   905→                          <p className="text-xs text-muted-foreground">Gaming Battery</p>
+   906→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.gamingBattery}</p>
+   907→                        </div>
+   908→                      )}
+   909→                      {p.benchmarks.browsingBattery && (
+   910→                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+   911→                          <p className="text-xs text-muted-foreground">Browsing Battery</p>
+   912→                          <p className="text-sm font-semibold mt-0.5">{p.benchmarks.browsingBattery}</p>
+   913→                        </div>
+   914→                      )}
+   915→                    </>
+   916→                  )}
+   917→                </div>
+   918→              </CardContent>
+   919→            </Card>
+   920→          )}
+   921→
+   922→          {/* Rating Scores */}
+   923→          <Card>
+   924→            <CardContent className="p-4 space-y-3">
+   925→              <div className="flex items-center justify-between mb-2">
+   926→                <h3 className="font-bold">Ratings & Scores</h3>
+   927→                <div className="flex items-center gap-1">
+   928→                  <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+   929→                  <span className="text-2xl font-extrabold">{p.overallRating}</span>
+   930→                  <span className="text-sm text-muted-foreground">/ 10</span>
+   931→                </div>
+   932→              </div>
+   933→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+   934→                <ScoreBar score={p.performanceScore} label="Performance" />
+   935→                <ScoreBar score={p.cameraScore} label="Camera" />
+   936→                <ScoreBar score={p.batteryScore} label="Battery" />
+   937→                <ScoreBar score={p.displayScore} label="Display" />
+   938→                <ScoreBar score={p.valueScore} label="Value" />
+   939→              </div>
+   940→            </CardContent>
+   941→          </Card>
+   942→
+   943→          {/* Tabs: Specs / Benchmarks / Review */}
+   944→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   945→            <TabsList className="w-full justify-start bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+   946→              <TabsTrigger value="specs" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Specifications</TabsTrigger>
+   947→              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Benchmarks</TabsTrigger>
+   948→              <TabsTrigger value="review" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-xs sm:text-sm">Review</TabsTrigger>
+   949→            </TabsList>
+   950→
+   951→            <TabsContent value="specs" className="mt-4 space-y-4">
+   952→              {specGroups.map(group => (
+   953→                <Card key={group.title}>
+   954→                  <CardHeader className="py-3 px-4">
+   955→                    <div className="flex items-center gap-2">
+   956→                      <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center"><group.icon className="w-4 h-4 text-white" /></div>
+   957→                      <CardTitle className="text-sm font-semibold">{group.title}</CardTitle>
+   958→                    </div>
+   959→                  </CardHeader>
+   960→                  <CardContent className="px-4 pb-4 pt-0">
+   961→                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+   962→                      {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
+   963→                        <div key={s.label} className="spec-row flex justify-between py-2.5 px-2 rounded text-sm">
+   964→                          <span className="text-muted-foreground">{s.label}</span>
+   965→                          <span className="font-medium text-right max-w-[60%]">{s.value}</span>
+   966→                        </div>
+   967→                      ))}
+   968→                    </div>
+   969→                  </CardContent>
+   970→                </Card>
+   971→              ))}
+   972→            </TabsContent>
+   973→
+   974→            <TabsContent value="benchmarks" className="mt-4">
+   975→              <Card>
+   976→                <CardContent className="p-4 space-y-6">
+   977→                  {p.benchmarks ? (<>
+   978→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   979→                      {[
+   980→                        { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'bg-blue-500' },
+   981→                        { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'bg-green-500' },
+   982→                        { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'bg-purple-500' },
+   983→                      ].map(b => (
+   984→                        <div key={b.label} className="text-center p-4 rounded-xl bg-gray-50 dark:bg-gray-800">
+   985→                          <p className="text-xs text-muted-foreground mb-1">{b.label}</p>
+   986→                          <p className="text-2xl font-extrabold">{b.value}</p>
+   987→                          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+   988→                            <div className={`h-full rounded-full ${b.color}`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
+   989→                          </div>
+   990→                        </div>
+   991→                      ))}
+   992→                    </div>
+   993→                    <div>
+   994→                      <h4 className="font-semibold mb-3">Gaming Performance</h4>
+   995→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   996→                        {[
+   997→                          { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
+   998→                          { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
+   999→                          { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
+  1000→                        ].map(g => (
+  1001→                          <div key={g.label} className="p-3 rounded-lg border text-center">
+  1002→                            <p className="text-xs text-muted-foreground mt-1">{g.label}</p>
+  1003→                            <p className="text-sm font-bold mt-0.5">{g.value || 'N/A'}</p>
+  1004→                          </div>
+  1005→                        ))}
+  1006→                      </div>
+  1007→                    </div>
+  1008→                    <div>
+  1009→                      <h4 className="font-semibold mb-3">Battery Tests</h4>
+  1010→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1011→                        {[
+  1012→                          { label: 'Video Playback', value: p.benchmarks.videoPlayback },
+  1013→                          { label: 'Gaming', value: p.benchmarks.gamingBattery },
+  1014→                          { label: 'Browsing', value: p.benchmarks.browsingBattery },
+  1015→                        ].map(b => (
+  1016→                          <div key={b.label} className="p-3 rounded-lg border text-center">
+  1017→                            <p className="text-xs text-muted-foreground mt-1">{b.label}</p>
+  1018→                            <p className="text-sm font-bold mt-0.5">{b.value || 'N/A'}</p>
+  1019→                          </div>
+  1020→                        ))}
+  1021→                      </div>
+  1022→                    </div>
+  1023→                  </>) : <p className="text-muted-foreground text-center py-8">No benchmark data available</p>}
+  1024→                </CardContent>
+  1025→              </Card>
+  1026→            </TabsContent>
+  1027→
+  1028→            <TabsContent value="review" className="mt-4 space-y-4">
+  1029→              <Card>
+  1030→                <CardContent className="p-4 space-y-4">
+  1031→                  {p.reviewSummary && <p className="text-sm leading-relaxed">{p.reviewSummary}</p>}
+  1032→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1033→                    {p.pros && (
+  1034→                      <div className="p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+  1035→                        <h4 className="font-semibold text-green-700 dark:text-green-400 text-sm mb-3 flex items-center gap-1.5">
+  1036→                          <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center"><Check className="w-3.5 h-3.5 text-white" /></div>
+  1037→                          Pros
+  1038→                        </h4>
+  1039→                        <ul className="space-y-2">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-green-600 dark:text-green-300 flex items-start gap-2"><Check className="w-4 h-4 mt-0.5 shrink-0 text-green-500" />{pro.trim()}</li>)}</ul>
+  1040→                      </div>
+  1041→                    )}
+  1042→                    {p.cons && (
+  1043→                      <div className="p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+  1044→                        <h4 className="font-semibold text-red-700 dark:text-red-400 text-sm mb-3 flex items-center gap-1.5">
+  1045→                          <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center"><Minus className="w-3.5 h-3.5 text-white" /></div>
+  1046→                          Cons
+  1047→                        </h4>
+  1048→                        <ul className="space-y-2">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-600 dark:text-red-300 flex items-start gap-2"><Minus className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />{con.trim()}</li>)}</ul>
+  1049→                      </div>
+  1050→                    )}
+  1051→                  </div>
+  1052→                </CardContent>
+  1053→              </Card>
+  1054→            </TabsContent>
+  1055→          </Tabs>
+  1056→
+  1057→          {/* Related Phones */}
+  1058→          {related.length > 0 && (
+  1059→            <section className="space-y-4 pt-4">
+  1060→              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
+  1061→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}</div>
+  1062→            </section>
+  1063→          )}
+  1064→        </div>
+  1065→      </div>
+  1066→    </div>
+  1067→  );
+  1068→}
+  1069→
+  1070→// ============ COMPARE PAGE ============
+  1071→function ComparePage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1072→  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  1073→  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  1074→  const [compareData, setCompareData] = useState<Phone[]>([]);
+  1075→  const [loading, setLoading] = useState(false);
+  1076→  const [searchQ, setSearchQ] = useState('');
+  1077→  const [showPicker, setShowPicker] = useState(true);
+  1078→
+  1079→  useEffect(() => { fetch('/api/phones?limit=50').then(r => r.json()).then(d => setAllPhones(d.phones || [])); }, []);
+  1080→
+  1081→  const doCompare = async () => {
+  1082→    if (selectedIds.length < 2) return;
+  1083→    setLoading(true);
+  1084→    setShowPicker(false);
+  1085→    try {
+  1086→      const res = await fetch(`/api/compare?ids=${selectedIds.join(',')}`);
+  1087→      const d = await res.json();
+  1088→      setCompareData(d.phones || []);
+  1089→    } catch { /* empty */ }
+  1090→    setLoading(false);
+  1091→  };
+  1092→
+  1093→  const addToCompare = (id: string) => {
+  1094→    if (selectedIds.includes(id)) { setSelectedIds(selectedIds.filter(x => x !== id)); }
+  1095→    else if (selectedIds.length < 4) { setSelectedIds([...selectedIds, id]); }
+  1096→  };
+  1097→
+  1098→  const getWinner = (field: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore' | 'overallRating') => {
+  1099→    if (compareData.length < 2) return null;
+  1100→    const maxVal = Math.max(...compareData.map(p => p[field]));
+  1101→    return compareData.findIndex(p => p[field] === maxVal);
+  1102→  };
+  1103→
+  1104→  const specRows = [
+  1105→    { label: 'Display', key: 'display' }, { label: 'Resolution', key: 'resolution' }, { label: 'Refresh Rate', key: 'refreshRate' },
+  1106→    { label: 'Chipset', key: 'chipset' }, { label: 'CPU', key: 'cpu' }, { label: 'RAM', key: 'ram' }, { label: 'Storage', key: 'storage' },
+  1107→    { label: 'Main Camera', key: 'mainCamera' }, { label: 'Selfie', key: 'selfieCamera' }, { label: 'Video', key: 'videoRecording' },
+  1108→    { label: 'Battery', key: 'battery' }, { label: 'Charging', key: 'charging' }, { label: 'Wireless', key: 'wirelessCharge' },
+  1109→    { label: '5G', key: 'fiveG' }, { label: 'WiFi', key: 'wifi' }, { label: 'Bluetooth', key: 'bluetooth' },
+  1110→    { label: 'NFC', key: 'nfc' }, { label: 'Fingerprint', key: 'fingerprint' }, { label: 'IP Rating', key: 'ipRating' },
+  1111→    { label: 'OS', key: 'os' }, { label: 'Weight', key: 'weight' },
+  1112→  ];
+  1113→
+  1114→  const filteredPhones = searchQ ? allPhones.filter(p => p.modelName.toLowerCase().includes(searchQ.toLowerCase()) || p.brand?.name.toLowerCase().includes(searchQ.toLowerCase())) : allPhones;
+  1115→
+  1116→  const categoryWinners = [
+  1117→    { label: 'Best Camera', icon: Camera, key: 'cameraScore' as const },
+  1118→    { label: 'Best Performance', icon: Cpu, key: 'performanceScore' as const },
+  1119→    { label: 'Best Battery', icon: Battery, key: 'batteryScore' as const },
+  1120→    { label: 'Best Value', icon: Tag, key: 'valueScore' as const },
+  1121→  ];
+  1122→
+  1123→  return (
+  1124→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1125→      <div className="flex items-center justify-between">
+  1126→        <div>
+  1127→          <h1 className="text-2xl font-extrabold">Compare Phones</h1>
+  1128→          <p className="text-sm text-muted-foreground mt-1">Select 2-4 phones to compare specifications side by side</p>
+  1129→        </div>
+  1130→        {!showPicker && <Button variant="outline" onClick={() => { setShowPicker(true); setSelectedIds([]); setCompareData([]); }}>
+  1131→          <Plus className="w-4 h-4 mr-2" /> New Compare
+  1132→        </Button>}
+  1133→      </div>
+  1134→
+  1135→      {showPicker ? (
+  1136→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  1137→          <Card>
+  1138→            <CardHeader><CardTitle className="text-sm">Search & Select Phones</CardTitle></CardHeader>
+  1139→            <CardContent className="p-4 pt-0 space-y-3">
+  1140→              <Input placeholder="Search phones..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+  1141→              <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
+  1142→                {filteredPhones.slice(0, 20).map(p => (
+  1143→                  <div key={p.id} onClick={() => addToCompare(p.id)} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${selectedIds.includes(p.id) ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+  1144→                    <div className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0" style={{ borderColor: selectedIds.includes(p.id) ? '#2563EB' : '#d4d4d4', background: selectedIds.includes(p.id) ? '#2563EB' : 'transparent' }}>
+  1145→                      {selectedIds.includes(p.id) && <Check className="w-3 h-3 text-white" />}
+  1146→                    </div>
+  1147→                    <div className="flex-1 min-w-0">
+  1148→                      <p className="text-sm font-medium truncate">{p.brand?.name} {p.modelName}</p>
+  1149→                      <p className="text-xs text-muted-foreground">{formatPrice(p.pricePKR)}</p>
+  1150→                    </div>
+  1151→                  </div>
+  1152→                ))}
+  1153→              </div>
+  1154→            </CardContent>
+  1155→          </Card>
+  1156→          <div className="space-y-3">
+  1157→            <Card>
+  1158→              <CardContent className="p-4">
+  1159→                <h3 className="font-semibold text-sm mb-3">Selected ({selectedIds.length}/4)</h3>
+  1160→                {selectedIds.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Select phones from the left panel</p>}
+  1161→                <div className="space-y-2">
+  1162→                  {selectedIds.map(id => {
+  1163→                    const phone = allPhones.find(p => p.id === id);
+  1164→                    if (!phone) return null;
+  1165→                    return (
+  1166→                      <div key={id} className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+  1167→                        <div className="flex-1 min-w-0">
+  1168→                          <p className="text-sm font-medium truncate">{phone.brand?.name} {phone.modelName}</p>
+  1169→                          <p className="text-xs text-muted-foreground">{formatPrice(phone.pricePKR)}</p>
+  1170→                        </div>
+  1171→                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => addToCompare(id)}><X className="w-4 h-4" /></Button>
+  1172→                      </div>
+  1173→                    );
+  1174→                  })}
+  1175→                </div>
+  1176→                <Button className="w-full mt-4 bg-blue-600 text-white hover:bg-blue-700" disabled={selectedIds.length < 2} onClick={doCompare}>
+  1177→                  Compare {selectedIds.length} Phones
+  1178→                </Button>
+  1179→              </CardContent>
+  1180→            </Card>
+  1181→          </div>
+  1182→        </div>
+  1183→      ) : loading ? (
+  1184→        <div className="text-center py-20"><Skeleton className="h-96 max-w-4xl mx-auto rounded-2xl" /></div>
+  1185→      ) : (
+  1186→        <div className="space-y-6">
+  1187→          {/* Category Winner Badges */}
+  1188→          {compareData.length >= 2 && (
+  1189→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1190→              {categoryWinners.map(cw => {
+  1191→                const winnerIdx = getWinner(cw.key);
+  1192→                const winnerPhone = winnerIdx !== null ? compareData[winnerIdx] : null;
+  1193→                return (
+  1194→                  <Card key={cw.label} className="overflow-hidden border-0 shadow-md">
+  1195→                    <div className={`p-3 text-white text-center ${winnerIdx === 0 ? 'bg-blue-600' : winnerIdx === 1 ? 'bg-cyan-600' : winnerIdx === 2 ? 'bg-purple-600' : 'bg-violet-600'}`}>
+  1196→                      <cw.icon className="w-5 h-5 mx-auto mb-1" />
+  1197→                      <p className="text-[10px] font-medium opacity-80">{cw.label}</p>
+  1198→                    </div>
+  1199→                    <CardContent className="p-3 text-center">
+  1200→                      <p className="text-xs font-bold truncate">{winnerPhone?.brand?.name} {winnerPhone?.modelName}</p>
+  1201→                    </CardContent>
+  1202→                  </Card>
+  1203→                );
+  1204→              })}
+  1205→            </div>
+  1206→          )}
+  1207→
+  1208→          <div className="overflow-x-auto no-scrollbar -mx-4 px-4">
+  1209→            <div className="min-w-[600px]">
+  1210→              {/* Header row */}
+  1211→              <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+  1212→                <div />
+  1213→                {compareData.map(p => (
+  1214→                  <div key={p.id} className="text-center">
+  1215→                    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mb-2">
+  1216→                      {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={120} height={120} className="object-contain mx-auto" unoptimized /> : <Smartphone className="w-16 h-16 mx-auto text-gray-400" />}
+  1217→                    </div>
+  1218→                    <p className="text-xs text-muted-foreground">{p.brand?.name}</p>
+  1219→                    <p className="text-sm font-bold">{p.modelName}</p>
+  1220→                    <p className="text-sm font-bold text-blue-700 dark:text-blue-400">{formatPrice(p.pricePKR)}</p>
+  1221→                    <Button variant="link" size="sm" className="text-xs text-blue-600" onClick={() => onNavigate(`/phone/${p.slug}`)}>Full Specs <ExternalLink className="w-3 h-3" /></Button>
+  1222→                  </div>
+  1223→                ))}
+  1224→              </div>
+  1225→
+  1226→              {/* Score Comparison Bars */}
+  1227→              <Card className="mb-4">
+  1228→                <CardContent className="p-4 space-y-3">
+  1229→                  {[{ label: 'Overall', key: 'overallRating' as const, max: 10 }, { label: 'Camera', key: 'cameraScore' as const, max: 100 }, { label: 'Performance', key: 'performanceScore' as const, max: 100 }, { label: 'Battery', key: 'batteryScore' as const, max: 100 }, { label: 'Value', key: 'valueScore' as const, max: 100 }, { label: 'Display', key: 'displayScore' as const, max: 100 }].map(row => {
+  1230→                    const winner = getWinner(row.key === 'overallRating' ? 'overallRating' : row.key as 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore');
+  1231→                    const maxVal = row.key === 'overallRating' ? 10 : 100;
+  1232→                    return (
+  1233→                      <div key={row.label}>
+  1234→                        <div className="flex items-center justify-between mb-1">
+  1235→                          <span className="text-xs font-medium text-muted-foreground">{row.label}</span>
+  1236→                        </div>
+  1237→                        <div className="grid gap-2" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+  1238→                          <div />
+  1239→                          {compareData.map((p, i) => {
+  1240→                            const val = p[row.key as keyof Phone] as number;
+  1241→                            return (
+  1242→                              <div key={p.id} className="relative">
+  1243→                                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+  1244→                                  <div
+  1245→                                    className={`h-full rounded-full transition-all duration-500 ${winner === i ? 'bg-blue-500' : 'bg-gradient-to-r from-blue-400 to-cyan-400'}`}
+  1246→                                    style={{ width: `${(val / maxVal) * 100}%` }}
+  1247→                                  />
+  1248→                                </div>
+  1249→                                <div className="flex items-center justify-center mt-1">
+  1250→                                  <span className={`text-xs font-bold ${winner === i ? 'text-blue-600' : ''}`}>
+  1251→                                    {val}{row.key === 'overallRating' ? '/10' : '/100'}
+  1252→                                  </span>
+  1253→                                  {winner === i && <Trophy className="w-3 h-3 inline ml-1 text-blue-500" />}
+  1254→                                </div>
+  1255→                              </div>
+  1256→                            );
+  1257→                          })}
+  1258→                        </div>
+  1259→                      </div>
+  1260→                    );
+  1261→                  })}
+  1262→                </CardContent>
+  1263→              </Card>
+  1264→
+  1265→              {/* Specs comparison */}
+  1266→              <Card>
+  1267→                <CardContent className="p-3">
+  1268→                  <div className="grid gap-0.5" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+  1269→                    {specRows.map(row => (
+  1270→                      <React.Fragment key={row.label}>
+  1271→                        <div className="spec-row text-xs font-medium py-2 px-2 text-muted-foreground">{row.label}</div>
+  1272→                        {compareData.map(p => {
+  1273→                          const val = (p.specs as Record<string, string | undefined>)?.[row.key] || '-';
+  1274→                          return <div key={p.id} className="spec-row text-xs py-2 px-2 text-center">{val}</div>;
+  1275→                        })}
+  1276→                      </React.Fragment>
+  1277→                    ))}
+  1278→                  </div>
+  1279→                </CardContent>
+  1280→              </Card>
+  1281→            </div>
+  1282→          </div>
+  1283→        </div>
+  1284→      )}
+  1285→    </div>
+  1286→  );
+  1287→}
+  1288→
+  1289→// ============ BRANDS PAGE ============
+  1290→function BrandsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1291→  const [brands, setBrands] = useState<Brand[]>([]);
+  1292→  const [loading, setLoading] = useState(true);
+  1293→  useEffect(() => { fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }); }, []);
+  1294→
+  1295→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div></div>;
+  1296→
+  1297→  return (
+  1298→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1299→      <div><h1 className="text-2xl font-extrabold">All Brands</h1><p className="text-sm text-muted-foreground mt-1">Browse smartphones by manufacturer</p></div>
+  1300→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1301→        {brands.map(b => (
+  1302→          <Card key={b.id} className="cursor-pointer phone-card border hover:border-blue-600/50" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+  1303→            <CardContent className="p-4 flex items-center gap-3">
+  1304→              <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center shrink-0">
+  1305→                <Smartphone className="w-6 h-6 text-gray-400" />
+  1306→              </div>
+  1307→              <div className="min-w-0">
+  1308→                <h3 className="font-semibold text-sm">{b.name}</h3>
+  1309→                <p className="text-xs text-muted-foreground">{b._count?.phones || 0} phones</p>
+  1310→                <p className="text-[10px] text-muted-foreground">{b.country}</p>
+  1311→              </div>
+  1312→            </CardContent>
+  1313→          </Card>
+  1314→        ))}
+  1315→      </div>
+  1316→    </div>
+  1317→  );
+  1318→}
+  1319→
+  1320→// ============ BRAND DETAIL PAGE ============
+  1321→function BrandDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+  1322→  const [brand, setBrand] = useState<Brand & { phones: Phone[] } | null>(null);
+  1323→  const [loading, setLoading] = useState(true);
+  1324→  useEffect(() => { let cancelled = false; fetch(`/api/brands/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setBrand(d.brand); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [slug]);
+  1325→
+  1326→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>;
+  1327→  if (!brand) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><h2 className="text-xl font-bold">Brand not found</h2><Button className="mt-4" onClick={() => onNavigate('/brands')}>All Brands</Button></div>;
+  1328→
+  1329→  return (
+  1330→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1331→      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1332→        <button onClick={() => onNavigate('/')} className="hover:text-blue-600">Home</button><ChevronRight className="w-3 h-3" />
+  1333→        <button onClick={() => onNavigate('/brands')} className="hover:text-blue-600">Brands</button><ChevronRight className="w-3 h-3" />
+  1334→        <span className="font-medium text-foreground">{brand.name}</span>
+  1335→      </div>
+  1336→      <div className="flex items-center gap-4">
+  1337→        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center"><Smartphone className="w-8 h-8 text-gray-400" /></div>
+  1338→        <div>
+  1339→          <h1 className="text-2xl font-extrabold">{brand.name}</h1>
+  1340→          <p className="text-sm text-muted-foreground">{brand.country} &middot; {brand.phones.length} phones</p>
+  1341→          {brand.description && <p className="text-sm text-muted-foreground mt-1">{brand.description}</p>}
+  1342→        </div>
+  1343→      </div>
+  1344→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1345→        {brand.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1346→      </div>
+  1347→      {brand.phones.length === 0 && <div className="text-center py-16 text-muted-foreground"><Smartphone className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No phones listed yet for this brand</p></div>}
+  1348→    </div>
+  1349→  );
+  1350→}
+  1351→
+  1352→// ============ SEARCH PAGE ============
+  1353→function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: string) => void }) {
+  1354→  const [results, setResults] = useState<{ phones: Phone[]; brands: Brand[]; total?: number } | null>(null);
+  1355→  const [loading, setLoading] = useState(true);
+  1356→  useEffect(() => { let cancelled = false; fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => { if (!cancelled) { setResults(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [query]);
+  1357→
+  1358→  return (
+  1359→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1360→      <div>
+  1361→        <h1 className="text-2xl font-extrabold">Search Results for &ldquo;{query}&rdquo;</h1>
+  1362→        <p className="text-sm text-muted-foreground mt-1">{loading ? 'Searching...' : `${results?.total || 0} results found`}</p>
+  1363→      </div>
+  1364→      {results?.brands && results.brands.length > 0 && (
+  1365→        <section>
+  1366→          <h2 className="font-semibold mb-3">Brands</h2>
+  1367→          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  1368→            {results.brands.map(b => (
+  1369→              <Card key={b.id} className="cursor-pointer" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+  1370→                <CardContent className="p-3 flex items-center gap-3">
+  1371→                  <Smartphone className="w-5 h-5 text-gray-400" />
+  1372→                  <div><p className="font-semibold text-sm">{b.name}</p><p className="text-xs text-muted-foreground">{b._count?.phones || 0} phones</p></div>
+  1373→                </CardContent>
+  1374→              </Card>
+  1375→            ))}
+  1376→          </div>
+  1377→        </section>
+  1378→      )}
+  1379→      {results?.phones && results.phones.length > 0 && (
+  1380→        <section>
+  1381→          <h2 className="font-semibold mb-3">Phones</h2>
+  1382→          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1383→            {results.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1384→          </div>
+  1385→        </section>
+  1386→      )}
+  1387→      {!loading && results && results.phones.length === 0 && results.brands.length === 0 && (
+  1388→        <div className="text-center py-16 text-muted-foreground"><Search className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No results found for &ldquo;{query}&rdquo;</p><Button variant="outline" className="mt-4" onClick={() => onNavigate('/')}>Browse All Phones</Button></div>
+  1389→      )}
+  1390→    </div>
+  1391→  );
+  1392→}
+  1393→
+  1394→// ============ NEWS PAGE ============
+  1395→function NewsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1396→  const [news, setNews] = useState<NewsItem[]>([]);
+  1397→  const [loading, setLoading] = useState(true);
+  1398→  useEffect(() => { fetch('/api/news').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }); }, []);
+  1399→
+  1400→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+  1401→
+  1402→  return (
+  1403→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1404→      <div><h1 className="text-2xl font-extrabold">Latest News</h1><p className="text-sm text-muted-foreground mt-1">Stay updated with the latest smartphone news from Pakistan and around the world</p></div>
+  1405→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1406→        {news.map(n => (
+  1407→          <Card key={n.id} className="overflow-hidden">
+  1408→            <CardContent className="p-5 space-y-3">
+  1409→              <div className="flex items-center gap-2">
+  1410→                <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+  1411→                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+  1412→              </div>
+  1413→              <h2 className="font-bold text-lg leading-tight">{n.title}</h2>
+  1414→              <p className="text-sm text-muted-foreground leading-relaxed">{n.excerpt}</p>
+  1415→              <p className="text-sm text-muted-foreground leading-relaxed">{n.content}</p>
+  1416→              <div className="flex items-center gap-2 text-xs text-muted-foreground"><Users className="w-3 h-3" />{n.author}</div>
+  1417→            </CardContent>
+  1418→          </Card>
+  1419→        ))}
+  1420→      </div>
+  1421→      {news.length === 0 && <div className="text-center py-16 text-muted-foreground"><Newspaper className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No news articles yet</p></div>}
+  1422→    </div>
+  1423→  );
+  1424→}
+  1425→
+  1426→// ============ ADMIN LOGIN ============
+  1427→function AdminLoginPage({ onLogin }: { onLogin: (admin: AdminUser, token: string) => void }) {
+  1428→  const [email, setEmail] = useState('admin@phonedock.pk');
+  1429→  const [password, setPassword] = useState('admin123');
+  1430→  const [error, setError] = useState('');
+  1431→  const [loading, setLoading] = useState(false);
+  1432→
+  1433→  const handleSubmit = async (e: React.FormEvent) => {
+  1434→    e.preventDefault();
+  1435→    setLoading(true);
+  1436→    setError('');
+  1437→    try {
+  1438→      const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  1439→      const data = await res.json();
+  1440→      if (data.success) { onLogin(data.admin, data.token); window.location.hash = '/admin/dashboard'; }
+  1441→      else { setError(data.error || 'Login failed'); }
+  1442→    } catch { setError('Connection error'); }
+  1443→    setLoading(false);
+  1444→  };
+  1445→
+  1446→  return (
+  1447→    <div className="min-h-[70vh] flex items-center justify-center px-4">
+  1448→      <Card className="w-full max-w-md border-2 border-blue-600/30 blue-glow">
+  1449→        <CardContent className="p-6 sm:p-8">
+  1450→          <div className="text-center mb-6">
+  1451→            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-3"><Shield className="w-7 h-7 text-white" /></div>
+  1452→            <h1 className="text-2xl font-extrabold">Admin Panel</h1>
+  1453→            <p className="text-sm text-muted-foreground mt-1">Sign in to manage PhoneDock</p>
+  1454→          </div>
+  1455→          <form onSubmit={handleSubmit} className="space-y-4">
+  1456→            <div><label className="text-sm font-medium mb-1 block">Email</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
+  1457→            <div><label className="text-sm font-medium mb-1 block">Password</label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} required /></div>
+  1458→            {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
+  1459→            <Button type="submit" className="w-full bg-blue-600 text-white hover:bg-blue-700 font-semibold" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
+  1460→          </form>
+  1461→          <p className="text-[10px] text-center text-muted-foreground mt-4">Demo: admin@phonedock.pk / admin123</p>
+  1462→        </CardContent>
+  1463→      </Card>
+  1464→    </div>
+  1465→  );
+  1466→}
+  1467→
+  1468→// ============ ADMIN DASHBOARD ============
+  1469→function AdminDashboard({ admin, onNavigate }: { admin: AdminUser; onNavigate: (p: string) => void }) {
+  1470→  const [stats, setStats] = useState<{ totalPhones?: number; totalBrands?: number; trending?: number; featured?: number; avgPrice?: number; totalReviews?: number; totalNews?: number } | null>(null);
+  1471→  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  1472→  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  1473→
+  1474→  useEffect(() => {
+  1475→    fetch('/api/stats').then(r => r.json()).then(setStats);
+  1476→    fetch('/api/admin/activity-logs').then(r => r.json()).then(d => setActivityLogs(d.logs || [])).catch(() => {});
+  1477→    fetch('/api/phones?limit=500').then(r => r.json()).then(d => setAllPhones(d.phones || [])).catch(() => {});
+  1478→  }, []);
+  1479→
+  1480→  const priceRanges = [
+  1481→    { label: 'Under 20K', min: 0, max: 20000, color: 'bg-emerald-500' },
+  1482→    { label: '20K - 40K', min: 20000, max: 40000, color: 'bg-blue-500' },
+  1483→    { label: '40K - 60K', min: 40000, max: 60000, color: 'bg-cyan-500' },
+  1484→    { label: '60K - 100K', min: 60000, max: 100000, color: 'bg-purple-500' },
+  1485→    { label: 'Above 100K', min: 100000, max: Infinity, color: 'bg-blue-600' },
+  1486→  ];
+  1487→
+  1488→  const priceDistribution = priceRanges.map(range => ({
+  1489→    ...range,
+  1490→    count: allPhones.filter(p => p.pricePKR >= range.min && p.pricePKR < range.max).length,
+  1491→  }));
+  1492→
+  1493→  const maxCount = Math.max(...priceDistribution.map(d => d.count), 1);
+  1494→
+  1495→  const quickActions = [
+  1496→    { label: 'Manage Phones', desc: 'Add, edit, delete phones', hash: '/admin/phones', icon: Smartphone, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+  1497→    { label: 'Manage Brands', desc: 'Add, edit, delete brands', hash: '/admin/brands', icon: Layers, color: 'text-green-600 bg-green-100 dark:bg-green-900/30' },
+  1498→    { label: 'Manage News', desc: 'Add, edit, delete articles', hash: '/admin/news', icon: Newspaper, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
+  1499→    { label: 'Manage Sponsors', desc: 'Manage sponsor banners', hash: '/admin/sponsors', icon: Star, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
+  1500→    { label: 'SEO Settings', desc: 'Meta tags, sitemap', hash: '/admin/dashboard', icon: Settings, color: 'text-cyan-600 bg-cyan-100 dark:bg-cyan-900/30' },
+  1501→    { label: 'Image Management', desc: 'Phone images, thumbnails', hash: '/admin/phones', icon: ImageIcon, color: 'text-rose-600 bg-rose-100 dark:bg-rose-900/30' },
+  1502→  ];
+  1503→
+  1504→  return (
+  1505→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1506→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1507→        <div>
+  1508→          <h1 className="text-2xl font-extrabold">Dashboard</h1>
+  1509→          <p className="text-sm text-muted-foreground">Welcome back, {admin.name || admin.email}</p>
+  1510→        </div>
+  1511→        <Button variant="outline" size="sm" onClick={() => { window.location.hash = '/'; }}><Eye className="w-4 h-4 mr-2" />View Site</Button>
+  1512→      </div>
+  1513→
+  1514→      {/* Stat Cards - 2x3 grid */}
+  1515→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+  1516→        {[
+  1517→          { label: 'Total Phones', value: stats?.totalPhones || 0, icon: Smartphone, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+  1518→          { label: 'Brands', value: stats?.totalBrands || 0, icon: Layers, color: 'text-green-600 bg-green-100 dark:bg-green-900/30' },
+  1519→          { label: 'Trending', value: stats?.trending || 0, icon: TrendingUp, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
+  1520→          { label: 'Featured', value: stats?.featured || 0, icon: Star, color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30' },
+  1521→          { label: 'Avg Price', value: stats?.avgPrice ? formatPrice(Math.round(stats.avgPrice)) : 'N/A', icon: Tag, color: 'text-purple-600 bg-purple-100 dark:bg-purple-900/30' },
+  1522→          { label: 'News Articles', value: stats?.totalNews || 0, icon: Newspaper, color: 'text-cyan-600 bg-cyan-100 dark:bg-cyan-900/30' },
+  1523→        ].map(s => (
+  1524→          <Card key={s.label}>
+  1525→            <CardContent className="p-3 sm:p-4 flex flex-col items-center gap-2 text-center">
+  1526→              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${s.color}`}><s.icon className="w-4 h-4" /></div>
+  1527→              <div>
+  1528→                <p className="text-lg sm:text-2xl font-extrabold">{typeof s.value === 'number' ? s.value : s.value}</p>
+  1529→                <p className="text-[10px] sm:text-xs text-muted-foreground">{s.label}</p>
+  1530→              </div>
+  1531→            </CardContent>
+  1532→          </Card>
+  1533→        ))}
+  1534→      </div>
+  1535→
+  1536→      {/* Price Distribution */}
+  1537→      <Card>
+  1538→        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Price Distribution</CardTitle></CardHeader>
+  1539→        <CardContent className="p-4 pt-0 space-y-3">
+  1540→          {priceDistribution.map(range => (
+  1541→            <div key={range.label} className="flex items-center gap-3">
+  1542→              <span className="text-xs text-muted-foreground w-20 shrink-0 text-right">{range.label}</span>
+  1543→              <div className="flex-1 h-6 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+  1544→                <div className={`h-full ${range.color} rounded-lg flex items-center px-2 transition-all duration-500`} style={{ width: `${(range.count / maxCount) * 100}%`, minWidth: range.count > 0 ? '2rem' : '0' }}>
+  1545→                  {range.count > 0 && <span className="text-[10px] font-bold text-white">{range.count}</span>}
+  1546→                </div>
+  1547→              </div>
+  1548→            </div>
+  1549→          ))}
+  1550→        </CardContent>
+  1551→      </Card>
+  1552→
+  1553→      {/* Quick Actions - 2x3 grid */}
+  1554→      <div>
+  1555→        <h3 className="font-semibold text-sm mb-3">Quick Actions</h3>
+  1556→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1557→          {quickActions.map(action => (
+  1558→            <Card key={action.label} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate(action.hash)}>
+  1559→              <CardContent className="p-4 flex items-center gap-3">
+  1560→                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}><action.icon className="w-5 h-5" /></div>
+  1561→                <div className="min-w-0">
+  1562→                  <p className="font-semibold text-sm">{action.label}</p>
+  1563→                  <p className="text-xs text-muted-foreground">{action.desc}</p>
+  1564→                </div>
+  1565→                <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground shrink-0" />
+  1566→              </CardContent>
+  1567→            </Card>
+  1568→          ))}
+  1569→        </div>
+  1570→      </div>
+  1571→
+  1572→      {/* Activity Log */}
+  1573→      <Card>
+  1574→        <CardHeader className="pb-2">
+  1575→          <div className="flex items-center justify-between">
+  1576→            <CardTitle className="text-sm font-semibold flex items-center gap-2"><Activity className="w-4 h-4 text-blue-600" /> Recent Activity</CardTitle>
+  1577→            <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400 text-xs" onClick={() => onNavigate('/admin/activity')}>View All</Button>
+  1578→          </div>
+  1579→        </CardHeader>
+  1580→        <CardContent className="p-4 pt-0">
+  1581→          {activityLogs.length > 0 ? (
+  1582→            <div className="max-h-72 overflow-y-auto space-y-1">
+  1583→              {activityLogs.slice(0, 10).map(log => (
+  1584→                <div key={log.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+  1585→                  <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+  1586→                  <div className="flex-1 min-w-0">
+  1587→                    <div className="flex items-center gap-2">
+  1588→                      <p className="text-xs font-medium">{log.action}</p>
+  1589→                      <span className="text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+  1590→                    </div>
+  1591→                    <p className="text-xs text-muted-foreground truncate">{log.details}</p>
+  1592→                  </div>
+  1593→                </div>
+  1594→              ))}
+  1595→            </div>
+  1596→          ) : (
+  1597→            <p className="text-sm text-muted-foreground text-center py-6">No recent activity</p>
+  1598→          )}
+  1599→        </CardContent>
+  1600→      </Card>
+  1601→    </div>
+  1602→  );
+  1603→}
+  1604→
+  1605→// ============ ADMIN PHONES ============
+  1606→function AdminPhones({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1607→  const [phones, setPhones] = useState<Phone[]>([]);
+  1608→  const [loading, setLoading] = useState(true);
+  1609→  const [filterQ, setFilterQ] = useState('');
+  1610→  const [addOpen, setAddOpen] = useState(false);
+  1611→  const [brands, setBrands] = useState<Brand[]>([]);
+  1612→  const [newPhone, setNewPhone] = useState({ modelName: '', brandId: '', pricePKR: '', ptaStatus: 'Unknown' });
+  1613→
+  1614→  useEffect(() => {
+  1615→    fetch('/api/admin/phones', { headers: { Authorization: 'Bearer token' } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setLoading(false); });
+  1616→    fetch('/api/brands').then(r => r.json()).then(d => setBrands(d.brands || []));
+  1617→  }, []);
+  1618→
+  1619→  const filteredPhones = filterQ ? phones.filter(p => p.modelName.toLowerCase().includes(filterQ.toLowerCase()) || p.brand?.name.toLowerCase().includes(filterQ.toLowerCase())) : phones;
+  1620→
+  1621→  return (
+  1622→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1623→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1624→        <div className="flex items-center gap-2">
+  1625→          <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button>
+  1626→          <h1 className="text-xl font-extrabold">Manage Phones ({phones.length})</h1>
+  1627→        </div>
+  1628→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1629→          <DialogTrigger asChild>
+  1630→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Phone</Button>
+  1631→          </DialogTrigger>
+  1632→          <DialogContent>
+  1633→            <DialogHeader><DialogTitle>Add New Phone</DialogTitle></DialogHeader>
+  1634→            <div className="space-y-4 pt-2">
+  1635→              <div><label className="text-sm font-medium mb-1 block">Model Name</label><Input value={newPhone.modelName} onChange={e => setNewPhone({ ...newPhone, modelName: e.target.value })} placeholder="e.g., Galaxy S24 Ultra" /></div>
+  1636→              <div><label className="text-sm font-medium mb-1 block">Brand</label>
+  1637→                <Select value={newPhone.brandId} onValueChange={v => setNewPhone({ ...newPhone, brandId: v })}>
+  1638→                  <SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger>
+  1639→                  <SelectContent>{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+  1640→                </Select>
+  1641→              </div>
+  1642→              <div><label className="text-sm font-medium mb-1 block">Price (PKR)</label><Input type="number" value={newPhone.pricePKR} onChange={e => setNewPhone({ ...newPhone, pricePKR: e.target.value })} placeholder="e.g., 250000" /></div>
+  1643→              <div><label className="text-sm font-medium mb-1 block">PTA Status</label>
+  1644→                <Select value={newPhone.ptaStatus} onValueChange={v => setNewPhone({ ...newPhone, ptaStatus: v })}>
+  1645→                  <SelectTrigger><SelectValue /></SelectTrigger>
+  1646→                  <SelectContent><SelectItem value="PTA Approved">PTA Approved</SelectItem><SelectItem value="Not Approved">Not Approved</SelectItem><SelectItem value="Unknown">Unknown</SelectItem></SelectContent>
+  1647→                </Select>
+  1648→              </div>
+  1649→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewPhone({ modelName: '', brandId: '', pricePKR: '', ptaStatus: 'Unknown' }); }}>Save Phone</Button>
+  1650→            </div>
+  1651→          </DialogContent>
+  1652→        </Dialog>
+  1653→      </div>
+  1654→      <Input placeholder="Filter phones..." value={filterQ} onChange={e => setFilterQ(e.target.value)} className="max-w-sm" />
+  1655→      {loading ? <div className="space-y-2">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div> : (
+  1656→        <Card>
+  1657→          <div className="overflow-x-auto">
+  1658→            <table className="w-full text-sm">
+  1659→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1660→                <th className="text-left p-3 font-medium">Phone</th>
+  1661→                <th className="text-left p-3 font-medium">Brand</th>
+  1662→                <th className="text-left p-3 font-medium">Price (PKR)</th>
+  1663→                <th className="text-left p-3 font-medium">Rating</th>
+  1664→                <th className="text-left p-3 font-medium">PTA</th>
+  1665→                <th className="text-left p-3 font-medium">Status</th>
+  1666→                <th className="text-right p-3 font-medium">Actions</th>
+  1667→              </tr></thead>
+  1668→              <tbody>
+  1669→                {filteredPhones.map(p => (
+  1670→                  <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1671→                    <td className="p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0">{p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="object-contain" unoptimized /> : <Smartphone className="w-5 h-5 text-gray-400" />}</div><span className="font-medium truncate max-w-[200px] block">{p.modelName}</span></div></td>
+  1672→                    <td className="p-3 text-muted-foreground">{p.brand?.name}</td>
+  1673→                    <td className="p-3 font-medium">{formatPrice(p.pricePKR)}</td>
+  1674→                    <td className="p-3"><span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" />{p.overallRating}</span></td>
+  1675→                    <td className="p-3"><Badge className={p.ptaApproved ? 'pta-approved text-[10px]' : 'pta-unknown text-[10px]'}>{p.ptaStatus}</Badge></td>
+  1676→                    <td className="p-3"><Badge className={`text-[10px] ${p.published !== false ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{p.published !== false ? 'Published' : 'Draft'}</Badge></td>
+  1677→                    <td className="p-3 text-right">
+  1678→                      <div className="flex items-center justify-end gap-1">
+  1679→                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onNavigate(`/phone/${p.slug}`)}><Eye className="w-3.5 h-3.5" /></Button>
+  1680→                        <Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+  1681→                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+  1682→                      </div>
+  1683→                    </td>
+  1684→                  </tr>
+  1685→                ))}
+  1686→              </tbody>
+  1687→            </table>
+  1688→          </div>
+  1689→        </Card>
+  1690→      )}
+  1691→    </div>
+  1692→  );
+  1693→}
+  1694→
+  1695→// ============ ADMIN BRANDS ============
+  1696→function AdminBrands({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1697→  const [brands, setBrands] = useState<Brand[]>([]);
+  1698→  const [loading, setLoading] = useState(true);
+  1699→  const [addOpen, setAddOpen] = useState(false);
+  1700→  const [newBrand, setNewBrand] = useState({ name: '', country: '', description: '' });
+  1701→
+  1702→  useEffect(() => { fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }); }, []);
+  1703→
+  1704→  return (
+  1705→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1706→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1707→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage Brands ({brands.length})</h1></div>
+  1708→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1709→          <DialogTrigger asChild>
+  1710→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Brand</Button>
+  1711→          </DialogTrigger>
+  1712→          <DialogContent>
+  1713→            <DialogHeader><DialogTitle>Add New Brand</DialogTitle></DialogHeader>
+  1714→            <div className="space-y-4 pt-2">
+  1715→              <div><label className="text-sm font-medium mb-1 block">Brand Name</label><Input value={newBrand.name} onChange={e => setNewBrand({ ...newBrand, name: e.target.value })} placeholder="e.g., Samsung" /></div>
+  1716→              <div><label className="text-sm font-medium mb-1 block">Country</label><Input value={newBrand.country} onChange={e => setNewBrand({ ...newBrand, country: e.target.value })} placeholder="e.g., South Korea" /></div>
+  1717→              <div><label className="text-sm font-medium mb-1 block">Description</label><Input value={newBrand.description} onChange={e => setNewBrand({ ...newBrand, description: e.target.value })} placeholder="Brief description" /></div>
+  1718→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewBrand({ name: '', country: '', description: '' }); }}>Save Brand</Button>
+  1719→            </div>
+  1720→          </DialogContent>
+  1721→        </Dialog>
+  1722→      </div>
+  1723→      {loading ? <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div> : (
+  1724→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1725→          {brands.map(b => (
+  1726→            <Card key={b.id}>
+  1727→              <CardContent className="p-4 flex items-center justify-between">
+  1728→                <div className="flex items-center gap-3">
+  1729→                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center"><Smartphone className="w-6 h-6 text-gray-400" /></div>
+  1730→                  <div><p className="font-semibold text-sm">{b.name}</p><p className="text-xs text-muted-foreground">{b.country} &middot; {b._count?.phones || 0} phones</p></div>
+  1731→                </div>
+  1732→                <div className="flex gap-1"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1733→              </CardContent>
+  1734→            </Card>
+  1735→          ))}
+  1736→        </div>
+  1737→      )}
+  1738→    </div>
+  1739→  );
+  1740→}
+  1741→
+  1742→// ============ ADMIN NEWS ============
+  1743→function AdminNews({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1744→  const [news, setNews] = useState<NewsItem[]>([]);
+  1745→  const [loading, setLoading] = useState(true);
+  1746→  const [addOpen, setAddOpen] = useState(false);
+  1747→  const [newArticle, setNewArticle] = useState({ title: '', category: 'News', excerpt: '', content: '' });
+  1748→
+  1749→  useEffect(() => { fetch('/api/news?published=false').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }); }, []);
+  1750→
+  1751→  return (
+  1752→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1753→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1754→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage News ({news.length})</h1></div>
+  1755→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1756→          <DialogTrigger asChild>
+  1757→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Article</Button>
+  1758→          </DialogTrigger>
+  1759→          <DialogContent>
+  1760→            <DialogHeader><DialogTitle>Add New Article</DialogTitle></DialogHeader>
+  1761→            <div className="space-y-4 pt-2">
+  1762→              <div><label className="text-sm font-medium mb-1 block">Title</label><Input value={newArticle.title} onChange={e => setNewArticle({ ...newArticle, title: e.target.value })} placeholder="Article title" /></div>
+  1763→              <div><label className="text-sm font-medium mb-1 block">Category</label>
+  1764→                <Select value={newArticle.category} onValueChange={v => setNewArticle({ ...newArticle, category: v })}>
+  1765→                  <SelectTrigger><SelectValue /></SelectTrigger>
+  1766→                  <SelectContent><SelectItem value="News">News</SelectItem><SelectItem value="Review">Review</SelectItem><SelectItem value="Comparison">Comparison</SelectItem><SelectItem value="Guide">Guide</SelectItem></SelectContent>
+  1767→                </Select>
+  1768→              </div>
+  1769→              <div><label className="text-sm font-medium mb-1 block">Excerpt</label><Input value={newArticle.excerpt} onChange={e => setNewArticle({ ...newArticle, excerpt: e.target.value })} placeholder="Brief summary" /></div>
+  1770→              <div><label className="text-sm font-medium mb-1 block">Content</label><Input value={newArticle.content} onChange={e => setNewArticle({ ...newArticle, content: e.target.value })} placeholder="Article content" /></div>
+  1771→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewArticle({ title: '', category: 'News', excerpt: '', content: '' }); }}>Save Article</Button>
+  1772→            </div>
+  1773→          </DialogContent>
+  1774→        </Dialog>
+  1775→      </div>
+  1776→      {loading ? <div className="space-y-2">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div> : (
+  1777→        <div className="space-y-2">
+  1778→          {news.map(n => (
+  1779→            <Card key={n.id}>
+  1780→              <CardContent className="p-4 flex items-center justify-between gap-4">
+  1781→                <div className="min-w-0">
+  1782→                  <div className="flex items-center gap-2 mb-1">
+  1783→                    <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+  1784→                    <Badge className={`text-[10px] ${n.published ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{n.published ? 'Published' : 'Draft'}</Badge>
+  1785→                  </div>
+  1786→                  <p className="font-semibold text-sm truncate">{n.title}</p>
+  1787→                  <p className="text-xs text-muted-foreground">{n.author} &middot; {new Date(n.createdAt).toLocaleDateString()}</p>
+  1788→                </div>
+  1789→                <div className="flex gap-1 shrink-0"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1790→              </CardContent>
+  1791→            </Card>
+  1792→          ))}
+  1793→        </div>
+  1794→      )}
+  1795→    </div>
+  1796→  );
+  1797→}
+  1798→
+  1799→// ============ ADMIN SPONSORS ============
+  1800→function AdminSponsors({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1801→  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  1802→  const [loading, setLoading] = useState(true);
+  1803→  const [addOpen, setAddOpen] = useState(false);
+  1804→  const [newSponsor, setNewSponsor] = useState({ name: '', image: '', url: '', position: '' });
+  1805→
+  1806→  useEffect(() => { fetch('/api/sponsors').then(r => r.json()).then(d => { setSponsors(d.sponsors || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  1807→
+  1808→  return (
+  1809→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1810→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1811→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage Sponsors ({sponsors.length})</h1></div>
+  1812→        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+  1813→          <DialogTrigger asChild>
+  1814→            <Button className="bg-blue-600 text-white hover:bg-blue-700" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Sponsor</Button>
+  1815→          </DialogTrigger>
+  1816→          <DialogContent>
+  1817→            <DialogHeader><DialogTitle>Add New Sponsor</DialogTitle></DialogHeader>
+  1818→            <div className="space-y-4 pt-2">
+  1819→              <div><label className="text-sm font-medium mb-1 block">Name</label><Input value={newSponsor.name} onChange={e => setNewSponsor({ ...newSponsor, name: e.target.value })} placeholder="Sponsor name" /></div>
+  1820→              <div><label className="text-sm font-medium mb-1 block">Image URL</label><Input value={newSponsor.image} onChange={e => setNewSponsor({ ...newSponsor, image: e.target.value })} placeholder="https://..." /></div>
+  1821→              <div><label className="text-sm font-medium mb-1 block">Website URL</label><Input value={newSponsor.url} onChange={e => setNewSponsor({ ...newSponsor, url: e.target.value })} placeholder="https://..." /></div>
+  1822→              <div><label className="text-sm font-medium mb-1 block">Position</label><Input value={newSponsor.position} onChange={e => setNewSponsor({ ...newSponsor, position: e.target.value })} placeholder="e.g., Homepage Banner" /></div>
+  1823→              <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={() => { setAddOpen(false); setNewSponsor({ name: '', image: '', url: '', position: '' }); }}>Save Sponsor</Button>
+  1824→            </div>
+  1825→          </DialogContent>
+  1826→        </Dialog>
+  1827→      </div>
+  1828→      {loading ? <div className="space-y-2">{Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div> : (
+  1829→        <Card>
+  1830→          <div className="overflow-x-auto">
+  1831→            <table className="w-full text-sm">
+  1832→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1833→                <th className="text-left p-3 font-medium">Sponsor</th>
+  1834→                <th className="text-left p-3 font-medium">Position</th>
+  1835→                <th className="text-left p-3 font-medium">Status</th>
+  1836→                <th className="text-right p-3 font-medium">Actions</th>
+  1837→              </tr></thead>
+  1838→              <tbody>
+  1839→                {sponsors.map(s => (
+  1840→                  <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1841→                    <td className="p-3">
+  1842→                      <div className="flex items-center gap-3">
+  1843→                        <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0">
+  1844→                          {s.image ? <Image src={s.image} alt={s.name} width={40} height={40} className="object-contain rounded" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
+  1845→                        </div>
+  1846→                        <div>
+  1847→                          <p className="font-medium">{s.name}</p>
+  1848→                          {s.url && <p className="text-xs text-blue-600 truncate max-w-[200px]">{s.url}</p>}
+  1849→                        </div>
+  1850→                      </div>
+  1851→                    </td>
+  1852→                    <td className="p-3 text-muted-foreground">{s.position || '-'}</td>
+  1853→                    <td className="p-3"><Badge className={`text-[10px] ${s.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500'}`}>{s.active ? 'Active' : 'Inactive'}</Badge></td>
+  1854→                    <td className="p-3 text-right">
+  1855→                      <div className="flex items-center justify-end gap-1">
+  1856→                        <Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+  1857→                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+  1858→                      </div>
+  1859→                    </td>
+  1860→                  </tr>
+  1861→                ))}
+  1862→              </tbody>
+  1863→            </table>
+  1864→          </div>
+  1865→          {sponsors.length === 0 && <div className="text-center py-10 text-muted-foreground text-sm">No sponsors yet. Add your first sponsor above.</div>}
+  1866→        </Card>
+  1867→      )}
+  1868→    </div>
+  1869→  );
+  1870→}
+  1871→
+  1872→// ============ ADMIN ACTIVITY ============
+  1873→function AdminActivity({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1874→  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  1875→  const [loading, setLoading] = useState(true);
+  1876→
+  1877→  useEffect(() => { fetch('/api/admin/activity-logs').then(r => r.json()).then(d => { setLogs(d.logs || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  1878→
+  1879→  return (
+  1880→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1881→      <div className="flex items-center gap-2">
+  1882→        <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button>
+  1883→        <h1 className="text-xl font-extrabold">Activity Logs</h1>
+  1884→      </div>
+  1885→      {loading ? <div className="space-y-2">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div> : (
+  1886→        <Card>
+  1887→          <div className="overflow-x-auto">
+  1888→            <table className="w-full text-sm">
+  1889→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1890→                <th className="text-left p-3 font-medium">Action</th>
+  1891→                <th className="text-left p-3 font-medium">Details</th>
+  1892→                <th className="text-left p-3 font-medium">Type</th>
+  1893→                <th className="text-left p-3 font-medium">Admin</th>
+  1894→                <th className="text-left p-3 font-medium">Date</th>
+  1895→              </tr></thead>
+  1896→              <tbody>
+  1897→                {logs.map(log => (
+  1898→                  <tr key={log.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1899→                    <td className="p-3 font-medium">{log.action}</td>
+  1900→                    <td className="p-3 text-muted-foreground max-w-[300px] truncate">{log.details}</td>
+  1901→                    <td className="p-3"><Badge variant="secondary" className="text-[10px]">{log.entityType}</Badge></td>
+  1902→                    <td className="p-3 text-muted-foreground">{log.admin?.name || '-'}</td>
+  1903→                    <td className="p-3 text-muted-foreground whitespace-nowrap">{new Date(log.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+  1904→                  </tr>
+  1905→                ))}
+  1906→              </tbody>
+  1907→            </table>
+  1908→          </div>
+  1909→          {logs.length === 0 && <div className="text-center py-10 text-muted-foreground text-sm">No activity logs found.</div>}
+  1910→        </Card>
+  1911→      )}
+  1912→    </div>
+  1913→  );
+  1914→}
+  1915→
+  1916→// ============ MAIN APP ============
+  1917→export default function PhoneDockApp() {
+  1918→  const { view, params, navigate } = useHashRouter();
+  1919→  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  1920→  const [homeLoading, setHomeLoading] = useState(true);
+  1921→  const [admin, setAdmin] = useState<AdminUser | null>(() => {
+  1922→    if (typeof window === 'undefined') return null;
+  1923→    const saved = localStorage.getItem('phonedock_admin');
+  1924→    if (saved) { try { const a = JSON.parse(saved); return a.admin; } catch { return null; } }
+  1925→    return null;
+  1926→  });
+  1927→  const [adminToken, setAdminToken] = useState<string | null>(() => {
+  1928→    if (typeof window === 'undefined') return null;
+  1929→    const saved = localStorage.getItem('phonedock_admin');
+  1930→    if (saved) { try { const a = JSON.parse(saved); return a.token; } catch { return null; } }
+  1931→    return null;
+  1932→  });
+  1933→  const { theme, setTheme } = useTheme();
+  1934→
+  1935→  useEffect(() => {
+  1936→    const savedTheme = localStorage.getItem('phonedock_theme');
+  1937→    if (savedTheme) { queueMicrotask(() => setTheme(savedTheme)); }
+  1938→  }, []);
+  1939→
+  1940→  useEffect(() => {
+  1941→    if (view === 'home') {
+  1942→      let cancelled = false;
+  1943→      fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { setHomeData(d); setHomeLoading(false); } }).catch(() => { if (!cancelled) setHomeLoading(false); });
+  1944→      return () => { cancelled = true; };
+  1945→    }
+  1946→  }, [view]);
+  1947→
+  1948→  const handleLogin = (a: AdminUser, token: string) => {
+  1949→    setAdmin(a); setAdminToken(token);
+  1950→    localStorage.setItem('phonedock_admin', JSON.stringify({ admin: a, token }));
+  1951→  };
+  1952→
+  1953→  const toggleTheme = () => {
+  1954→    const newTheme = theme === 'dark' ? 'light' : 'dark';
+  1955→    setTheme(newTheme);
+  1956→    localStorage.setItem('phonedock_theme', newTheme);
+  1957→  };
+  1958→
+  1959→  const handleSearch = (q: string) => { navigate(`/search/${encodeURIComponent(q)}`); };
+  1960→  const nav = (path: string) => { if (path === '/' || path === '') window.location.hash = '/'; else if (!path.startsWith('#')) window.location.hash = path; };
+  1961→
+  1962→  const handleLogout = () => {
+  1963→    setAdmin(null); setAdminToken(null);
+  1964→    localStorage.removeItem('phonedock_admin');
+  1965→    nav('/');
+  1966→  };
+  1967→
+  1968→  const isAdminView = view.startsWith('admin') && view !== 'admin-login';
+  1969→  const showAdminSidebar = isAdminView && admin;
+  1970→
+  1971→  return (
+  1972→    <div className="min-h-screen flex flex-col bg-background text-foreground">
+  1973→      <Header onNavigate={nav} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
+  1974→
+  1975→      <div className="flex flex-1">
+  1976→        {showAdminSidebar && <AdminSidebar admin={admin!} onNavigate={nav} onLogout={handleLogout} currentView={view} />}
+  1977→        <main className="flex-1 min-w-0">
+  1978→          {view === 'home' && <HomePage data={homeData} loading={homeLoading} onNavigate={nav} />}
+  1979→          {view === 'phone' && <PhoneDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+  1980→          {view === 'compare' && <ComparePage onNavigate={nav} />}
+  1981→          {view === 'brands' && <BrandsPage onNavigate={nav} />}
+  1982→          {view === 'brand' && <BrandDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+  1983→          {view === 'search' && <SearchPage key={params.q} query={params.q || ''} onNavigate={nav} />}
+  1984→          {view === 'news' && <NewsPage onNavigate={nav} />}
+  1985→          {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
+  1986→          {view === 'admin-dashboard' && admin && <AdminDashboard admin={admin} onNavigate={nav} />}
+  1987→          {view === 'admin-phones' && admin && <AdminPhones onNavigate={nav} />}
+  1988→          {view === 'admin-brands' && admin && <AdminBrands onNavigate={nav} />}
+  1989→          {view === 'admin-news' && admin && <AdminNews onNavigate={nav} />}
+  1990→          {view === 'admin-sponsors' && admin && <AdminSponsors onNavigate={nav} />}
+  1991→          {view === 'admin-activity' && admin && <AdminActivity onNavigate={nav} />}
+  1992→          {view === 'admin' && !admin && <AdminLoginPage onLogin={handleLogin} />}
+  1993→        </main>
+  1994→      </div>
+  1995→
+  1996→      {!isAdminView && <Footer onNavigate={nav} />}
+  1997→    </div>
+  1998→  );
+  1999→}
