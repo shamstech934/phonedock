@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import { hash } from 'bcryptjs';
+import * as dotenv from 'dotenv';
+dotenv.config();
 import { Brand } from '../src/lib/models/Brand';
 import { Phone } from '../src/lib/models/Phone';
 import { PhoneSpecs } from '../src/lib/models/PhoneSpecs';
