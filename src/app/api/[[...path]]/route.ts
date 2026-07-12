@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog, ImportHistory, SyncJob } from '@/lib/models';
+import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog, ImportHistory, SyncJob, CollectorSource, CollectedPhone, CollectorJob } from '@/lib/models';
 import connectDB, { connectDBSafe } from '@/lib/mongodb';
 import { compare } from 'bcryptjs';
 import { Types } from 'mongoose';
 import { parseFile, detectFileType, validatePhoneRecord, importPhones, rollbackImport, getImportStats } from '@/lib/import';
+import { createProvider, startJob, approveAndImport } from '@/lib/collectors';
 
 // ============ SIMPLE RATE LIMITER (in-memory, per-process) ============
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -511,8 +512,19 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     if (seg0 === 'sync' && method === 'GET') return handleSyncStatus(req);
     if (seg0 === 'sync' && method === 'POST') return handleSyncAction(req);
     if (seg0 === 'sync' && method === 'DELETE') return handleSyncDelete(req);
+    if (seg0 === 'collector' && pathParts[1] === 'run') return handleCollectorRun(req);
+    if (seg0 === 'collector' && pathParts[1] === 'sources' && method === 'GET') return handleCollectorSources(req);
+    if (seg0 === 'collector' && pathParts[1] === 'sources' && method === 'POST') return handleCollectorSourcesPost(req);
+    if (seg0 === 'collector' && pathParts[1] === 'sources' && pathParts[2] && method === 'GET') return handleCollectorSourceDetail(pathParts[2]);
+    if (seg0 === 'collector' && pathParts[1] === 'sources' && pathParts[2] && method === 'PUT') return handleCollectorSourceUpdate(req, pathParts[2]);
+    if (seg0 === 'collector' && pathParts[1] === 'jobs' && method === 'GET') return handleCollectorJobs(req);
+    if (seg0 === 'collector' && pathParts[1] === 'jobs' && method === 'POST') return handleCollectorJobsPost(req);
+    if (seg0 === 'collector' && pathParts[1] === 'review' && method === 'GET') return handleCollectorReview(req);
+    if (seg0 === 'collector' && pathParts[1] === 'review' && pathParts[2] && method === 'GET') return handleCollectorReviewDetail(pathParts[2]);
+    if (seg0 === 'collector' && pathParts[1] === 'review' && pathParts[2] && method === 'POST') return handleCollectorReviewAction(req, pathParts[2]);
+    if (seg0 === 'collector' && pathParts[1] === 'dashboard' && method === 'GET') return handleCollectorDashboard(req);
 
-    // ============ IMPORT ROUTES (Admin-protected via verifyAdmin in handler) ============
+    // ============ IMPORT ROUTES (Admin-protected via verifyAdmin in handler) ==========
     // Already handled above for /api/import, /api/sync
 
     // ============ ADMIN ROUTES ============
@@ -798,6 +810,171 @@ async function handleSyncDelete(req: NextRequest) {
 }
 
 // ============ SYNC JOB WORKER ============
+// ============ COLLECTOR HANDLERS ============
+async function handleCollectorRun(req: NextRequest) {
+  const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+  if (secret !== (process.env.COLLECTOR_SECRET || '')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { sourceId } = await req.json();
+    const source = await CollectorSource.findById(sourceId);
+    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+    const job = await CollectorJob.create({ sourceId, sourceName: source.name, trigger: 'api', status: 'running', startedAt: new Date() });
+    startJob((job._id as any).toString()).catch(e => console.error('Collector job error:', e.message));
+    return NextResponse.json({ success: true, jobId: (job._id as any).toString() });
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }); }
+}
+
+async function handleCollectorSources(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
+  sources.forEach((s: any) => { s.id = s._id.toString(); });
+  return NextResponse.json({ sources });
+}
+
+async function handleCollectorSourcesPost(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const data = await req.json();
+    const headers = new Map(Object.entries(data.headers || {}));
+    const mappingRules = new Map(Object.entries(data.mappingRules || {}));
+    const source = await CollectorSource.create({ ...data, headers, mappingRules });
+    await ActivityLog.create({ action: 'source_created', details: `Created collector source: ${data.name}`, entityType: 'collector', entityId: (source._id as any).toString() });
+    return NextResponse.json({ source }, { status: 201 });
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+}
+
+async function handleCollectorSourceDetail(id: string) {
+  await connectDB();
+  const source = await CollectorSource.findById(id).lean();
+  if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+  (source as any).id = (source as any)._id.toString();
+  return NextResponse.json({ source });
+}
+
+async function handleCollectorSourceUpdate(req: NextRequest, id: string) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const data = await req.json();
+    const update: any = {};
+ for (const key of ['name', 'type', 'enabled', 'endpoint', 'apiKeyEnvVar', 'brandFilter', 'countryFilter', 'region', 'syncFrequencyHours', 'dataPath', 'paginationPageSize', 'paginationMaxPages', 'paginationPageParam', 'notes']) {
+    if (data[key] !== undefined) update[key] = data[key];
+  }
+  if (data.headers) update.headers = new Map(Object.entries(data.headers));
+  if (data.mappingRules) update.mappingRules = new Map(Object.entries(data.mappingRules));
+  await CollectorSource.updateOne({ _id: id }, { $set: update });
+  return NextResponse.json({ success: true });
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+}
+
+async function handleCollectorJobs(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
+  jobs.forEach((j: any) => { j.id = j._id.toString(); });
+  return NextResponse.json({ jobs });
+}
+
+async function handleCollectorJobsPost(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { sourceId, mode, filterBrand, filterModel } = await req.json();
+    const source = sourceId ? await CollectorSource.findById(sourceId) : null;
+    const job = await CollectorJob.create({ sourceId: sourceId || undefined, sourceName: source?.name || 'All Sources', trigger: 'manual', mode: mode || 'single_source', filterBrand: filterBrand || '', filterModel: filterModel || '', status: 'queued' });
+    startJob((job._id as any).toString()).catch(e => console.error('Job error:', e.message));
+    return NextResponse.json({ success: true, jobId: (job._id as any).toString() });
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+}
+
+async function handleCollectorReview(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get('status') || 'pending,needs_review';
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
+  const where: any = { status: { $in: status.split(',') } };
+  const [phones, total] = await Promise.all([
+    CollectedPhone.find(where).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    CollectedPhone.countDocuments(where),
+  ]);
+  phones.forEach((p: any) => { p.id = p._id.toString(); });
+  return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) });
+}
+
+async function handleCollectorReviewDetail(id: string) {
+  if (!verifyAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const draft = await CollectedPhone.findById(id).lean();
+  if (!draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
+  (draft as any).id = (draft as any)._id.toString();
+  // Fetch existing phone for comparison
+  let existingPhone: any = null;
+  if (draft.duplicatePhoneId && Types.ObjectId.isValid(draft.duplicatePhoneId)) {
+    existingPhone = await Phone.findOne({ _id: draft.duplicatePhoneId }).lean();
+    if (existingPhone) {
+      (existingPhone as any).id = (existingPhone as any)._id.toString();
+      const brand = await Brand.findById(existingPhone.brandId).lean();
+      if (brand) (existingPhone as any).brand = { id: (brand as any)._id.toString(), name: brand.name, slug: brand.slug };
+    }
+  }
+  return NextResponse.json({ draft, existingPhone });
+}
+
+async function handleCollectorReviewAction(req: NextRequest, id: string) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  try {
+    await connectDB();
+    const { action, edits } = await req.json();
+    const draft = await CollectedPhone.findById(id);
+    if (!draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
+    if (action === 'approve') {
+      const result = await approveAndImport(id, edits);
+      return NextResponse.json(result);
+    }
+    if (action === 'reject') {
+      await CollectedPhone.updateOne({ _id: id }, { $set: { status: 'rejected' } });
+      return NextResponse.json({ success: true });
+    }
+    if (action === 'save_draft') {
+      if (edits) await CollectedPhone.updateOne({ _id: id }, { $set: { adminEdits: edits } });
+      return NextResponse.json({ success: true });
+    }
+    if (action === 'mark_unreliable') {
+      if (draft.sourceId) await CollectorSource.updateOne({ _id: draft.sourceId }, { $inc: { reliabilityScore: -0.1 } });
+      return NextResponse.json({ success: true });
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }); }
+}
+
+async function handleCollectorDashboard(req: NextRequest) {
+  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  await connectDB();
+  const [pending, needsReview, approved, rejected, imported, failed, sourcesWithError, lastJob, sourcesCount, totalCollected] = await Promise.all([
+    CollectedPhone.countDocuments({ status: 'pending' }),
+    CollectedPhone.countDocuments({ status: 'needs_review' }),
+    CollectedPhone.countDocuments({ status: 'approved' }),
+    CollectedPhone.countDocuments({ status: 'rejected' }),
+    CollectedPhone.countDocuments({ status: 'imported' }),
+    CollectedPhone.countDocuments({ status: 'failed' }),
+    CollectorSource.countDocuments({ lastSyncStatus: 'failed' }),
+    CollectorJob.findOne().sort({ createdAt: -1 }).lean(),
+    CollectorSource.countDocuments({}),
+    CollectedPhone.countDocuments(),
+  ]);
+  return NextResponse.json({
+    pending, needsReview, approved, rejected, imported, failed,
+    sourcesWithError, totalCollected, sourcesCount,
+    lastJob: lastJob ? { ...lastJob, id: (lastJob as any)._id.toString() } : null,
+  });
+}
+
+// ============ SYNC JOB WORKER (Import system) ============
 async function runSyncJob(jobId: string, source: string) {
   try {
     const job = await SyncJob.findById(jobId);

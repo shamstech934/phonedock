@@ -10,7 +10,7 @@ import {
   ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
   Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
   AlertTriangle, Upload, Download, RefreshCw, FileJson, FileSpreadsheet, RotateCcw, History, Database,
-  UploadCloud, Pause, CheckCircle, XCircle, AlertCircle, FileText
+  UploadCloud, Pause, CheckCircle, XCircle, AlertCircle, FileText, Radio, Globe, ShieldCheck, Wrench, ClipboardCheck, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +39,7 @@ interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; best
 interface AdminUser { id: string; email: string; name: string; role: string; }
 
 // ============ ROUTER ============
-type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync';
+type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync' | 'admin-collector' | 'admin-collector-sources' | 'admin-collector-jobs' | 'admin-collector-review' | 'admin-collector-review-detail';
 
 function useHashRouter() {
   const [view, setView] = useState<View>('home');
@@ -65,6 +65,11 @@ function useHashRouter() {
       if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'import') { setView('admin-import'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'sync') { setView('admin-sync'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'collector' && !parts[2]) { setView('admin-collector'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'sources') { setView('admin-collector-sources'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'jobs') { setView('admin-collector-jobs'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'review' && parts[3]) { setView('admin-collector-review-detail'); setParams({ id: parts[3] }); return; }
+      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'review') { setView('admin-collector-review'); setParams({}); return; }
       if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
       setView('home'); setParams({});
     };
@@ -227,6 +232,7 @@ function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: Adm
     { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
     { label: 'Import', hash: '/admin/import', icon: Upload, view: 'admin-import' },
     { label: 'Sync', hash: '/admin/sync', icon: RefreshCw, view: 'admin-sync' },
+    { label: 'Collector', hash: '/admin/collector', icon: Radio, view: 'admin-collector' },
   ];
 
   return (
@@ -2359,6 +2365,384 @@ function AdminSyncPage({ token }: { token: string | null }) {
   );
 }
 
+// ============ ADMIN COLLECTOR DASHBOARD ============
+function AdminCollectorPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
+  const [dash, setDash] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/collector/dashboard', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setDash(d); setLoading(false); }).catch(() => setLoading(false));
+  }, [token]);
+  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div><h1 className="text-xl font-extrabold text-gray-900">Data Collector</h1><p className="text-xs text-muted-foreground mt-1">Collect, validate, and review phone data from trusted sources before publishing</p></div>
+      {dash && (<>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Pending Review', value: dash.pending + dash.needsReview, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50' },
+            { label: 'Imported', value: dash.imported, icon: CheckCircle, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Total Collected', value: dash.totalCollected, icon: Database, color: 'text-blue-600 bg-blue-50' },
+            { label: 'Sources', value: dash.sourcesCount, icon: Globe, color: 'text-violet-600 bg-violet-50' },
+          ].map(s => (
+            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
+              <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
+              <p className="text-lg font-bold text-gray-900">{s.value}</p>
+              <p className="text-[10px] text-muted-foreground">{s.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            { label: 'Needs Review', value: dash.needsReview, color: 'text-orange-600 bg-orange-50' },
+            { label: 'Rejected', value: dash.rejected, color: 'text-red-600 bg-red-50' },
+            { label: 'Failed', value: dash.failed, color: 'text-red-700 bg-red-100' },
+          ].map(s => (
+            <div key={s.label} className={`rounded-xl p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.value}</p><p className="text-[10px] font-medium">{s.label}</p></div>
+          ))}
+        </div>
+      </>)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {[
+          { label: 'Review Queue', desc: 'Review and approve collected phones', hash: '/admin/collector/review', icon: Eye, count: dash?.pending || 0 },
+          { label: 'Sources', desc: 'Manage data providers', hash: '/admin/collector/sources', icon: Globe, count: dash?.sourcesCount || 0 },
+          { label: 'Jobs', desc: 'Sync history and progress', hash: '/admin/collector/jobs', icon: Activity, count: 0 },
+        ].map(s => (
+          <Card key={s.hash} className="border-gray-100 cursor-pointer hover:shadow-md hover:shadow-black/5 transition-all duration-200" onClick={() => onNavigate(s.hash)}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0"><s.icon className="w-5 h-5 text-blue-500" /></div>
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-gray-900">{s.label}</p><p className="text-[10px] text-muted-foreground">{s.desc}</p></div>
+              {s.count > 0 && <Badge variant="secondary" className="bg-blue-50 text-blue-700 text-xs">{s.count}</Badge>}
+              <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ ADMIN COLLECTOR SOURCES ============
+function AdminCollectorSourcesPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
+  const [sources, setSources] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ name: '', type: 'json_url', endpoint: '', apiKeyEnvVar: '', dataPath: '', syncFrequencyHours: 0, brandFilter: '', countryFilter: '', region: '', notes: '' });
+  const [testing, setTesting] = useState<string | null>(null);
+
+  const fetchSources = () => {
+    if (!token) return;
+    fetch('/api/collector/sources', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setSources(d.sources || []); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(() => { fetchSources(); }, [token]);
+
+  const handleSave = async () => {
+    if (!token || !form.name) return;
+    const data = { ...form, brandFilter: form.brandFilter ? form.brandFilter.split(',').map(s => s.trim()) : [], headers: {}, mappingRules: {} };
+    await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(data) });
+    setShowAdd(false); setForm({ name: '', type: 'json_url', endpoint: '', apiKeyEnvVar: '', dataPath: '', syncFrequencyHours: 0, brandFilter: '', countryFilter: '', region: '', notes: '' });
+    fetchSources();
+  };
+
+  const handleTest = async (sourceId: string) => {
+    setTesting(sourceId);
+    try {
+      const res = await fetch(`/api/collector/sources/${sourceId}/test`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      alert(data.success ? `Connection OK: ${data.message}` : `Failed: ${data.message}`);
+    } catch (e: any) { alert('Test failed: ' + e.message); }
+    setTesting(null);
+  };
+
+  const handleToggle = async (source: any) => {
+    await fetch(`/api/collector/sources/${source.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ enabled: !source.enabled }) });
+    fetchSources();
+  };
+
+  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
+
+  const typeColors: Record<string, string> = { json_url: 'bg-blue-50 text-blue-700', csv_url: 'bg-green-50 text-green-700', api: 'bg-violet-50 text-violet-700', manual_url: 'bg-amber-50 text-amber-700', manufacturer: 'bg-cyan-50 text-cyan-700', file_upload: 'bg-gray-50 text-gray-700' };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between"><div><h1 className="text-xl font-extrabold text-gray-900">Data Sources</h1><p className="text-xs text-muted-foreground mt-1">Configure trusted data providers</p></div>
+        <Button onClick={() => setShowAdd(!showAdd)} className="gap-1.5 bg-blue-500 hover:bg-blue-600" size="sm"><Plus className="w-4 h-4" />Add Source</Button>
+      </div>
+      {showAdd && (
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardContent className="p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input placeholder="Source name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              <select className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+                {['json_url', 'csv_url', 'api', 'manual_url', 'manufacturer'].map(t => <option key={t} value={t}>{t.replace('_', ' ').toUpperCase()}</option>)}
+              </select>
+            </div>
+            <Input placeholder="Endpoint URL" value={form.endpoint} onChange={e => setForm(f => ({ ...f, endpoint: e.target.value }))} />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Input placeholder="API Key Env Var (e.g. PHONE_DATA_API_KEY)" value={form.apiKeyEnvVar} onChange={e => setForm(f => ({ ...f, apiKeyEnvVar: e.target.value }))} />
+              <Input placeholder="Data path (e.g. data.phones)" value={form.dataPath} onChange={e => setForm(f => ({ ...f, dataPath: e.target.value }))} />
+              <Input placeholder="Brand filter (comma-separated)" value={form.brandFilter} onChange={e => setForm(f => ({ ...f, brandFilter: e.target.value }))} />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleSave} size="sm" className="bg-blue-500 hover:bg-blue-600">Save Source</Button>
+              <Button onClick={() => setShowAdd(false)} size="sm" variant="outline">Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {sources.length > 0 ? sources.map((s: any) => (
+        <Card key={s.id} className="border-gray-100">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2"><p className="text-sm font-semibold text-gray-900">{s.name}</p><Badge variant="secondary" className={`text-[10px] ${typeColors[s.type] || 'bg-gray-50'}`}>{s.type.replace('_', ' ')}</Badge>{s.enabled ? <Badge variant="secondary" className="text-[10px] bg-emerald-50 text-emerald-700">Active</Badge> : <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Disabled</Badge>}</div>
+                <p className="text-[10px] text-muted-foreground mt-1 truncate">{s.endpoint || 'No endpoint'}{s.lastSyncAt ? ` | Last sync: ${new Date(s.lastSyncAt).toLocaleString()}` : ''}</p>
+                {s.lastError && <p className="text-[10px] text-red-500 mt-0.5">Error: {s.lastError}</p>}
+                <p className="text-[10px] text-muted-foreground mt-0.5">Collected: {s.totalCollected} | Failed: {s.totalFailed} | Reliability: {(s.reliabilityScore * 100).toFixed(0)}%</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="ghost" onClick={() => handleTest(s.id)} disabled={testing === s.id}>{testing === s.id ? '...' : <Wrench className="w-3.5 h-3.5" />}</Button>
+                <Button size="sm" variant="ghost" onClick={() => handleToggle(s)}>{s.enabled ? <Pause className="w-3.5 h-3.5 text-amber-500" /> : <Play className="w-3.5 h-3.5 text-emerald-500" />}</Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )) : <div className="text-center py-16 text-muted-foreground"><Globe className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No sources configured yet</p></div>}
+    </div>
+  );
+}
+
+// ============ ADMIN COLLECTOR JOBS ============
+function AdminCollectorJobsPage({ token }: { token: string | null }) {
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [selectedSource, setSelectedSource] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/collector/jobs', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); }).catch(() => setLoading(false));
+    fetch('/api/collector/sources', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { if (d.sources?.[0]?.id) setSelectedSource(d.sources[0].id); }).catch(() => {});
+  }, [token]);
+
+  const handleStartJob = async () => {
+    if (!token || !selectedSource) return;
+    setStarting(true);
+    try {
+      await fetch('/api/collector/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ sourceId: selectedSource, mode: 'single_source' }) });
+      setTimeout(() => fetch('/api/collector/jobs', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => setJobs(d.jobs || [])), 2000);
+    } catch (e: any) { alert('Failed: ' + e.message); }
+    setStarting(false);
+  };
+
+  const statusIcon = (s: string) => {
+    const m: Record<string, any> = { queued: Clock, running: RefreshCw, paused: Pause, completed: CheckCircle, partially_completed: AlertCircle, failed: XCircle };
+    const c: Record<string, string> = { queued: 'text-gray-600 bg-gray-50', running: 'text-blue-600 bg-blue-50', paused: 'text-amber-600 bg-amber-50', completed: 'text-emerald-600 bg-emerald-50', partially_completed: 'text-orange-600 bg-orange-50', failed: 'text-red-600 bg-red-50' };
+    const Icon = m[s] || Clock;
+    return <Badge variant="secondary" className={`text-[10px] gap-1 ${c[s] || ''}`}><Icon className="w-3 h-3" />{s}</Badge>;
+  };
+
+  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div><h1 className="text-xl font-extrabold text-gray-900">Collector Jobs</h1><p className="text-xs text-muted-foreground mt-1">Sync history and progress</p></div>
+      <Card className="border-gray-100"><CardContent className="p-4 flex gap-3">
+        <select className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm flex-1" value={selectedSource} onChange={e => setSelectedSource(e.target.value)}><option value="">Select source...</option></select>
+        <Button onClick={handleStartJob} disabled={!selectedSource || starting} className="bg-blue-500 hover:bg-blue-600 gap-1.5" size="sm">{starting ? '...' : <><Play className="w-4 h-4" />Run Job</>}</Button>
+      </CardContent></Card>
+      {jobs.length > 0 ? jobs.map((j: any) => (
+        <Card key={j.id} className="border-gray-100"><CardContent className="p-4">
+          <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-sm font-medium text-gray-900">{j.sourceName}</span>{statusIcon(j.status)}</div><span className="text-[10px] text-muted-foreground">{j.createdAt ? new Date(j.createdAt).toLocaleString() : ''}</span></div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center text-[10px]">
+            {[['Fetched', j.fetched], ['New', j.newPhones], ['Dupes', j.duplicates], ['Conflicts', j.conflictCount], ['Failures', j.failureCount], ['Duration', j.duration ? `${(j.duration / 1000).toFixed(1)}s` : '-']].map(([l, v]) => (
+              <div key={String(l)} className="bg-gray-50 rounded-lg p-1.5"><p className="font-bold text-gray-900">{v}</p><p className="text-muted-foreground">{l}</p></div>
+            ))}
+          </div>
+          {j.totalExpected > 0 && <Progress value={((j.fetched || 0) / j.totalExpected) * 100} className="h-1 mt-2" />}
+          {j.errorLog?.length > 0 && <p className="text-[10px] text-red-500 mt-1 truncate">{j.errorLog[j.errorLog.length - 1]}</p>}
+        </CardContent></Card>
+      )) : <div className="text-center py-16 text-muted-foreground"><Activity className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No jobs yet</p></div>}
+    </div>
+  );
+}
+
+// ============ ADMIN COLLECTOR REVIEW ============
+function AdminCollectorReviewPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
+  const [phones, setPhones] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('pending,needs_review');
+
+  const fetchPhones = (p: number, f: string) => {
+    if (!token) return;
+    setLoading(true);
+    fetch(`/api/collector/review?status=${f}&page=${p}&limit=20`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setTotal(d.total || 0); setPage(p); setLoading(false); }).catch(() => setLoading(false));
+  };
+  useEffect(() => { fetchPhones(1, filter); }, [token, filter]);
+
+  const handleAction = async (id: string, action: string) => {
+    if (!token) return;
+    if (action === 'approve' && !confirm('Import this phone to the live database?')) return;
+    await fetch(`/api/collector/review/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action }) });
+    fetchPhones(page, filter);
+  };
+
+  const statusBadge = (s: string) => {
+    const m: Record<string, { color: string; label: string }> = {
+      pending: { color: 'bg-blue-50 text-blue-700', label: 'Pending' },
+      needs_review: { color: 'bg-orange-50 text-orange-700', label: 'Needs Review' },
+      approved: { color: 'bg-emerald-50 text-emerald-700', label: 'Approved' },
+      rejected: { color: 'bg-red-50 text-red-700', label: 'Rejected' },
+      imported: { color: 'bg-green-50 text-green-700', label: 'Imported' },
+      failed: { color: 'bg-red-100 text-red-700', label: 'Failed' },
+    };
+    const cfg = m[s] || m.pending;
+    return <Badge variant="secondary" className={`text-[10px] ${cfg.color}`}>{cfg.label}</Badge>;
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div><h1 className="text-xl font-extrabold text-gray-900">Review Queue</h1><p className="text-xs text-muted-foreground mt-1">{total} phones waiting for review</p></div>
+      <div className="flex gap-2 flex-wrap">
+        {[['pending,needs_review', 'To Review'], ['pending', 'Pending'], ['needs_review', 'Needs Review'], ['imported', 'Imported'], ['rejected', 'Rejected']].map(([val, label]) => (
+          <Button key={String(val)} size="sm" variant={filter === val ? 'default' : 'outline'} onClick={() => fetchPhones(1, val as string)} className={filter === val ? 'bg-blue-500' : ''}>{label}</Button>
+        ))}
+      </div>
+      {loading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-20 rounded-xl" />)}</div> : phones.length > 0 ? phones.map((p: any) => (
+        <Card key={p.id} className="border-gray-100">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                {p.thumbnail ? <img src={p.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover bg-gray-100 shrink-0" /> : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{p.brandName} {p.model}</p>
+                  <p className="text-[10px] text-muted-foreground">{p.suggestedCategory || 'No category'} | Source: {p.sourceName}</p>
+                  <div className="flex items-center gap-1.5 mt-1">{statusBadge(p.status)}
+                    {p.hasExactDuplicate && <Badge variant="secondary" className="text-[10px] bg-red-50 text-red-600">Duplicate</Badge>}
+                    {p.conflictCount > 0 && <Badge variant="secondary" className="text-[10px] bg-amber-50 text-amber-600">{p.conflictCount} conflicts</Badge>}
+                    {!p.isValid && <Badge variant="secondary" className="text-[10px] bg-red-50 text-red-600">Invalid</Badge>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="ghost" className="text-xs text-blue-600" onClick={() => onNavigate(`/admin/collector/review/${p.id}`)}><Eye className="w-3.5 h-3.5 mr-1" />Review</Button>
+                <Button size="sm" variant="ghost" className="text-xs text-emerald-600" onClick={() => handleAction(p.id, 'approve')}><CheckCircle className="w-3.5 h-3.5" /></Button>
+                <Button size="sm" variant="ghost" className="text-xs text-red-600" onClick={() => handleAction(p.id, 'reject')}><XCircle className="w-3.5 h-3.5" /></Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )) : <div className="text-center py-16 text-muted-foreground"><ClipboardCheck className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No phones in queue</p></div>}
+      {total > 20 && <div className="flex justify-center gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => fetchPhones(page - 1, filter)}>Prev</Button><span className="text-xs text-muted-foreground self-center">Page {page} of {Math.ceil(total / 20)}</span><Button size="sm" variant="outline" disabled={page * 20 >= total} onClick={() => fetchPhones(page + 1, filter)}>Next</Button></div>}
+    </div>
+  );
+}
+
+// ============ ADMIN COLLECTOR REVIEW DETAIL ============
+function AdminCollectorReviewDetailPage({ token, id, onNavigate }: { token: string | null; id: string; onNavigate: (p: string) => void }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState('');
+
+  useEffect(() => {
+    if (!token || !id) return;
+    fetch(`/api/collector/review/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+  }, [token, id]);
+
+  const handleAction = async (action: string) => {
+    if (!token || !id) return;
+    setActionLoading(action);
+    try {
+      const res = await fetch(`/api/collector/review/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action }) });
+      const result = await res.json();
+      if (action === 'approve' && result.success) { onNavigate('/admin/collector/review'); return; }
+      if (result.success) { fetch(`/api/collector/review/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setData(d); setActionLoading(''); }); return; }
+      alert(result.error || 'Action failed');
+    } catch (e: any) { alert('Failed: ' + e.message); }
+    setActionLoading('');
+  };
+
+  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
+  if (!data?.draft) return <div className="text-center py-16 text-muted-foreground"><p>Not found</p><Button variant="link" onClick={() => onNavigate('/admin/collector/review')}>Back to queue</Button></div>;
+
+  const d = data.draft;
+  const ex = data.existingPhone;
+
+  const SpecRow = ({ label, value, existingValue }: { label: string; value?: string; existingValue?: string }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-gray-50 text-xs">
+      <span className="text-muted-foreground w-28 shrink-0">{label}</span>
+      <span className="text-gray-900 flex-1">{value || <span className="text-gray-300">-</span>}</span>
+      {existingValue && <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">{existingValue}</span>}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/collector/review')}><ChevronLeft className="w-4 h-4" />Back</Button>
+        <div><h1 className="text-xl font-extrabold text-gray-900">{d.brandName} {d.model}</h1><p className="text-xs text-muted-foreground mt-0.5">{d.suggestedCategory} | Source: {d.sourceName} | Collected: {d.collectedAt ? new Date(d.collectedAt).toLocaleString() : ''}</p></div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">New Data</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+          <SpecRow label="Brand" value={d.brandName} /><SpecRow label="Model" value={d.model} /><SpecRow label="Slug" value={d.slug} /><SpecRow label="Release Date" value={d.releaseDate} /><SpecRow label="Status" value={d.deviceStatus} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">DISPLAY</p>
+          <SpecRow label="Size" value={d.display?.size} /><SpecRow label="Resolution" value={d.display?.resolution} /><SpecRow label="Refresh Rate" value={d.display?.refreshRate} /><SpecRow label="Protection" value={d.display?.protection} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">PROCESSOR</p>
+          <SpecRow label="Chipset" value={d.processor?.chipset} /><SpecRow label="CPU" value={d.processor?.cpu} /><SpecRow label="GPU" value={d.processor?.gpu} /><SpecRow label="Process" value={d.processor?.process} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">MEMORY</p>
+          <SpecRow label="RAM" value={d.memory?.ram} /><SpecRow label="Storage" value={d.memory?.storage} /><SpecRow label="Card Slot" value={d.memory?.cardSlot} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">CAMERA</p>
+          <SpecRow label="Rear" value={d.camera?.rearModules} /><SpecRow label="Front" value={d.camera?.frontCamera} /><SpecRow label="Aperture" value={d.camera?.aperture} /><SpecRow label="OIS" value={d.camera?.ois} /><SpecRow label="Video" value={d.camera?.videoRecording} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BATTERY</p>
+          <SpecRow label="Capacity" value={d.battery?.capacity} /><SpecRow label="Charging" value={d.battery?.wiredCharging} /><SpecRow label="Wireless" value={d.battery?.wirelessCharging} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BODY</p>
+          <SpecRow label="Dimensions" value={d.body?.dimensions} /><SpecRow label="Weight" value={d.body?.weight} /><SpecRow label="Build" value={d.body?.build} /><SpecRow label="Water Resistance" value={d.body?.waterResistance} /><SpecRow label="Colors" value={d.body?.colors} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">CONNECTIVITY</p>
+          <SpecRow label="Network" value={d.connectivity?.network} /><SpecRow label="5G" value={d.connectivity?.fiveG} /><SpecRow label="Wi-Fi" value={d.connectivity?.wifi} /><SpecRow label="Bluetooth" value={d.connectivity?.bluetooth} /><SpecRow label="NFC" value={d.connectivity?.nfc} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">SOFTWARE</p>
+          <SpecRow label="OS" value={d.software?.os} /><SpecRow label="Version" value={d.software?.osVersion} /><SpecRow label="UI" value={d.software?.osUI} /><SpecRow label="Updates" value={d.software?.updatePolicy} />
+          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BENCHMARKS</p>
+          <SpecRow label="AnTuTu" value={d.benchmarks?.antutu ? String(d.benchmarks.antutu) : ''} /><SpecRow label="Geekbench S" value={d.benchmarks?.geekbenchSingle ? String(d.benchmarks.geekbenchSingle) : ''} /><SpecRow label="Geekbench M" value={d.benchmarks?.geekbenchMulti ? String(d.benchmarks.geekbenchMulti) : ''} />
+        </CardContent></Card>
+
+        <div className="space-y-4">
+          {d.conflictCount > 0 && <Card className="border-amber-200 bg-amber-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-amber-700">{d.conflictCount} Conflict{d.conflictCount > 1 ? 's' : ''} Detected</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+            {d.conflicts.map((c: any, i: number) => (<div key={i} className="text-xs py-1.5 border-b border-amber-100"><span className="font-medium text-amber-800">{c.field}:</span> <span className="text-gray-600">{String(c.existingValue || '-')}</span> → <span className="text-amber-700">{String(c.newValue || '-')}</span></div>))}
+          </CardContent></Card>}
+
+          {d.duplicateMatches?.length > 0 && <Card className="border-blue-200 bg-blue-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-blue-700">Duplicate Matches</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+            {d.duplicateMatches.map((m: any, i: number) => (<div key={i} className="text-xs py-1 border-b border-blue-100 flex justify-between"><span><Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 mr-1">{m.type}</Badge>{m.brandName} {m.modelName}</span><span className="text-muted-foreground">{(m.confidence * 100).toFixed(0)}%</span></div>))}
+          </CardContent></Card>}
+
+          {d.validationIssues?.length > 0 && <Card className="border-red-200 bg-red-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Issues</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+            {d.validationIssues.map((v: string, i: number) => (<p key={i} className="text-xs text-red-600 py-0.5">{v}</p>))}
+          </CardContent></Card>}
+
+          {d.suggestedSeoTitle && <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">Suggested SEO</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+            <p className="text-xs font-medium text-gray-700 mb-1">Title:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedSeoTitle}</p>
+            <p className="text-xs font-medium text-gray-700 mb-1 mt-2">Description:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedSeoDescription}</p>
+            <p className="text-xs font-medium text-gray-700 mb-1 mt-2">Keywords:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedKeywords}</p>
+          </CardContent></Card>}
+
+          {ex && <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">Existing Live Phone</CardTitle></CardHeader><CardContent className="p-4 pt-0">
+            <p className="text-xs"><span className="text-muted-foreground">Model:</span> <span className="font-medium text-gray-900">{ex.modelName}</span> | <span className="text-muted-foreground">Brand:</span> <span className="font-medium">{ex.brand?.name || '-'}</span></p>
+            <p className="text-xs mt-1"><span className="text-muted-foreground">Slug:</span> {ex.slug} | <span className="text-muted-foreground">Price:</span> PKR {(ex.pricePKR || 0).toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">Amber values in left panel show existing live data</p>
+          </CardContent></Card>}
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <Button onClick={() => handleAction('approve')} disabled={!!actionLoading} className="bg-emerald-500 hover:bg-emerald-600 gap-1.5"><CheckCircle className="w-4 h-4" />{actionLoading === 'approve' ? 'Importing...' : 'Approve & Import'}</Button>
+        <Button onClick={() => handleAction('reject')} disabled={!!actionLoading} variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50"><XCircle className="w-4 h-4" />{actionLoading === 'reject' ? '...' : 'Reject'}</Button>
+        <Button onClick={() => handleAction('mark_unreliable')} disabled={!!actionLoading} variant="outline" className="gap-1.5"><AlertTriangle className="w-4 h-4" />Mark Source Unreliable</Button>
+      </div>
+    </div>
+  );
+}
+
 // ============ ERROR BOUNDARY ============
 class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
   state = { hasError: false, error: undefined as Error | undefined };
@@ -2430,6 +2814,11 @@ export default function PhoneDockApp() {
                   {view === 'admin-activity' && <AdminActivityPage token={token} />}
                   {view === 'admin-import' && <AdminImportPage token={token} />}
                   {view === 'admin-sync' && <AdminSyncPage token={token} />}
+                  {view === 'admin-collector' && <AdminCollectorPage token={token} onNavigate={navigate} />}
+                  {view === 'admin-collector-sources' && <AdminCollectorSourcesPage token={token} onNavigate={navigate} />}
+                  {view === 'admin-collector-jobs' && <AdminCollectorJobsPage token={token} />}
+                  {view === 'admin-collector-review' && <AdminCollectorReviewPage token={token} onNavigate={navigate} />}
+                  {view === 'admin-collector-review-detail' && <AdminCollectorReviewDetailPage token={token} id={params.id || ''} onNavigate={navigate} />}
                 </div>
               </div>
             </div>
