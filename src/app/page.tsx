@@ -491,31 +491,28 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight">
             Find Your Perfect <span className="text-blue-400">Smartphone</span>
           </h1>
-          <p className="text-gray-400 text-sm sm:text-base mb-8 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
-          <div className="flex flex-wrap gap-3">
-            <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-11 px-6 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
+          <p className="text-gray-400 text-sm sm:text-base mb-6 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+
+          {/* Search Bar Inside Hero */}
+          <div className="flex gap-2 max-w-xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input placeholder="Phone name, brand ya chipset search karein..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/95 text-gray-900 outline-none focus:ring-2 focus:ring-blue-400/50 placeholder:text-gray-400 transition-all shadow-lg" />
+            </div>
+            <button onClick={handleHomeSearch} className="bg-blue-500 hover:bg-blue-400 text-white h-12 px-6 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2">
+              <Search className="w-4 h-4" /> Search
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-6">
+            <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-10 px-5 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
               <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
             </Button>
           </div>
-          <div className="flex flex-wrap gap-5 mt-8 text-xs sm:text-sm text-gray-400">
+          <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-400">
             <span className="flex items-center gap-1.5"><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
             <span className="flex items-center gap-1.5"><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
             <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Glass Search Bar */}
-      <section>
-        <div className="relative max-w-2xl mx-auto -mt-8 z-10">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input placeholder="Search phones, brands, processors..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="glass-search w-full pl-12 pr-4 h-14 text-base rounded-2xl bg-white/80 backdrop-blur-xl border border-white/60 shadow-lg shadow-black/5 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" />
-            </div>
-            <button onClick={handleHomeSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-14 px-7 rounded-2xl text-sm font-semibold transition-colors shadow-lg shadow-blue-500/25">
-              <Search className="w-5 h-5" />
-            </button>
           </div>
         </div>
       </section>
