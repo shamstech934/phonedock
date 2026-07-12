@@ -105,16 +105,16 @@ function normalizeForComparison(name: string): string {
 }
 
 function levenshtein(a: string, b: string): number {
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= a.length; j++) matrix[j][0] = j;
-  for (let j = 1; j <= a.length; j++) {
-    for (let i = 1; i <= b.length; i++) {
-      const cost = a[j - 1] === b[i - 1] ? 0 : 1;
+  const aLen = a.length;
+  const bLen = b.length;
+  const matrix: number[][] = Array.from({ length: aLen + 1 }, () => new Array(bLen + 1).fill(0));
+  for (let i = 1; i <= aLen; i++) {
+    for (let j = 1; j <= bLen; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       matrix[j][i] = Math.min(matrix[j - 1][i] + 1, matrix[j][i - 1] + 1, matrix[j - 1][i - 1] + cost);
     }
   }
-  return matrix[a.length][b.length];
+  return matrix[aLen][bLen];
 }
 
 export function detectDuplicates(

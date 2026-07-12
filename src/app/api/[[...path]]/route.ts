@@ -1,1021 +1,206 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog, ImportHistory, SyncJob, CollectorSource, CollectedPhone, CollectorJob } from '@/lib/models';
-import connectDB, { connectDBSafe } from '@/lib/mongodb';
-import { compare } from 'bcryptjs';
-import { Types } from 'mongoose';
-import { parseFile, detectFileType, validatePhoneRecord, importPhones, rollbackImport, getImportStats } from '@/lib/import';
-import { createProvider, startJob, approveAndImport } from '@/lib/collectors';
+import { readFile, writeFile } from 'fs/promises';
+import Papa from 'papaparse';
+import { createProvider } from '@/lib/collectors';
+import { CollectorSource, CollectedPhone, CollectorJob, ActivityLog } from '@/lib/models';
+import { connectDB } from '@/lib/mongodb';
+import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
-// ============ SIMPLE RATE LIMITER (in-memory, per-process) ============
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 60; // requests per window
-
-// Cleanup expired entries every 5 minutes to prevent memory leak
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitMap) {
-    if (now > entry.resetAt) rateLimitMap.delete(key);
-  }
-}, 300_000).unref();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= RATE_LIMIT_MAX;
-}
-
-// ============ TOKEN STORE ============
-const activeTokens = new Set<string>();
-
-function generateToken(): string {
-  return Buffer.from(`${Date.now()}_${Math.random().toString(36).slice(2)}_${crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10)}`).toString('base64');
-}
-
-function verifyAdmin(req: NextRequest): boolean {
-  const auth = req.headers.get('authorization');
-  if (!auth || !auth.startsWith('Bearer ')) return false;
-  const token = auth.slice(7);
-  return activeTokens.has(token);
-}
-
-function cacheHeaders(maxAge = 60) {
-  return { 'Cache-Control': `public, s-maxage=${maxAge}, stale-while-revalidate=${maxAge * 2}` };
-}
-
-// ============ SECURITY HELPERS ============
-function sanitizeRegex(input: string): string {
-  // Remove regex special chars that could cause ReDoS or NoSQL injection
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getClientIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
-}
-
-// ============ HELPERS ============
-// Map MongoDB _id to id for lean docs (frontend expects 'id')
-function mapId(doc: any): any {
-  if (!doc) return doc;
-  if (Array.isArray(doc)) return doc.map(mapId);
-  if (doc._id) doc.id = doc._id.toString();
-  return doc;
-}
-
-// Batch-attach brands to lean phone docs (single query)
-async function attachBrands(phones: any[]): Promise<void> {
-  const brandIds = [...new Set(phones.map((p: any) => p.brandId).filter(Boolean).map((id: any) => new Types.ObjectId(id)))];
-  if (brandIds.length === 0) return;
-  const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo country').lean();
-  const brandMap = new Map(brands.map((b: any) => [b._id.toString(), mapId(b)]));
-  for (const phone of phones) {
-    (phone as any).brand = brandMap.get(phone.brandId?.toString()) || null;
-  }
-}
-
-// Batch-attach specs and benchmarks (2 queries total instead of 2N)
-async function attachPhoneExtras(phones: any[]): Promise<void> {
-  if (phones.length === 0) return;
-  const phoneIds = phones.map((p: any) => p._id);
-  const [allSpecs, allBenchmarks] = await Promise.all([
-    PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean(),
-    PhoneBenchmark.find({ phoneId: { $in: phoneIds } }).lean(),
-  ]);
-  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), mapId(s)]));
-  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), mapId(b)]));
-  for (const phone of phones) {
-    (phone as any).specs = specsMap.get(phone._id?.toString()) || null;
-    (phone as any).benchmarks = benchmarksMap.get(phone._id?.toString()) || null;
-  }
-}
-
-// ============ AUTH ============
-async function handleAuth(req: NextRequest, action: string) {
-  if (req.method === 'POST' && action === 'login') {
-    try {
-      await connectDB();
-      const { email, password } = await req.json();
-      if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
-      // Sanitize email to prevent NoSQL injection
-      const admin = await Admin.findOne({ email: String(email).trim() });
-      if (!admin || !admin.active) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      const valid = await compare(password, admin.password);
-      if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      await Admin.findByIdAndUpdate(admin._id, { lastLogin: new Date() });
-      const token = generateToken();
-      activeTokens.add(token);
-      await ActivityLog.create({ adminId: admin._id, action: 'login', details: `Admin ${admin.email} logged in`, entityType: 'admin' });
-      return NextResponse.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name, role: admin.role } });
-    } catch {
-      return NextResponse.json({ error: 'Server error' }, { status: 500 });
-    }
-  }
-  return NextResponse.json({ error: 'Not found' }, { status: 404 });
-}
-
-// ============ PHONES ============
-async function handlePhones(req: NextRequest, pathParts: string[]) {
-  if (req.method === 'GET' && pathParts.length <= 1) {
-    await connectDB();
-    const { searchParams } = new URL(req.url);
-    const brand = searchParams.get('brand');
-    const search = searchParams.get('search');
-    const minPrice = searchParams.get('minPrice');
-    const maxPrice = searchParams.get('maxPrice');
-    const featured = searchParams.get('featured');
-    const trending = searchParams.get('trending');
-    const upcoming = searchParams.get('upcoming');
-    const sort = searchParams.get('sort') || 'latest';
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
-
-    const where: any = { active: true, status: 'published' };
-    if (brand && Types.ObjectId.isValid(brand)) where.brandId = new Types.ObjectId(brand);
-    if (featured === 'true') where.featured = true;
-    if (trending === 'true') where.trending = true;
-    if (upcoming === 'true') where.upcoming = true;
-    if (search) {
-      const safe = sanitizeRegex(search);
-      where.$or = [
-        { modelName: { $regex: safe, $options: 'i' } },
-        { description: { $regex: safe, $options: 'i' } },
-      ];
-    }
-    if (minPrice || maxPrice) {
-      where.pricePKR = {};
-      const min = parseInt(minPrice || '0');
-      const max = parseInt(maxPrice || '999999999');
-      if (!isNaN(min)) where.pricePKR.$gte = min;
-      if (!isNaN(max)) where.pricePKR.$lte = max;
-    }
-
-    const sortObj: any = { createdAt: -1 };
-    if (sort === 'price-asc') sortObj.pricePKR = 1;
-    else if (sort === 'price-desc') sortObj.pricePKR = -1;
-    else if (sort === 'rating') sortObj.overallRating = -1;
-    else if (sort === 'name') sortObj.modelName = 1;
-    else if (sort === 'views') sortObj.views = -1;
-
-    const [phones, total] = await Promise.all([
-      Phone.find(where).sort(sortObj).skip((page - 1) * limit).limit(limit).lean(),
-      Phone.countDocuments(where),
-    ]);
-
-    phones.forEach(mapId);
-    await attachBrands(phones);
-    await attachPhoneExtras(phones);
-
-    return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) }, { headers: cacheHeaders(60) });
-  }
-
-  if (req.method === 'POST') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    try {
-      await connectDB();
-      const data = await req.json();
-      const phone = await Phone.create(data);
-      return NextResponse.json({ phone }, { status: 201 });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message || 'Create failed' }, { status: 400 });
-    }
-  }
-
-  return NextResponse.json({ error: 'Not found' }, { status: 404 });
-}
-
-// ============ PHONE DETAIL ============
-async function handlePhoneDetail(req: NextRequest, slug: string) {
-  if (req.method === 'GET') {
-    await connectDB();
-    // Sanitize slug to prevent NoSQL injection
-    const safeSlug = String(slug).replace(/[^a-z0-9\-]/gi, '');
-    const phone = await Phone.findOne({ slug: safeSlug }).lean();
-    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
-    mapId(phone);
-    await attachBrands([phone]);
-    // Increment views (fire and forget)
-    Phone.findOneAndUpdate({ slug: safeSlug }, { $inc: { views: 1 } }).catch(() => {});
-    // Fetch related data
-    const [specs, benchmarks, images, reviews, prices] = await Promise.all([
-      PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
-      PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
-      PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      Review.find({ phoneId: phone._id, published: true }).lean(),
-      PhonePrice.find({ phoneId: phone._id }).sort({ price: 1 }).lean(),
-    ]);
-    [specs, benchmarks, ...images, ...reviews, ...prices].forEach(mapId);
-    const phoneWithDetails = { ...phone, specs: specs || null, benchmarks: benchmarks || null, images, reviews, prices };
-    const related = await Phone.find({ brandId: phone.brandId, _id: { $ne: phone._id }, active: true, status: 'published' })
-      .sort({ overallRating: -1 }).limit(6).lean();
-    related.forEach(mapId);
-    await attachBrands(related);
-    return NextResponse.json({ phone: phoneWithDetails, related }, { headers: cacheHeaders(30) });
-  }
-  if (req.method === 'PUT') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    try {
-      await connectDB();
-      const data = await req.json();
-      const phone = await Phone.findOneAndUpdate({ slug }, data, { new: true });
-      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
-      return NextResponse.json({ phone });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
-  }
-  if (req.method === 'DELETE') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    await connectDB();
-    await Phone.findOneAndDelete({ slug });
-    return NextResponse.json({ success: true });
-  }
-  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
-}
-
-// ============ BEST PHONES BY CATEGORY ============
-async function handleBestPhones(req: NextRequest, category: string) {
-  await connectDB();
-  let where: any = { active: true, status: 'published' };
-  if (category === 'camera') where.cameraScore = { $gte: 85 };
-  else if (category === 'gaming') where.performanceScore = { $gte: 88 };
-  else if (category === 'battery') where.batteryScore = { $gte: 85 };
-  else if (category === 'flagship') where.pricePKR = { $gte: 150000 };
-  else if (category === 'budget') where.pricePKR = { $lte: 40000 };
-  else if (category === 'display') where.displayScore = { $gte: 90 };
-
-  const phones = await Phone.find(where)
-    .sort({ overallRating: -1 }).limit(20).lean();
-  phones.forEach(mapId);
-  await attachBrands(phones);
-  await attachPhoneExtras(phones);
-  return NextResponse.json({ phones, category }, { headers: cacheHeaders(120) });
-}
-
-// ============ BRANDS ============
-async function handleBrands(req: NextRequest) {
-  if (req.method === 'GET') {
-    await connectDB();
-    const brands = await Brand.aggregate([
-      { $match: { active: true } },
-      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
-      { $addFields: { phoneCount: { $size: '$_phones' } } },
-      { $unset: '_phones' },
-      { $sort: { sortOrder: 1 } },
-    ]);
-    brands.forEach((b: any) => { b.id = b._id.toString(); });
-    return NextResponse.json({ brands }, { headers: cacheHeaders(300) });
-  }
-  if (req.method === 'POST') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    try {
-      await connectDB();
-      const data = await req.json();
-      const brand = await Brand.create(data);
-      return NextResponse.json({ brand }, { status: 201 });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
-  }
-  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
-}
-
-// ============ COMPARE ============
-async function handleCompare(req: NextRequest) {
-  if (req.method === 'GET') {
-    await connectDB();
-    const { searchParams } = new URL(req.url);
-    const ids = searchParams.get('ids')?.split(',').filter(Boolean).map(id => id.trim()) || [];
-    if (ids.length < 2) return NextResponse.json({ error: 'Provide at least 2 phone IDs' }, { status: 400 });
-    if (ids.length > 4) return NextResponse.json({ error: 'Max 4 phones' }, { status: 400 });
-    // Validate all IDs are valid ObjectIds
-    const validIds = ids.filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id));
-    if (validIds.length < 2) return NextResponse.json({ error: 'Invalid phone IDs' }, { status: 400 });
-    const phones = await Phone.find({ _id: { $in: validIds } }).lean();
-    phones.forEach(mapId);
-    await attachBrands(phones);
-    await attachPhoneExtras(phones);
-    return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
-  }
-  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
-}
-
-// ============ SEARCH ============
-async function handleSearch(req: NextRequest) {
-  await connectDB();
-  const { searchParams } = new URL(req.url);
-  const q = searchParams.get('q') || '';
-  if (!q.trim()) return NextResponse.json({ results: [], total: 0 });
-  const safe = sanitizeRegex(q.trim());
-  const [phones, brandsRaw] = await Promise.all([
-    Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: safe, $options: 'i' } }, { description: { $regex: safe, $options: 'i' } }] })
-      .sort({ overallRating: -1 }).limit(20).lean(),
-    Brand.aggregate([
-      { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
-      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
-      { $addFields: { phoneCount: { $size: '$_phones' } } },
-      { $unset: '_phones' },
-    ]),
-  ]);
-  phones.forEach(mapId);
-  brandsRaw.forEach((b: any) => { b.id = b._id.toString(); });
-  await attachBrands(phones);
-  return NextResponse.json({ phones, brands: brandsRaw, total: phones.length + brandsRaw.length }, { headers: cacheHeaders(30) });
-}
-
-// ============ NEWS ============
-async function handleNews(req: NextRequest) {
-  if (req.method === 'GET') {
-    await connectDB();
-    const { searchParams } = new URL(req.url);
-    const published = searchParams.get('published') !== 'false';
-    const category = searchParams.get('category');
-    const where: any = { published };
-    if (published) where.status = 'published';
-    if (category) where.category = category;
-    const news = await News.find(where).sort({ createdAt: -1 }).limit(20).lean();
-    news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
-    return NextResponse.json({ news }, { headers: cacheHeaders(60) });
-  }
-  if (req.method === 'POST') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    try {
-      await connectDB();
-      const data = await req.json();
-      const news = await News.create(data);
-      return NextResponse.json({ news }, { status: 201 });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
-  }
-  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
-}
-
-// ============ SPONSORS ============
-async function handleSponsors(req: NextRequest) {
-  if (req.method === 'GET') {
-    await connectDB();
-    const position = new URL(req.url).searchParams.get('position');
-    const where: any = { active: true };
-    if (position) where.position = position;
-    const sponsors = await Sponsor.find(where).sort({ createdAt: -1 }).lean();
-    sponsors.forEach((s: any) => { s.id = s._id.toString(); });
-    return NextResponse.json({ sponsors }, { headers: cacheHeaders(300) });
-  }
-  if (req.method === 'POST') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    try {
-      await connectDB();
-      const data = await req.json();
-      const sponsor = await Sponsor.create(data);
-      return NextResponse.json({ sponsor }, { status: 201 });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
-    }
-  }
-  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
-}
-
-// ============ STATS ============
-async function handleStats() {
-  await connectDB();
-  const [totalPhones, totalBrands, totalReviews, totalNews, avgResult, trending, featured, upcoming, under20k, price20to40, price40to60, price60to100, above100k] = await Promise.all([
-    Phone.countDocuments({ active: true, status: 'published' }),
-    Brand.countDocuments({ active: true }),
-    Review.countDocuments(),
-    News.countDocuments({ published: true }),
-    Phone.aggregate([{ $match: { active: true, status: 'published' } }, { $group: { _id: null, avgPrice: { $avg: '$pricePKR' } } }]),
-    Phone.countDocuments({ trending: true, active: true }),
-    Phone.countDocuments({ featured: true, active: true }),
-    Phone.countDocuments({ upcoming: true, active: true }),
-    Phone.countDocuments({ active: true, pricePKR: { $lte: 20000 } }),
-    Phone.countDocuments({ active: true, pricePKR: { $gt: 20000, $lte: 40000 } }),
-    Phone.countDocuments({ active: true, pricePKR: { $gt: 40000, $lte: 60000 } }),
-    Phone.countDocuments({ active: true, pricePKR: { $gt: 60000, $lte: 100000 } }),
-    Phone.countDocuments({ active: true, pricePKR: { $gt: 100000 } }),
-  ]);
-  return NextResponse.json({
-    totalPhones, totalBrands, totalReviews, totalNews,
-    avgPrice: avgResult[0]?.avgPrice || 0,
-    trending, featured, upcoming,
-    priceDistribution: [
-      { range: 'under20k', count: under20k },
-      { range: 'price20to40', count: price20to40 },
-      { range: 'price40to60', count: price40to60 },
-      { range: 'price60to100', count: price60to100 },
-      { range: 'above100k', count: above100k },
-    ],
-  });
-}
-
-// ============ SEO SITEMAP (Safe - won't crash if DB is down) ============
-async function handleSitemap() {
-  const conn = await connectDBSafe();
-  if (!conn) {
-    // Return static sitemap data when DB is unavailable
-    return NextResponse.json({
-      phones: [],
-      brands: [{ slug: 'samsung' }, { slug: 'apple' }, { slug: 'xiaomi' }, { slug: 'oneplus' }],
-      news: [],
-    }, { headers: cacheHeaders(3600) });
-  }
-  const [phoneDocs, brands, news] = await Promise.all([
-    Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').lean(),
-    Brand.find({ active: true }).select('slug').lean(),
-    News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
-  ]);
-  await attachBrands(phoneDocs);
-  const phones = phoneDocs.map((p: any) => ({ slug: p.slug, updatedAt: p.updatedAt, brand: p.brand ? { slug: p.brand.slug } : null }));
-  return NextResponse.json({ phones, brands, news }, { headers: cacheHeaders(3600) });
-}
-
-// ============ MAIN ROUTER ============
-export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  return routeRequest(req, 'GET', path);
-}
-export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  return routeRequest(req, 'POST', path);
-}
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  return routeRequest(req, 'PUT', path);
-}
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  return routeRequest(req, 'DELETE', path);
-}
-
-async function routeRequest(req: NextRequest, method: string, pathParts: string[]) {
-  // Rate limiting
-  const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
-  }
-
-  if (method === 'OPTIONS') {
-    return new NextResponse(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' } });
-  }
-
-  // Security headers for all responses
-  const securityHeaders = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-  };
-
-  try {
-    const seg0 = pathParts[0] || '';
-
-    if (seg0 === 'auth') return handleAuth(req, pathParts[1] || '');
-    // FIX: Also handle login at /api/admin/login (frontend calls this path)
-    if (seg0 === 'admin' && pathParts[1] === 'login' && req.method === 'POST') return handleAuth(req, 'login');
-    if (seg0 === 'stats') return handleStats();
-    if (seg0 === 'sponsors') return handleSponsors(req);
-    if (seg0 === 'seo' && pathParts[1] === 'sitemap') return handleSitemap();
-
-    if (seg0 === 'phones') {
-      if (pathParts.length <= 1) return handlePhones(req, pathParts);
-      if (pathParts[1] === 'best' && pathParts[2]) return handleBestPhones(req, pathParts[2]);
-      if (pathParts.length === 2) return handlePhoneDetail(req, pathParts[1]);
-    }
-
-    if (seg0 === 'brands' && pathParts.length <= 1) return handleBrands(req);
-    if (seg0 === 'brands' && pathParts.length === 2) {
-      await connectDB();
-      const safeSlug = String(pathParts[1]).replace(/[^a-z0-9\-]/gi, '');
-      const brand = await Brand.findOne({ slug: safeSlug }).lean();
-      if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
-      (brand as any).id = (brand as any)._id.toString();
-      const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
-      phones.forEach(mapId);
-      await attachBrands(phones);
-      await attachPhoneExtras(phones);
-      const brandWithPhones = { ...brand, phones };
-      return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
-    }
-
-    if (seg0 === 'compare') return handleCompare(req);
-    if (seg0 === 'search') return handleSearch(req);
-    if (seg0 === 'news') return handleNews(req);
-    if (seg0 === 'import' && method === 'POST') return handleImport(req);
-    if (seg0 === 'import' && method === 'GET' && pathParts[1] === 'history') return handleImportHistory(req);
-    if (seg0 === 'import' && method === 'GET' && pathParts[1] === 'stats') return handleImportStats(req);
-    if (seg0 === 'import' && method === 'POST' && pathParts[1] === 'validate') return handleValidate(req);
-    if (seg0 === 'import' && method === 'POST' && pathParts[1] === 'rollback') return handleRollback(req);
-    if (seg0 === 'sync' && method === 'GET') return handleSyncStatus(req);
-    if (seg0 === 'sync' && method === 'POST') return handleSyncAction(req);
-    if (seg0 === 'sync' && method === 'DELETE') return handleSyncDelete(req);
-    if (seg0 === 'collector' && pathParts[1] === 'run') return handleCollectorRun(req);
-    if (seg0 === 'collector' && pathParts[1] === 'sources' && method === 'GET') return handleCollectorSources(req);
-    if (seg0 === 'collector' && pathParts[1] === 'sources' && method === 'POST') return handleCollectorSourcesPost(req);
-    if (seg0 === 'collector' && pathParts[1] === 'sources' && pathParts[2] && method === 'GET') return handleCollectorSourceDetail(pathParts[2]);
-    if (seg0 === 'collector' && pathParts[1] === 'sources' && pathParts[2] && method === 'PUT') return handleCollectorSourceUpdate(req, pathParts[2]);
-    if (seg0 === 'collector' && pathParts[1] === 'jobs' && method === 'GET') return handleCollectorJobs(req);
-    if (seg0 === 'collector' && pathParts[1] === 'jobs' && method === 'POST') return handleCollectorJobsPost(req);
-    if (seg0 === 'collector' && pathParts[1] === 'review' && method === 'GET') return handleCollectorReview(req);
-    if (seg0 === 'collector' && pathParts[1] === 'review' && pathParts[2] && method === 'GET') return handleCollectorReviewDetail(pathParts[2]);
-    if (seg0 === 'collector' && pathParts[1] === 'review' && pathParts[2] && method === 'POST') return handleCollectorReviewAction(req, pathParts[2]);
-    if (seg0 === 'collector' && pathParts[1] === 'dashboard' && method === 'GET') return handleCollectorDashboard(req);
-
-    // ============ IMPORT ROUTES (Admin-protected via verifyAdmin in handler) ==========
-    // Already handled above for /api/import, /api/sync
-
-    // ============ ADMIN ROUTES ============
-    if (seg0 === 'admin') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      await connectDB();
-
-      if (pathParts[1] === 'phones' && method === 'GET') {
-        const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
-        phones.forEach(mapId);
-        await attachBrands(phones);
-        return NextResponse.json({ phones });
-      }
-      if (pathParts[1] === 'brands' && method === 'GET') {
-        const brands = await Brand.aggregate([
-          { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
-          { $addFields: { phoneCount: { $size: '$_phones' } } },
-          { $unset: '_phones' },
-          { $sort: { sortOrder: 1 } },
-        ]);
-        brands.forEach((b: any) => { b.id = b._id.toString(); });
-        return NextResponse.json({ brands });
-      }
-      if (pathParts[1] === 'news' && method === 'GET') {
-        const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
-        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
-        return NextResponse.json({ news });
-      }
-      if (pathParts[1] === 'sponsors' && method === 'GET') {
-        const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
-        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
-        return NextResponse.json({ sponsors });
-      }
-      // FIX: Support both 'activity' and 'activity-logs' paths
-      if ((pathParts[1] === 'activity-logs' || pathParts[1] === 'activity') && method === 'GET') {
-        const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
-        logs.forEach((l: any) => { l.id = l._id.toString(); });
-        return NextResponse.json({ logs });
-      }
-      if (pathParts[1] === 'stats') return handleStats();
-    }
-
-    // ============ HOME ============
-    if (seg0 === 'home') {
-      try {
-        await connectDB();
-        const allPhones = await Phone.find({ active: true, status: 'published' })
-          .sort({ overallRating: -1 }).lean();
-        allPhones.forEach(mapId);
-        await attachBrands(allPhones);
-        await attachPhoneExtras(allPhones);
-        const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
-        const featured = p(x => x.featured, 8);
-        const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
-        const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
-        upcoming.forEach(mapId);
-        await attachBrands(upcoming);
-        const bestCamera = p(x => x.cameraScore >= 85, 6);
-        const bestGaming = p(x => x.performanceScore >= 88, 6);
-        const bestBattery = p(x => x.batteryScore >= 85, 6);
-        const flagship = p(x => x.pricePKR >= 150000, 6);
-        const budget = p(x => x.pricePKR <= 40000, 6);
-        const latest = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
-        const [news, sponsors] = await Promise.all([
-          News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
-          Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
-        ]);
-        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
-        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
-        return NextResponse.json({
-          featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
-          priceCategories: {
-            under20k: p(x => x.pricePKR <= 20000, 6),
-            price20to40: p(x => x.pricePKR > 20000 && x.pricePKR <= 40000, 6),
-            price40to60: p(x => x.pricePKR > 40000 && x.pricePKR <= 60000, 6),
-            price60to100: p(x => x.pricePKR > 60000 && x.pricePKR <= 100000, 6),
-            above100k: p(x => x.pricePKR > 100000, 6),
-          },
-        }, { headers: cacheHeaders(60) });
-      } catch (e: any) {
-        console.error('Home API error:', e.message);
-        return NextResponse.json({ error: 'Failed to load home data' }, { status: 500 });
-      }
-    }
-
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (e: any) {
-    console.error('API Error:', e.message);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-// ============ IMPORT HANDLER ============
-async function handleImport(req: NextRequest) {
+// ============ FILE UPLOAD HANDLER ============
+export async function handleCollectorFileUpload(req: NextRequest) {
   if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     await connectDB();
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
+    const sourceId = formData.get('sourceId') as string;
+
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
-    if (file.size > 50 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File too large (max 50MB)' }, { status: 400 });
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!['json', 'csv', 'xlsx', 'xls'].includes(ext)) {
+      return NextResponse.json({ error: 'Unsupported file type. Use .json, .csv, or .xlsx' }, { status: 400 });
     }
 
-    const fileType = detectFileType(file.name, file.type);
-    if (!fileType) return NextResponse.json({ error: 'Unsupported file type. Use .json, .csv, or .xlsx' }, { status: 400 });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let records: any[];
 
-    const content = await file.arrayBuffer();
-    const records = await parseFile(content, fileType);
-
-    if (!records || records.length === 0) {
-      return NextResponse.json({ error: 'No valid phone records found in file' }, { status: 400 });
-    }
-
-    const autoCategorize = formData.get('autoCategorize') === 'true';
-    const autoSEO = formData.get('autoSEO') === 'true';
-    const autoReview = formData.get('autoReview') === 'true';
-    const skipExisting = formData.get('skipExisting') === 'true';
-
-    const result = await importPhones(records, {
-      filename: file.name,
-      fileType,
-      autoCategorize,
-      autoSEO,
-      autoReview,
-      skipExisting,
-    });
-
-    await ActivityLog.create({
-      action: 'import',
-      details: `Imported ${result.inserted} phones, updated ${result.updated}, failed ${result.failed} from ${file.name}`,
-      entityType: 'import',
-    });
-
-    return NextResponse.json({ success: true, ...result });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Import failed' }, { status: 500 });
-  }
-}
-
-// ============ VALIDATE HANDLER ============
-async function handleValidate(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-
-    const fileType = detectFileType(file.name, file.type);
-    if (!fileType) return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
-
-    const content = await file.arrayBuffer();
-    const records = await parseFile(content, fileType);
-
-    if (!records || records.length === 0) {
-      return NextResponse.json({ error: 'No records found' }, { status: 400 });
-    }
-
-    const existingSlugs = new Set<string>();
-    const existingPhones = await Phone.find({}, { slug: 1 }).lean();
-    for (const p of existingPhones) existingSlugs.add((p as any).slug);
-
-    const results = records.map((record, idx) => validatePhoneRecord(record, idx + 1, existingSlugs));
-    const validCount = results.filter(r => r.valid).length;
-    const errorCount = results.filter(r => !r.valid).length;
-    const allErrors = results.flatMap(r => r.errors);
-    const allWarnings = results.flatMap(r => r.warnings);
-
-    // Preview: first 5 valid records
-    const preview = results.filter(r => r.valid).slice(0, 5).map(r => r.phone);
-
-    return NextResponse.json({
-      totalRecords: records.length,
-      validCount,
-      errorCount,
-      errors: allErrors,
-      warnings: allWarnings,
-      preview,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Validation failed' }, { status: 500 });
-  }
-}
-
-// ============ ROLLBACK HANDLER ============
-async function handleRollback(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { historyId } = await req.json();
-    if (!historyId) return NextResponse.json({ error: 'historyId is required' }, { status: 400 });
-    const result = await rollbackImport(historyId);
-    await ActivityLog.create({ action: 'rollback', details: `Rolled back import ${historyId}`, entityType: 'import' });
-    return NextResponse.json(result);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Rollback failed' }, { status: 500 });
-  }
-}
-
-// ============ IMPORT HISTORY HANDLER ============
-async function handleImportHistory(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const history = await ImportHistory.find().sort({ createdAt: -1 }).limit(50).lean();
-  history.forEach((h: any) => { h.id = h._id.toString(); });
-  return NextResponse.json({ history });
-}
-
-// ============ IMPORT STATS HANDLER ============
-async function handleImportStats(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    const stats = await getImportStats();
-    return NextResponse.json({ stats });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
-  }
-}
-
-// ============ SYNC STATUS HANDLER ============
-async function handleSyncStatus(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const jobs = await SyncJob.find().sort({ createdAt: -1 }).limit(20).lean();
-  jobs.forEach((j: any) => { j.id = j._id.toString(); });
-  return NextResponse.json({ jobs });
-}
-
-// ============ SYNC ACTION HANDLER ============
-async function handleSyncAction(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { action, source } = await req.json();
-    if (!action || !['start', 'pause', 'resume'].includes(action)) {
-      return NextResponse.json({ error: 'Invalid action. Use start, pause, or resume' }, { status: 400 });
-    }
-
-    if (action === 'start') {
-      if (!source) return NextResponse.json({ error: 'Source URL is required for sync start' }, { status: 400 });
-      const job = await SyncJob.create({
-        status: 'running',
-        source,
-        startedAt: new Date(),
+    if (ext === 'json' || ext === 'xlsx' || ext === 'xls') {
+      const text = buffer.toString('utf-8');
+      const parsed = JSON.parse(text);
+      records = Array.isArray(parsed) ? parsed : [parsed];
+      // Try wrapper keys
+      if (!Array.isArray(records[0])) {
+        for (const wrapper of ['phones', 'data', 'records', 'results', 'items']) {
+          if (Array.isArray(records[wrapper])) { records = records[wrapper]; break; }
+        }
+      }
+    } else if (ext === 'csv') {
+      const text = buffer.toString('utf-8');
+      const result = await new Promise<{ data: any[] }>((resolve, reject) => {
+        Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve });
       });
-      // Run sync in background (fire and forget for Vercel compatibility)
-      runSyncJob((job as any)._id.toString(), source).catch(e => console.error('Sync job error:', e.message));
-      return NextResponse.json({ success: true, jobId: (job as any)._id.toString(), message: 'Sync job started' });
+      records = result.data;
     }
 
-    if (action === 'pause') {
-      const running = await SyncJob.findOneAndUpdate({ status: 'running' }, { $set: { status: 'paused' } }, { sort: { createdAt: -1 } });
-      if (!running) return NextResponse.json({ error: 'No running sync job found' }, { status: 404 });
-      return NextResponse.json({ success: true, message: 'Sync paused' });
+    if (!Array.isArray(records) || records.length === 0) {
+      return NextResponse.json({ error: 'No phone records found in file' }, { status: 400 });
     }
 
-    if (action === 'resume') {
-      const paused = await SyncJob.findOneAndUpdate({ status: 'paused' }, { $set: { status: 'running' } }, { sort: { createdAt: -1 } });
-      if (!paused) return NextResponse.json({ error: 'No paused sync job found' }, { status: 404 });
-      return NextResponse.json({ success: true, message: 'Sync resumed' });
+    // Create a temporary source for provenance
+    let sourceName = `Upload: ${file.name}`;
+    let sourceId = sourceId;
+
+    if (!sourceId) {
+      const slug = file.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30);
+      const existing = await CollectorSource.findOne({ name: new RegExp(`^${slug}`, 'i') }).lean();
+      if (existing) {
+        sourceId = (existing._id as string).toString();
+        sourceName = existing.name;
+      } else {
+        const source = await CollectorSource.create({
+          name: `Upload ${file.name}`,
+          type: ext === 'csv' ? 'csv_url' : 'json_url',
+          endpoint: '',
+          enabled: true,
+          totalCollected: 0,
+        });
+        sourceId = (source._id as string).toString();
+        sourceName = source.name;
+      }
     }
 
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Sync action failed' }, { status: 500 });
-  }
-}
-
-// ============ SYNC DELETE HANDLER ============
-async function handleSyncDelete(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { jobId } = await req.json();
-    if (!jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
-    await SyncJob.findByIdAndDelete(jobId);
-    return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
-  }
-}
-
-// ============ SYNC JOB WORKER ============
-// ============ COLLECTOR HANDLERS ============
-async function handleCollectorRun(req: NextRequest) {
-  const secret = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (secret !== (process.env.COLLECTOR_SECRET || '')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { sourceId } = await req.json();
-    const source = await CollectorSource.findById(sourceId);
-    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
-    const job = await CollectorJob.create({ sourceId, sourceName: source.name, trigger: 'api', status: 'running', startedAt: new Date() });
-    startJob((job._id as any).toString()).catch(e => console.error('Collector job error:', e.message));
-    return NextResponse.json({ success: true, jobId: (job._id as any).toString() });
-  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }); }
-}
-
-async function handleCollectorSources(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
-  sources.forEach((s: any) => { s.id = s._id.toString(); });
-  return NextResponse.json({ sources });
-}
-
-async function handleCollectorSourcesPost(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const data = await req.json();
-    const headers = new Map(Object.entries(data.headers || {}));
-    const mappingRules = new Map(Object.entries(data.mappingRules || {}));
-    const source = await CollectorSource.create({ ...data, headers, mappingRules });
-    await ActivityLog.create({ action: 'source_created', details: `Created collector source: ${data.name}`, entityType: 'collector', entityId: (source._id as any).toString() });
-    return NextResponse.json({ source }, { status: 201 });
-  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
-}
-
-async function handleCollectorSourceDetail(id: string) {
-  await connectDB();
-  const source = await CollectorSource.findById(id).lean();
-  if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
-  (source as any).id = (source as any)._id.toString();
-  return NextResponse.json({ source });
-}
-
-async function handleCollectorSourceUpdate(req: NextRequest, id: string) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const data = await req.json();
-    const update: any = {};
- for (const key of ['name', 'type', 'enabled', 'endpoint', 'apiKeyEnvVar', 'brandFilter', 'countryFilter', 'region', 'syncFrequencyHours', 'dataPath', 'paginationPageSize', 'paginationMaxPages', 'paginationPageParam', 'notes']) {
-    if (data[key] !== undefined) update[key] = data[key];
-  }
-  if (data.headers) update.headers = new Map(Object.entries(data.headers));
-  if (data.mappingRules) update.mappingRules = new Map(Object.entries(data.mappingRules));
-  await CollectorSource.updateOne({ _id: id }, { $set: update });
-  return NextResponse.json({ success: true });
-  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
-}
-
-async function handleCollectorJobs(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-  jobs.forEach((j: any) => { j.id = j._id.toString(); });
-  return NextResponse.json({ jobs });
-}
-
-async function handleCollectorJobsPost(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { sourceId, mode, filterBrand, filterModel } = await req.json();
-    const source = sourceId ? await CollectorSource.findById(sourceId) : null;
-    const job = await CollectorJob.create({ sourceId: sourceId || undefined, sourceName: source?.name || 'All Sources', trigger: 'manual', mode: mode || 'single_source', filterBrand: filterBrand || '', filterModel: filterModel || '', status: 'queued' });
-    startJob((job._id as any).toString()).catch(e => console.error('Job error:', e.message));
-    return NextResponse.json({ success: true, jobId: (job._id as any).toString() });
-  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 400 }); }
-}
-
-async function handleCollectorReview(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get('status') || 'pending,needs_review';
-  const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
-  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
-  const where: any = { status: { $in: status.split(',') } };
-  const [phones, total] = await Promise.all([
-    CollectedPhone.find(where).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-    CollectedPhone.countDocuments(where),
-  ]);
-  phones.forEach((p: any) => { p.id = p._id.toString(); });
-  return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) });
-}
-
-async function handleCollectorReviewDetail(id: string) {
-  if (!verifyAdmin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const draft = await CollectedPhone.findById(id).lean();
-  if (!draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
-  (draft as any).id = (draft as any)._id.toString();
-  // Fetch existing phone for comparison
-  let existingPhone: any = null;
-  if (draft.duplicatePhoneId && Types.ObjectId.isValid(draft.duplicatePhoneId)) {
-    existingPhone = await Phone.findOne({ _id: draft.duplicatePhoneId }).lean();
-    if (existingPhone) {
-      (existingPhone as any).id = (existingPhone as any)._id.toString();
-      const brand = await Brand.findById(existingPhone.brandId).lean();
-      if (brand) (existingPhone as any).brand = { id: (brand as any)._id.toString(), name: brand.name, slug: brand.slug };
-    }
-  }
-  return NextResponse.json({ draft, existingPhone });
-}
-
-async function handleCollectorReviewAction(req: NextRequest, id: string) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    await connectDB();
-    const { action, edits } = await req.json();
-    const draft = await CollectedPhone.findById(id);
-    if (!draft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 });
-    if (action === 'approve') {
-      const result = await approveAndImport(id, edits);
-      return NextResponse.json(result);
-    }
-    if (action === 'reject') {
-      await CollectedPhone.updateOne({ _id: id }, { $set: { status: 'rejected' } });
-      return NextResponse.json({ success: true });
-    }
-    if (action === 'save_draft') {
-      if (edits) await CollectedPhone.updateOne({ _id: id }, { $set: { adminEdits: edits } });
-      return NextResponse.json({ success: true });
-    }
-    if (action === 'mark_unreliable') {
-      if (draft.sourceId) await CollectorSource.updateOne({ _id: draft.sourceId }, { $inc: { reliabilityScore: -0.1 } });
-      return NextResponse.json({ success: true });
-    }
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }); }
-}
-
-async function handleCollectorDashboard(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  await connectDB();
-  const [pending, needsReview, approved, rejected, imported, failed, sourcesWithError, lastJob, sourcesCount, totalCollected] = await Promise.all([
-    CollectedPhone.countDocuments({ status: 'pending' }),
-    CollectedPhone.countDocuments({ status: 'needs_review' }),
-    CollectedPhone.countDocuments({ status: 'approved' }),
-    CollectedPhone.countDocuments({ status: 'rejected' }),
-    CollectedPhone.countDocuments({ status: 'imported' }),
-    CollectedPhone.countDocuments({ status: 'failed' }),
-    CollectorSource.countDocuments({ lastSyncStatus: 'failed' }),
-    CollectorJob.findOne().sort({ createdAt: -1 }).lean(),
-    CollectorSource.countDocuments({}),
-    CollectedPhone.countDocuments(),
-  ]);
-  return NextResponse.json({
-    pending, needsReview, approved, rejected, imported, failed,
-    sourcesWithError, totalCollected, sourcesCount,
-    lastJob: lastJob ? { ...lastJob, id: (lastJob as any)._id.toString() } : null,
-  });
-}
-
-// ============ SYNC JOB WORKER (Import system) ============
-async function runSyncJob(jobId: string, source: string) {
-  try {
-    const job = await SyncJob.findById(jobId);
-    if (!job) return;
-
-    // Simulate sync from source URL (real implementation would fetch from the source)
-    // For now, this demonstrates the architecture — the admin can extend the source handlers
-    const response = await fetch(source, { signal: AbortSignal.timeout(30000) }).catch(() => null);
-    if (!response?.ok) {
-      await SyncJob.updateOne({ _id: jobId }, { $set: { status: 'failed', completedAt: new Date(), errorLog: [`Failed to fetch source: ${source}`] } });
-      return;
+    // Validate all records first
+    const issues: string[] = [];
+    const validRecords: any[] = [];
+    for (let i = 0; i < records.length; i++) {
+      const r = records[i];
+      const brand = String(r.brand || r.brandName || '').trim();
+      const model = String(r.model || r.modelName || r.name || '').trim();
+      if (!brand || !model) { issues.push(`Row ${i + 1}: missing brand or model`); continue; }
+      const slug = `${brand} ${model}`.toLowerCase().replace(/[^a-z0-9\s-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      if (!/^[a-z0-9-]+$/.test(slug)) { issues.push(`Row ${i + 1}: invalid slug "${slug}"`); continue; }
+      const phone: any = { brandName: brand, model, slug, ...r };
+      const vIssues = validateCollectedPhone(phone);
+      for (const iss of vIssues) issues.push(`Row ${i + 1}: ${iss.severity}: ${iss.field} — ${iss.message}`);
+      validRecords.push(phone);
     }
 
-    const data = await response.json() as any[];
-    const records = Array.isArray(data) ? data : (data.phones || data.data || data.records || [data]);
+    // Fetch existing phones ONCE
+    const allExisting = await Phone.find(
+      { active: true, status: 'published' },
+      { modelName: 1, slug: 1, brandId: 1, pricePKR: 1, battery: 1, display: 1, chipset: 1, os: 1, weight: 1 }
+    ).populate({ path: 'brand', select: 'name' }).lean();
+    const existingMap = new Map<string, any>();
+    for (const p of allExisting) {
+      existingMap.set(`${(p.brand as any)?.name || ''}|${p.modelName}`.toLowerCase(), {
+        _id: p._id, modelName: p.modelName, slug: p.slug,
+        brand: p.brand ? { name: p.brand.name } : undefined,
+        weight: String(p.weight || ''), battery: String(p.battery || ''),
+        display: String(p.display || ''), chipset: String(p.chipset || ''), os: String(p.os || ''),
+        pricePKR: p.pricePKR || 0,
+      });
+    }
 
-    await SyncJob.updateOne({ _id: jobId }, { $set: { totalPhones: records.length } });
+    // Process each record
+    let inserted = 0, updated = 0, skipped = 0;
+    const batchDocs: any[] = [];
 
-    const result = await importPhones(records, { filename: `sync-${source.split('/').pop() || 'unknown'}`, fileType: 'json', autoSEO: true, autoReview: true });
+    for (const phone of validRecords) {
+      const phoneNorm: any = { ...phone, brandName: String(phone.brandName), model: String(phone.model), slug };
+      phoneNorm.releaseDate = String(phoneNorm.releaseDate || '');
 
-    await SyncJob.updateOne({ _id: jobId }, {
-      $set: {
-        status: 'completed',
-        processed: result.total,
-        inserted: result.inserted,
-        updated: result.updated,
-        errorCount: result.failed,
-        completedAt: new Date(),
-      },
+      // Detect duplicates
+      const dupResult = detectDuplicates(phoneNorm, allExisting);
+      const hasExact = dupResult.matches.some(m => m.confidence >= 0.95);
+      if (hasExact) { skipped++; continue; }
+
+      // Detect conflicts
+      const conflicts = detectConflicts(phoneNorm, existingMap.get(`${phoneNorm.brandName}|${phoneNorm.model}`.toLowerCase()) || [], sourceName);
+      const isNew = dupResult.matches.length === 0 && conflicts.length === 0;
+      if (isNew) { inserted++; } else { updated++; }
+
+      // Suggest category & SEO
+      const categories = suggestCategory(phoneNorm);
+      const seo = suggestSEO(phoneNorm);
+
+      // Build provenance
+      const provenance = buildFieldProvenance(phoneNorm, sourceId, sourceName, '', 0.85);
+
+      batchDocs.push({
+        status: isNew ? 'pending' : 'needs_review',
+        brandName: phoneNorm.brandName,
+        model: phoneNorm.model,
+        slug: phoneNorm.slug,
+        releaseDate: phoneNorm.releaseDate || '',
+        announcedDate: String(phoneNorm.announcedDate || ''),
+        availability: String(phoneNorm.availability || ''),
+        deviceStatus: String(phoneNorm.deviceStatus || ''),
+        deviceType: String(phoneNorm.deviceType || ''),
+        display: phoneNorm.display || {},
+        processor: phoneNorm.processor || {},
+        memory: phoneNorm.memory || {},
+        camera: phoneNorm.camera || {},
+        battery: phoneNorm.battery || {},
+        body: phoneNorm.body || {},
+        connectivity: phoneNorm.connectivity || {},
+        software: phoneNorm.software || {},
+        audio: phoneNorm.audio || {},
+        sensors: phoneNorm.sensors || {},
+        benchmarks: phoneNorm.benchmarks || {},
+        images: phoneNorm.images || [],
+        thumbnail: phoneNorm.thumbnail || '',
+        suggestedCategory: categories.join(', '),
+        suggestedSeoTitle: seo.title,
+        suggestedSeoDescription: seo.description,
+        suggestedKeywords: seo.keywords,
+        sourceId: new Types.ObjectId(sourceId),
+        sourceName,
+        sourceUrl: '',
+        providerRecordId: phoneNorm.slug,
+        fieldProvenance: provenance,
+        duplicateMatches: dupResult.matches.map(m => ({
+          type: m.type, phoneId: m.phoneId || '', modelName: m.modelName || '',
+          brandName: m.brandName || '', slug: m.slug || '', confidence: m.confidence,
+        })),
+        hasExactDuplicate: hasExact,
+        duplicatePhoneId: dupResult.matches[0]?.phoneId || '',
+        conflicts,
+        conflictCount: conflicts.length,
+        validationIssues: issues.filter(i => i.includes(String(i + 1))).length > 0 ? issues.filter(i => i.includes(String(i + 1))) : [],
+        isValid: issues.filter(i => i.includes('error')).length === 0,
+        sourceReliability: 1.0,
+      });
+    }
+
+    // Batch insert into MongoDB
+    if (batchDocs.length > 0) {
+      await CollectedPhone.insertMany(batchDocs);
+    }
+
+    // Update source stats
+    await CollectorSource.updateOne({ _id: new Types.ObjectId(sourceId) }, {
+      $inc: { totalCollected: inserted + updated, totalFailed: issues.length },
+      $set: { lastSyncAt: new Date(), lastSyncStatus: issues.length > 0 ? 'partial' : 'success' },
     });
 
     await ActivityLog.create({
-      action: 'sync',
-      details: `Sync job ${jobId} completed: ${result.inserted} inserted, ${result.updated} updated, ${result.failed} failed`,
-      entityType: 'sync',
-      entityId: jobId,
+      action: 'collector_upload',
+      details: `Uploaded ${file.name}: ${inserted} new, ${updated} existing, ${skipped} duplicates, ${issues.length} issues`,
+      entityType: 'collector',
+    });
+
+    return NextResponse.json({
+      success: true,
+      filename: file.name,
+      totalRecords: records.length,
+      validRecords: validRecords.length,
+      inserted,
+      updated,
+      skipped,
+      issues,
     });
   } catch (e: any) {
-    await SyncJob.updateOne(
-      { _id: jobId },
-      { $set: { status: 'failed', completedAt: new Date() }, $push: { errorLog: e.message || 'Unknown sync error' } }
-    );
+    return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
