@@ -71,7 +71,7 @@ const specNames = [
 for (const f of specNames) specFields[f] = { type: String, default: '' };
 
 const PhoneSpecsSchema = new Schema<IPhoneSpecs>({
-  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, unique: true },
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true },
   ...specFields,
 }, { timestamps: true });
 

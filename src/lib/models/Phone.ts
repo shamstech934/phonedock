@@ -1,7 +1,17 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
+export interface IBrand {
+  _id: Types.ObjectId;
+  name: string;
+  slug: string;
+  logo: string;
+  country: string;
+  description: string;
+}
+
 export interface IPhone extends Document {
   brandId: Types.ObjectId;
+  brand?: IBrand;
   modelName: string;
   slug: string;
   releaseDate: string;
@@ -37,7 +47,7 @@ export interface IPhone extends Document {
 const PhoneSchema = new Schema<IPhone>({
   brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true },
   modelName: { type: String, required: true },
-  slug: { type: String, required: true, unique: true },
+  slug: { type: String, required: true },
   releaseDate: { type: String, default: '' },
   pricePKR: { type: Number, default: 0 },
   ptaStatus: { type: String, default: 'Unknown' },
@@ -64,9 +74,21 @@ const PhoneSchema = new Schema<IPhone>({
   keywords: { type: String, default: '' },
   views: { type: Number, default: 0 },
   status: { type: String, default: 'published' },
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
 
-PhoneSchema.index({ slug: 1 });
+// Virtual for brand population
+PhoneSchema.virtual('brand', {
+  ref: 'Brand',
+  localField: 'brandId',
+  foreignField: '_id',
+  justOne: true,
+});
+
+PhoneSchema.index({ slug: 1, unique: true });
 PhoneSchema.index({ brandId: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ status: 1 });

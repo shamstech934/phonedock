@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 const NewsSchema = new Schema({
   title: { type: String, required: true },
-  slug: { type: String, required: true, unique: true },
+  slug: { type: String, required: true },
   content: { type: String, default: '' },
   excerpt: { type: String, default: '' },
   category: { type: String, default: 'General' },
@@ -16,7 +16,7 @@ const NewsSchema = new Schema({
   status: { type: String, default: 'published' },
 }, { timestamps: true });
 
-NewsSchema.index({ slug: 1 });
+NewsSchema.index({ slug: 1, unique: true });
 NewsSchema.index({ status: 1 });
 NewsSchema.index({ published: 1, status: 1 });
 

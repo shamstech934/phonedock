@@ -10,7 +10,7 @@ const PhoneImageSchema = new Schema({
 export const PhoneImage = mongoose.models.PhoneImage || mongoose.model('PhoneImage', PhoneImageSchema);
 
 const PhoneBenchmarkSchema = new Schema({
-  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, unique: true },
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true },
   antutu: { type: Number, default: 0 },
   geekbenchSingle: { type: Number, default: 0 },
   geekbenchMulti: { type: Number, default: 0 },

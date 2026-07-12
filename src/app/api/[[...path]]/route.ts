@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog } from '@/lib/models';
 import connectDB from '@/lib/mongodb';
 import { compare } from 'bcryptjs';
+import { Types } from 'mongoose';
 
 // ============ TOKEN STORE ============
 const activeTokens = new Set<string>();
@@ -19,6 +20,29 @@ function verifyAdmin(req: NextRequest): boolean {
 
 function cacheHeaders(maxAge = 60) {
   return { 'Cache-Control': `public, s-maxage=${maxAge}, stale-while-revalidate=${maxAge * 2}` };
+}
+
+// ============ HELPERS ============
+// Batch-attach brands to lean phone docs
+async function attachBrands(phones: any[]): Promise<void> {
+  const brandIds = [...new Set(phones.map((p: any) => p.brandId).filter(Boolean).map((id: any) => new Types.ObjectId(id)))];
+  if (brandIds.length === 0) return;
+  const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo country').lean();
+  const brandMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+  for (const phone of phones) {
+    (phone as any).brand = brandMap.get(phone.brandId?.toString()) || null;
+  }
+}
+
+async function attachPhoneExtras(phones: any[]): Promise<void> {
+  for (const phone of phones) {
+    const [specs, benchmarks] = await Promise.all([
+      PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+      PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+    ]);
+    (phone as any).specs = specs || null;
+    (phone as any).benchmarks = benchmarks || null;
+  }
 }
 
 // ============ AUTH ============
@@ -85,19 +109,12 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
     else if (sort === 'views') sortObj.views = -1;
 
     const [phones, total] = await Promise.all([
-      Phone.find(where).populate({ path: 'brand', select: 'name slug logo country' }).sort(sortObj).skip((page - 1) * limit).limit(limit).lean(),
+      Phone.find(where).sort(sortObj).skip((page - 1) * limit).limit(limit).lean(),
       Phone.countDocuments(where),
     ]);
 
-    // Attach specs and benchmarks to each phone
-    for (const phone of phones) {
-      const [specs, benchmarks] = await Promise.all([
-        PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
-        PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
-      ]);
-      (phone as any).specs = specs || null;
-      (phone as any).benchmarks = benchmarks || null;
-    }
+    await attachBrands(phones);
+    await attachPhoneExtras(phones);
 
     return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) }, { headers: cacheHeaders(60) });
   }
@@ -121,8 +138,9 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
 async function handlePhoneDetail(req: NextRequest, slug: string) {
   if (req.method === 'GET') {
     await connectDB();
-    const phone = await Phone.findOne({ slug }).populate({ path: 'brand', select: 'name slug logo country' }).lean();
+    const phone = await Phone.findOne({ slug }).lean();
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+    await attachBrands([phone]);
     // Increment views
     await Phone.findOneAndUpdate({ slug }, { $inc: { views: 1 } });
     // Fetch related data
@@ -135,8 +153,8 @@ async function handlePhoneDetail(req: NextRequest, slug: string) {
     ]);
     const phoneWithDetails = { ...phone, specs: specs || null, benchmarks: benchmarks || null, images, reviews, prices };
     const related = await Phone.find({ brandId: phone.brandId, _id: { $ne: phone._id }, active: true, status: 'published' })
-      .populate({ path: 'brand', select: 'name slug logo country' })
       .sort({ overallRating: -1 }).limit(6).lean();
+    await attachBrands(related);
     return NextResponse.json({ phone: phoneWithDetails, related }, { headers: cacheHeaders(30) });
   }
   if (req.method === 'PUT') {
@@ -172,13 +190,9 @@ async function handleBestPhones(req: NextRequest, category: string) {
   else if (category === 'display') where.displayScore = { $gte: 90 };
 
   const phones = await Phone.find(where)
-    .populate({ path: 'brand', select: 'name slug logo country' })
     .sort({ overallRating: -1 }).limit(20).lean();
-  // Attach specs
-  for (const phone of phones) {
-    const specs = await PhoneSpecs.findOne({ phoneId: phone._id }).lean();
-    (phone as any).specs = specs || null;
-  }
+  await attachBrands(phones);
+  await attachPhoneExtras(phones);
   return NextResponse.json({ phones, category }, { headers: cacheHeaders(120) });
 }
 
@@ -218,17 +232,9 @@ async function handleCompare(req: NextRequest) {
     if (ids.length < 2) return NextResponse.json({ error: 'Provide at least 2 phone IDs' }, { status: 400 });
     if (ids.length > 4) return NextResponse.json({ error: 'Max 4 phones' }, { status: 400 });
     const phones = await Phone.find({ _id: { $in: ids } })
-      .populate({ path: 'brand', select: 'name slug logo country' })
       .lean();
-    // Attach specs and benchmarks
-    for (const phone of phones) {
-      const [specs, benchmarks] = await Promise.all([
-        PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
-        PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
-      ]);
-      (phone as any).specs = specs || null;
-      (phone as any).benchmarks = benchmarks || null;
-    }
+    await attachBrands(phones);
+    await attachPhoneExtras(phones);
     return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
   }
   return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -242,7 +248,6 @@ async function handleSearch(req: NextRequest) {
   if (!q.trim()) return NextResponse.json({ results: [], total: 0 });
   const [phones, brandsRaw] = await Promise.all([
     Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: q, $options: 'i' } }, { description: { $regex: q, $options: 'i' } }] })
-      .populate({ path: 'brand', select: 'name slug logo country' })
       .sort({ overallRating: -1 }).limit(20).lean(),
     Brand.aggregate([
       { $match: { active: true, name: { $regex: q, $options: 'i' } } },
@@ -251,6 +256,7 @@ async function handleSearch(req: NextRequest) {
       { $unset: '_phones' },
     ]),
   ]);
+  await attachBrands(phones);
   return NextResponse.json({ phones, brands: brandsRaw, total: phones.length + brandsRaw.length }, { headers: cacheHeaders(30) });
 }
 
@@ -341,10 +347,11 @@ async function handleStats() {
 async function handleSitemap() {
   await connectDB();
   const [phoneDocs, brands, news] = await Promise.all([
-    Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').populate({ path: 'brand', select: 'slug' }).lean(),
+    Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').lean(),
     Brand.find({ active: true }).select('slug').lean(),
     News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
   ]);
+  await attachBrands(phoneDocs);
   const phones = phoneDocs.map((p: any) => ({ slug: p.slug, updatedAt: p.updatedAt, brand: p.brand ? { slug: p.brand.slug } : null }));
   return NextResponse.json({ phones, brands, news }, { headers: cacheHeaders(3600) });
 }
@@ -390,12 +397,9 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     await connectDB();
     const brand = await Brand.findOne({ slug: pathParts[1] }).lean();
     if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
-    const phones = await Phone.find({ brandId: brand._id, active: true }).populate({ path: 'brand', select: 'name slug logo country' }).sort({ pricePKR: -1 }).lean();
-    // Attach specs to each phone
-    for (const phone of phones) {
-      const specs = await PhoneSpecs.findOne({ phoneId: phone._id }).lean();
-      (phone as any).specs = specs || null;
-    }
+    const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
+    await attachBrands(phones);
+    await attachPhoneExtras(phones);
     const brandWithPhones = { ...brand, phones };
     return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
   }
@@ -410,7 +414,8 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     await connectDB();
 
     if (pathParts[1] === 'phones' && method === 'GET') {
-      const phones = await Phone.find().populate({ path: 'brand', select: 'name slug logo country' }).sort({ createdAt: -1 }).limit(50).lean();
+      const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
+      await attachBrands(phones);
       return NextResponse.json({ phones });
     }
     if (pathParts[1] === 'brands' && method === 'GET') {
@@ -442,12 +447,14 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     try {
       await connectDB();
       const allPhones = await Phone.find({ active: true, status: 'published' })
-        .populate({ path: 'brand', select: 'name slug logo country' })
         .sort({ overallRating: -1 }).lean();
+      await attachBrands(allPhones);
+      await attachPhoneExtras(allPhones);
       const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
       const featured = p(x => x.featured, 8);
       const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
-      const upcoming = await Phone.find({ upcoming: true, active: true }).populate({ path: 'brand', select: 'name slug logo country' }).sort({ createdAt: -1 }).limit(6).lean();
+      const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
+      await attachBrands(upcoming);
       const bestCamera = p(x => x.cameraScore >= 85, 6);
       const bestGaming = p(x => x.performanceScore >= 88, 6);
       const bestBattery = p(x => x.batteryScore >= 85, 6);
