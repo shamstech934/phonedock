@@ -237,7 +237,7 @@ function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: Adm
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-100 min-h-[calc(100vh-3.5rem)] sticky top-14">
+      <aside className="hidden lg:flex flex-col w-60 glass-modal border-r border-white/30 min-h-[calc(100vh-3.5rem)] sticky top-14">
         <div className="p-4 border-b border-gray-50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
@@ -501,7 +501,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14">
+    <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
       {/* Hero */}
       <section className="hero-gradient rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
         <div className="relative z-10 max-w-2xl">
@@ -1708,7 +1708,7 @@ function AdminPhonesPage({ token }: { token: string | null }) {
       {/* Mobile Cards */}
       <div className="sm:hidden space-y-2">
         {phones.map(p => (
-          <div key={p.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+          <div key={p.id} className="card-premium p-3 flex items-center gap-3">
             {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="w-10 h-10 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
@@ -1786,7 +1786,7 @@ function AdminNewsPage({ token }: { token: string | null }) {
       </div>
       <div className="space-y-2">
         {news.map(n => (
-          <div key={n.id} className="card-premium card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={n.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-sm text-gray-900 truncate">{n.title}</h3>
               <div className="flex items-center gap-2 mt-1.5">
@@ -1827,7 +1827,7 @@ function AdminSponsorsPage({ token }: { token: string | null }) {
       </div>
       <div className="space-y-2">
         {sponsors.map(s => (
-          <div key={s.id} className="card-premium card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={s.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                 {s.image ? <Image src={s.image} alt={s.name} width={28} height={28} className="object-contain" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
@@ -2196,7 +2196,7 @@ function AdminImportPage({ token }: { token: string | null }) {
           {history.length > 0 ? (
             <div className="space-y-2">
               {history.map((h: any) => (
-                <div key={h.id} className="bg-white rounded-xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div key={h.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
                       {h.fileType === 'json' ? <FileJson className="w-4 h-4 text-gray-500" /> : h.fileType === 'csv' ? <FileText className="w-4 h-4 text-gray-500" /> : <FileSpreadsheet className="w-4 h-4 text-gray-500" />}
@@ -2747,7 +2747,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6">
+        <div className="min-h-screen flex items-center justify-center p-6">
           <div className="text-center max-w-md space-y-4">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 flex items-center justify-center"><AlertTriangle className="w-8 h-8 text-red-500" /></div>
             <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
@@ -2789,12 +2789,12 @@ export default function PhoneDockApp() {
   const isAdmin = view.startsWith('admin-') && view !== 'admin-login';
 
   if (!mounted) {
-    return <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
+    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   return (
     <AppErrorBoundary>
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+    <div className="min-h-screen flex flex-col">
       <Header onNavigate={navigate} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
       <main className="flex-1">
         {isAdmin ? (
