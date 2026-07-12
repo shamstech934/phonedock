@@ -8,7 +8,8 @@ import {
   TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
   LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
   ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
-  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon
+  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1880,6 +1881,27 @@ function AdminActivityPage({ token }: { token: string | null }) {
   );
 }
 
+// ============ ERROR BOUNDARY ============
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  state = { hasError: false, error: undefined as Error | undefined };
+  static getDerivedStateFromError(e: Error) { return { hasError: true, error: e }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6">
+          <div className="text-center max-w-md space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 flex items-center justify-center"><AlertTriangle className="w-8 h-8 text-red-500" /></div>
+            <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
+            <p className="text-sm text-gray-500">We are connecting to the database. Please refresh in a moment.</p>
+            <button onClick={() => { this.setState({ hasError: false, error: undefined }); window.location.reload(); }} className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold transition-colors">Refresh Page</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ============ MAIN APP ============
 export default function PhoneDockApp() {
   const { view, params, navigate } = useHashRouter();
@@ -1912,6 +1934,7 @@ export default function PhoneDockApp() {
   }
 
   return (
+    <AppErrorBoundary>
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
       <Header onNavigate={navigate} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
       <main className="flex-1">
@@ -1948,5 +1971,6 @@ export default function PhoneDockApp() {
       </main>
       {!isAdmin && <Footer onNavigate={navigate} />}
     </div>
+    </AppErrorBoundary>
   );
 }
