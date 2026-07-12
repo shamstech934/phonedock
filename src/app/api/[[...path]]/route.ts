@@ -49,13 +49,13 @@ export async function handleCollectorFileUpload(req: NextRequest) {
 
     // Create a temporary source for provenance
     let sourceName = `Upload: ${file.name}`;
-    let sourceId = sourceId;
+    let resolvedSourceId = sourceId;
 
-    if (!sourceId) {
+    if (!resolvedSourceId) {
       const slug = file.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30);
       const existing = await CollectorSource.findOne({ name: new RegExp(`^${slug}`, 'i') }).lean();
       if (existing) {
-        sourceId = (existing._id as string).toString();
+        resolvedSourceId = (existing._id as string).toString();
         sourceName = existing.name;
       } else {
         const source = await CollectorSource.create({
@@ -65,7 +65,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
           enabled: true,
           totalCollected: 0,
         });
-        sourceId = (source._id as string).toString();
+        resolvedSourceId = (source._id as string).toString();
         sourceName = source.name;
       }
     }
@@ -125,7 +125,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
       const seo = suggestSEO(phoneNorm);
 
       // Build provenance
-      const provenance = buildFieldProvenance(phoneNorm, sourceId, sourceName, '', 0.85);
+      const provenance = buildFieldProvenance(phoneNorm, resolvedSourceId, sourceName, '', 0.85);
 
       batchDocs.push({
         status: isNew ? 'pending' : 'needs_review',
@@ -154,7 +154,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
         suggestedSeoTitle: seo.title,
         suggestedSeoDescription: seo.description,
         suggestedKeywords: seo.keywords,
-        sourceId: new Types.ObjectId(sourceId),
+        sourceId: new Types.ObjectId(resolvedSourceId),
         sourceName,
         sourceUrl: '',
         providerRecordId: phoneNorm.slug,
@@ -179,7 +179,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
     }
 
     // Update source stats
-    await CollectorSource.updateOne({ _id: new Types.ObjectId(sourceId) }, {
+    await CollectorSource.updateOne({ _id: new Types.ObjectId(resolvedSourceId) }, {
       $inc: { totalCollected: inserted + updated, totalFailed: issues.length },
       $set: { lastSyncAt: new Date(), lastSyncStatus: issues.length > 0 ? 'partial' : 'success' },
     });

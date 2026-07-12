@@ -120,7 +120,7 @@ function ScoreBar({ score, label, mini }: { score: number; label: string; mini?:
 function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
   const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
   return (
-    <div className="phone-card bg-white rounded-2xl border border-gray-100 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={nav}>
+    <div className="phone-card glass-shine cursor-pointer group" onClick={nav}>
       <div className="p-3 sm:p-4">
         <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
           {phone.thumbnail ? (
@@ -187,7 +187,7 @@ function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) 
 // ============ PHONE CARD SKELETON ============
 function PhoneCardSkeleton() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div className="card-premium overflow-hidden">
       <div className="p-3 sm:p-4">
         <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
         <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
@@ -207,9 +207,8 @@ function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; i
     <div className="flex items-center justify-between mb-5">
       <div className="flex items-center gap-3">
         {Icon && <Icon className="w-5 h-5 text-blue-500" />}
-        <h2 className="text-lg sm:text-xl font-bold text-gray-900 relative">
+        <h2 className="section-title text-lg sm:text-xl text-gray-900">
           {title}
-          <span className="absolute -bottom-1.5 left-0 h-[3px] w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
         </h2>
       </div>
       {link && (
@@ -361,9 +360,9 @@ function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: {
           <div className="pb-3 flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" autoFocus />
+              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" autoFocus />
             </div>
-            <button onClick={doSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-11 px-5 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+            <button onClick={doSearch} className="btn-primary h-11 px-5 rounded-xl text-sm">
               Search
             </button>
           </div>
@@ -401,15 +400,16 @@ function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: {
 // ============ FOOTER ============
 function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
   return (
-    <footer className="bg-[#0F172A] text-gray-400 mt-auto">
-      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
+    <footer className="bg-[#0F172A] text-gray-400 mt-auto relative overflow-hidden">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
           <div className="col-span-2 sm:col-span-1">
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <Smartphone className="w-5 h-5 text-white" />
               </div>
-              <span className="font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+              <span className="font-display font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
             </div>
             <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
           </div>
@@ -438,10 +438,10 @@ function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
             </div>
           </div>
         </div>
-        <Separator className="bg-gray-800 mb-6" />
+        <div className="divider-glass mb-6" />
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
           <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
-          <p className="text-cyan-400/80 font-medium">Phone prices may vary. Check with retailers.</p>
+          <p className="text-cyan-400/60 font-medium">Phone prices may vary. Check with retailers.</p>
         </div>
       </div>
     </footer>
@@ -455,7 +455,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
     return (
       <section className="space-y-4">
         <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
-        <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+        <div className="text-center py-12 card-premium">
           <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
           <p className="text-sm text-muted-foreground">No phones in this section yet</p>
           <p className="text-xs text-muted-foreground/60 mt-1">Check back later for updates</p>
@@ -503,36 +503,33 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14">
       {/* Hero */}
-      <section className="rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #2563EB 100%)' }}>
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-400/15 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-60 h-60 bg-purple-500/10 rounded-full translate-y-1/2 -translate-x-1/3 blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-cyan-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+      <section className="hero-gradient rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
         <div className="relative z-10 max-w-2xl">
           <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
             <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
           </Badge>
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight">
+          <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight">
             Find Your Perfect <span className="text-blue-400">Smartphone</span>
           </h1>
-          <p className="text-gray-400 text-sm sm:text-base mb-6 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+          <p className="text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
 
           {/* Search Bar Inside Hero */}
           <div className="flex gap-2 max-w-xl">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input placeholder="Phone name, brand ya chipset search karein..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/95 text-gray-900 outline-none focus:ring-2 focus:ring-blue-400/50 placeholder:text-gray-400 transition-all shadow-lg" />
+              <input placeholder="Phone name, brand ya chipset search karein..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
             </div>
-            <button onClick={handleHomeSearch} className="bg-blue-500 hover:bg-blue-400 text-white h-12 px-6 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2">
+            <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
               <Search className="w-4 h-4" /> Search
             </button>
           </div>
 
           <div className="flex flex-wrap gap-3 mt-6">
-            <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-10 px-5 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
+            <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => onNavigate('/brands')}>
               <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
             </Button>
           </div>
-          <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-400">
+          <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
             <span className="flex items-center gap-1.5"><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
             <span className="flex items-center gap-1.5"><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
             <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
@@ -552,7 +549,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
             ))}
           </div>
         ) : (
-          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+          <div className="text-center py-12 card-premium">
             <Star className="w-10 h-10 mx-auto mb-2 text-gray-200" />
             <p className="text-sm text-muted-foreground">No featured phones yet</p>
             <p className="text-xs text-muted-foreground/60 mt-1">We are adding phones to our database</p>
@@ -565,7 +562,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
         <section className="space-y-5">
           <SectionHeader title="Phones by Price" icon={Tag} />
           <Tabs defaultValue="above100k" className="w-full">
-            <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 bg-gray-100 p-1.5 rounded-2xl">
+            <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 p-1.5 rounded-2xl">
               {[
                 { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
                 { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
@@ -607,7 +604,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
             { phones: budgetPhones, title: 'Budget Phones', icon: Tag, gradient: 'from-green-500 to-emerald-600' },
             { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, gradient: 'from-indigo-500 to-violet-600' },
           ].map(cat => (
-            <div key={cat.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
+            <div key={cat.title} className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
               <div className={`bg-gradient-to-br ${cat.gradient} p-4 text-white`}>
                 <div className="flex items-center gap-2"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
               </div>
@@ -639,7 +636,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
           <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {data.news.slice(0, 4).map(n => (
-              <div key={n.id} className="bg-white rounded-2xl border border-gray-100 p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => onNavigate('/news')}>
+              <div key={n.id} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => onNavigate('/news')}>
                 <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
                 <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
                 <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
@@ -815,7 +812,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
         {/* Left Sidebar */}
         <div className="lg:col-span-1 space-y-4">
           {/* Image Card */}
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="card-premium overflow-hidden">
             <div className="bg-[#F8FAFC] aspect-square flex items-center justify-center p-8">
               {p.thumbnail ? (
                 <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized />
@@ -828,7 +825,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
           </div>
 
           {/* Quick Info Card */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+          <div className="card-premium p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Price in Pakistan</span>
               <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
@@ -862,7 +859,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
           {/* Store Prices */}
           {p.prices && p.prices.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div className="card-premium p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Best Prices</h3>
               <div className="space-y-2">
                 {p.prices.map(pr => (
@@ -886,7 +883,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
         <div className="lg:col-span-2 space-y-5">
           <div>
             <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
             {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
           </div>
 
@@ -925,7 +922,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
           {/* Camera Details */}
           {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div className="card-premium p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Camera className="w-4 h-4 text-blue-600" /></div>
                 Camera Details
@@ -943,7 +940,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
           {/* Performance Section */}
           {(p.specs?.chipset || p.specs?.cpu) && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div className="card-premium p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Cpu className="w-4 h-4 text-blue-600" /></div>
                 Performance
@@ -961,7 +958,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
           {/* Battery & Charging */}
           {p.specs?.battery && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div className="card-premium p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Battery className="w-4 h-4 text-blue-600" /></div>
                 Battery & Charging
@@ -978,7 +975,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
           )}
 
           {/* Ratings & Scores */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <div className="card-premium p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-900">Ratings & Scores</h3>
               <div className="flex items-center gap-1.5">
@@ -998,7 +995,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
           {/* Tabs: Specs / Benchmarks / Review */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="glass-filter w-full justify-start bg-gray-100 rounded-2xl p-1.5 h-auto">
+            <TabsList className="glass-filter w-full justify-start rounded-2xl p-1.5 h-auto">
               <TabsTrigger value="specs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Specifications</TabsTrigger>
               <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Benchmarks</TabsTrigger>
               <TabsTrigger value="review" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Review</TabsTrigger>
@@ -1007,7 +1004,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
             {/* Specs Tab */}
             <TabsContent value="specs" className="mt-5 space-y-4">
               {specGroups.map(group => (
-                <div key={group.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <div key={group.title} className="card-premium overflow-hidden">
                   <div className="px-4 py-3 flex items-center gap-2.5 border-b border-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
                       <group.icon className="w-4 h-4 text-white" />
@@ -1028,7 +1025,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
             {/* Benchmarks Tab */}
             <TabsContent value="benchmarks" className="mt-5">
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-6">
+              <div className="card-premium p-5 space-y-6">
                 {p.benchmarks ? (<>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {[
@@ -1088,7 +1085,7 @@ function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
 
             {/* Review Tab */}
             <TabsContent value="review" className="mt-5 space-y-4">
-              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-5">
+              <div className="card-premium p-5 space-y-5">
                 {p.reviewSummary && <p className="text-sm leading-relaxed text-gray-700">{p.reviewSummary}</p>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {p.pros && (
@@ -1200,13 +1197,13 @@ function ComparePage({ params, onNavigate }: { params: Record<string, string>; o
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
-      <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
+      <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
 
       {!compared ? (<>
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 space-y-4">
+        <div className="card-premium p-4 sm:p-6 space-y-4">
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" />
+            <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
           </div>
           <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
             {filtered.length === 0 && <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>}
@@ -1262,7 +1259,7 @@ function ComparePage({ params, onNavigate }: { params: Record<string, string>; o
         </section>
 
         {/* Score Comparison */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 space-y-5">
+        <section className="card-premium p-4 sm:p-6 space-y-5">
           <h2 className="font-bold text-gray-900">Score Comparison</h2>
           {metrics.map(metric => {
             const scores = selected.map(p => ({ phone: p, score: metric.get(p) }));
@@ -1291,7 +1288,7 @@ function ComparePage({ params, onNavigate }: { params: Record<string, string>; o
         </section>
 
         {/* Specs Table */}
-        <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <section className="card-premium overflow-hidden">
           <div className="px-4 sm:px-6 py-4 border-b border-gray-100"><h2 className="font-bold text-gray-900">Specifications Comparison</h2></div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[500px] text-sm">
@@ -1339,12 +1336,12 @@ function BrandsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">All Brands</h1>
+        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">All Brands</h1>
         <p className="text-sm text-muted-foreground mt-1">{brands.length} brands in our database</p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {brands.map(brand => (
-          <div key={brand.id} className="phone-card bg-white rounded-2xl border border-gray-100 p-5 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={() => onNavigate(`/brand/${brand.slug}`)}>
+          <div key={brand.id} className="phone-card glass-shine p-5 cursor-pointer group" onClick={() => onNavigate(`/brand/${brand.slug}`)}>
             <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
               {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />}
             </div>
@@ -1383,7 +1380,7 @@ function BrandDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: s
         <button onClick={() => onNavigate('/brands')} className="hover:text-blue-500 transition-colors">Brands</button><ChevronRight className="w-3.5 h-3.5" />
         <span className="font-medium text-gray-900">{brand.name}</span>
       </div>
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
+      <div className="card-premium p-5 sm:p-6">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
             {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-7 h-7 text-gray-400" />}
@@ -1425,7 +1422,7 @@ function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: stri
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-8">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Search Results for &ldquo;{query}&rdquo;</h1>
+        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Search Results for &ldquo;{query}&rdquo;</h1>
         <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
       </div>
 
@@ -1434,7 +1431,7 @@ function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: stri
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Layers className="w-5 h-5 text-blue-500" /> Brands ({results.brands.length})</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {results.brands.map(b => (
-              <div key={b.id} className="phone-card bg-white rounded-2xl border border-gray-100 p-4 cursor-pointer group transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200 flex items-center gap-3" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+              <div key={b.id} className="phone-card glass-shine p-4 cursor-pointer group flex items-center gap-3" onClick={() => onNavigate(`/brand/${b.slug}`)}>
                 <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors">
                   {b.logo ? <Image src={b.logo} alt={b.name} width={28} height={28} className="object-contain" unoptimized /> : <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />}
                 </div>
@@ -1480,13 +1477,13 @@ function NewsPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">News & Updates</h1>
+        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">News & Updates</h1>
         <p className="text-sm text-muted-foreground mt-1">Latest smartphone news, leaks, and reviews</p>
       </div>
       {news.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {news.map(n => (
-            <article key={n.id} className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+            <article key={n.id} className="card-premium p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
               <div className="flex items-center gap-2 mb-3">
                 <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-600 font-medium">{n.category}</Badge>
                 <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
@@ -1595,7 +1592,7 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {statCards.map(s => (
-          <div key={s.label} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={s.label} className="card-premium p-4">
             <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor}`} /></div>
             <p className="text-2xl font-extrabold text-gray-900">{s.value}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
@@ -1606,7 +1603,7 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
       {/* Quick Actions */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {quickActions.map(a => (
-          <button key={a.label} onClick={() => onNavigate(a.hash)} className="card-premium bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 text-center hover:shadow-md hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 group">
+          <button key={a.label} onClick={() => onNavigate(a.hash)} className="card-premium p-3 sm:p-4 text-center group">
             <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-50 transition-colors"><a.icon className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors" /></div>
             <p className="text-xs font-semibold text-gray-700">{a.label}</p>
           </button>
@@ -1615,7 +1612,7 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Price Distribution */}
-        <div className="card-premium bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="card-premium p-5">
           <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500" /> Price Distribution</h3>
           <div className="space-y-3">
             {priceDist.map((d: any, i: number) => (
@@ -1630,7 +1627,7 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
         </div>
 
         {/* Recent Activity */}
-        <div className="card-premium bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="card-premium p-5">
           <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Recent Activity</h3>
           <div className="space-y-3">
             {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
@@ -1671,7 +1668,7 @@ function AdminPhonesPage({ token }: { token: string | null }) {
         <span className="text-xs text-muted-foreground">{phones.length} phones</span>
       </div>
       {/* Desktop Table */}
-      <div className="hidden sm:block bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="hidden sm:block card-premium overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-[#F8FAFC] border-b border-gray-100">
@@ -1748,7 +1745,7 @@ function AdminBrandsPage({ token }: { token: string | null }) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {brands.map(brand => (
-          <div key={brand.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={brand.id} className="card-premium p-5 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
                 {brand.logo ? <Image src={brand.logo} alt={brand.name} width={32} height={32} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400" />}
@@ -1789,7 +1786,7 @@ function AdminNewsPage({ token }: { token: string | null }) {
       </div>
       <div className="space-y-2">
         {news.map(n => (
-          <div key={n.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={n.id} className="card-premium card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-sm text-gray-900 truncate">{n.title}</h3>
               <div className="flex items-center gap-2 mt-1.5">
@@ -1830,7 +1827,7 @@ function AdminSponsorsPage({ token }: { token: string | null }) {
       </div>
       <div className="space-y-2">
         {sponsors.map(s => (
-          <div key={s.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+          <div key={s.id} className="card-premium card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                 {s.image ? <Image src={s.image} alt={s.name} width={28} height={28} className="object-contain" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
@@ -1874,7 +1871,7 @@ function AdminActivityPage({ token }: { token: string | null }) {
   return (
     <div className="space-y-5 animate-fade-in">
       <h1 className="text-xl font-extrabold text-gray-900">Activity Log</h1>
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6">
+      <div className="card-premium p-4 sm:p-6">
         {logs.length > 0 ? (
           <div className="relative">
             <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gray-100" />
@@ -2004,7 +2001,7 @@ function AdminImportPage({ token }: { token: string | null }) {
             { label: 'Failed Today', value: stats.failedToday, icon: XCircle, color: 'text-red-600 bg-red-50' },
             { label: 'Missing Images', value: stats.missingImages, icon: ImageIcon, color: 'text-amber-600 bg-amber-50' },
           ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div key={s.label} className="card-premium p-4">
               <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
               <p className="text-lg font-bold text-gray-900">{s.value}</p>
               <p className="text-[10px] text-muted-foreground">{s.label}</p>
@@ -2385,7 +2382,7 @@ function AdminCollectorPage({ token, onNavigate }: { token: string | null; onNav
             { label: 'Total Collected', value: dash.totalCollected, icon: Database, color: 'text-blue-600 bg-blue-50' },
             { label: 'Sources', value: dash.sourcesCount, icon: Globe, color: 'text-violet-600 bg-violet-50' },
           ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
+            <div key={s.label} className="card-premium p-4">
               <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
               <p className="text-lg font-bold text-gray-900">{s.value}</p>
               <p className="text-[10px] text-muted-foreground">{s.label}</p>
