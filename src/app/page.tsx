@@ -438,8 +438,20 @@ function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
 }
 
 // ============ PHONE SECTION (reusable) ============
-function PhoneSection({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string }) {
-  if (!phones.length) return null;
+function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean }) {
+  if (!phones.length) {
+    if (!showEmpty) return null;
+    return (
+      <section className="space-y-4">
+        <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+        <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+          <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+          <p className="text-sm text-muted-foreground">No phones in this section yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">Check back later for updates</p>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="space-y-4">
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
@@ -520,13 +532,21 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
       {/* Featured Phones */}
       <section className="space-y-4">
         <SectionHeader title="Featured Phones" icon={Star} link="/brands" linkText="All Phones" />
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
-          {data.featured.slice(0, 8).map(p => (
-            <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
-              <PhoneCard phone={p} />
-            </div>
-          ))}
-        </div>
+        {data.featured.length > 0 ? (
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+            {data.featured.slice(0, 8).map(p => (
+              <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+                <PhoneCard phone={p} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+            <Star className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+            <p className="text-sm text-muted-foreground">No featured phones yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">We are adding phones to our database</p>
+          </div>
+        )}
       </section>
 
       {/* Phones by Price */}
@@ -562,7 +582,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
       )}
 
       {/* Trending Now */}
-      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" />
+      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" showEmpty />
 
       {/* Best in Category */}
       <section className="space-y-5">
@@ -600,7 +620,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
       </section>
 
       {/* Latest Additions */}
-      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" />
+      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" showEmpty />
 
       {/* Latest News */}
       {data.news.length > 0 && (
@@ -651,7 +671,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
       )}
 
       {/* Upcoming Phones */}
-      {data.upcoming.length > 0 && <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} />}
+      <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} showEmpty />
     </div>
   );
 }

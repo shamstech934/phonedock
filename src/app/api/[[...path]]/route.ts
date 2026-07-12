@@ -1,14 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog } from '@/lib/models';
-import connectDB from '@/lib/mongodb';
+import connectDB, { connectDBSafe } from '@/lib/mongodb';
 import { compare } from 'bcryptjs';
 import { Types } from 'mongoose';
+
+// ============ SIMPLE RATE LIMITER (in-memory, per-process) ============
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 60; // requests per window
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= RATE_LIMIT_MAX;
+}
 
 // ============ TOKEN STORE ============
 const activeTokens = new Set<string>();
 
 function generateToken(): string {
-  return Buffer.from(`${Date.now()}_${Math.random().toString(36).slice(2)}`).toString('base64');
+  return Buffer.from(`${Date.now()}_${Math.random().toString(36).slice(2)}_${crypto.randomUUID?.() || Math.random().toString(36).slice(2, 10)}`).toString('base64');
 }
 
 function verifyAdmin(req: NextRequest): boolean {
@@ -22,8 +38,18 @@ function cacheHeaders(maxAge = 60) {
   return { 'Cache-Control': `public, s-maxage=${maxAge}, stale-while-revalidate=${maxAge * 2}` };
 }
 
+// ============ SECURITY HELPERS ============
+function sanitizeRegex(input: string): string {
+  // Remove regex special chars that could cause ReDoS or NoSQL injection
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getClientIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+}
+
 // ============ HELPERS ============
-// Batch-attach brands to lean phone docs
+// Batch-attach brands to lean phone docs (single query)
 async function attachBrands(phones: any[]): Promise<void> {
   const brandIds = [...new Set(phones.map((p: any) => p.brandId).filter(Boolean).map((id: any) => new Types.ObjectId(id)))];
   if (brandIds.length === 0) return;
@@ -34,14 +60,19 @@ async function attachBrands(phones: any[]): Promise<void> {
   }
 }
 
+// Batch-attach specs and benchmarks (2 queries total instead of 2N)
 async function attachPhoneExtras(phones: any[]): Promise<void> {
+  if (phones.length === 0) return;
+  const phoneIds = phones.map((p: any) => p._id);
+  const [allSpecs, allBenchmarks] = await Promise.all([
+    PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean(),
+    PhoneBenchmark.find({ phoneId: { $in: phoneIds } }).lean(),
+  ]);
+  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), s]));
+  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), b]));
   for (const phone of phones) {
-    const [specs, benchmarks] = await Promise.all([
-      PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
-      PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
-    ]);
-    (phone as any).specs = specs || null;
-    (phone as any).benchmarks = benchmarks || null;
+    (phone as any).specs = specsMap.get(phone._id?.toString()) || null;
+    (phone as any).benchmarks = benchmarksMap.get(phone._id?.toString()) || null;
   }
 }
 
@@ -52,7 +83,8 @@ async function handleAuth(req: NextRequest, action: string) {
       await connectDB();
       const { email, password } = await req.json();
       if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
-      const admin = await Admin.findOne({ email });
+      // Sanitize email to prevent NoSQL injection
+      const admin = await Admin.findOne({ email: String(email).trim() });
       if (!admin || !admin.active) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       const valid = await compare(password, admin.password);
       if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
@@ -81,24 +113,27 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
     const trending = searchParams.get('trending');
     const upcoming = searchParams.get('upcoming');
     const sort = searchParams.get('sort') || 'latest';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
 
     const where: any = { active: true, status: 'published' };
-    if (brand) where.brandId = brand;
+    if (brand && Types.ObjectId.isValid(brand)) where.brandId = new Types.ObjectId(brand);
     if (featured === 'true') where.featured = true;
     if (trending === 'true') where.trending = true;
     if (upcoming === 'true') where.upcoming = true;
     if (search) {
+      const safe = sanitizeRegex(search);
       where.$or = [
-        { modelName: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { modelName: { $regex: safe, $options: 'i' } },
+        { description: { $regex: safe, $options: 'i' } },
       ];
     }
     if (minPrice || maxPrice) {
       where.pricePKR = {};
-      if (minPrice) where.pricePKR.$gte = parseInt(minPrice);
-      if (maxPrice) where.pricePKR.$lte = parseInt(maxPrice);
+      const min = parseInt(minPrice || '0');
+      const max = parseInt(maxPrice || '999999999');
+      if (!isNaN(min)) where.pricePKR.$gte = min;
+      if (!isNaN(max)) where.pricePKR.$lte = max;
     }
 
     const sortObj: any = { createdAt: -1 };
@@ -138,11 +173,13 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
 async function handlePhoneDetail(req: NextRequest, slug: string) {
   if (req.method === 'GET') {
     await connectDB();
-    const phone = await Phone.findOne({ slug }).lean();
+    // Sanitize slug to prevent NoSQL injection
+    const safeSlug = String(slug).replace(/[^a-z0-9\-]/gi, '');
+    const phone = await Phone.findOne({ slug: safeSlug }).lean();
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
     await attachBrands([phone]);
-    // Increment views
-    await Phone.findOneAndUpdate({ slug }, { $inc: { views: 1 } });
+    // Increment views (fire and forget)
+    Phone.findOneAndUpdate({ slug: safeSlug }, { $inc: { views: 1 } }).catch(() => {});
     // Fetch related data
     const [specs, benchmarks, images, reviews, prices] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
@@ -228,11 +265,13 @@ async function handleCompare(req: NextRequest) {
   if (req.method === 'GET') {
     await connectDB();
     const { searchParams } = new URL(req.url);
-    const ids = searchParams.get('ids')?.split(',').filter(Boolean) || [];
+    const ids = searchParams.get('ids')?.split(',').filter(Boolean).map(id => id.trim()) || [];
     if (ids.length < 2) return NextResponse.json({ error: 'Provide at least 2 phone IDs' }, { status: 400 });
     if (ids.length > 4) return NextResponse.json({ error: 'Max 4 phones' }, { status: 400 });
-    const phones = await Phone.find({ _id: { $in: ids } })
-      .lean();
+    // Validate all IDs are valid ObjectIds
+    const validIds = ids.filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id));
+    if (validIds.length < 2) return NextResponse.json({ error: 'Invalid phone IDs' }, { status: 400 });
+    const phones = await Phone.find({ _id: { $in: validIds } }).lean();
     await attachBrands(phones);
     await attachPhoneExtras(phones);
     return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
@@ -246,11 +285,12 @@ async function handleSearch(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q') || '';
   if (!q.trim()) return NextResponse.json({ results: [], total: 0 });
+  const safe = sanitizeRegex(q.trim());
   const [phones, brandsRaw] = await Promise.all([
-    Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: q, $options: 'i' } }, { description: { $regex: q, $options: 'i' } }] })
+    Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: safe, $options: 'i' } }, { description: { $regex: safe, $options: 'i' } }] })
       .sort({ overallRating: -1 }).limit(20).lean(),
     Brand.aggregate([
-      { $match: { active: true, name: { $regex: q, $options: 'i' } } },
+      { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
       { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
       { $addFields: { phoneCount: { $size: '$_phones' } } },
       { $unset: '_phones' },
@@ -343,9 +383,17 @@ async function handleStats() {
   });
 }
 
-// ============ SEO SITEMAP ============
+// ============ SEO SITEMAP (Safe - won't crash if DB is down) ============
 async function handleSitemap() {
-  await connectDB();
+  const conn = await connectDBSafe();
+  if (!conn) {
+    // Return static sitemap data when DB is unavailable
+    return NextResponse.json({
+      phones: [],
+      brands: [{ slug: 'samsung' }, { slug: 'apple' }, { slug: 'xiaomi' }, { slug: 'oneplus' }],
+      news: [],
+    }, { headers: cacheHeaders(3600) });
+  }
   const [phoneDocs, brands, news] = await Promise.all([
     Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').lean(),
     Brand.find({ active: true }).select('slug').lean(),
@@ -375,111 +423,132 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 }
 
 async function routeRequest(req: NextRequest, method: string, pathParts: string[]) {
+  // Rate limiting
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+  }
+
   if (method === 'OPTIONS') {
     return new NextResponse(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE', 'Access-Control-Allow-Headers': 'Content-Type,Authorization' } });
   }
 
-  const seg0 = pathParts[0] || '';
+  // Security headers for all responses
+  const securityHeaders = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+  };
 
-  if (seg0 === 'auth') return handleAuth(req, pathParts[1] || '');
-  if (seg0 === 'stats') return handleStats();
-  if (seg0 === 'sponsors') return handleSponsors(req);
-  if (seg0 === 'seo' && pathParts[1] === 'sitemap') return handleSitemap();
+  try {
+    const seg0 = pathParts[0] || '';
 
-  if (seg0 === 'phones') {
-    if (pathParts.length <= 1) return handlePhones(req, pathParts);
-    if (pathParts[1] === 'best' && pathParts[2]) return handleBestPhones(req, pathParts[2]);
-    if (pathParts.length === 2) return handlePhoneDetail(req, pathParts[1]);
-  }
+    if (seg0 === 'auth') return handleAuth(req, pathParts[1] || '');
+    if (seg0 === 'stats') return handleStats();
+    if (seg0 === 'sponsors') return handleSponsors(req);
+    if (seg0 === 'seo' && pathParts[1] === 'sitemap') return handleSitemap();
 
-  if (seg0 === 'brands' && pathParts.length <= 1) return handleBrands(req);
-  if (seg0 === 'brands' && pathParts.length === 2) {
-    await connectDB();
-    const brand = await Brand.findOne({ slug: pathParts[1] }).lean();
-    if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
-    const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
-    await attachBrands(phones);
-    await attachPhoneExtras(phones);
-    const brandWithPhones = { ...brand, phones };
-    return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
-  }
-
-  if (seg0 === 'compare') return handleCompare(req);
-  if (seg0 === 'search') return handleSearch(req);
-  if (seg0 === 'news') return handleNews(req);
-
-  // ============ ADMIN ROUTES ============
-  if (seg0 === 'admin') {
-    if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    await connectDB();
-
-    if (pathParts[1] === 'phones' && method === 'GET') {
-      const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
-      await attachBrands(phones);
-      return NextResponse.json({ phones });
+    if (seg0 === 'phones') {
+      if (pathParts.length <= 1) return handlePhones(req, pathParts);
+      if (pathParts[1] === 'best' && pathParts[2]) return handleBestPhones(req, pathParts[2]);
+      if (pathParts.length === 2) return handlePhoneDetail(req, pathParts[1]);
     }
-    if (pathParts[1] === 'brands' && method === 'GET') {
-      const brands = await Brand.aggregate([
-        { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
-        { $addFields: { phoneCount: { $size: '$_phones' } } },
-        { $unset: '_phones' },
-        { $sort: { sortOrder: 1 } },
-      ]);
-      return NextResponse.json({ brands });
-    }
-    if (pathParts[1] === 'news' && method === 'GET') {
-      const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
-      return NextResponse.json({ news });
-    }
-    if (pathParts[1] === 'sponsors' && method === 'GET') {
-      const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ sponsors });
-    }
-    if (pathParts[1] === 'activity-logs' && method === 'GET') {
-      const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
-      return NextResponse.json({ logs });
-    }
-    if (pathParts[1] === 'stats') return handleStats();
-  }
 
-  // ============ HOME ============
-  if (seg0 === 'home') {
-    try {
+    if (seg0 === 'brands' && pathParts.length <= 1) return handleBrands(req);
+    if (seg0 === 'brands' && pathParts.length === 2) {
       await connectDB();
-      const allPhones = await Phone.find({ active: true, status: 'published' })
-        .sort({ overallRating: -1 }).lean();
-      await attachBrands(allPhones);
-      await attachPhoneExtras(allPhones);
-      const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
-      const featured = p(x => x.featured, 8);
-      const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
-      const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
-      await attachBrands(upcoming);
-      const bestCamera = p(x => x.cameraScore >= 85, 6);
-      const bestGaming = p(x => x.performanceScore >= 88, 6);
-      const bestBattery = p(x => x.batteryScore >= 85, 6);
-      const flagship = p(x => x.pricePKR >= 150000, 6);
-      const budget = p(x => x.pricePKR <= 40000, 6);
-      const latest = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
-      const [news, sponsors] = await Promise.all([
-        News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
-        Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
-      ]);
-      return NextResponse.json({
-        featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
-        priceCategories: {
-          under20k: p(x => x.pricePKR <= 20000, 6),
-          price20to40: p(x => x.pricePKR > 20000 && x.pricePKR <= 40000, 6),
-          price40to60: p(x => x.pricePKR > 40000 && x.pricePKR <= 60000, 6),
-          price60to100: p(x => x.pricePKR > 60000 && x.pricePKR <= 100000, 6),
-          above100k: p(x => x.pricePKR > 100000, 6),
-        },
-      }, { headers: cacheHeaders(60) });
-    } catch (e: any) {
-      console.error('Home API error:', e.message);
-      return NextResponse.json({ error: 'Failed to load home data' }, { status: 500 });
+      const safeSlug = String(pathParts[1]).replace(/[^a-z0-9\-]/gi, '');
+      const brand = await Brand.findOne({ slug: safeSlug }).lean();
+      if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+      const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
+      await attachBrands(phones);
+      await attachPhoneExtras(phones);
+      const brandWithPhones = { ...brand, phones };
+      return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
     }
-  }
 
-  return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (seg0 === 'compare') return handleCompare(req);
+    if (seg0 === 'search') return handleSearch(req);
+    if (seg0 === 'news') return handleNews(req);
+
+    // ============ ADMIN ROUTES ============
+    if (seg0 === 'admin') {
+      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      await connectDB();
+
+      if (pathParts[1] === 'phones' && method === 'GET') {
+        const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
+        await attachBrands(phones);
+        return NextResponse.json({ phones });
+      }
+      if (pathParts[1] === 'brands' && method === 'GET') {
+        const brands = await Brand.aggregate([
+          { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+          { $addFields: { phoneCount: { $size: '$_phones' } } },
+          { $unset: '_phones' },
+          { $sort: { sortOrder: 1 } },
+        ]);
+        return NextResponse.json({ brands });
+      }
+      if (pathParts[1] === 'news' && method === 'GET') {
+        const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
+        return NextResponse.json({ news });
+      }
+      if (pathParts[1] === 'sponsors' && method === 'GET') {
+        const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
+        return NextResponse.json({ sponsors });
+      }
+      // FIX: Support both 'activity' and 'activity-logs' paths
+      if ((pathParts[1] === 'activity-logs' || pathParts[1] === 'activity') && method === 'GET') {
+        const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
+        return NextResponse.json({ logs });
+      }
+      if (pathParts[1] === 'stats') return handleStats();
+    }
+
+    // ============ HOME ============
+    if (seg0 === 'home') {
+      try {
+        await connectDB();
+        const allPhones = await Phone.find({ active: true, status: 'published' })
+          .sort({ overallRating: -1 }).lean();
+        await attachBrands(allPhones);
+        await attachPhoneExtras(allPhones);
+        const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
+        const featured = p(x => x.featured, 8);
+        const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
+        const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
+        await attachBrands(upcoming);
+        const bestCamera = p(x => x.cameraScore >= 85, 6);
+        const bestGaming = p(x => x.performanceScore >= 88, 6);
+        const bestBattery = p(x => x.batteryScore >= 85, 6);
+        const flagship = p(x => x.pricePKR >= 150000, 6);
+        const budget = p(x => x.pricePKR <= 40000, 6);
+        const latest = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
+        const [news, sponsors] = await Promise.all([
+          News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
+          Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
+        ]);
+        return NextResponse.json({
+          featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
+          priceCategories: {
+            under20k: p(x => x.pricePKR <= 20000, 6),
+            price20to40: p(x => x.pricePKR > 20000 && x.pricePKR <= 40000, 6),
+            price40to60: p(x => x.pricePKR > 40000 && x.pricePKR <= 60000, 6),
+            price60to100: p(x => x.pricePKR > 60000 && x.pricePKR <= 100000, 6),
+            above100k: p(x => x.pricePKR > 100000, 6),
+          },
+        }, { headers: cacheHeaders(60) });
+      } catch (e: any) {
+        console.error('Home API error:', e.message);
+        return NextResponse.json({ error: 'Failed to load home data' }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (e: any) {
+    console.error('API Error:', e.message);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

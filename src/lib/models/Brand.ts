@@ -22,6 +22,13 @@ const BrandSchema = new Schema<IBrand>({
   active: { type: Boolean, default: true },
 }, { timestamps: true });
 
+BrandSchema.pre('save', function(next) {
+  if (!this.slug) {
+    this.slug = this.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+  next();
+});
+
 BrandSchema.index({ slug: 1, unique: true });
 BrandSchema.index({ active: 1 });
 

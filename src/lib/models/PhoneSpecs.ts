@@ -75,4 +75,6 @@ const PhoneSpecsSchema = new Schema<IPhoneSpecs>({
   ...specFields,
 }, { timestamps: true });
 
+PhoneSpecsSchema.index({ phoneId: 1 }, { unique: true });
+
 export const PhoneSpecs = mongoose.models.PhoneSpecs || mongoose.model<IPhoneSpecs>('PhoneSpecs', PhoneSpecsSchema);

@@ -350,8 +350,12 @@ async function main() {
 
   // Seed brands
   console.log('Seeding brands...');
-  for (const b of BRANDS) {
-    await Brand.findOneAndUpdate({ slug: b.slug }, b, { upsert: true, new: true });
+  for (const brand of BRANDS) {
+    await Brand.findOneAndUpdate(
+      { slug: brand.slug },
+      { $set: brand },
+      { upsert: true, returnDocument: "after" }
+    );
   }
   console.log(`Created ${BRANDS.length} brands`);
 
@@ -364,50 +368,53 @@ async function main() {
       continue;
     }
 
+    const phoneData = {
+      brandId: brand._id,
+      modelName: p.model,
+      slug: p.slug,
+      pricePKR: p.pricePKR,
+      ptaStatus: p.ptaStatus,
+      ptaApproved: p.ptaApproved,
+      featured: p.featured,
+      trending: p.trending,
+      upcoming: p.upcoming,
+      thumbnail: p.thumbnail,
+      description: p.description,
+      cameraScore: p.cameraScore,
+      performanceScore: p.performanceScore,
+      batteryScore: p.batteryScore,
+      displayScore: p.displayScore,
+      valueScore: p.valueScore,
+      overallRating: p.overallRating,
+      pros: p.pros,
+      cons: p.cons,
+      reviewSummary: p.reviewSummary,
+      reviewVerdict: p.reviewVerdict,
+      releaseDate: p.releaseDate,
+    };
     const phone = await Phone.findOneAndUpdate(
-      { slug: p.slug },
-      {
-        brandId: brand._id,
-        modelName: p.model,
-        slug: p.slug,
-        pricePKR: p.pricePKR,
-        ptaStatus: p.ptaStatus,
-        ptaApproved: p.ptaApproved,
-        featured: p.featured,
-        trending: p.trending,
-        upcoming: p.upcoming,
-        thumbnail: p.thumbnail,
-        description: p.description,
-        cameraScore: p.cameraScore,
-        performanceScore: p.performanceScore,
-        batteryScore: p.batteryScore,
-        displayScore: p.displayScore,
-        valueScore: p.valueScore,
-        overallRating: p.overallRating,
-        pros: p.pros,
-        cons: p.cons,
-        reviewSummary: p.reviewSummary,
-        reviewVerdict: p.reviewVerdict,
-        releaseDate: p.releaseDate,
-      },
-      { upsert: true, new: true }
+      { slug: phoneData.slug },
+      { $set: phoneData },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     // Seed specs
     if (p.specs) {
+      const specData = { phoneId: phone._id, ...p.specs };
       await PhoneSpecs.findOneAndUpdate(
         { phoneId: phone._id },
-        { phoneId: phone._id, ...p.specs },
-        { upsert: true, new: true }
+        { $set: specData },
+        { upsert: true, returnDocument: "after" }
       );
     }
 
     // Seed benchmarks
     if (p.benchmarks) {
+      const benchmarkData = { phoneId: phone._id, ...p.benchmarks };
       await PhoneBenchmark.findOneAndUpdate(
         { phoneId: phone._id },
-        { phoneId: phone._id, ...p.benchmarks },
-        { upsert: true, new: true }
+        { $set: benchmarkData },
+        { upsert: true, returnDocument: "after" }
       );
     }
 
@@ -435,17 +442,18 @@ async function main() {
   // Seed news
   console.log('Seeding news...');
   for (const n of NEWS_DATA) {
-    await News.findOneAndUpdate({ slug: n.slug }, n, { upsert: true, new: true });
+    await News.findOneAndUpdate({ slug: n.slug }, n, { upsert: true, returnDocument: "after" });
   }
   console.log(`Created ${NEWS_DATA.length} news articles`);
 
   // Seed admin user
   console.log('Seeding admin user...');
   const hashedPassword = await hash('admin123', 12);
+  const adminData = { email: 'admin@phonedock.pk', password: hashedPassword, name: 'Admin', role: 'superadmin' };
   await Admin.findOneAndUpdate(
-    { email: 'admin@phonedock.pk' },
-    { email: 'admin@phonedock.pk', password: hashedPassword, name: 'Admin', role: 'superadmin' },
-    { upsert: true, new: true }
+    { email: adminData.email },
+    { $set: adminData },
+    { upsert: true, returnDocument: "after" }
   );
   console.log('Created admin user (admin@phonedock.pk / admin123)');
 

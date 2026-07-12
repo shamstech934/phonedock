@@ -88,6 +88,13 @@ PhoneSchema.virtual('brand', {
   justOne: true,
 });
 
+PhoneSchema.pre('save', async function(next) {
+  if (!this.slug && this.modelName) {
+    this.slug = this.modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+  next();
+});
+
 PhoneSchema.index({ slug: 1, unique: true });
 PhoneSchema.index({ brandId: 1 });
 PhoneSchema.index({ pricePKR: 1 });

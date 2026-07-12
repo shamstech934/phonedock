@@ -23,6 +23,8 @@ const PhoneBenchmarkSchema = new Schema({
   browsingBattery: { type: String, default: '' },
 }, { timestamps: true });
 
+PhoneBenchmarkSchema.index({ phoneId: 1 }, { unique: true });
+
 export const PhoneBenchmark = mongoose.models.PhoneBenchmark || mongoose.model('PhoneBenchmark', PhoneBenchmarkSchema);
 
 const ReviewSchema = new Schema({
