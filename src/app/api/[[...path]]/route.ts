@@ -49,12 +49,20 @@ function getClientIp(req: NextRequest): string {
 }
 
 // ============ HELPERS ============
+// Map MongoDB _id to id for lean docs (frontend expects 'id')
+function mapId(doc: any): any {
+  if (!doc) return doc;
+  if (Array.isArray(doc)) return doc.map(mapId);
+  if (doc._id) doc.id = doc._id.toString();
+  return doc;
+}
+
 // Batch-attach brands to lean phone docs (single query)
 async function attachBrands(phones: any[]): Promise<void> {
   const brandIds = [...new Set(phones.map((p: any) => p.brandId).filter(Boolean).map((id: any) => new Types.ObjectId(id)))];
   if (brandIds.length === 0) return;
   const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo country').lean();
-  const brandMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+  const brandMap = new Map(brands.map((b: any) => [b._id.toString(), mapId(b)]));
   for (const phone of phones) {
     (phone as any).brand = brandMap.get(phone.brandId?.toString()) || null;
   }
@@ -68,8 +76,8 @@ async function attachPhoneExtras(phones: any[]): Promise<void> {
     PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean(),
     PhoneBenchmark.find({ phoneId: { $in: phoneIds } }).lean(),
   ]);
-  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), s]));
-  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), b]));
+  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), mapId(s)]));
+  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), mapId(b)]));
   for (const phone of phones) {
     (phone as any).specs = specsMap.get(phone._id?.toString()) || null;
     (phone as any).benchmarks = benchmarksMap.get(phone._id?.toString()) || null;
@@ -148,6 +156,7 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
       Phone.countDocuments(where),
     ]);
 
+    phones.forEach(mapId);
     await attachBrands(phones);
     await attachPhoneExtras(phones);
 
@@ -177,6 +186,7 @@ async function handlePhoneDetail(req: NextRequest, slug: string) {
     const safeSlug = String(slug).replace(/[^a-z0-9\-]/gi, '');
     const phone = await Phone.findOne({ slug: safeSlug }).lean();
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+    mapId(phone);
     await attachBrands([phone]);
     // Increment views (fire and forget)
     Phone.findOneAndUpdate({ slug: safeSlug }, { $inc: { views: 1 } }).catch(() => {});
@@ -188,9 +198,11 @@ async function handlePhoneDetail(req: NextRequest, slug: string) {
       Review.find({ phoneId: phone._id, published: true }).lean(),
       PhonePrice.find({ phoneId: phone._id }).sort({ price: 1 }).lean(),
     ]);
+    [specs, benchmarks, ...images, ...reviews, ...prices].forEach(mapId);
     const phoneWithDetails = { ...phone, specs: specs || null, benchmarks: benchmarks || null, images, reviews, prices };
     const related = await Phone.find({ brandId: phone.brandId, _id: { $ne: phone._id }, active: true, status: 'published' })
       .sort({ overallRating: -1 }).limit(6).lean();
+    related.forEach(mapId);
     await attachBrands(related);
     return NextResponse.json({ phone: phoneWithDetails, related }, { headers: cacheHeaders(30) });
   }
@@ -228,6 +240,7 @@ async function handleBestPhones(req: NextRequest, category: string) {
 
   const phones = await Phone.find(where)
     .sort({ overallRating: -1 }).limit(20).lean();
+  phones.forEach(mapId);
   await attachBrands(phones);
   await attachPhoneExtras(phones);
   return NextResponse.json({ phones, category }, { headers: cacheHeaders(120) });
@@ -244,6 +257,7 @@ async function handleBrands(req: NextRequest) {
       { $unset: '_phones' },
       { $sort: { sortOrder: 1 } },
     ]);
+    brands.forEach((b: any) => { b.id = b._id.toString(); });
     return NextResponse.json({ brands }, { headers: cacheHeaders(300) });
   }
   if (req.method === 'POST') {
@@ -272,6 +286,7 @@ async function handleCompare(req: NextRequest) {
     const validIds = ids.filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id));
     if (validIds.length < 2) return NextResponse.json({ error: 'Invalid phone IDs' }, { status: 400 });
     const phones = await Phone.find({ _id: { $in: validIds } }).lean();
+    phones.forEach(mapId);
     await attachBrands(phones);
     await attachPhoneExtras(phones);
     return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
@@ -296,6 +311,8 @@ async function handleSearch(req: NextRequest) {
       { $unset: '_phones' },
     ]),
   ]);
+  phones.forEach(mapId);
+  brandsRaw.forEach((b: any) => { b.id = b._id.toString(); });
   await attachBrands(phones);
   return NextResponse.json({ phones, brands: brandsRaw, total: phones.length + brandsRaw.length }, { headers: cacheHeaders(30) });
 }
@@ -311,6 +328,7 @@ async function handleNews(req: NextRequest) {
     if (published) where.status = 'published';
     if (category) where.category = category;
     const news = await News.find(where).sort({ createdAt: -1 }).limit(20).lean();
+    news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
     return NextResponse.json({ news }, { headers: cacheHeaders(60) });
   }
   if (req.method === 'POST') {
@@ -335,6 +353,7 @@ async function handleSponsors(req: NextRequest) {
     const where: any = { active: true };
     if (position) where.position = position;
     const sponsors = await Sponsor.find(where).sort({ createdAt: -1 }).lean();
+    sponsors.forEach((s: any) => { s.id = s._id.toString(); });
     return NextResponse.json({ sponsors }, { headers: cacheHeaders(300) });
   }
   if (req.method === 'POST') {
@@ -461,7 +480,9 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
       const safeSlug = String(pathParts[1]).replace(/[^a-z0-9\-]/gi, '');
       const brand = await Brand.findOne({ slug: safeSlug }).lean();
       if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+      (brand as any).id = (brand as any)._id.toString();
       const phones = await Phone.find({ brandId: brand._id, active: true }).sort({ pricePKR: -1 }).lean();
+      phones.forEach(mapId);
       await attachBrands(phones);
       await attachPhoneExtras(phones);
       const brandWithPhones = { ...brand, phones };
@@ -479,6 +500,7 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
 
       if (pathParts[1] === 'phones' && method === 'GET') {
         const phones = await Phone.find().sort({ createdAt: -1 }).limit(50).lean();
+        phones.forEach(mapId);
         await attachBrands(phones);
         return NextResponse.json({ phones });
       }
@@ -489,19 +511,23 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
           { $unset: '_phones' },
           { $sort: { sortOrder: 1 } },
         ]);
+        brands.forEach((b: any) => { b.id = b._id.toString(); });
         return NextResponse.json({ brands });
       }
       if (pathParts[1] === 'news' && method === 'GET') {
         const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
+        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
         return NextResponse.json({ news });
       }
       if (pathParts[1] === 'sponsors' && method === 'GET') {
         const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
+        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
         return NextResponse.json({ sponsors });
       }
       // FIX: Support both 'activity' and 'activity-logs' paths
       if ((pathParts[1] === 'activity-logs' || pathParts[1] === 'activity') && method === 'GET') {
         const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
+        logs.forEach((l: any) => { l.id = l._id.toString(); });
         return NextResponse.json({ logs });
       }
       if (pathParts[1] === 'stats') return handleStats();
@@ -513,12 +539,14 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
         await connectDB();
         const allPhones = await Phone.find({ active: true, status: 'published' })
           .sort({ overallRating: -1 }).lean();
+        allPhones.forEach(mapId);
         await attachBrands(allPhones);
         await attachPhoneExtras(allPhones);
         const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
         const featured = p(x => x.featured, 8);
         const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
         const upcoming = await Phone.find({ upcoming: true, active: true }).sort({ createdAt: -1 }).limit(6).lean();
+        upcoming.forEach(mapId);
         await attachBrands(upcoming);
         const bestCamera = p(x => x.cameraScore >= 85, 6);
         const bestGaming = p(x => x.performanceScore >= 88, 6);
@@ -530,6 +558,8 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
           News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
           Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
         ]);
+        news.forEach((n: any) => { n.id = n._id.toString(); n.imageUrl = n.image; });
+        sponsors.forEach((s: any) => { s.id = s._id.toString(); });
         return NextResponse.json({
           featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
           priceCategories: {

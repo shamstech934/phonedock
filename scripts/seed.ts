@@ -354,7 +354,7 @@ async function main() {
     await Brand.findOneAndUpdate(
       { slug: brand.slug },
       { $set: brand },
-      { upsert: true, returnDocument: "after" }
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
   }
   console.log(`Created ${BRANDS.length} brands`);
@@ -404,7 +404,7 @@ async function main() {
       await PhoneSpecs.findOneAndUpdate(
         { phoneId: phone._id },
         { $set: specData },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, new: true, setDefaultsOnInsert: true }
       );
     }
 
@@ -414,7 +414,7 @@ async function main() {
       await PhoneBenchmark.findOneAndUpdate(
         { phoneId: phone._id },
         { $set: benchmarkData },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, new: true, setDefaultsOnInsert: true }
       );
     }
 
@@ -442,7 +442,7 @@ async function main() {
   // Seed news
   console.log('Seeding news...');
   for (const n of NEWS_DATA) {
-    await News.findOneAndUpdate({ slug: n.slug }, n, { upsert: true, returnDocument: "after" });
+    await News.findOneAndUpdate({ slug: n.slug }, n, { upsert: true, new: true });
   }
   console.log(`Created ${NEWS_DATA.length} news articles`);
 
@@ -453,7 +453,7 @@ async function main() {
   await Admin.findOneAndUpdate(
     { email: adminData.email },
     { $set: adminData },
-    { upsert: true, returnDocument: "after" }
+    { upsert: true, new: true }
   );
   console.log('Created admin user (admin@phonedock.pk / admin123)');
 
