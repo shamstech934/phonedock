@@ -9,6 +9,14 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 60; // requests per window
 
+// Cleanup expired entries every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(key);
+  }
+}, 300_000).unref();
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
@@ -464,6 +472,8 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
     const seg0 = pathParts[0] || '';
 
     if (seg0 === 'auth') return handleAuth(req, pathParts[1] || '');
+    // FIX: Also handle login at /api/admin/login (frontend calls this path)
+    if (seg0 === 'admin' && pathParts[1] === 'login' && req.method === 'POST') return handleAuth(req, 'login');
     if (seg0 === 'stats') return handleStats();
     if (seg0 === 'sponsors') return handleSponsors(req);
     if (seg0 === 'seo' && pathParts[1] === 'sitemap') return handleSitemap();

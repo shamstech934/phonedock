@@ -1,0 +1,1989 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { useTheme } from 'next-themes';
+     5→import Image from 'next/image';
+     6→import {
+     7→  Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
+     8→  TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
+     9→  LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
+    10→  ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
+    11→  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
+    12→  AlertTriangle
+    13→} from 'lucide-react';
+    14→import { Button } from '@/components/ui/button';
+    15→import { Input } from '@/components/ui/input';
+    16→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    17→import { Badge } from '@/components/ui/badge';
+    18→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    19→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+    20→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    21→import { Skeleton } from '@/components/ui/skeleton';
+    22→import { Progress } from '@/components/ui/progress';
+    23→import { ScrollArea } from '@/components/ui/scroll-area';
+    24→import { Separator } from '@/components/ui/separator';
+    25→import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+    26→
+    27→// ============ TYPES ============
+    28→interface Brand { id: string; name: string; slug: string; logo: string; country: string; description: string; _count?: { phones: number } }
+    29→interface PhoneSpecs { display?: string; displayType?: string; resolution?: string; refreshRate?: string; protection?: string; brightness?: string; chipset?: string; cpu?: string; gpu?: string; process?: string; ram?: string; ramType?: string; storage?: string; cardSlot?: string; mainCamera?: string; mainCameraSensor?: string; aperture?: string; ois?: string; eis?: string; ultrawide?: string; telephoto?: string; zoom?: string; cameraFeatures?: string; videoRecording?: string; selfieCamera?: string; selfieSensor?: string; selfieVideo?: string; battery?: string; charging?: string; chargingSpeed?: string; wirelessCharge?: string; wirelessSpeed?: string; reverseCharge?: string; weight?: string; dimensions?: string; build?: string; sim?: string; ipRating?: string; network?: string; fiveG?: string; wifi?: string; bluetooth?: string; nfc?: string; usb?: string; fingerprint?: string; faceUnlock?: string; sensors?: string; colors?: string; os?: string; osVersion?: string; osUI?: string; updatePolicy?: string; specialFeatures?: string; }
+    30→interface PhoneBenchmark { antutu: number; geekbenchSingle: number; geekbenchMulti: number; gamingScore: number; pubgFps?: string; codMobileFps?: string; genshinFps?: string; videoPlayback?: string; gamingBattery?: string; browsingBattery?: string; }
+    31→interface PhoneImage { id: string; url: string; altText: string; sortOrder: number; }
+    32→interface PhonePrice { id: string; storeName: string; price: number; url: string; inStock: boolean; }
+    33→interface Phone { id: string; modelName: string; slug: string; brandId: string; brand?: Brand; thumbnail: string; pricePKR: number; description: string; overallRating: number; cameraScore: number; performanceScore: number; batteryScore: number; displayScore: number; valueScore: number; ptaStatus: string; ptaApproved: boolean; releaseDate: string; trending: boolean; upcoming: boolean; featured: boolean; specs?: PhoneSpecs; benchmarks?: PhoneBenchmark; images?: PhoneImage[]; prices?: PhonePrice[]; pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string; published?: boolean; }
+    34→interface NewsItem { id: string; title: string; slug: string; excerpt: string; content: string; category: string; author: string; imageUrl: string; published: boolean; createdAt: string; }
+    35→interface Sponsor { id: string; name: string; image: string; url: string; position: string; active: boolean; }
+    36→interface ActivityLog { id: string; action: string; details: string; entityType: string; createdAt: string; admin?: { name: string; email: string }; }
+    37→interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; bestCamera: Phone[]; bestGaming: Phone[]; bestBattery: Phone[]; upcoming: Phone[]; news: NewsItem[]; priceCategories: { above100k: Phone[]; price60to100: Phone[]; price40to60: Phone[]; price20to40: Phone[]; under20k: Phone[] }; brands: Brand[]; sponsors?: Sponsor[]; }
+    38→interface AdminUser { id: string; email: string; name: string; role: string; }
+    39→
+    40→// ============ ROUTER ============
+    41→type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity';
+    42→
+    43→function useHashRouter() {
+    44→  const [view, setView] = useState<View>('home');
+    45→  const [params, setParams] = useState<Record<string, string>>({});
+    46→
+    47→  useEffect(() => {
+    48→    const parseHash = () => {
+    49→      const hash = window.location.hash.slice(1) || '/';
+    50→      const parts = hash.split('/').filter(Boolean);
+    51→      if (parts.length === 0) { setView('home'); setParams({}); return; }
+    52→      if (parts[0] === 'phone' && parts[1]) { setView('phone'); setParams({ slug: parts[1] }); return; }
+    53→      if (parts[0] === 'compare') { setView('compare'); setParams(Object.fromEntries(new URLSearchParams(parts.slice(1).join('/')))); return; }
+    54→      if (parts[0] === 'brand' && parts[1]) { setView('brand'); setParams({ slug: parts[1] }); return; }
+    55→      if (parts[0] === 'search') { setView('search'); setParams({ q: parts.slice(1).join('/') }); return; }
+    56→      if (parts[0] === 'brands') { setView('brands'); setParams({}); return; }
+    57→      if (parts[0] === 'news') { setView('news'); setParams({}); return; }
+    58→      if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
+    59→      if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
+    60→      if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
+    61→      if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
+    62→      if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
+    63→      if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
+    64→      if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
+    65→      if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
+    66→      setView('home'); setParams({});
+    67→    };
+    68→    parseHash();
+    69→    window.addEventListener('hashchange', parseHash);
+    70→    return () => window.removeEventListener('hashchange', parseHash);
+    71→  }, []);
+    72→
+    73→  const navigate = useCallback((path: string) => {
+    74→    window.location.hash = path;
+    75→  }, []);
+    76→
+    77→  return { view, params, navigate };
+    78→}
+    79→
+    80→// ============ HELPERS ============
+    81→function formatPrice(price: number): string {
+    82→  return 'PKR ' + price.toLocaleString('en-PK');
+    83→}
+    84→
+    85→// ============ SCORE BAR ============
+    86→function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
+    87→  if (mini) {
+    88→    return (
+    89→      <div className="flex items-center gap-2">
+    90→        <span className="text-xs text-muted-foreground w-14 shrink-0">{label}</span>
+    91→        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+    92→          <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+    93→        </div>
+    94→        <span className="text-xs font-bold w-8 text-right">{score}</span>
+    95→      </div>
+    96→    );
+    97→  }
+    98→  return (
+    99→    <div className="space-y-1.5">
+   100→      <div className="flex justify-between text-sm">
+   101→        <span className="text-muted-foreground">{label}</span>
+   102→        <span className="font-semibold">{score}/100</span>
+   103→      </div>
+   104→      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+   105→        <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+   106→      </div>
+   107→    </div>
+   108→  );
+   109→}
+   110→
+   111→// ============ PHONE CARD ============
+   112→function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
+   113→  const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
+   114→  return (
+   115→    <div className="phone-card bg-white rounded-2xl border border-gray-100 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={nav}>
+   116→      <div className="p-3 sm:p-4">
+   117→        <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
+   118→          {phone.thumbnail ? (
+   119→            <Image src={phone.thumbnail} alt={phone.modelName} width={200} height={200} className="object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500 ease-out" unoptimized />
+   120→          ) : (
+   121→            <Smartphone className="w-16 h-16 text-gray-300" />
+   122→          )}
+   123→          {phone.ptaApproved && (
+   124→            <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
+   125→              <Shield className="w-3 h-3 mr-0.5" /> PTA
+   126→            </Badge>
+   127→          )}
+   128→          {phone.overallRating >= 8 && !phone.upcoming && (
+   129→            <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-semibold shadow-sm shadow-blue-500/30">
+   130→              <Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}
+   131→            </Badge>
+   132→          )}
+   133→          {phone.upcoming && (
+   134→            <Badge className="absolute top-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
+   135→              <Clock className="w-3 h-3 mr-0.5" /> Upcoming
+   136→            </Badge>
+   137→          )}
+   138→          {phone.trending && (
+   139→            <Badge className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
+   140→              <TrendingUp className="w-3 h-3 mr-0.5" /> Hot
+   141→            </Badge>
+   142→          )}
+   143→        </div>
+   144→        <div className="space-y-1.5">
+   145→          <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
+   146→          <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
+   147→          <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
+   148→          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+   149→            {phone.specs?.ram && (
+   150→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   151→                <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
+   152→              </span>
+   153→            )}
+   154→            {phone.specs?.storage && (
+   155→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   156→                <Layers className="w-2.5 h-2.5" />{phone.specs.storage}
+   157→              </span>
+   158→            )}
+   159→            {phone.specs?.chipset && (
+   160→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md hidden sm:flex items-center gap-0.5">
+   161→                <Cpu className="w-2.5 h-2.5" />{phone.specs.chipset.split(' ').slice(0, 2).join(' ')}
+   162→              </span>
+   163→            )}
+   164→            {phone.specs?.battery && (
+   165→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   166→                <Battery className="w-2.5 h-2.5" />{phone.specs.battery}
+   167→              </span>
+   168→            )}
+   169→          </div>
+   170→        </div>
+   171→        <Button className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg h-9 text-xs font-semibold transition-colors">
+   172→          View Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
+   173→        </Button>
+   174→      </div>
+   175→    </div>
+   176→  );
+   177→}
+   178→
+   179→// ============ PHONE CARD SKELETON ============
+   180→function PhoneCardSkeleton() {
+   181→  return (
+   182→    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   183→      <div className="p-3 sm:p-4">
+   184→        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
+   185→        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
+   186→        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
+   187→        <div className="skeleton-shimmer h-4 w-3/4 mb-2 rounded-md" />
+   188→        <div className="skeleton-shimmer h-3 w-20 mb-1 rounded-md" />
+   189→        <div className="skeleton-shimmer h-3 w-16 mb-3 rounded-md" />
+   190→        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
+   191→      </div>
+   192→    </div>
+   193→  );
+   194→}
+   195→
+   196→// ============ SECTION HEADER ============
+   197→function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   198→  return (
+   199→    <div className="flex items-center justify-between mb-5">
+   200→      <div className="flex items-center gap-3">
+   201→        {Icon && <Icon className="w-5 h-5 text-blue-500" />}
+   202→        <h2 className="text-lg sm:text-xl font-bold text-gray-900 relative">
+   203→          {title}
+   204→          <span className="absolute -bottom-1.5 left-0 h-[3px] w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
+   205→        </h2>
+   206→      </div>
+   207→      {link && (
+   208→        <button onClick={() => { window.location.hash = link; }} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
+   209→          {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
+   210→        </button>
+   211→      )}
+   212→    </div>
+   213→  );
+   214→}
+   215→
+   216→// ============ ADMIN SIDEBAR ============
+   217→function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
+   218→  const adminLinks = [
+   219→    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
+   220→    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
+   221→    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
+   222→    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
+   223→    { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
+   224→    { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
+   225→  ];
+   226→
+   227→  return (
+   228→    <>
+   229→      {/* Desktop Sidebar */}
+   230→      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-100 min-h-[calc(100vh-3.5rem)] sticky top-14">
+   231→        <div className="p-4 border-b border-gray-50">
+   232→          <div className="flex items-center gap-3">
+   233→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
+   234→              <Shield className="w-5 h-5 text-white" />
+   235→            </div>
+   236→            <div className="min-w-0">
+   237→              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
+   238→              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
+   239→            </div>
+   240→          </div>
+   241→        </div>
+   242→        <nav className="flex-1 p-3 space-y-1">
+   243→          {adminLinks.map(link => {
+   244→            const isActive = currentView === link.view;
+   245→            return (
+   246→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive ? 'bg-blue-50 text-blue-600 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+   247→                <link.icon className="w-4 h-4" />{link.label}
+   248→              </button>
+   249→            );
+   250→          })}
+   251→        </nav>
+   252→        <div className="p-3 border-t border-gray-50">
+   253→          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all duration-200 mb-1">
+   254→            <Eye className="w-4 h-4" />View Site
+   255→          </button>
+   256→          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200">
+   257→            <LogOut className="w-4 h-4" />Logout
+   258→          </button>
+   259→        </div>
+   260→      </aside>
+   261→
+   262→      {/* Mobile horizontal pill tabs */}
+   263→      <div className="lg:hidden border-b border-gray-100 bg-white">
+   264→        <div className="flex items-center justify-between px-4 py-2">
+   265→          <div className="flex items-center gap-2">
+   266→            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+   267→              <Shield className="w-3.5 h-3.5 text-white" />
+   268→            </div>
+   269→            <span className="text-xs font-semibold text-gray-900">{admin.name || admin.email}</span>
+   270→          </div>
+   271→          <div className="flex items-center gap-1">
+   272→            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
+   273→            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
+   274→          </div>
+   275→        </div>
+   276→        <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
+   277→          {adminLinks.map(link => {
+   278→            const isActive = currentView === link.view;
+   279→            return (
+   280→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${isActive ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
+   281→                <link.icon className="w-3 h-3" />{link.label}
+   282→              </button>
+   283→            );
+   284→          })}
+   285→        </div>
+   286→      </div>
+   287→    </>
+   288→  );
+   289→}
+   290→
+   291→// ============ HEADER (LIQUID GLASS) ============
+   292→function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
+   293→  const [mobileOpen, setMobileOpen] = useState(false);
+   294→  const [searchOpen, setSearchOpen] = useState(false);
+   295→  const [searchQ, setSearchQ] = useState('');
+   296→  const searchRef = useRef<HTMLInputElement>(null);
+   297→
+   298→  useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
+   299→  useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [location?.hash]);
+   300→
+   301→  const doSearch = () => { if (searchQ.trim()) { onSearch(searchQ.trim()); setSearchOpen(false); setSearchQ(''); } };
+   302→
+   303→  return (
+   304→    <header className="glass-nav sticky top-0 z-50">
+   305→      <div className="max-w-7xl mx-auto px-4">
+   306→        <div className="flex items-center justify-between h-14 sm:h-16">
+   307→          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('/')}>
+   308→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
+   309→              <Smartphone className="w-5 h-5 text-white" />
+   310→            </div>
+   311→            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-500">Dock</span></span>
+   312→          </div>
+   313→
+   314→          {/* Desktop Nav */}
+   315→          <nav className="hidden md:flex items-center gap-1">
+   316→            {[
+   317→              { label: 'Home', hash: '/' }, { label: 'Brands', hash: '/brands' },
+   318→              { label: 'Compare', hash: '/compare' }, { label: 'News', hash: '/news' },
+   319→            ].map(item => (
+   320→              <button key={item.hash} onClick={() => onNavigate(item.hash)} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200">
+   321→                {item.label}
+   322→              </button>
+   323→            ))}
+   324→          </nav>
+   325→
+   326→          <div className="flex items-center gap-1">
+   327→            {admin ? (
+   328→              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-blue-500/25">
+   329→                <Shield className="w-4 h-4" />Dashboard
+   330→              </button>
+   331→            ) : (
+   332→              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
+   333→                <Shield className="w-4 h-4" />Admin
+   334→              </button>
+   335→            )}
+   336→            <button onClick={() => setSearchOpen(!searchOpen)} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   337→              <Search className="w-[18px] h-[18px]" />
+   338→            </button>
+   339→            <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   340→              {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+   341→            </button>
+   342→            <button className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200 md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
+   343→              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+   344→            </button>
+   345→          </div>
+   346→        </div>
+   347→
+   348→        {/* Search overlay */}
+   349→        {searchOpen && (
+   350→          <div className="pb-3 flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+   351→            <div className="relative flex-1">
+   352→              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+   353→              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" autoFocus />
+   354→            </div>
+   355→            <button onClick={doSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-11 px-5 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+   356→              Search
+   357→            </button>
+   358→          </div>
+   359→        )}
+   360→      </div>
+   361→
+   362→      {/* Mobile Drawer */}
+   363→      {mobileOpen && (
+   364→        <div className="md:hidden glass-modal border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200">
+   365→          <nav className="flex flex-col p-4 gap-1">
+   366→            {[
+   367→              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
+   368→              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
+   369→            ].map(item => (
+   370→              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   371→                <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+   372→              </button>
+   373→            ))}
+   374→            {admin ? (
+   375→              <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 bg-blue-50/80">
+   376→                <Shield className="w-4 h-4" />Dashboard
+   377→              </button>
+   378→            ) : (
+   379→              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   380→                <Shield className="w-4 h-4 text-gray-400" />Admin
+   381→              </button>
+   382→            )}
+   383→          </nav>
+   384→        </div>
+   385→      )}
+   386→    </header>
+   387→  );
+   388→}
+   389→
+   390→// ============ FOOTER ============
+   391→function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
+   392→  return (
+   393→    <footer className="bg-[#0F172A] text-gray-400 mt-auto">
+   394→      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
+   395→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+   396→          <div className="col-span-2 sm:col-span-1">
+   397→            <div className="flex items-center gap-2.5 mb-4">
+   398→              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center">
+   399→                <Smartphone className="w-5 h-5 text-white" />
+   400→              </div>
+   401→              <span className="font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+   402→            </div>
+   403→            <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+   404→          </div>
+   405→          <div>
+   406→            <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
+   407→            <div className="space-y-2.5 text-sm">
+   408→              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+   409→                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</button>
+   410→              ))}
+   411→            </div>
+   412→          </div>
+   413→          <div>
+   414→            <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
+   415→            <div className="space-y-2.5 text-sm">
+   416→              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/' }, { l: 'Best Gaming', h: '/' }, { l: 'Best Battery', h: '/' }].map(item => (
+   417→                <button key={item.l} onClick={() => onNavigate(item.h)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</button>
+   418→              ))}
+   419→            </div>
+   420→          </div>
+   421→          <div>
+   422→            <h4 className="font-semibold text-white mb-4 text-sm">Price Ranges (PKR)</h4>
+   423→            <div className="space-y-2.5 text-sm text-gray-500">
+   424→              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
+   425→                <span key={r} className="block">{r}</span>
+   426→              ))}
+   427→            </div>
+   428→          </div>
+   429→        </div>
+   430→        <Separator className="bg-gray-800 mb-6" />
+   431→        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
+   432→          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+   433→          <p className="text-cyan-400/80 font-medium">Phone prices may vary. Check with retailers.</p>
+   434→        </div>
+   435→      </div>
+   436→    </footer>
+   437→  );
+   438→}
+   439→
+   440→// ============ PHONE SECTION (reusable) ============
+   441→function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean }) {
+   442→  if (!phones.length) {
+   443→    if (!showEmpty) return null;
+   444→    return (
+   445→      <section className="space-y-4">
+   446→        <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   447→        <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+   448→          <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+   449→          <p className="text-sm text-muted-foreground">No phones in this section yet</p>
+   450→          <p className="text-xs text-muted-foreground/60 mt-1">Check back later for updates</p>
+   451→        </div>
+   452→      </section>
+   453→    );
+   454→  }
+   455→  return (
+   456→    <section className="space-y-4">
+   457→      <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   458→      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   459→        {phones.map(p => (
+   460→          <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   461→            <PhoneCard phone={p} />
+   462→          </div>
+   463→        ))}
+   464→      </div>
+   465→    </section>
+   466→  );
+   467→}
+   468→
+   469→// ============ HOME PAGE ============
+   470→function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
+   471→  const [homeSearchQ, setHomeSearchQ] = useState('');
+   472→
+   473→  if (loading || !data) {
+   474→    return (
+   475→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+   476→        <div className="skeleton-shimmer h-72 sm:h-96 rounded-3xl" />
+   477→        <div className="skeleton-shimmer h-14 rounded-2xl max-w-2xl mx-auto" />
+   478→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+   479→      </div>
+   480→    );
+   481→  }
+   482→
+   483→  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
+   484→  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
+   485→
+   486→  const handleHomeSearch = () => {
+   487→    if (homeSearchQ.trim()) {
+   488→      window.location.hash = `/search/${encodeURIComponent(homeSearchQ.trim())}`;
+   489→    }
+   490→  };
+   491→
+   492→  return (
+   493→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14">
+   494→      {/* Hero */}
+   495→      <section className="rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #2563EB 100%)' }}>
+   496→        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-400/15 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl" />
+   497→        <div className="absolute bottom-0 left-0 w-60 h-60 bg-purple-500/10 rounded-full translate-y-1/2 -translate-x-1/3 blur-3xl" />
+   498→        <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-cyan-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+   499→        <div className="relative z-10 max-w-2xl">
+   500→          <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+   501→            <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
+   502→          </Badge>
+   503→          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight">
+   504→            Find Your Perfect <span className="text-blue-400">Smartphone</span>
+   505→          </h1>
+   506→          <p className="text-gray-400 text-sm sm:text-base mb-6 leading-relaxed max-w-lg">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+   507→
+   508→          {/* Search Bar Inside Hero */}
+   509→          <div className="flex gap-2 max-w-xl">
+   510→            <div className="relative flex-1">
+   511→              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+   512→              <input placeholder="Phone name, brand ya chipset search karein..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/95 text-gray-900 outline-none focus:ring-2 focus:ring-blue-400/50 placeholder:text-gray-400 transition-all shadow-lg" />
+   513→            </div>
+   514→            <button onClick={handleHomeSearch} className="bg-blue-500 hover:bg-blue-400 text-white h-12 px-6 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2">
+   515→              <Search className="w-4 h-4" /> Search
+   516→            </button>
+   517→          </div>
+   518→
+   519→          <div className="flex flex-wrap gap-3 mt-6">
+   520→            <Button className="bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl h-10 px-5 shadow-lg shadow-white/10 transition-colors" onClick={() => onNavigate('/brands')}>
+   521→              <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+   522→            </Button>
+   523→          </div>
+   524→          <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-400">
+   525→            <span className="flex items-center gap-1.5"><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
+   526→            <span className="flex items-center gap-1.5"><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
+   527→            <span className="flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+   528→          </div>
+   529→        </div>
+   530→      </section>
+   531→
+   532→      {/* Featured Phones */}
+   533→      <section className="space-y-4">
+   534→        <SectionHeader title="Featured Phones" icon={Star} link="/brands" linkText="All Phones" />
+   535→        {data.featured.length > 0 ? (
+   536→          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   537→            {data.featured.slice(0, 8).map(p => (
+   538→              <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   539→                <PhoneCard phone={p} />
+   540→              </div>
+   541→            ))}
+   542→          </div>
+   543→        ) : (
+   544→          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+   545→            <Star className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+   546→            <p className="text-sm text-muted-foreground">No featured phones yet</p>
+   547→            <p className="text-xs text-muted-foreground/60 mt-1">We are adding phones to our database</p>
+   548→          </div>
+   549→        )}
+   550→      </section>
+   551→
+   552→      {/* Phones by Price */}
+   553→      {data.priceCategories.above100k.length > 0 && (
+   554→        <section className="space-y-5">
+   555→          <SectionHeader title="Phones by Price" icon={Tag} />
+   556→          <Tabs defaultValue="above100k" className="w-full">
+   557→            <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 bg-gray-100 p-1.5 rounded-2xl">
+   558→              {[
+   559→                { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
+   560→                { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
+   561→                { key: 'under20k', label: 'Under 20K' },
+   562→              ].map(tab => (
+   563→                <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl">{tab.label}</TabsTrigger>
+   564→              ))}
+   565→            </TabsList>
+   566→            {['above100k', 'price60to100', 'price40to60', 'price20to40', 'under20k'].map(key => (
+   567→              <TabsContent key={key} value={key}>
+   568→                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:overflow-visible">
+   569→                  {(data.priceCategories as Record<string, Phone[]>)[key]?.length > 0 ? (data.priceCategories as Record<string, Phone[]>)[key].map((p: Phone) => (
+   570→                    <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto"><PhoneCard phone={p} /></div>
+   571→                  )) : (
+   572→                    <div className="col-span-full text-center py-16 text-muted-foreground">
+   573→                      <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
+   574→                      <p className="text-sm">No phones in this range yet</p>
+   575→                    </div>
+   576→                  )}
+   577→                </div>
+   578→              </TabsContent>
+   579→            ))}
+   580→          </Tabs>
+   581→        </section>
+   582→      )}
+   583→
+   584→      {/* Trending Now */}
+   585→      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" showEmpty />
+   586→
+   587→      {/* Best in Category */}
+   588→      <section className="space-y-5">
+   589→        <SectionHeader title="Best in Category" icon={Trophy} />
+   590→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   591→          {[
+   592→            { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, gradient: 'from-violet-500 to-purple-600' },
+   593→            { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, gradient: 'from-blue-500 to-cyan-500' },
+   594→            { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, gradient: 'from-emerald-500 to-green-600' },
+   595→            { phones: flagshipPhones, title: 'Flagship Phones', icon: Star, gradient: 'from-amber-500 to-orange-500' },
+   596→            { phones: budgetPhones, title: 'Budget Phones', icon: Tag, gradient: 'from-green-500 to-emerald-600' },
+   597→            { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, gradient: 'from-indigo-500 to-violet-600' },
+   598→          ].map(cat => (
+   599→            <div key={cat.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
+   600→              <div className={`bg-gradient-to-br ${cat.gradient} p-4 text-white`}>
+   601→                <div className="flex items-center gap-2"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
+   602→              </div>
+   603→              <div className="p-3 space-y-1.5">
+   604→                {cat.phones.length > 0 ? cat.phones.slice(0, 3).map((p, i) => (
+   605→                  <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors" onClick={() => onNavigate(`/phone/${p.slug}`)}>
+   606→                    <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
+   607→                    <div className="flex-1 min-w-0">
+   608→                      <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
+   609→                      <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
+   610→                    </div>
+   611→                    <p className="text-xs font-bold text-blue-600">{formatPrice(p.pricePKR)}</p>
+   612→                  </div>
+   613→                )) : (
+   614→                  <div className="text-center py-5 text-xs text-muted-foreground">No phones yet</div>
+   615→                )}
+   616→              </div>
+   617→            </div>
+   618→          ))}
+   619→        </div>
+   620→      </section>
+   621→
+   622→      {/* Latest Additions */}
+   623→      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" showEmpty />
+   624→
+   625→      {/* Latest News */}
+   626→      {data.news.length > 0 && (
+   627→        <section className="space-y-5">
+   628→          <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+   629→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   630→            {data.news.slice(0, 4).map(n => (
+   631→              <div key={n.id} className="bg-white rounded-2xl border border-gray-100 p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => onNavigate('/news')}>
+   632→                <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
+   633→                <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
+   634→                <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
+   635→                <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+   636→              </div>
+   637→            ))}
+   638→          </div>
+   639→        </section>
+   640→      )}
+   641→
+   642→      {/* Sponsor Banner */}
+   643→      {data.sponsors && data.sponsors.length > 0 && (
+   644→        <section>
+   645→          <div className="rounded-2xl overflow-hidden">
+   646→            <div className="flex items-center gap-4 p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, #111827, #1F2937)' }}>
+   647→              <div className="flex-1 min-w-0">
+   648→                <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30 mb-2 text-[10px] font-medium">Sponsored</Badge>
+   649→                <div className="flex items-center gap-3">
+   650→                  {data.sponsors[0].image ? (
+   651→                    <Image src={data.sponsors[0].image} alt={data.sponsors[0].name} width={60} height={60} className="rounded-xl object-contain bg-white/10 p-1.5" unoptimized />
+   652→                  ) : (
+   653→                    <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center"><Star className="w-7 h-7 text-blue-400" /></div>
+   654→                  )}
+   655→                  <div>
+   656→                    <h3 className="font-bold text-sm sm:text-base text-white">{data.sponsors[0].name}</h3>
+   657→                    <p className="text-xs text-gray-500">{data.sponsors[0].position || 'Featured Partner'}</p>
+   658→                  </div>
+   659→                </div>
+   660→              </div>
+   661→              {data.sponsors[0].url && (
+   662→                <a href={data.sponsors[0].url} target="_blank" rel="noopener noreferrer">
+   663→                  <Button variant="outline" size="sm" className="border-white/15 text-white hover:bg-white/10 rounded-xl">
+   664→                    Visit <ExternalLink className="w-3 h-3 ml-1" />
+   665→                  </Button>
+   666→                </a>
+   667→              )}
+   668→            </div>
+   669→          </div>
+   670→        </section>
+   671→      )}
+   672→
+   673→      {/* Upcoming Phones */}
+   674→      <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} showEmpty />
+   675→    </div>
+   676→  );
+   677→}
+   678→
+   679→// ============ PHONE DETAIL PAGE ============
+   680→function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   681→  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
+   682→  const [loading, setLoading] = useState(true);
+   683→  const [activeTab, setActiveTab] = useState('specs');
+   684→
+   685→  useEffect(() => {
+   686→    let cancelled = false;
+   687→    setLoading(true);
+   688→    fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+   689→    return () => { cancelled = true; };
+   690→  }, [slug]);
+   691→
+   692→  if (loading) {
+   693→    return (
+   694→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+   695→        <div className="skeleton-shimmer h-6 w-64 rounded-lg" />
+   696→        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   697→          <div className="space-y-4">
+   698→            <div className="skeleton-shimmer aspect-square rounded-2xl" />
+   699→            <div className="skeleton-shimmer h-48 rounded-2xl" />
+   700→          </div>
+   701→          <div className="lg:col-span-2 space-y-4">
+   702→            <div className="skeleton-shimmer h-8 w-3/4 rounded-lg" />
+   703→            <div className="skeleton-shimmer h-4 w-full rounded-lg" />
+   704→            <div className="skeleton-shimmer h-32 rounded-2xl" />
+   705→            <div className="skeleton-shimmer h-64 rounded-2xl" />
+   706→          </div>
+   707→        </div>
+   708→      </div>
+   709→    );
+   710→  }
+   711→
+   712→  if (!data?.phone) {
+   713→    return (
+   714→      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+   715→        <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mx-auto mb-5">
+   716→          <Smartphone className="w-10 h-10 text-gray-300" />
+   717→        </div>
+   718→        <h2 className="text-xl font-bold text-gray-900">Phone not found</h2>
+   719→        <p className="text-sm text-muted-foreground mt-2">The phone you&apos;re looking for doesn&apos;t exist.</p>
+   720→        <Button variant="outline" className="mt-6 rounded-xl" onClick={() => onNavigate('/')}>Go Home</Button>
+   721→      </div>
+   722→    );
+   723→  }
+   724→
+   725→  const { phone, related } = data;
+   726→  const p = phone;
+   727→
+   728→  const specGroups = [
+   729→    { title: 'Display & Design', icon: Monitor, specs: [
+   730→      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
+   731→      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
+   732→      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
+   733→      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
+   734→    ]},
+   735→    { title: 'Performance', icon: Cpu, specs: [
+   736→      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
+   737→      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
+   738→      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
+   739→    ]},
+   740→    { title: 'Camera', icon: Camera, specs: [
+   741→      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
+   742→      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
+   743→      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
+   744→      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
+   745→    ]},
+   746→    { title: 'Battery & Charging', icon: Battery, specs: [
+   747→      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   748→      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   749→    ]},
+   750→    { title: 'Connectivity', icon: Wifi, specs: [
+   751→      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
+   752→      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
+   753→    ]},
+   754→    { title: 'Features & OS', icon: Smartphone, specs: [
+   755→      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
+   756→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   757→      { label: 'Special Features', value: p.specs?.specialFeatures },
+   758→    ]},
+   759→  ];
+   760→
+   761→  const cameraTiles = [
+   762→    { label: 'Sensor', value: p.specs?.mainCameraSensor },
+   763→    { label: 'Aperture', value: p.specs?.aperture },
+   764→    { label: 'OIS', value: p.specs?.ois },
+   765→    { label: 'EIS', value: p.specs?.eis },
+   766→    { label: 'Zoom', value: p.specs?.zoom },
+   767→    { label: 'Video', value: p.specs?.videoRecording },
+   768→    { label: 'Features', value: p.specs?.cameraFeatures },
+   769→  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
+   770→
+   771→  const perfTiles = [
+   772→    { label: 'Process Node', value: p.specs?.process, span: '' },
+   773→    { label: 'Chipset', value: p.specs?.chipset, span: 'sm:col-span-2' },
+   774→    { label: 'CPU', value: p.specs?.cpu, span: 'sm:col-span-2' },
+   775→    { label: 'GPU', value: p.specs?.gpu, span: 'sm:col-span-2' },
+   776→    { label: 'RAM', value: p.specs?.ram, span: '' },
+   777→    { label: 'RAM Type', value: p.specs?.ramType, span: '' },
+   778→    { label: 'Storage', value: p.specs?.storage, span: '' },
+   779→  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
+   780→
+   781→  const batteryTiles = [
+   782→    { label: 'Capacity', value: p.specs?.battery },
+   783→    { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   784→    { label: 'Wireless Charging', value: p.specs?.wirelessCharge },
+   785→    { label: 'Wireless Speed', value: p.specs?.wirelessSpeed },
+   786→    { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   787→  ];
+   788→  if (p.benchmarks?.videoPlayback) batteryTiles.push({ label: 'Video Playback', value: p.benchmarks.videoPlayback });
+   789→  if (p.benchmarks?.gamingBattery) batteryTiles.push({ label: 'Gaming Battery', value: p.benchmarks.gamingBattery });
+   790→  if (p.benchmarks?.browsingBattery) batteryTiles.push({ label: 'Browsing Battery', value: p.benchmarks.browsingBattery });
+   791→
+   792→  return (
+   793→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+   794→      {/* Breadcrumb */}
+   795→      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
+   796→        <button onClick={() => onNavigate('/')} className="hover:text-blue-500 transition-colors">Home</button>
+   797→        <ChevronRight className="w-3.5 h-3.5" />
+   798→        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-blue-500 transition-colors">{p.brand?.name}</button>
+   799→        <ChevronRight className="w-3.5 h-3.5" />
+   800→        <span className="font-medium text-gray-900">{p.modelName}</span>
+   801→      </div>
+   802→
+   803→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   804→        {/* Left Sidebar */}
+   805→        <div className="lg:col-span-1 space-y-4">
+   806→          {/* Image Card */}
+   807→          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   808→            <div className="bg-[#F8FAFC] aspect-square flex items-center justify-center p-8">
+   809→              {p.thumbnail ? (
+   810→                <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized />
+   811→              ) : (
+   812→                <div className="w-32 h-32 rounded-3xl bg-gray-100 flex items-center justify-center">
+   813→                  <Smartphone className="w-16 h-16 text-gray-300" />
+   814→                </div>
+   815→              )}
+   816→            </div>
+   817→          </div>
+   818→
+   819→          {/* Quick Info Card */}
+   820→          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+   821→            <div className="flex items-center justify-between">
+   822→              <span className="text-sm text-muted-foreground">Price in Pakistan</span>
+   823→              <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
+   824→            </div>
+   825→            <Separator className="bg-gray-100" />
+   826→            <div className="flex items-center justify-between">
+   827→              <span className="text-sm text-muted-foreground">PTA Status</span>
+   828→              <Badge className={p.ptaApproved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50 font-medium' : 'bg-gray-100 text-gray-600 font-medium'}>
+   829→                <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
+   830→              </Badge>
+   831→            </div>
+   832→            <Separator className="bg-gray-100" />
+   833→            <div className="flex items-center justify-between">
+   834→              <span className="text-sm text-muted-foreground">Release Date</span>
+   835→              <span className="text-sm font-medium text-gray-900">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
+   836→            </div>
+   837→            {p.specs?.colors && (
+   838→              <>
+   839→                <Separator className="bg-gray-100" />
+   840→                <div>
+   841→                  <span className="text-sm text-muted-foreground">Colors</span>
+   842→                  <p className="text-sm mt-1 font-medium text-gray-900">{p.specs.colors}</p>
+   843→                </div>
+   844→              </>
+   845→            )}
+   846→            <Separator className="bg-gray-100" />
+   847→            <button className="w-full bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
+   848→              <GitCompare className="w-4 h-4" /> Add to Compare
+   849→            </button>
+   850→          </div>
+   851→
+   852→          {/* Store Prices */}
+   853→          {p.prices && p.prices.length > 0 && (
+   854→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   855→              <h3 className="text-sm font-semibold text-gray-900 mb-3">Best Prices</h3>
+   856→              <div className="space-y-2">
+   857→                {p.prices.map(pr => (
+   858→                  <div key={pr.id} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC]">
+   859→                    <div>
+   860→                      <p className="text-sm font-medium text-gray-900">{pr.storeName}</p>
+   861→                      <p className="text-[10px] mt-0.5 flex items-center gap-1">
+   862→                        <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
+   863→                        <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
+   864→                      </p>
+   865→                    </div>
+   866→                    <span className="font-bold text-sm text-blue-600">{formatPrice(pr.price)}</span>
+   867→                  </div>
+   868→                ))}
+   869→              </div>
+   870→            </div>
+   871→          )}
+   872→        </div>
+   873→
+   874→        {/* Right Content */}
+   875→        <div className="lg:col-span-2 space-y-5">
+   876→          <div>
+   877→            <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
+   878→            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
+   879→            {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
+   880→          </div>
+   881→
+   882→          {/* Quick Verdict Card */}
+   883→          {p.reviewVerdict && (
+   884→            <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
+   885→              <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+   886→              <div className="p-4 sm:p-6">
+   887→                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+   888→                  <div className="flex items-center gap-4">
+   889→                    <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/25">
+   890→                      <div className="text-center">
+   891→                        <span className="text-xl font-extrabold">{p.overallRating}</span>
+   892→                        <span className="text-[10px] block opacity-70">/ 10</span>
+   893→                      </div>
+   894→                    </div>
+   895→                    <div>
+   896→                      <div className="flex items-center gap-1.5 mb-1">
+   897→                        <Trophy className="w-4 h-4 text-blue-500" />
+   898→                        <h3 className="font-bold text-sm sm:text-base text-gray-900">Quick Verdict</h3>
+   899→                      </div>
+   900→                      <p className="text-sm text-muted-foreground leading-relaxed">{p.reviewVerdict}</p>
+   901→                    </div>
+   902→                  </div>
+   903→                  <div className="sm:ml-auto sm:w-64 space-y-2">
+   904→                    <ScoreBar score={p.cameraScore} label="Camera" mini />
+   905→                    <ScoreBar score={p.performanceScore} label="Performance" mini />
+   906→                    <ScoreBar score={p.displayScore} label="Display" mini />
+   907→                    <ScoreBar score={p.batteryScore} label="Battery" mini />
+   908→                    <ScoreBar score={p.valueScore} label="Value" mini />
+   909→                  </div>
+   910→                </div>
+   911→              </div>
+   912→            </div>
+   913→          )}
+   914→
+   915→          {/* Camera Details */}
+   916→          {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
+   917→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   918→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   919→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Camera className="w-4 h-4 text-blue-600" /></div>
+   920→                Camera Details
+   921→              </h3>
+   922→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   923→                {cameraTiles.map(tile => (
+   924→                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.label === 'Features' ? 'col-span-2 sm:col-span-3' : ''}`}>
+   925→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   926→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   927→                  </div>
+   928→                ))}
+   929→              </div>
+   930→            </div>
+   931→          )}
+   932→
+   933→          {/* Performance Section */}
+   934→          {(p.specs?.chipset || p.specs?.cpu) && (
+   935→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   936→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   937→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Cpu className="w-4 h-4 text-blue-600" /></div>
+   938→                Performance
+   939→              </h3>
+   940→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   941→                {perfTiles.map(tile => (
+   942→                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.span}`}>
+   943→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   944→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   945→                  </div>
+   946→                ))}
+   947→              </div>
+   948→            </div>
+   949→          )}
+   950→
+   951→          {/* Battery & Charging */}
+   952→          {p.specs?.battery && (
+   953→            <div className="bg-white rounded-2xl border border-gray-100 p-4">
+   954→              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+   955→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Battery className="w-4 h-4 text-blue-600" /></div>
+   956→                Battery & Charging
+   957→              </h3>
+   958→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   959→                {batteryTiles.filter(t => t.value && t.value !== 'No' && t.value !== '').map(tile => (
+   960→                  <div key={tile.label} className="p-3 rounded-xl bg-[#F8FAFC]">
+   961→                    <p className="text-xs text-muted-foreground">{tile.label}</p>
+   962→                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
+   963→                  </div>
+   964→                ))}
+   965→              </div>
+   966→            </div>
+   967→          )}
+   968→
+   969→          {/* Ratings & Scores */}
+   970→          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+   971→            <div className="flex items-center justify-between mb-4">
+   972→              <h3 className="font-bold text-gray-900">Ratings & Scores</h3>
+   973→              <div className="flex items-center gap-1.5">
+   974→                <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+   975→                <span className="text-2xl font-extrabold text-gray-900">{p.overallRating}</span>
+   976→                <span className="text-sm text-muted-foreground">/ 10</span>
+   977→              </div>
+   978→            </div>
+   979→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+   980→              <ScoreBar score={p.performanceScore} label="Performance" />
+   981→              <ScoreBar score={p.cameraScore} label="Camera" />
+   982→              <ScoreBar score={p.batteryScore} label="Battery" />
+   983→              <ScoreBar score={p.displayScore} label="Display" />
+   984→              <ScoreBar score={p.valueScore} label="Value" />
+   985→            </div>
+   986→          </div>
+   987→
+   988→          {/* Tabs: Specs / Benchmarks / Review */}
+   989→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   990→            <TabsList className="glass-filter w-full justify-start bg-gray-100 rounded-2xl p-1.5 h-auto">
+   991→              <TabsTrigger value="specs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Specifications</TabsTrigger>
+   992→              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Benchmarks</TabsTrigger>
+   993→              <TabsTrigger value="review" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Review</TabsTrigger>
+   994→            </TabsList>
+   995→
+   996→            {/* Specs Tab */}
+   997→            <TabsContent value="specs" className="mt-5 space-y-4">
+   998→              {specGroups.map(group => (
+   999→                <div key={group.title} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+  1000→                  <div className="px-4 py-3 flex items-center gap-2.5 border-b border-gray-50">
+  1001→                    <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
+  1002→                      <group.icon className="w-4 h-4 text-white" />
+  1003→                    </div>
+  1004→                    <h3 className="text-sm font-semibold text-gray-900">{group.title}</h3>
+  1005→                  </div>
+  1006→                  <div className="divide-y divide-gray-50 px-4 py-1">
+  1007→                    {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
+  1008→                      <div key={s.label} className="flex justify-between py-3 text-sm">
+  1009→                        <span className="text-muted-foreground">{s.label}</span>
+  1010→                        <span className="font-medium text-right max-w-[60%] text-gray-900">{s.value}</span>
+  1011→                      </div>
+  1012→                    ))}
+  1013→                  </div>
+  1014→                </div>
+  1015→              ))}
+  1016→            </TabsContent>
+  1017→
+  1018→            {/* Benchmarks Tab */}
+  1019→            <TabsContent value="benchmarks" className="mt-5">
+  1020→              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-6">
+  1021→                {p.benchmarks ? (<>
+  1022→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+  1023→                    {[
+  1024→                      { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'from-blue-500 to-blue-600' },
+  1025→                      { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'from-emerald-500 to-green-600' },
+  1026→                      { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'from-violet-500 to-purple-600' },
+  1027→                    ].map(b => (
+  1028→                      <div key={b.label} className="text-center p-5 rounded-2xl bg-[#F8FAFC] border border-gray-100">
+  1029→                        <p className="text-xs text-muted-foreground mb-2 font-medium">{b.label}</p>
+  1030→                        <p className="text-3xl font-extrabold text-gray-900">{b.value}</p>
+  1031→                        <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+  1032→                          <div className={`h-full rounded-full bg-gradient-to-r ${b.color} transition-all duration-700`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
+  1033→                        </div>
+  1034→                      </div>
+  1035→                    ))}
+  1036→                  </div>
+  1037→
+  1038→                  <div>
+  1039→                    <h4 className="font-semibold text-gray-900 mb-3">Gaming Performance</h4>
+  1040→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1041→                      {[
+  1042→                        { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
+  1043→                        { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
+  1044→                        { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
+  1045→                      ].map(g => (
+  1046→                        <div key={g.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
+  1047→                          <p className="text-xs text-muted-foreground font-medium">{g.label}</p>
+  1048→                          <p className="text-lg font-bold mt-1.5 text-gray-900">{g.value || 'N/A'}</p>
+  1049→                        </div>
+  1050→                      ))}
+  1051→                    </div>
+  1052→                  </div>
+  1053→
+  1054→                  <div>
+  1055→                    <h4 className="font-semibold text-gray-900 mb-3">Battery Tests</h4>
+  1056→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1057→                      {[
+  1058→                        { label: 'Video Playback', value: p.benchmarks.videoPlayback },
+  1059→                        { label: 'Gaming', value: p.benchmarks.gamingBattery },
+  1060→                        { label: 'Browsing', value: p.benchmarks.browsingBattery },
+  1061→                      ].map(b => (
+  1062→                        <div key={b.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
+  1063→                          <p className="text-xs text-muted-foreground font-medium">{b.label}</p>
+  1064→                          <p className="text-lg font-bold mt-1.5 text-gray-900">{b.value || 'N/A'}</p>
+  1065→                        </div>
+  1066→                      ))}
+  1067→                    </div>
+  1068→                  </div>
+  1069→                </>) : (
+  1070→                  <div className="text-center py-16 text-muted-foreground">
+  1071→                    <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-20" />
+  1072→                    <p className="text-sm">No benchmark data available</p>
+  1073→                  </div>
+  1074→                )}
+  1075→              </div>
+  1076→            </TabsContent>
+  1077→
+  1078→            {/* Review Tab */}
+  1079→            <TabsContent value="review" className="mt-5 space-y-4">
+  1080→              <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-5">
+  1081→                {p.reviewSummary && <p className="text-sm leading-relaxed text-gray-700">{p.reviewSummary}</p>}
+  1082→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1083→                  {p.pros && (
+  1084→                    <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100">
+  1085→                      <h4 className="font-semibold text-emerald-700 text-sm mb-3 flex items-center gap-2">
+  1086→                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/25"><Check className="w-3.5 h-3.5 text-white" /></div>
+  1087→                        Pros
+  1088→                      </h4>
+  1089→                      <ul className="space-y-2">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-emerald-700 flex items-start gap-2"><Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />{pro.trim()}</li>)}</ul>
+  1090→                    </div>
+  1091→                  )}
+  1092→                  {p.cons && (
+  1093→                    <div className="p-5 rounded-2xl bg-red-50 border border-red-100">
+  1094→                      <h4 className="font-semibold text-red-700 text-sm mb-3 flex items-center gap-2">
+  1095→                        <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm shadow-red-500/25"><Minus className="w-3.5 h-3.5 text-white" /></div>
+  1096→                        Cons
+  1097→                      </h4>
+  1098→                      <ul className="space-y-2">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-700 flex items-start gap-2"><Minus className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />{con.trim()}</li>)}</ul>
+  1099→                    </div>
+  1100→                  )}
+  1101→                </div>
+  1102→              </div>
+  1103→            </TabsContent>
+  1104→          </Tabs>
+  1105→
+  1106→          {/* Related Phones */}
+  1107→          {related.length > 0 && (
+  1108→            <section className="space-y-5 pt-4">
+  1109→              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
+  1110→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  1111→                {related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}
+  1112→              </div>
+  1113→            </section>
+  1114→          )}
+  1115→        </div>
+  1116→      </div>
+  1117→    </div>
+  1118→  );
+  1119→}
+  1120→
+  1121→// ============ COMPARE PAGE ============
+  1122→function ComparePage({ params, onNavigate }: { params: Record<string, string>; onNavigate: (p: string) => void }) {
+  1123→  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  1124→  const [selected, setSelected] = useState<Phone[]>([]);
+  1125→  const [search, setSearch] = useState('');
+  1126→  const [compared, setCompared] = useState(false);
+  1127→  const [loading, setLoading] = useState(true);
+  1128→
+  1129→  useEffect(() => {
+  1130→    let cancelled = false;
+  1131→    fetch('/api/phones').then(r => r.json()).then(data => {
+  1132→      if (cancelled) return;
+  1133→      const phones: Phone[] = data.phones || [];
+  1134→      setAllPhones(phones);
+  1135→      if (params.ids) {
+  1136→        const ids = params.ids.split(',');
+  1137→        const pre = phones.filter(p => ids.includes(p.id));
+  1138→        setSelected(pre.slice(0, 4));
+  1139→        if (pre.length >= 2) setCompared(true);
+  1140→      }
+  1141→      setLoading(false);
+  1142→    }).catch(() => { if (!cancelled) setLoading(false); });
+  1143→    return () => { cancelled = true; };
+  1144→  }, []);
+  1145→
+  1146→  const filtered = allPhones.filter(p => p.modelName.toLowerCase().includes(search.toLowerCase()));
+  1147→  const isSelected = (id: string) => selected.some(p => p.id === id);
+  1148→
+  1149→  const togglePhone = (phone: Phone) => {
+  1150→    if (isSelected(phone.id)) { setSelected(prev => prev.filter(p => p.id !== phone.id)); setCompared(false); }
+  1151→    else if (selected.length < 4) { setSelected(prev => [...prev, phone]); setCompared(false); }
+  1152→  };
+  1153→
+  1154→  const getWinner = (key: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore') => {
+  1155→    let best = selected[0]; let max = 0;
+  1156→    selected.forEach(p => { if (p[key] > max) { max = p[key]; best = p; } });
+  1157→    return best;
+  1158→  };
+  1159→
+  1160→  const catData = [
+  1161→    { label: 'Camera', key: 'cameraScore' as const, icon: Camera, gradient: 'from-blue-500 to-blue-600' },
+  1162→    { label: 'Performance', key: 'performanceScore' as const, icon: Cpu, gradient: 'from-purple-500 to-purple-600' },
+  1163→    { label: 'Battery', key: 'batteryScore' as const, icon: Battery, gradient: 'from-emerald-500 to-green-600' },
+  1164→    { label: 'Value', key: 'valueScore' as const, icon: Tag, gradient: 'from-amber-500 to-orange-500' },
+  1165→  ];
+  1166→
+  1167→  const metrics = [
+  1168→    { label: 'Overall', get: (p: Phone) => p.overallRating * 10 },
+  1169→    { label: 'Camera', get: (p: Phone) => p.cameraScore },
+  1170→    { label: 'Performance', get: (p: Phone) => p.performanceScore },
+  1171→    { label: 'Battery', get: (p: Phone) => p.batteryScore },
+  1172→    { label: 'Value', get: (p: Phone) => p.valueScore },
+  1173→    { label: 'Display', get: (p: Phone) => p.displayScore },
+  1174→  ];
+  1175→
+  1176→  const specRows = [
+  1177→    { label: 'Display', get: (p: Phone) => p.specs?.display },
+  1178→    { label: 'Processor', get: (p: Phone) => p.specs?.chipset },
+  1179→    { label: 'RAM', get: (p: Phone) => p.specs?.ram },
+  1180→    { label: 'Storage', get: (p: Phone) => p.specs?.storage },
+  1181→    { label: 'Main Camera', get: (p: Phone) => p.specs?.mainCamera },
+  1182→    { label: 'Battery', get: (p: Phone) => p.specs?.battery },
+  1183→    { label: 'OS', get: (p: Phone) => [p.specs?.os, p.specs?.osVersion].filter(Boolean).join(' ') },
+  1184→    { label: '5G', get: (p: Phone) => p.specs?.fiveG },
+  1185→    { label: 'Fingerprint', get: (p: Phone) => p.specs?.fingerprint },
+  1186→  ];
+  1187→
+  1188→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-64 rounded-2xl" /><div className="skeleton-shimmer h-96 rounded-2xl mt-4" /></div>;
+  1189→
+  1190→  return (
+  1191→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+  1192→      <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
+  1193→
+  1194→      {!compared ? (<>
+  1195→        <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 space-y-4">
+  1196→          <div className="relative">
+  1197→            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+  1198→            <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" />
+  1199→          </div>
+  1200→          <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
+  1201→            {filtered.length === 0 && <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>}
+  1202→            {filtered.map(p => (
+  1203→              <label key={p.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
+  1204→                <input type="checkbox" checked={isSelected(p.id)} onChange={() => togglePhone(p)} disabled={!isSelected(p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
+  1205→                {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 object-contain rounded-lg bg-[#F8FAFC] p-0.5" unoptimized /> : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
+  1206→                <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p><p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p></div>
+  1207→                {isSelected(p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
+  1208→              </label>
+  1209→            ))}
+  1210→          </div>
+  1211→        </div>
+  1212→
+  1213→        {selected.length > 0 && (
+  1214→          <div className="flex flex-wrap items-center gap-2">
+  1215→            <span className="text-sm font-medium text-muted-foreground mr-1">Selected:</span>
+  1216→            {selected.map(p => (
+  1217→              <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full">
+  1218→                {p.modelName}
+  1219→                <button onClick={() => togglePhone(p)} className="hover:bg-blue-600 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
+  1220→              </span>
+  1221→            ))}
+  1222→            <button onClick={() => setCompared(true)} disabled={selected.length < 2} className="ml-auto bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 h-10 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25 disabled:shadow-none flex items-center gap-2">
+  1223→              <GitCompare className="w-4 h-4" /> Compare ({selected.length})
+  1224→            </button>
+  1225→          </div>
+  1226→        )}
+  1227→      </>) : (<>
+  1228→        <button onClick={() => setCompared(false)} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors">
+  1229→          <ChevronLeft className="w-4 h-4" /> Back to picker
+  1230→        </button>
+  1231→
+  1232→        {/* Category Winners */}
+  1233→        <section className="space-y-4">
+  1234→          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-blue-500" /> Category Winners</h2>
+  1235→          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1236→            {catData.map(cat => {
+  1237→              const winner = getWinner(cat.key);
+  1238→              return (
+  1239→                <div key={cat.label} className={`bg-gradient-to-br ${cat.gradient} rounded-2xl p-4 text-white relative overflow-hidden`}>
+  1240→                  <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-xl" />
+  1241→                  <div className="relative z-10">
+  1242→                    <div className="flex items-center gap-2 mb-3"><cat.icon className="w-5 h-5" /><span className="text-sm font-semibold">{cat.label}</span></div>
+  1243→                    <p className="font-bold text-sm leading-snug">{winner?.modelName || 'N/A'}</p>
+  1244→                    <p className="text-xs text-white/70 mt-1">{winner?.brand?.name}</p>
+  1245→                    <p className="text-2xl font-extrabold mt-2">{winner?.[cat.key] || 0}<span className="text-sm font-medium text-white/70">/100</span></p>
+  1246→                  </div>
+  1247→                </div>
+  1248→              );
+  1249→            })}
+  1250→          </div>
+  1251→        </section>
+  1252→
+  1253→        {/* Score Comparison */}
+  1254→        <section className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 space-y-5">
+  1255→          <h2 className="font-bold text-gray-900">Score Comparison</h2>
+  1256→          {metrics.map(metric => {
+  1257→            const scores = selected.map(p => ({ phone: p, score: metric.get(p) }));
+  1258→            const maxScore = Math.max(...scores.map(s => s.score));
+  1259→            const winnerId = scores.find(s => s.score === maxScore)?.phone.id;
+  1260→            return (
+  1261→              <div key={metric.label}>
+  1262→                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{metric.label}</p>
+  1263→                <div className="space-y-2">
+  1264→                  {scores.map(s => (
+  1265→                    <div key={s.phone.id} className="flex items-center gap-3">
+  1266→                      <span className="text-xs font-medium text-gray-600 w-28 sm:w-40 truncate shrink-0">{s.phone.modelName}</span>
+  1267→                      <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+  1268→                        <div className={`h-full rounded-full transition-all duration-700 ${s.phone.id === winnerId ? 'bg-blue-500' : 'bg-gradient-to-r from-blue-400 to-cyan-400'}`} style={{ width: `${Math.max(s.score, 2)}%` }} />
+  1269→                      </div>
+  1270→                      <div className="flex items-center gap-1.5 shrink-0 w-16 justify-end">
+  1271→                        {s.phone.id === winnerId && <Trophy className="w-3.5 h-3.5 text-blue-500" />}
+  1272→                        <span className={`text-xs font-bold ${s.phone.id === winnerId ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score}</span>
+  1273→                      </div>
+  1274→                    </div>
+  1275→                  ))}
+  1276→                </div>
+  1277→              </div>
+  1278→            );
+  1279→          })}
+  1280→        </section>
+  1281→
+  1282→        {/* Specs Table */}
+  1283→        <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+  1284→          <div className="px-4 sm:px-6 py-4 border-b border-gray-100"><h2 className="font-bold text-gray-900">Specifications Comparison</h2></div>
+  1285→          <div className="overflow-x-auto">
+  1286→            <table className="w-full min-w-[500px] text-sm">
+  1287→              <thead>
+  1288→                <tr className="bg-[#F8FAFC]">
+  1289→                  <th className="sticky left-0 bg-[#F8FAFC] z-10 text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-36">Spec</th>
+  1290→                  {selected.map(p => <th key={p.id} className="text-left px-4 py-3 text-xs font-semibold text-gray-900">{p.modelName}</th>)}
+  1291→                </tr>
+  1292→              </thead>
+  1293→              <tbody>
+  1294→                {specRows.map((row, i) => (
+  1295→                  <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'}>
+  1296→                    <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-inherit">{row.label}</td>
+  1297→                    {selected.map(p => <td key={p.id} className="px-4 py-3 text-gray-900">{row.get(p) || <span className="text-muted-foreground">—</span>}</td>)}
+  1298→                  </tr>
+  1299→                ))}
+  1300→                <tr className="bg-white border-t border-gray-100">
+  1301→                  <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-white">Price</td>
+  1302→                  {selected.map(p => <td key={p.id} className="px-4 py-3 font-bold text-blue-600">{formatPrice(p.pricePKR)}</td>)}
+  1303→                </tr>
+  1304→                <tr className="bg-[#F8FAFC]">
+  1305→                  <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-[#F8FAFC]">PTA</td>
+  1306→                  {selected.map(p => <td key={p.id} className="px-4 py-3">{p.ptaApproved ? <span className="text-emerald-600 font-medium flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Approved</span> : <span className="text-muted-foreground">{p.ptaStatus}</span>}</td>)}
+  1307→                </tr>
+  1308→              </tbody>
+  1309→            </table>
+  1310→          </div>
+  1311→        </section>
+  1312→      </>)}
+  1313→    </div>
+  1314→  );
+  1315→}
+  1316→
+  1317→// ============ BRANDS PAGE ============
+  1318→function BrandsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1319→  const [brands, setBrands] = useState<Brand[]>([]);
+  1320→  const [loading, setLoading] = useState(true);
+  1321→
+  1322→  useEffect(() => {
+  1323→    fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }).catch(() => setLoading(false));
+  1324→  }, []);
+  1325→
+  1326→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-48 rounded-lg mb-6" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(8).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-40 rounded-2xl" />)}</div></div>;
+  1327→
+  1328→  return (
+  1329→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
+  1330→      <div className="mb-6">
+  1331→        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">All Brands</h1>
+  1332→        <p className="text-sm text-muted-foreground mt-1">{brands.length} brands in our database</p>
+  1333→      </div>
+  1334→      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+  1335→        {brands.map(brand => (
+  1336→          <div key={brand.id} className="phone-card bg-white rounded-2xl border border-gray-100 p-5 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={() => onNavigate(`/brand/${brand.slug}`)}>
+  1337→            <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
+  1338→              {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />}
+  1339→            </div>
+  1340→            <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
+  1341→            <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
+  1342→            {brand.country && <p className="text-[10px] text-muted-foreground mt-0.5">{brand.country}</p>}
+  1343→            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 mt-3 transition-colors" />
+  1344→          </div>
+  1345→        ))}
+  1346→      </div>
+  1347→    </div>
+  1348→  );
+  1349→}
+  1350→
+  1351→// ============ BRAND DETAIL PAGE ============
+  1352→function BrandDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+  1353→  const [brand, setBrand] = useState<Brand | null>(null);
+  1354→  const [phones, setPhones] = useState<Phone[]>([]);
+  1355→  const [loading, setLoading] = useState(true);
+  1356→
+  1357→  useEffect(() => {
+  1358→    let cancelled = false;
+  1359→    setLoading(true);
+  1360→    fetch(`/api/brands/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setBrand(d.brand || null); setPhones(d.phones || []); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+  1361→    return () => { cancelled = true; };
+  1362→  }, [slug]);
+  1363→
+  1364→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6 space-y-4"><div className="skeleton-shimmer h-6 w-48 rounded-lg" /><div className="skeleton-shimmer h-32 rounded-2xl" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(4).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div></div>;
+  1365→
+  1366→  if (!brand) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><Smartphone className="w-12 h-12 text-gray-300 mx-auto mb-3" /><h2 className="text-xl font-bold text-gray-900">Brand not found</h2><Button variant="outline" className="mt-4 rounded-xl" onClick={() => onNavigate('/')}>Go Home</Button></div>;
+  1367→
+  1368→  return (
+  1369→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+  1370→      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+  1371→        <button onClick={() => onNavigate('/')} className="hover:text-blue-500 transition-colors">Home</button><ChevronRight className="w-3.5 h-3.5" />
+  1372→        <button onClick={() => onNavigate('/brands')} className="hover:text-blue-500 transition-colors">Brands</button><ChevronRight className="w-3.5 h-3.5" />
+  1373→        <span className="font-medium text-gray-900">{brand.name}</span>
+  1374→      </div>
+  1375→      <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
+  1376→        <div className="flex items-center gap-4">
+  1377→          <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+  1378→            {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-7 h-7 text-gray-400" />}
+  1379→          </div>
+  1380→          <div>
+  1381→            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">{brand.name}</h1>
+  1382→            <p className="text-sm text-muted-foreground">{brand.country && `${brand.country} · `}{brand._count?.phones || 0} phones</p>
+  1383→            {brand.description && <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">{brand.description}</p>}
+  1384→          </div>
+  1385→        </div>
+  1386→      </div>
+  1387→      {phones.length > 0 ? (
+  1388→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1389→          {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1390→        </div>
+  1391→      ) : (
+  1392→        <div className="text-center py-16 text-muted-foreground"><Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="text-sm">No phones listed for this brand yet</p></div>
+  1393→      )}
+  1394→    </div>
+  1395→  );
+  1396→}
+  1397→
+  1398→// ============ SEARCH PAGE ============
+  1399→function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: string) => void }) {
+  1400→  const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
+  1401→  const [loading, setLoading] = useState(true);
+  1402→
+  1403→  useEffect(() => {
+  1404→    let cancelled = false;
+  1405→    setLoading(true);
+  1406→    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => { if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+  1407→    return () => { cancelled = true; };
+  1408→  }, [query]);
+  1409→
+  1410→  const total = results.brands.length + results.phones.length;
+  1411→
+  1412→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-64 rounded-lg mb-2" /><div className="skeleton-shimmer h-5 w-32 rounded-md mb-6" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div></div>;
+  1413→
+  1414→  return (
+  1415→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-8">
+  1416→      <div>
+  1417→        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Search Results for &ldquo;{query}&rdquo;</h1>
+  1418→        <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
+  1419→      </div>
+  1420→
+  1421→      {results.brands.length > 0 && (
+  1422→        <section className="space-y-4">
+  1423→          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Layers className="w-5 h-5 text-blue-500" /> Brands ({results.brands.length})</h2>
+  1424→          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+  1425→            {results.brands.map(b => (
+  1426→              <div key={b.id} className="phone-card bg-white rounded-2xl border border-gray-100 p-4 cursor-pointer group transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200 flex items-center gap-3" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+  1427→                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors">
+  1428→                  {b.logo ? <Image src={b.logo} alt={b.name} width={28} height={28} className="object-contain" unoptimized /> : <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />}
+  1429→                </div>
+  1430→                <div><p className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{b.name}</p><p className="text-[10px] text-muted-foreground">{b._count?.phones || 0} phones</p></div>
+  1431→              </div>
+  1432→            ))}
+  1433→          </div>
+  1434→        </section>
+  1435→      )}
+  1436→
+  1437→      {results.phones.length > 0 && (
+  1438→        <section className="space-y-4">
+  1439→          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> Phones ({results.phones.length})</h2>
+  1440→          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+  1441→            {results.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1442→          </div>
+  1443→        </section>
+  1444→      )}
+  1445→
+  1446→      {total === 0 && (
+  1447→        <div className="text-center py-20 text-muted-foreground">
+  1448→          <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
+  1449→          <h3 className="text-lg font-bold text-gray-900 mb-1">No results found</h3>
+  1450→          <p className="text-sm">Try a different search term</p>
+  1451→          <Button variant="outline" className="mt-5 rounded-xl" onClick={() => onNavigate('/')}>Browse All Phones</Button>
+  1452→        </div>
+  1453→      )}
+  1454→    </div>
+  1455→  );
+  1456→}
+  1457→
+  1458→// ============ NEWS PAGE ============
+  1459→function NewsPage() {
+  1460→  const [news, setNews] = useState<NewsItem[]>([]);
+  1461→  const [loading, setLoading] = useState(true);
+  1462→
+  1463→  useEffect(() => {
+  1464→    fetch('/api/news').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }).catch(() => setLoading(false));
+  1465→  }, []);
+  1466→
+  1467→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-48 rounded-lg mb-2" /><div className="skeleton-shimmer h-5 w-64 rounded-md mb-6" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-56 rounded-2xl" />)}</div></div>;
+  1468→
+  1469→  return (
+  1470→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+  1471→      <div>
+  1472→        <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">News & Updates</h1>
+  1473→        <p className="text-sm text-muted-foreground mt-1">Latest smartphone news, leaks, and reviews</p>
+  1474→      </div>
+  1475→      {news.length > 0 ? (
+  1476→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1477→          {news.map(n => (
+  1478→            <article key={n.id} className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+  1479→              <div className="flex items-center gap-2 mb-3">
+  1480→                <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-600 font-medium">{n.category}</Badge>
+  1481→                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+  1482→              </div>
+  1483→              <h2 className="font-bold text-base text-gray-900 leading-snug mb-2 line-clamp-2">{n.title}</h2>
+  1484→              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 mb-3">{n.excerpt || n.content}</p>
+  1485→              {n.author && <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1"><Users className="w-3 h-3" /> {n.author}</p>}
+  1486→            </article>
+  1487→          ))}
+  1488→        </div>
+  1489→      ) : (
+  1490→        <div className="text-center py-20 text-muted-foreground"><Newspaper className="w-14 h-14 mx-auto mb-4 opacity-15" /><h3 className="text-lg font-bold text-gray-900 mb-1">No news yet</h3><p className="text-sm">Check back later for updates</p></div>
+  1491→      )}
+  1492→    </div>
+  1493→  );
+  1494→}
+  1495→
+  1496→// ============ ADMIN LOGIN PAGE ============
+  1497→function AdminLoginPage({ onLogin }: { onLogin: (admin: AdminUser, token: string) => void }) {
+  1498→  const [email, setEmail] = useState('');
+  1499→  const [password, setPassword] = useState('');
+  1500→  const [error, setError] = useState('');
+  1501→  const [loading, setLoading] = useState(false);
+  1502→
+  1503→  const handleSubmit = async (e: React.FormEvent) => {
+  1504→    e.preventDefault();
+  1505→    setLoading(true); setError('');
+  1506→    try {
+  1507→      const res = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  1508→      const data = await res.json();
+  1509→      if (data.token) { onLogin(data.admin, data.token); } else { setError(data.error || 'Invalid credentials'); }
+  1510→    } catch { setError('Connection failed. Try again.'); }
+  1511→    setLoading(false);
+  1512→  };
+  1513→
+  1514→  return (
+  1515→    <div className="min-h-[70vh] flex items-center justify-center px-4 animate-fade-in">
+  1516→      <div className="w-full max-w-sm glass-modal rounded-2xl p-6 sm:p-8 shadow-xl shadow-blue-500/10">
+  1517→        <div className="text-center mb-6">
+  1518→          <div className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
+  1519→            <Shield className="w-7 h-7 text-white" />
+  1520→          </div>
+  1521→          <h1 className="text-xl font-extrabold text-gray-900">Admin Panel</h1>
+  1522→          <p className="text-sm text-muted-foreground mt-1">Sign in to manage your phone database</p>
+  1523→        </div>
+  1524→        {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs font-medium rounded-xl px-4 py-2.5 mb-4">{error}</div>}
+  1525→        <form onSubmit={handleSubmit} className="space-y-3">
+  1526→          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
+  1527→          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
+  1528→          <button type="submit" disabled={loading} className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white h-11 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+  1529→            {loading ? 'Signing in...' : 'Sign In'}
+  1530→          </button>
+  1531→        </form>
+  1532→        <p className="text-[10px] text-center text-muted-foreground/70 mt-4">Demo: admin@phonedock.pk / admin123</p>
+  1533→      </div>
+  1534→    </div>
+  1535→  );
+  1536→}
+  1537→
+  1538→// ============ ADMIN DASHBOARD ============
+  1539→function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string | null; admin: AdminUser; onNavigate: (p: string) => void; homeData: HomeData | null }) {
+  1540→  const [stats, setStats] = useState<Record<string, any>>({});
+  1541→  const [loading, setLoading] = useState(true);
+  1542→
+  1543→  useEffect(() => {
+  1544→    if (!token) return;
+  1545→    fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setStats(d); setLoading(false); }).catch(() => setLoading(false));
+  1546→  }, [token]);
+  1547→
+  1548→  const statCards = [
+  1549→    { label: 'Total Phones', value: stats.totalPhones ?? homeData?.featured?.length ?? 0, icon: Smartphone, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
+  1550→    { label: 'Brands', value: stats.totalBrands ?? homeData?.brands?.length ?? 0, icon: Layers, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
+  1551→    { label: 'Trending', value: stats.trendingCount ?? homeData?.trending?.length ?? 0, icon: TrendingUp, bg: 'bg-red-50', iconColor: 'text-red-500' },
+  1552→    { label: 'Featured', value: stats.featuredCount ?? homeData?.featured?.length ?? 0, icon: Star, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
+  1553→    { label: 'Avg Price', value: stats.avgPrice ? formatPrice(stats.avgPrice) : 'N/A', icon: Tag, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
+  1554→    { label: 'News', value: stats.newsCount ?? homeData?.news?.length ?? 0, icon: Newspaper, bg: 'bg-cyan-50', iconColor: 'text-cyan-500' },
+  1555→  ];
+  1556→
+  1557→  const quickActions = [
+  1558→    { label: 'Phones', icon: Smartphone, hash: '/admin/phones' },
+  1559→    { label: 'Brands', icon: Layers, hash: '/admin/brands' },
+  1560→    { label: 'News', icon: Newspaper, hash: '/admin/news' },
+  1561→    { label: 'Sponsors', icon: Star, hash: '/admin/sponsors' },
+  1562→    { label: 'SEO', icon: Settings, hash: '/admin/dashboard' },
+  1563→    { label: 'Images', icon: ImageIcon, hash: '/admin/dashboard' },
+  1564→  ];
+  1565→
+  1566→  const priceDist = stats.priceDistribution || [
+  1567→    { range: 'Under 20K', count: 0 }, { range: '20K - 40K', count: 0 }, { range: '40K - 60K', count: 0 },
+  1568→    { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
+  1569→  ];
+  1570→  const maxPriceCount = Math.max(...priceDist.map((d: any) => d.count || 0), 1);
+  1571→
+  1572→  return (
+  1573→    <div className="space-y-6 animate-fade-in">
+  1574→      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1575→        <div>
+  1576→          <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {admin.name || 'Admin'}</h1>
+  1577→          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with PhoneDock</p>
+  1578→        </div>
+  1579→        <button onClick={() => onNavigate('/')} className="self-start bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 h-9 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
+  1580→          <Eye className="w-4 h-4" /> View Site
+  1581→        </button>
+  1582→      </div>
+  1583→
+  1584→      {/* Stat Cards */}
+  1585→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+  1586→        {statCards.map(s => (
+  1587→          <div key={s.label} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+  1588→            <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor}`} /></div>
+  1589→            <p className="text-2xl font-extrabold text-gray-900">{s.value}</p>
+  1590→            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+  1591→          </div>
+  1592→        ))}
+  1593→      </div>
+  1594→
+  1595→      {/* Quick Actions */}
+  1596→      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+  1597→        {quickActions.map(a => (
+  1598→          <button key={a.label} onClick={() => onNavigate(a.hash)} className="card-premium bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 text-center hover:shadow-md hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 group">
+  1599→            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-50 transition-colors"><a.icon className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors" /></div>
+  1600→            <p className="text-xs font-semibold text-gray-700">{a.label}</p>
+  1601→          </button>
+  1602→        ))}
+  1603→      </div>
+  1604→
+  1605→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  1606→        {/* Price Distribution */}
+  1607→        <div className="card-premium bg-white rounded-2xl border border-gray-100 p-5">
+  1608→          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500" /> Price Distribution</h3>
+  1609→          <div className="space-y-3">
+  1610→            {priceDist.map((d: any, i: number) => (
+  1611→              <div key={i}>
+  1612→                <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">{d.range}</span><span className="font-semibold text-gray-900">{d.count || 0}</span></div>
+  1613→                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+  1614→                  <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-700" style={{ width: `${((d.count || 0) / maxPriceCount) * 100}%` }} />
+  1615→                </div>
+  1616→              </div>
+  1617→            ))}
+  1618→          </div>
+  1619→        </div>
+  1620→
+  1621→        {/* Recent Activity */}
+  1622→        <div className="card-premium bg-white rounded-2xl border border-gray-100 p-5">
+  1623→          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Recent Activity</h3>
+  1624→          <div className="space-y-3">
+  1625→            {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
+  1626→              <div key={i} className="flex items-start gap-3">
+  1627→                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
+  1628→                  {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
+  1629→                </div>
+  1630→                <div className="flex-1 min-w-0">
+  1631→                  <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>
+  1632→                  <p className="text-[10px] text-muted-foreground mt-0.5">{log.admin?.name || 'Admin'} · {log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+  1633→                </div>
+  1634→              </div>
+  1635→            ))}
+  1636→            {(!stats.recentActivity || stats.recentActivity.length === 0) && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
+  1637→          </div>
+  1638→        </div>
+  1639→      </div>
+  1640→    </div>
+  1641→  );
+  1642→}
+  1643→
+  1644→// ============ ADMIN PHONES PAGE ============
+  1645→function AdminPhonesPage({ token }: { token: string | null }) {
+  1646→  const [phones, setPhones] = useState<Phone[]>([]);
+  1647→  const [loading, setLoading] = useState(true);
+  1648→
+  1649→  useEffect(() => {
+  1650→    if (!token) return;
+  1651→    fetch('/api/admin/phones', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setLoading(false); }).catch(() => setLoading(false));
+  1652→  }, [token]);
+  1653→
+  1654→  if (loading) return <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-14 rounded-xl" />)}</div>;
+  1655→
+  1656→  return (
+  1657→    <div className="space-y-5 animate-fade-in">
+  1658→      <div className="flex items-center justify-between">
+  1659→        <h1 className="text-xl font-extrabold text-gray-900">Manage Phones</h1>
+  1660→        <span className="text-xs text-muted-foreground">{phones.length} phones</span>
+  1661→      </div>
+  1662→      {/* Desktop Table */}
+  1663→      <div className="hidden sm:block bg-white rounded-2xl border border-gray-100 overflow-hidden">
+  1664→        <div className="overflow-x-auto">
+  1665→          <table className="w-full text-sm">
+  1666→            <thead><tr className="bg-[#F8FAFC] border-b border-gray-100">
+  1667→              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone</th>
+  1668→              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Brand</th>
+  1669→              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Price</th>
+  1670→              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">PTA</th>
+  1671→              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rating</th>
+  1672→              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
+  1673→            </tr></thead>
+  1674→            <tbody className="divide-y divide-gray-50">
+  1675→              {phones.map((p, i) => (
+  1676→                <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]/50'}>
+  1677→                  <td className="px-4 py-3">
+  1678→                    <div className="flex items-center gap-3">
+  1679→                      {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={32} height={32} className="w-8 h-8 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
+  1680→                      <span className="font-medium text-gray-900 truncate max-w-[200px]">{p.modelName}</span>
+  1681→                    </div>
+  1682→                  </td>
+  1683→                  <td className="px-4 py-3 text-muted-foreground">{p.brand?.name}</td>
+  1684→                  <td className="px-4 py-3 font-semibold text-blue-600">{formatPrice(p.pricePKR)}</td>
+  1685→                  <td className="px-4 py-3">{p.ptaApproved ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">Approved</Badge> : <Badge variant="secondary" className="text-[10px]">{p.ptaStatus}</Badge>}</td>
+  1686→                  <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating}</span></div></td>
+  1687→                  <td className="px-4 py-3 text-right">
+  1688→                    <div className="flex items-center justify-end gap-1">
+  1689→                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"><Eye className="w-4 h-4" /></button>
+  1690→                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors"><Edit className="w-4 h-4" /></button>
+  1691→                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+  1692→                    </div>
+  1693→                  </td>
+  1694→                </tr>
+  1695→              ))}
+  1696→            </tbody>
+  1697→          </table>
+  1698→        </div>
+  1699→      </div>
+  1700→      {/* Mobile Cards */}
+  1701→      <div className="sm:hidden space-y-2">
+  1702→        {phones.map(p => (
+  1703→          <div key={p.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+  1704→            {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="w-10 h-10 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
+  1705→            <div className="flex-1 min-w-0">
+  1706→              <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
+  1707→              <p className="text-[10px] text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p>
+  1708→            </div>
+  1709→            <div className="flex items-center gap-0.5">
+  1710→              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Edit className="w-4 h-4" /></button>
+  1711→              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Trash2 className="w-4 h-4" /></button>
+  1712→            </div>
+  1713→          </div>
+  1714→        ))}
+  1715→      </div>
+  1716→    </div>
+  1717→  );
+  1718→}
+  1719→
+  1720→// ============ ADMIN BRANDS PAGE ============
+  1721→function AdminBrandsPage({ token }: { token: string | null }) {
+  1722→  const [brands, setBrands] = useState<Brand[]>([]);
+  1723→  const [loading, setLoading] = useState(true);
+  1724→
+  1725→  useEffect(() => {
+  1726→    if (!token) return;
+  1727→    fetch('/api/admin/brands', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }).catch(() => setLoading(false));
+  1728→  }, [token]);
+  1729→
+  1730→  if (loading) return <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-36 rounded-2xl" />)}</div>;
+  1731→
+  1732→  return (
+  1733→    <div className="space-y-5 animate-fade-in">
+  1734→      <div className="flex items-center justify-between">
+  1735→        <h1 className="text-xl font-extrabold text-gray-900">Manage Brands</h1>
+  1736→        <span className="text-xs text-muted-foreground">{brands.length} brands</span>
+  1737→      </div>
+  1738→      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  1739→        {brands.map(brand => (
+  1740→          <div key={brand.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+  1741→            <div className="flex items-center gap-4 mb-4">
+  1742→              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+  1743→                {brand.logo ? <Image src={brand.logo} alt={brand.name} width={32} height={32} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400" />}
+  1744→              </div>
+  1745→              <div>
+  1746→                <h3 className="font-bold text-sm text-gray-900">{brand.name}</h3>
+  1747→                <p className="text-xs text-muted-foreground font-mono">{brand.slug}</p>
+  1748→              </div>
+  1749→            </div>
+  1750→            <div className="flex items-center justify-between text-xs">
+  1751→              <span className="text-muted-foreground">{brand.country || 'N/A'}</span>
+  1752→              <Badge variant="secondary" className="text-[10px]">{brand._count?.phones || 0} phones</Badge>
+  1753→            </div>
+  1754→          </div>
+  1755→        ))}
+  1756→      </div>
+  1757→    </div>
+  1758→  );
+  1759→}
+  1760→
+  1761→// ============ ADMIN NEWS PAGE ============
+  1762→function AdminNewsPage({ token }: { token: string | null }) {
+  1763→  const [news, setNews] = useState<NewsItem[]>([]);
+  1764→  const [loading, setLoading] = useState(true);
+  1765→
+  1766→  useEffect(() => {
+  1767→    if (!token) return;
+  1768→    fetch('/api/admin/news', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }).catch(() => setLoading(false));
+  1769→  }, [token]);
+  1770→
+  1771→  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-20 rounded-xl" />)}</div>;
+  1772→
+  1773→  return (
+  1774→    <div className="space-y-5 animate-fade-in">
+  1775→      <div className="flex items-center justify-between">
+  1776→        <h1 className="text-xl font-extrabold text-gray-900">Manage News</h1>
+  1777→        <span className="text-xs text-muted-foreground">{news.length} articles</span>
+  1778→      </div>
+  1779→      <div className="space-y-2">
+  1780→        {news.map(n => (
+  1781→          <div key={n.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+  1782→            <div className="flex-1 min-w-0">
+  1783→              <h3 className="font-semibold text-sm text-gray-900 truncate">{n.title}</h3>
+  1784→              <div className="flex items-center gap-2 mt-1.5">
+  1785→                <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+  1786→                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+  1787→              </div>
+  1788→            </div>
+  1789→            <div className="flex items-center gap-2 shrink-0">
+  1790→              {n.published ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50"><Check className="w-3 h-3 mr-0.5" /> Published</Badge> : <Badge variant="secondary" className="text-[10px]">Draft</Badge>}
+  1791→              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors"><Edit className="w-4 h-4" /></button>
+  1792→              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+  1793→            </div>
+  1794→          </div>
+  1795→        ))}
+  1796→        {news.length === 0 && <div className="text-center py-16 text-muted-foreground"><Newspaper className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No news articles yet</p></div>}
+  1797→      </div>
+  1798→    </div>
+  1799→  );
+  1800→}
+  1801→
+  1802→// ============ ADMIN SPONSORS PAGE ============
+  1803→function AdminSponsorsPage({ token }: { token: string | null }) {
+  1804→  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  1805→  const [loading, setLoading] = useState(true);
+  1806→
+  1807→  useEffect(() => {
+  1808→    if (!token) return;
+  1809→    fetch('/api/admin/sponsors', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setSponsors(d.sponsors || []); setLoading(false); }).catch(() => setLoading(false));
+  1810→  }, [token]);
+  1811→
+  1812→  if (loading) return <div className="space-y-3">{Array(3).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
+  1813→
+  1814→  return (
+  1815→    <div className="space-y-5 animate-fade-in">
+  1816→      <div className="flex items-center justify-between">
+  1817→        <h1 className="text-xl font-extrabold text-gray-900">Manage Sponsors</h1>
+  1818→        <span className="text-xs text-muted-foreground">{sponsors.length} sponsors</span>
+  1819→      </div>
+  1820→      <div className="space-y-2">
+  1821→        {sponsors.map(s => (
+  1822→          <div key={s.id} className="card-premium bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
+  1823→            <div className="flex items-center gap-3 flex-1 min-w-0">
+  1824→              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+  1825→                {s.image ? <Image src={s.image} alt={s.name} width={28} height={28} className="object-contain" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
+  1826→              </div>
+  1827→              <div className="min-w-0">
+  1828→                <h3 className="font-semibold text-sm text-gray-900 truncate">{s.name}</h3>
+  1829→                <p className="text-[10px] text-muted-foreground">{s.position || 'No position'}</p>
+  1830→              </div>
+  1831→            </div>
+  1832→            <div className="flex items-center gap-3 shrink-0">
+  1833→              <div className="text-right hidden sm:block">
+  1834→                <p className="text-[10px] text-muted-foreground">Clicks</p>
+  1835→                <p className="text-xs font-semibold text-gray-900">{(s as any).clicks || 0}</p>
+  1836→              </div>
+  1837→              <div className="text-right hidden sm:block">
+  1838→                <p className="text-[10px] text-muted-foreground">Impressions</p>
+  1839→                <p className="text-xs font-semibold text-gray-900">{(s as any).impressions || 0}</p>
+  1840→              </div>
+  1841→              {s.active ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">Active</Badge> : <Badge variant="secondary" className="text-[10px]">Inactive</Badge>}
+  1842→            </div>
+  1843→          </div>
+  1844→        ))}
+  1845→        {sponsors.length === 0 && <div className="text-center py-16 text-muted-foreground"><Star className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No sponsors yet</p></div>}
+  1846→      </div>
+  1847→    </div>
+  1848→  );
+  1849→}
+  1850→
+  1851→// ============ ADMIN ACTIVITY PAGE ============
+  1852→function AdminActivityPage({ token }: { token: string | null }) {
+  1853→  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  1854→  const [loading, setLoading] = useState(true);
+  1855→
+  1856→  useEffect(() => {
+  1857→    if (!token) return;
+  1858→    fetch('/api/admin/activity', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setLogs(d.logs || []); setLoading(false); }).catch(() => setLoading(false));
+  1859→  }, [token]);
+  1860→
+  1861→  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
+  1862→
+  1863→  return (
+  1864→    <div className="space-y-5 animate-fade-in">
+  1865→      <h1 className="text-xl font-extrabold text-gray-900">Activity Log</h1>
+  1866→      <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6">
+  1867→        {logs.length > 0 ? (
+  1868→          <div className="relative">
+  1869→            <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gray-100" />
+  1870→            <div className="space-y-4">
+  1871→              {logs.map((log, i) => (
+  1872→                <div key={log.id || i} className="relative flex items-start gap-4">
+  1873→                  <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0 z-10 ring-4 ring-white">
+  1874→                    {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
+  1875→                  </div>
+  1876→                  <div className="flex-1 min-w-0 pb-1">
+  1877→                    <p className="text-sm font-medium text-gray-900">{log.action}</p>
+  1878→                    <p className="text-xs text-muted-foreground mt-0.5">{log.details}</p>
+  1879→                    <div className="flex items-center gap-2 mt-1.5">
+  1880→                      {log.entityType && <Badge variant="secondary" className="text-[10px]">{log.entityType}</Badge>}
+  1881→                      {log.admin && <span className="text-[10px] text-muted-foreground">{log.admin.name}</span>}
+  1882→                      <span className="text-[10px] text-muted-foreground/70">{log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+  1883→                    </div>
+  1884→                  </div>
+  1885→                </div>
+  1886→              ))}
+  1887→            </div>
+  1888→          </div>
+  1889→        ) : (
+  1890→          <div className="text-center py-16 text-muted-foreground"><Activity className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No activity logged yet</p></div>
+  1891→        )}
+  1892→      </div>
+  1893→    </div>
+  1894→  );
+  1895→}
+  1896→
+  1897→// ============ ERROR BOUNDARY ============
+  1898→class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  1899→  state = { hasError: false, error: undefined as Error | undefined };
+  1900→  static getDerivedStateFromError(e: Error) { return { hasError: true, error: e }; }
+  1901→  render() {
+  1902→    if (this.state.hasError) {
+  1903→      return (
+  1904→        <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6">
+  1905→          <div className="text-center max-w-md space-y-4">
+  1906→            <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 flex items-center justify-center"><AlertTriangle className="w-8 h-8 text-red-500" /></div>
+  1907→            <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
+  1908→            <p className="text-sm text-gray-500">We are connecting to the database. Please refresh in a moment.</p>
+  1909→            <button onClick={() => { this.setState({ hasError: false, error: undefined }); window.location.reload(); }} className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold transition-colors">Refresh Page</button>
+  1910→          </div>
+  1911→        </div>
+  1912→      );
+  1913→    }
+  1914→    return this.props.children;
+  1915→  }
+  1916→}
+  1917→
+  1918→// ============ MAIN APP ============
+  1919→export default function PhoneDockApp() {
+  1920→  const { view, params, navigate } = useHashRouter();
+  1921→  const [homeData, setHomeData] = useState<HomeData | null>(null);
+  1922→  const [loading, setLoading] = useState(true);
+  1923→  const [admin, setAdmin] = useState<AdminUser | null>(null);
+  1924→  const [token, setToken] = useState<string | null>(null);
+  1925→  const [searchQuery, setSearchQuery] = useState('');
+  1926→  const [mounted, setMounted] = useState(false);
+  1927→  const { theme, setTheme } = useTheme();
+  1928→
+  1929→  useEffect(() => { setMounted(true); }, []);
+  1930→
+  1931→  useEffect(() => {
+  1932→    if (!mounted) return;
+  1933→    let cancelled = false;
+  1934→    fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { if (d.error) { console.warn('Home API error:', d.error); setHomeData(null); } else { setHomeData(d); } setLoading(false); } }).catch(() => { if (!cancelled) { console.warn('Home fetch failed'); setLoading(false); } });
+  1935→    return () => { cancelled = true; };
+  1936→  }, [mounted]);
+  1937→
+  1938→  const handleLogin = useCallback((a: AdminUser, t: string) => { setAdmin(a); setToken(t); navigate('/admin/dashboard'); }, [navigate]);
+  1939→  const handleLogout = useCallback(() => { setAdmin(null); setToken(null); navigate('/'); }, [navigate]);
+  1940→  const handleSearch = useCallback((q: string) => { setSearchQuery(q); navigate(`/search/${encodeURIComponent(q)}`); }, [navigate]);
+  1941→  const toggleTheme = useCallback(() => { setTheme(theme === 'dark' ? 'light' : 'dark'); }, [theme, setTheme]);
+  1942→
+  1943→  const isAdmin = view.startsWith('admin-') && view !== 'admin-login';
+  1944→
+  1945→  if (!mounted) {
+  1946→    return <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
+  1947→  }
+  1948→
+  1949→  return (
+  1950→    <AppErrorBoundary>
+  1951→    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+  1952→      <Header onNavigate={navigate} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
+  1953→      <main className="flex-1">
+  1954→        {isAdmin ? (
+  1955→          admin ? (
+  1956→            <div className="flex">
+  1957→              <AdminSidebar admin={admin} onNavigate={navigate} onLogout={handleLogout} currentView={view} />
+  1958→              <div className="flex-1 p-4 sm:p-6 max-w-6xl w-full">
+  1959→                <div className="animate-fade-in">
+  1960→                  {view === 'admin-dashboard' && <AdminDashboard token={token} admin={admin} onNavigate={navigate} homeData={homeData} />}
+  1961→                  {view === 'admin-phones' && <AdminPhonesPage token={token} />}
+  1962→                  {view === 'admin-brands' && <AdminBrandsPage token={token} />}
+  1963→                  {view === 'admin-news' && <AdminNewsPage token={token} />}
+  1964→                  {view === 'admin-sponsors' && <AdminSponsorsPage token={token} />}
+  1965→                  {view === 'admin-activity' && <AdminActivityPage token={token} />}
+  1966→                </div>
+  1967→              </div>
+  1968→            </div>
+  1969→          ) : (
+  1970→            <AdminLoginPage onLogin={handleLogin} />
+  1971→          )
+  1972→        ) : (
+  1973→          <div className="animate-fade-in">
+  1974→            {view === 'home' && <HomePage data={homeData} loading={loading} onNavigate={navigate} />}
+  1975→            {view === 'phone' && <PhoneDetailPage slug={params.slug || ''} onNavigate={navigate} />}
+  1976→            {view === 'compare' && <ComparePage params={params} onNavigate={navigate} />}
+  1977→            {view === 'brand' && <BrandDetailPage slug={params.slug || ''} onNavigate={navigate} />}
+  1978→            {view === 'brands' && <BrandsPage onNavigate={navigate} />}
+  1979→            {view === 'search' && <SearchPage query={params.q || ''} onNavigate={navigate} />}
+  1980→            {view === 'news' && <NewsPage />}
+  1981→            {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
+  1982→          </div>
+  1983→        )}
+  1984→      </main>
+  1985→      {!isAdmin && <Footer onNavigate={navigate} />}
+  1986→    </div>
+  1987→    </AppErrorBoundary>
+  1988→  );
+  1989→}

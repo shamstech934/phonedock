@@ -1,0 +1,502 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react';
+     4→import { useTheme } from 'next-themes';
+     5→import Image from 'next/image';
+     6→import {
+     7→  Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
+     8→  TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
+     9→  LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
+    10→  ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
+    11→  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
+    12→  AlertTriangle
+    13→} from 'lucide-react';
+    14→import { Button } from '@/components/ui/button';
+    15→import { Input } from '@/components/ui/input';
+    16→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    17→import { Badge } from '@/components/ui/badge';
+    18→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    19→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+    20→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    21→import { Skeleton } from '@/components/ui/skeleton';
+    22→import { Progress } from '@/components/ui/progress';
+    23→import { ScrollArea } from '@/components/ui/scroll-area';
+    24→import { Separator } from '@/components/ui/separator';
+    25→import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+    26→
+    27→// ============ TYPES ============
+    28→interface Brand { id: string; name: string; slug: string; logo: string; country: string; description: string; _count?: { phones: number } }
+    29→interface PhoneSpecs { display?: string; displayType?: string; resolution?: string; refreshRate?: string; protection?: string; brightness?: string; chipset?: string; cpu?: string; gpu?: string; process?: string; ram?: string; ramType?: string; storage?: string; cardSlot?: string; mainCamera?: string; mainCameraSensor?: string; aperture?: string; ois?: string; eis?: string; ultrawide?: string; telephoto?: string; zoom?: string; cameraFeatures?: string; videoRecording?: string; selfieCamera?: string; selfieSensor?: string; selfieVideo?: string; battery?: string; charging?: string; chargingSpeed?: string; wirelessCharge?: string; wirelessSpeed?: string; reverseCharge?: string; weight?: string; dimensions?: string; build?: string; sim?: string; ipRating?: string; network?: string; fiveG?: string; wifi?: string; bluetooth?: string; nfc?: string; usb?: string; fingerprint?: string; faceUnlock?: string; sensors?: string; colors?: string; os?: string; osVersion?: string; osUI?: string; updatePolicy?: string; specialFeatures?: string; }
+    30→interface PhoneBenchmark { antutu: number; geekbenchSingle: number; geekbenchMulti: number; gamingScore: number; pubgFps?: string; codMobileFps?: string; genshinFps?: string; videoPlayback?: string; gamingBattery?: string; browsingBattery?: string; }
+    31→interface PhoneImage { id: string; url: string; altText: string; sortOrder: number; }
+    32→interface PhonePrice { id: string; storeName: string; price: number; url: string; inStock: boolean; }
+    33→interface Phone { id: string; modelName: string; slug: string; brandId: string; brand?: Brand; thumbnail: string; pricePKR: number; description: string; overallRating: number; cameraScore: number; performanceScore: number; batteryScore: number; displayScore: number; valueScore: number; ptaStatus: string; ptaApproved: boolean; releaseDate: string; trending: boolean; upcoming: boolean; featured: boolean; specs?: PhoneSpecs; benchmarks?: PhoneBenchmark; images?: PhoneImage[]; prices?: PhonePrice[]; pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string; published?: boolean; }
+    34→interface NewsItem { id: string; title: string; slug: string; excerpt: string; content: string; category: string; author: string; imageUrl: string; published: boolean; createdAt: string; }
+    35→interface Sponsor { id: string; name: string; image: string; url: string; position: string; active: boolean; }
+    36→interface ActivityLog { id: string; action: string; details: string; entityType: string; createdAt: string; admin?: { name: string; email: string }; }
+    37→interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; bestCamera: Phone[]; bestGaming: Phone[]; bestBattery: Phone[]; upcoming: Phone[]; news: NewsItem[]; priceCategories: { above100k: Phone[]; price60to100: Phone[]; price40to60: Phone[]; price20to40: Phone[]; under20k: Phone[] }; brands: Brand[]; sponsors?: Sponsor[]; }
+    38→interface AdminUser { id: string; email: string; name: string; role: string; }
+    39→
+    40→// ============ ROUTER ============
+    41→type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity';
+    42→
+    43→function useHashRouter() {
+    44→  const [view, setView] = useState<View>('home');
+    45→  const [params, setParams] = useState<Record<string, string>>({});
+    46→
+    47→  useEffect(() => {
+    48→    const parseHash = () => {
+    49→      const hash = window.location.hash.slice(1) || '/';
+    50→      const parts = hash.split('/').filter(Boolean);
+    51→      if (parts.length === 0) { setView('home'); setParams({}); return; }
+    52→      if (parts[0] === 'phone' && parts[1]) { setView('phone'); setParams({ slug: parts[1] }); return; }
+    53→      if (parts[0] === 'compare') { setView('compare'); setParams(Object.fromEntries(new URLSearchParams(parts.slice(1).join('/')))); return; }
+    54→      if (parts[0] === 'brand' && parts[1]) { setView('brand'); setParams({ slug: parts[1] }); return; }
+    55→      if (parts[0] === 'search') { setView('search'); setParams({ q: parts.slice(1).join('/') }); return; }
+    56→      if (parts[0] === 'brands') { setView('brands'); setParams({}); return; }
+    57→      if (parts[0] === 'news') { setView('news'); setParams({}); return; }
+    58→      if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
+    59→      if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
+    60→      if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
+    61→      if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
+    62→      if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
+    63→      if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
+    64→      if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
+    65→      if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
+    66→      setView('home'); setParams({});
+    67→    };
+    68→    parseHash();
+    69→    window.addEventListener('hashchange', parseHash);
+    70→    return () => window.removeEventListener('hashchange', parseHash);
+    71→  }, []);
+    72→
+    73→  const navigate = useCallback((path: string) => {
+    74→    window.location.hash = path;
+    75→  }, []);
+    76→
+    77→  return { view, params, navigate };
+    78→}
+    79→
+    80→// ============ HELPERS ============
+    81→function formatPrice(price: number): string {
+    82→  return 'PKR ' + price.toLocaleString('en-PK');
+    83→}
+    84→
+    85→// ============ SCORE BAR ============
+    86→function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
+    87→  if (mini) {
+    88→    return (
+    89→      <div className="flex items-center gap-2">
+    90→        <span className="text-xs text-muted-foreground w-14 shrink-0">{label}</span>
+    91→        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+    92→          <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+    93→        </div>
+    94→        <span className="text-xs font-bold w-8 text-right">{score}</span>
+    95→      </div>
+    96→    );
+    97→  }
+    98→  return (
+    99→    <div className="space-y-1.5">
+   100→      <div className="flex justify-between text-sm">
+   101→        <span className="text-muted-foreground">{label}</span>
+   102→        <span className="font-semibold">{score}/100</span>
+   103→      </div>
+   104→      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+   105→        <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
+   106→      </div>
+   107→    </div>
+   108→  );
+   109→}
+   110→
+   111→// ============ PHONE CARD ============
+   112→function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
+   113→  const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
+   114→  return (
+   115→    <div className="phone-card bg-white rounded-2xl border border-gray-100 cursor-pointer group transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/8 hover:border-blue-200" onClick={nav}>
+   116→      <div className="p-3 sm:p-4">
+   117→        <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
+   118→          {phone.thumbnail ? (
+   119→            <Image src={phone.thumbnail} alt={phone.modelName} width={200} height={200} className="object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500 ease-out" unoptimized />
+   120→          ) : (
+   121→            <Smartphone className="w-16 h-16 text-gray-300" />
+   122→          )}
+   123→          {phone.ptaApproved && (
+   124→            <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
+   125→              <Shield className="w-3 h-3 mr-0.5" /> PTA
+   126→            </Badge>
+   127→          )}
+   128→          {phone.overallRating >= 8 && !phone.upcoming && (
+   129→            <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-semibold shadow-sm shadow-blue-500/30">
+   130→              <Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}
+   131→            </Badge>
+   132→          )}
+   133→          {phone.upcoming && (
+   134→            <Badge className="absolute top-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
+   135→              <Clock className="w-3 h-3 mr-0.5" /> Upcoming
+   136→            </Badge>
+   137→          )}
+   138→          {phone.trending && (
+   139→            <Badge className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
+   140→              <TrendingUp className="w-3 h-3 mr-0.5" /> Hot
+   141→            </Badge>
+   142→          )}
+   143→        </div>
+   144→        <div className="space-y-1.5">
+   145→          <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
+   146→          <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
+   147→          <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
+   148→          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+   149→            {phone.specs?.ram && (
+   150→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   151→                <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
+   152→              </span>
+   153→            )}
+   154→            {phone.specs?.storage && (
+   155→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   156→                <Layers className="w-2.5 h-2.5" />{phone.specs.storage}
+   157→              </span>
+   158→            )}
+   159→            {phone.specs?.chipset && (
+   160→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md hidden sm:flex items-center gap-0.5">
+   161→                <Cpu className="w-2.5 h-2.5" />{phone.specs.chipset.split(' ').slice(0, 2).join(' ')}
+   162→              </span>
+   163→            )}
+   164→            {phone.specs?.battery && (
+   165→              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+   166→                <Battery className="w-2.5 h-2.5" />{phone.specs.battery}
+   167→              </span>
+   168→            )}
+   169→          </div>
+   170→        </div>
+   171→        <Button className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg h-9 text-xs font-semibold transition-colors">
+   172→          View Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
+   173→        </Button>
+   174→      </div>
+   175→    </div>
+   176→  );
+   177→}
+   178→
+   179→// ============ PHONE CARD SKELETON ============
+   180→function PhoneCardSkeleton() {
+   181→  return (
+   182→    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+   183→      <div className="p-3 sm:p-4">
+   184→        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
+   185→        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
+   186→        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
+   187→        <div className="skeleton-shimmer h-4 w-3/4 mb-2 rounded-md" />
+   188→        <div className="skeleton-shimmer h-3 w-20 mb-1 rounded-md" />
+   189→        <div className="skeleton-shimmer h-3 w-16 mb-3 rounded-md" />
+   190→        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
+   191→      </div>
+   192→    </div>
+   193→  );
+   194→}
+   195→
+   196→// ============ SECTION HEADER ============
+   197→function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   198→  return (
+   199→    <div className="flex items-center justify-between mb-5">
+   200→      <div className="flex items-center gap-3">
+   201→        {Icon && <Icon className="w-5 h-5 text-blue-500" />}
+   202→        <h2 className="text-lg sm:text-xl font-bold text-gray-900 relative">
+   203→          {title}
+   204→          <span className="absolute -bottom-1.5 left-0 h-[3px] w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" />
+   205→        </h2>
+   206→      </div>
+   207→      {link && (
+   208→        <button onClick={() => { window.location.hash = link; }} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
+   209→          {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
+   210→        </button>
+   211→      )}
+   212→    </div>
+   213→  );
+   214→}
+   215→
+   216→// ============ ADMIN SIDEBAR ============
+   217→function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
+   218→  const adminLinks = [
+   219→    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
+   220→    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
+   221→    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
+   222→    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
+   223→    { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
+   224→    { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
+   225→  ];
+   226→
+   227→  return (
+   228→    <>
+   229→      {/* Desktop Sidebar */}
+   230→      <aside className="hidden lg:flex flex-col w-60 bg-white border-r border-gray-100 min-h-[calc(100vh-3.5rem)] sticky top-14">
+   231→        <div className="p-4 border-b border-gray-50">
+   232→          <div className="flex items-center gap-3">
+   233→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
+   234→              <Shield className="w-5 h-5 text-white" />
+   235→            </div>
+   236→            <div className="min-w-0">
+   237→              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
+   238→              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
+   239→            </div>
+   240→          </div>
+   241→        </div>
+   242→        <nav className="flex-1 p-3 space-y-1">
+   243→          {adminLinks.map(link => {
+   244→            const isActive = currentView === link.view;
+   245→            return (
+   246→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive ? 'bg-blue-50 text-blue-600 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+   247→                <link.icon className="w-4 h-4" />{link.label}
+   248→              </button>
+   249→            );
+   250→          })}
+   251→        </nav>
+   252→        <div className="p-3 border-t border-gray-50">
+   253→          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all duration-200 mb-1">
+   254→            <Eye className="w-4 h-4" />View Site
+   255→          </button>
+   256→          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200">
+   257→            <LogOut className="w-4 h-4" />Logout
+   258→          </button>
+   259→        </div>
+   260→      </aside>
+   261→
+   262→      {/* Mobile horizontal pill tabs */}
+   263→      <div className="lg:hidden border-b border-gray-100 bg-white">
+   264→        <div className="flex items-center justify-between px-4 py-2">
+   265→          <div className="flex items-center gap-2">
+   266→            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+   267→              <Shield className="w-3.5 h-3.5 text-white" />
+   268→            </div>
+   269→            <span className="text-xs font-semibold text-gray-900">{admin.name || admin.email}</span>
+   270→          </div>
+   271→          <div className="flex items-center gap-1">
+   272→            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
+   273→            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
+   274→          </div>
+   275→        </div>
+   276→        <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
+   277→          {adminLinks.map(link => {
+   278→            const isActive = currentView === link.view;
+   279→            return (
+   280→              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${isActive ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
+   281→                <link.icon className="w-3 h-3" />{link.label}
+   282→              </button>
+   283→            );
+   284→          })}
+   285→        </div>
+   286→      </div>
+   287→    </>
+   288→  );
+   289→}
+   290→
+   291→// ============ HEADER (LIQUID GLASS) ============
+   292→function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
+   293→  const [mobileOpen, setMobileOpen] = useState(false);
+   294→  const [searchOpen, setSearchOpen] = useState(false);
+   295→  const [searchQ, setSearchQ] = useState('');
+   296→  const searchRef = useRef<HTMLInputElement>(null);
+   297→
+   298→  useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
+   299→  useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [location?.hash]);
+   300→
+   301→  const doSearch = () => { if (searchQ.trim()) { onSearch(searchQ.trim()); setSearchOpen(false); setSearchQ(''); } };
+   302→
+   303→  return (
+   304→    <header className="glass-nav sticky top-0 z-50">
+   305→      <div className="max-w-7xl mx-auto px-4">
+   306→        <div className="flex items-center justify-between h-14 sm:h-16">
+   307→          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('/')}>
+   308→            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
+   309→              <Smartphone className="w-5 h-5 text-white" />
+   310→            </div>
+   311→            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-500">Dock</span></span>
+   312→          </div>
+   313→
+   314→          {/* Desktop Nav */}
+   315→          <nav className="hidden md:flex items-center gap-1">
+   316→            {[
+   317→              { label: 'Home', hash: '/' }, { label: 'Brands', hash: '/brands' },
+   318→              { label: 'Compare', hash: '/compare' }, { label: 'News', hash: '/news' },
+   319→            ].map(item => (
+   320→              <button key={item.hash} onClick={() => onNavigate(item.hash)} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200">
+   321→                {item.label}
+   322→              </button>
+   323→            ))}
+   324→          </nav>
+   325→
+   326→          <div className="flex items-center gap-1">
+   327→            {admin ? (
+   328→              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-blue-500/25">
+   329→                <Shield className="w-4 h-4" />Dashboard
+   330→              </button>
+   331→            ) : (
+   332→              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
+   333→                <Shield className="w-4 h-4" />Admin
+   334→              </button>
+   335→            )}
+   336→            <button onClick={() => setSearchOpen(!searchOpen)} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   337→              <Search className="w-[18px] h-[18px]" />
+   338→            </button>
+   339→            <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+   340→              {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+   341→            </button>
+   342→            <button className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200 md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
+   343→              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+   344→            </button>
+   345→          </div>
+   346→        </div>
+   347→
+   348→        {/* Search overlay */}
+   349→        {searchOpen && (
+   350→          <div className="pb-3 flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+   351→            <div className="relative flex-1">
+   352→              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+   353→              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm bg-white/70 backdrop-blur-md border border-white/50 outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-gray-400 transition-all" autoFocus />
+   354→            </div>
+   355→            <button onClick={doSearch} className="bg-blue-500 hover:bg-blue-600 text-white h-11 px-5 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+   356→              Search
+   357→            </button>
+   358→          </div>
+   359→        )}
+   360→      </div>
+   361→
+   362→      {/* Mobile Drawer */}
+   363→      {mobileOpen && (
+   364→        <div className="md:hidden glass-modal border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200">
+   365→          <nav className="flex flex-col p-4 gap-1">
+   366→            {[
+   367→              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
+   368→              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
+   369→            ].map(item => (
+   370→              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   371→                <item.icon className="w-4 h-4 text-gray-400" />{item.label}
+   372→              </button>
+   373→            ))}
+   374→            {admin ? (
+   375→              <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 bg-blue-50/80">
+   376→                <Shield className="w-4 h-4" />Dashboard
+   377→              </button>
+   378→            ) : (
+   379→              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+   380→                <Shield className="w-4 h-4 text-gray-400" />Admin
+   381→              </button>
+   382→            )}
+   383→          </nav>
+   384→        </div>
+   385→      )}
+   386→    </header>
+   387→  );
+   388→}
+   389→
+   390→// ============ FOOTER ============
+   391→function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
+   392→  return (
+   393→    <footer className="bg-[#0F172A] text-gray-400 mt-auto">
+   394→      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16">
+   395→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+   396→          <div className="col-span-2 sm:col-span-1">
+   397→            <div className="flex items-center gap-2.5 mb-4">
+   398→              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center">
+   399→                <Smartphone className="w-5 h-5 text-white" />
+   400→              </div>
+   401→              <span className="font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+   402→            </div>
+   403→            <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+   404→          </div>
+   405→          <div>
+   406→            <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
+   407→            <div className="space-y-2.5 text-sm">
+   408→              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+   409→                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</button>
+   410→              ))}
+   411→            </div>
+   412→          </div>
+   413→          <div>
+   414→            <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
+   415→            <div className="space-y-2.5 text-sm">
+   416→              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/' }, { l: 'Best Gaming', h: '/' }, { l: 'Best Battery', h: '/' }].map(item => (
+   417→                <button key={item.l} onClick={() => onNavigate(item.h)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</button>
+   418→              ))}
+   419→            </div>
+   420→          </div>
+   421→          <div>
+   422→            <h4 className="font-semibold text-white mb-4 text-sm">Price Ranges (PKR)</h4>
+   423→            <div className="space-y-2.5 text-sm text-gray-500">
+   424→              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
+   425→                <span key={r} className="block">{r}</span>
+   426→              ))}
+   427→            </div>
+   428→          </div>
+   429→        </div>
+   430→        <Separator className="bg-gray-800 mb-6" />
+   431→        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
+   432→          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+   433→          <p className="text-cyan-400/80 font-medium">Phone prices may vary. Check with retailers.</p>
+   434→        </div>
+   435→      </div>
+   436→    </footer>
+   437→  );
+   438→}
+   439→
+   440→// ============ PHONE SECTION (reusable) ============
+   441→function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean }) {
+   442→  if (!phones.length) {
+   443→    if (!showEmpty) return null;
+   444→    return (
+   445→      <section className="space-y-4">
+   446→        <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   447→        <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+   448→          <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
+   449→          <p className="text-sm text-muted-foreground">No phones in this section yet</p>
+   450→          <p className="text-xs text-muted-foreground/60 mt-1">Check back later for updates</p>
+   451→        </div>
+   452→      </section>
+   453→    );
+   454→  }
+   455→  return (
+   456→    <section className="space-y-4">
+   457→      <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   458→      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+   459→        {phones.map(p => (
+   460→          <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+   461→            <PhoneCard phone={p} />
+   462→          </div>
+   463→        ))}
+   464→      </div>
+   465→    </section>
+   466→  );
+   467→}
+   468→
+   469→// ============ HOME PAGE ============
+   470→function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
+   471→  const [homeSearchQ, setHomeSearchQ] = useState('');
+   472→
+   473→  if (loading || !data) {
+   474→    return (
+   475→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+   476→        <div className="skeleton-shimmer h-72 sm:h-96 rounded-3xl" />
+   477→        <div className="skeleton-shimmer h-14 rounded-2xl max-w-2xl mx-auto" />
+   478→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+   479→      </div>
+   480→    );
+   481→  }
+   482→
+   483→  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
+   484→  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
+   485→
+   486→  const handleHomeSearch = () => {
+   487→    if (homeSearchQ.trim()) {
+   488→      window.location.hash = `/search/${encodeURIComponent(homeSearchQ.trim())}`;
+   489→    }
+   490→  };
+   491→
+   492→  return (
+   493→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14">
+   494→      {/* Hero */}
+   495→      <section className="rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #2563EB 100%)' }}>
+   496→        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-400/15 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl" />
+   497→        <div className="absolute bottom-0 left-0 w-60 h-60 bg-purple-500/10 rounded-full translate-y-1/2 -translate-x-1/3 blur-3xl" />
+   498→        <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-cyan-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+   499→        <div className="relative z-10 max-w-2xl">
+   500→          <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+
+[showing lines 1-500 of 1989; use offset=501 with limit to continue reading]

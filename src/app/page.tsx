@@ -413,7 +413,7 @@ function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
           <div>
             <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
             <div className="space-y-2.5 text-sm">
-              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/' }, { l: 'Best Gaming', h: '/' }, { l: 'Best Battery', h: '/' }].map(item => (
+              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/brands' }, { l: 'Best Gaming', h: '/brands' }, { l: 'Best Battery', h: '/brands' }].map(item => (
                 <button key={item.l} onClick={() => onNavigate(item.h)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</button>
               ))}
             </div>
