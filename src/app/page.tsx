@@ -148,8 +148,77 @@ function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; i
   );
 }
 
+// ============ ADMIN SIDEBAR ============
+function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
+  const adminLinks = [
+    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
+    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
+    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
+    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
+  ];
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 min-h-[calc(100vh-3.5rem)] sticky top-14">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-yellow-400 rounded-full flex items-center justify-center"><Shield className="w-5 h-5 text-black" /></div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
+            </div>
+          </div>
+        </div>
+        <nav className="flex-1 p-3 space-y-1">
+          {adminLinks.map(link => {
+            const isActive = currentView === link.view;
+            return (
+              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-yellow-400/15 text-yellow-600 dark:text-yellow-400' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                <link.icon className="w-4 h-4" />{link.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors mb-1">
+            <Eye className="w-4 h-4" />View Site
+          </button>
+          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+            <LogOut className="w-4 h-4" />Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile top bar for admin */}
+      <div className="lg:hidden border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-yellow-500" />
+            <span className="text-xs font-semibold">Admin: {admin.name || admin.email}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
+            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
+          </div>
+        </div>
+        <div className="flex overflow-x-auto no-scrollbar px-3 pb-2 gap-1">
+          {adminLinks.map(link => {
+            const isActive = currentView === link.view;
+            return (
+              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${isActive ? 'bg-yellow-400 text-black' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                <link.icon className="w-3 h-3" />{link.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ============ HEADER ============
-function Header({ onNavigate, onSearch, theme, toggleTheme }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void }) {
+function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -188,6 +257,26 @@ function Header({ onNavigate, onSearch, theme, toggleTheme }: { onNavigate: (p: 
               <TooltipTrigger asChild><Button variant="ghost" size="icon" onClick={toggleTheme}><Sun className="w-5 h-5 hidden dark:block" /><Moon className="w-5 h-5 dark:hidden" /></Button></TooltipTrigger>
               <TooltipContent>Toggle theme</TooltipContent>
             </Tooltip></TooltipProvider>
+            {/* Admin button - always visible on desktop, shows login or admin menu */}
+            {admin ? (
+              <TooltipProvider><Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="hidden md:flex items-center gap-1.5 border-yellow-400/50 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20" onClick={() => onNavigate('/admin/dashboard')}>
+                    <Shield className="w-4 h-4" /><span className="text-xs font-medium">{admin.name || 'Admin'}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Admin Dashboard</TooltipContent>
+              </Tooltip></TooltipProvider>
+            ) : (
+              <TooltipProvider><Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="hidden md:flex" onClick={() => onNavigate('/admin/login')}>
+                    <Shield className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Admin Login</TooltipContent>
+              </Tooltip></TooltipProvider>
+            )}
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
@@ -210,12 +299,26 @@ function Header({ onNavigate, onSearch, theme, toggleTheme }: { onNavigate: (p: 
             {[
               { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
               { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
-              { label: 'Admin', hash: '/admin/login', icon: Settings },
             ].map(item => (
               <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-yellow-600 dark:hover:text-yellow-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 <item.icon className="w-4 h-4" />{item.label}
               </button>
             ))}
+            <Separator className="my-2" />
+            {admin ? (
+              <>
+                <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-yellow-600 dark:text-yellow-400 rounded-lg bg-yellow-50 dark:bg-yellow-900/20">
+                  <Shield className="w-4 h-4" />Admin Panel
+                </button>
+                <button onClick={() => { onLogout(); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <LogOut className="w-4 h-4" />Logout
+                </button>
+              </>
+            ) : (
+              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-yellow-600 dark:hover:text-yellow-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+                <Settings className="w-4 h-4" />Admin Login
+              </button>
+            )}
           </nav>
         </div>
       )}
@@ -1247,27 +1350,37 @@ export default function PhoneDockApp() {
   const handleSearch = (q: string) => { navigate(`/search/${encodeURIComponent(q)}`); };
   const nav = (path: string) => { if (path === '/' || path === '') window.location.hash = '/'; else if (!path.startsWith('#')) window.location.hash = path; };
 
-  const isAdminView = view.startsWith('admin');
+  const handleLogout = () => {
+    setAdmin(null); setAdminToken(null);
+    localStorage.removeItem('phonedock_admin');
+    nav('/');
+  };
+
+  const isAdminView = view.startsWith('admin') && view !== 'admin-login';
+  const showAdminSidebar = isAdminView && admin;
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <Header onNavigate={nav} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} />
+      <Header onNavigate={nav} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
 
-      <main className="flex-1">
-        {view === 'home' && <HomePage data={homeData} loading={homeLoading} onNavigate={nav} />}
-        {view === 'phone' && <PhoneDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
-        {view === 'compare' && <ComparePage onNavigate={nav} />}
-        {view === 'brands' && <BrandsPage onNavigate={nav} />}
-        {view === 'brand' && <BrandDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
-        {view === 'search' && <SearchPage key={params.q} query={params.q || ''} onNavigate={nav} />}
-        {view === 'news' && <NewsPage onNavigate={nav} />}
-        {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
-        {view === 'admin-dashboard' && admin && <AdminDashboard admin={admin} onNavigate={nav} />}
-        {view === 'admin-phones' && admin && <AdminPhones onNavigate={nav} />}
-        {view === 'admin-brands' && admin && <AdminBrands onNavigate={nav} />}
-        {view === 'admin-news' && admin && <AdminNews onNavigate={nav} />}
-        {view === 'admin' && !admin && <AdminLoginPage onLogin={handleLogin} />}
-      </main>
+      <div className="flex flex-1">
+        {showAdminSidebar && <AdminSidebar admin={admin} onNavigate={nav} onLogout={handleLogout} currentView={view} />}
+        <main className="flex-1 min-w-0">
+          {view === 'home' && <HomePage data={homeData} loading={homeLoading} onNavigate={nav} />}
+          {view === 'phone' && <PhoneDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+          {view === 'compare' && <ComparePage onNavigate={nav} />}
+          {view === 'brands' && <BrandsPage onNavigate={nav} />}
+          {view === 'brand' && <BrandDetailPage key={params.slug} slug={params.slug || ''} onNavigate={nav} />}
+          {view === 'search' && <SearchPage key={params.q} query={params.q || ''} onNavigate={nav} />}
+          {view === 'news' && <NewsPage onNavigate={nav} />}
+          {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
+          {view === 'admin-dashboard' && admin && <AdminDashboard admin={admin} onNavigate={nav} />}
+          {view === 'admin-phones' && admin && <AdminPhones onNavigate={nav} />}
+          {view === 'admin-brands' && admin && <AdminBrands onNavigate={nav} />}
+          {view === 'admin-news' && admin && <AdminNews onNavigate={nav} />}
+          {view === 'admin' && !admin && <AdminLoginPage onLogin={handleLogin} />}
+        </main>
+      </div>
 
       {!isAdminView && <Footer onNavigate={nav} />}
     </div>
