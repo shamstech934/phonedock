@@ -31,45 +31,45 @@
 
 :root {
   --radius: 0.625rem;
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #0F172A;
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #FACC15;
-  --primary-foreground: #0a0a0a;
-  --secondary: #1a1a1a;
+  --popover-foreground: #0F172A;
+  --primary: #2563EB;
+  --primary-foreground: #ffffff;
+  --secondary: #7C3AED;
   --secondary-foreground: #ffffff;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --accent: #fef08a;
-  --accent-foreground: #1a1a1a;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --accent: #06B6D4;
+  --accent-foreground: #ffffff;
   --destructive: #ef4444;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
-  --ring: #FACC15;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #2563EB;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --card: #141414;
-  --card-foreground: #fafafa;
-  --popover: #141414;
-  --popover-foreground: #fafafa;
-  --primary: #FACC15;
-  --primary-foreground: #0a0a0a;
-  --secondary: #262626;
-  --secondary-foreground: #fafafa;
-  --muted: #1f1f1f;
-  --muted-foreground: #a3a3a3;
-  --accent: #854d0e;
-  --accent-foreground: #fef08a;
-  --destructive: #dc2626;
-  --border: #262626;
-  --input: #262626;
-  --ring: #FACC15;
+  --background: #0B1120;
+  --foreground: #F1F5F9;
+  --card: #111827;
+  --card-foreground: #F1F5F9;
+  --popover: #111827;
+  --popover-foreground: #F1F5F9;
+  --primary: #3B82F6;
+  --primary-foreground: #ffffff;
+  --secondary: #8B5CF6;
+  --secondary-foreground: #ffffff;
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  --accent: #22D3EE;
+  --accent-foreground: #0B1120;
+  --destructive: #DC2626;
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #3B82F6;
 }
 
 @layer base {
@@ -86,7 +86,7 @@
 }
 .phone-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+  box-shadow: 0 12px 40px rgba(37, 99, 235, 0.1);
 }
 
 /* Score bar animation */
@@ -97,31 +97,31 @@
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
-.dark ::-webkit-scrollbar-thumb { background: #404040; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #525252; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* PTA badge */
 .pta-approved { @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400; }
 .pta-unknown { @apply bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400; }
 
 /* Compare highlight winner */
-.winner-cell { @apply bg-yellow-50 dark:bg-yellow-900/20 font-semibold; }
+.winner-cell { @apply bg-blue-50 dark:bg-blue-900/20 font-semibold; }
 
 /* Rating circle */
 .rating-circle {
-  background: conic-gradient(#FACC15 calc(var(--pct) * 1%), #e5e5e5 0);
+  background: conic-gradient(#2563EB calc(var(--pct) * 1%), #e5e5e5 0);
 }
 
 /* Hero gradient */
 .hero-gradient {
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
+  background: linear-gradient(135deg, #0B1120 0%, #1E293B 40%, #2563EB 100%);
 }
 
-/* Yellow glow effect */
-.yellow-glow {
-  box-shadow: 0 0 40px rgba(250, 204, 21, 0.15);
+/* Blue glow effect */
+.blue-glow {
+  box-shadow: 0 0 40px rgba(37, 99, 235, 0.15);
 }
 
 /* Section title */
@@ -130,7 +130,7 @@
   display: block;
   width: 60px;
   height: 4px;
-  background: #FACC15;
+  background: #2563EB;
   margin-top: 8px;
   border-radius: 2px;
 }

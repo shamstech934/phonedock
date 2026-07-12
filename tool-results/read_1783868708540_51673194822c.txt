@@ -1,0 +1,502 @@
+   800→
+   801→  const getWinner = (field: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore' | 'overallRating') => {
+   802→    if (compareData.length < 2) return null;
+   803→    const maxVal = Math.max(...compareData.map(p => p[field]));
+   804→    return compareData.findIndex(p => p[field] === maxVal);
+   805→  };
+   806→
+   807→  const specRows = [
+   808→    { label: 'Display', key: 'display' }, { label: 'Resolution', key: 'resolution' }, { label: 'Refresh Rate', key: 'refreshRate' },
+   809→    { label: 'Chipset', key: 'chipset' }, { label: 'CPU', key: 'cpu' }, { label: 'RAM', key: 'ram' }, { label: 'Storage', key: 'storage' },
+   810→    { label: 'Main Camera', key: 'mainCamera' }, { label: 'Selfie', key: 'selfieCamera' }, { label: 'Video', key: 'videoRecording' },
+   811→    { label: 'Battery', key: 'battery' }, { label: 'Charging', key: 'charging' }, { label: 'Wireless', key: 'wirelessCharge' },
+   812→    { label: '5G', key: 'fiveG' }, { label: 'WiFi', key: 'wifi' }, { label: 'Bluetooth', key: 'bluetooth' },
+   813→    { label: 'NFC', key: 'nfc' }, { label: 'Fingerprint', key: 'fingerprint' }, { label: 'IP Rating', key: 'ipRating' },
+   814→    { label: 'OS', key: 'os' }, { label: 'Weight', key: 'weight' },
+   815→  ];
+   816→
+   817→  const filteredPhones = searchQ ? allPhones.filter(p => p.modelName.toLowerCase().includes(searchQ.toLowerCase()) || p.brand?.name.toLowerCase().includes(searchQ.toLowerCase())) : allPhones;
+   818→
+   819→  return (
+   820→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+   821→      <div className="flex items-center justify-between">
+   822→        <div>
+   823→          <h1 className="text-2xl font-extrabold">Compare Phones</h1>
+   824→          <p className="text-sm text-muted-foreground mt-1">Select 2-4 phones to compare specifications side by side</p>
+   825→        </div>
+   826→        {!showPicker && <Button variant="outline" onClick={() => { setShowPicker(true); setSelectedIds([]); setCompareData([]); }}>
+   827→          <Plus className="w-4 h-4 mr-2" /> New Compare
+   828→        </Button>}
+   829→      </div>
+   830→
+   831→      {showPicker ? (
+   832→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   833→          <Card>
+   834→            <CardHeader><CardTitle className="text-sm">Search & Select Phones</CardTitle></CardHeader>
+   835→            <CardContent className="p-4 pt-0 space-y-3">
+   836→              <Input placeholder="Search phones..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+   837→              <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
+   838→                {filteredPhones.slice(0, 20).map(p => (
+   839→                  <div key={p.id} onClick={() => addToCompare(p.id)} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${selectedIds.includes(p.id) ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+   840→                    <div className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0" style={{ borderColor: selectedIds.includes(p.id) ? '#FACC15' : '#d4d4d4', background: selectedIds.includes(p.id) ? '#FACC15' : 'transparent' }}>
+   841→                      {selectedIds.includes(p.id) && <Check className="w-3 h-3 text-black" />}
+   842→                    </div>
+   843→                    <div className="flex-1 min-w-0">
+   844→                      <p className="text-sm font-medium truncate">{p.brand?.name} {p.modelName}</p>
+   845→                      <p className="text-xs text-muted-foreground">{formatPrice(p.pricePKR)}</p>
+   846→                    </div>
+   847→                  </div>
+   848→                ))}
+   849→              </div>
+   850→            </CardContent>
+   851→          </Card>
+   852→          <div className="space-y-3">
+   853→            <Card>
+   854→              <CardContent className="p-4">
+   855→                <h3 className="font-semibold text-sm mb-3">Selected ({selectedIds.length}/4)</h3>
+   856→                {selectedIds.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Select phones from the left panel</p>}
+   857→                <div className="space-y-2">
+   858→                  {selectedIds.map(id => {
+   859→                    const phone = allPhones.find(p => p.id === id);
+   860→                    if (!phone) return null;
+   861→                    return (
+   862→                      <div key={id} className="flex items-center gap-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+   863→                        <div className="flex-1 min-w-0">
+   864→                          <p className="text-sm font-medium truncate">{phone.brand?.name} {phone.modelName}</p>
+   865→                          <p className="text-xs text-muted-foreground">{formatPrice(phone.pricePKR)}</p>
+   866→                        </div>
+   867→                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => addToCompare(id)}><X className="w-4 h-4" /></Button>
+   868→                      </div>
+   869→                    );
+   870→                  })}
+   871→                </div>
+   872→                <Button className="w-full mt-4 bg-yellow-400 text-black hover:bg-yellow-300" disabled={selectedIds.length < 2} onClick={doCompare}>
+   873→                  Compare {selectedIds.length} Phones
+   874→                </Button>
+   875→              </CardContent>
+   876→            </Card>
+   877→          </div>
+   878→        </div>
+   879→      ) : loading ? (
+   880→        <div className="text-center py-20"><Skeleton className="h-96 max-w-4xl mx-auto rounded-2xl" /></div>
+   881→      ) : (
+   882→        <div className="overflow-x-auto no-scrollbar">
+   883→          <div className="min-w-[600px]">
+   884→            {/* Header row */}
+   885→            <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+   886→              <div />
+   887→              {compareData.map(p => (
+   888→                <div key={p.id} className="text-center">
+   889→                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mb-2">
+   890→                    {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={120} height={120} className="object-contain mx-auto" unoptimized /> : <Smartphone className="w-16 h-16 mx-auto text-gray-400" />}
+   891→                  </div>
+   892→                  <p className="text-xs text-muted-foreground">{p.brand?.name}</p>
+   893→                  <p className="text-sm font-bold">{p.modelName}</p>
+   894→                  <p className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{formatPrice(p.pricePKR)}</p>
+   895→                  <Button variant="link" size="sm" className="text-xs text-yellow-600" onClick={() => onNavigate(`/phone/${p.slug}`)}>Full Specs <ExternalLink className="w-3 h-3" /></Button>
+   896→                </div>
+   897→              ))}
+   898→            </div>
+   899→
+   900→            {/* Scores */}
+   901→            <Card className="mb-4">
+   902→              <CardContent className="p-3">
+   903→                <div className="grid gap-2" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+   904→                  {[{ label: 'Overall', key: 'overallRating' as const }, { label: 'Camera', key: 'cameraScore' as const }, { label: 'Performance', key: 'performanceScore' as const }, { label: 'Battery', key: 'batteryScore' as const }, { label: 'Value', key: 'valueScore' as const }].map(row => {
+   905→                    const winner = getWinner(row.key);
+   906→                    return (
+   907→                      <React.Fragment key={row.label}>
+   908→                        <div className="text-sm font-medium py-2 flex items-center">{row.label}</div>
+   909→                        {compareData.map((p, i) => (
+   910→                          <div key={p.id} className={`text-center py-2 rounded-lg text-sm font-bold ${winner === i ? 'winner-cell' : ''}`}>
+   911→                            {p[row.key]}{row.key === 'overallRating' ? '/10' : '/100'}
+   912→                            {winner === i && <Trophy className="w-3 h-3 inline ml-1 text-yellow-500" />}
+   913→                          </div>
+   914→                        ))}
+   915→                      </React.Fragment>
+   916→                    );
+   917→                  })}
+   918→                </div>
+   919→              </CardContent>
+   920→            </Card>
+   921→
+   922→            {/* Specs comparison */}
+   923→            <Card>
+   924→              <CardContent className="p-3">
+   925→                <div className="grid gap-0.5" style={{ gridTemplateColumns: `160px repeat(${compareData.length}, 1fr)` }}>
+   926→                  {specRows.map(row => (
+   927→                    <React.Fragment key={row.label}>
+   928→                      <div className="spec-row text-xs font-medium py-2 px-2 text-muted-foreground">{row.label}</div>
+   929→                      {compareData.map(p => {
+   930→                        const val = (p.specs as Record<string, string | undefined>)?.[row.key] || '-';
+   931→                        return <div key={p.id} className="spec-row text-xs py-2 px-2 text-center">{val}</div>;
+   932→                      })}
+   933→                    </React.Fragment>
+   934→                  ))}
+   935→                </div>
+   936→              </CardContent>
+   937→            </Card>
+   938→          </div>
+   939→        </div>
+   940→      )}
+   941→    </div>
+   942→  );
+   943→}
+   944→
+   945→// ============ BRANDS PAGE ============
+   946→function BrandsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
+   947→  const [brands, setBrands] = useState<Brand[]>([]);
+   948→  const [loading, setLoading] = useState(true);
+   949→  useEffect(() => { fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }); }, []);
+   950→
+   951→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div></div>;
+   952→
+   953→  return (
+   954→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+   955→      <div><h1 className="text-2xl font-extrabold">All Brands</h1><p className="text-sm text-muted-foreground mt-1">Browse smartphones by manufacturer</p></div>
+   956→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   957→        {brands.map(b => (
+   958→          <Card key={b.id} className="cursor-pointer phone-card border hover:border-yellow-400/50" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+   959→            <CardContent className="p-4 flex items-center gap-3">
+   960→              <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center shrink-0">
+   961→                <Smartphone className="w-6 h-6 text-gray-400" />
+   962→              </div>
+   963→              <div className="min-w-0">
+   964→                <h3 className="font-semibold text-sm">{b.name}</h3>
+   965→                <p className="text-xs text-muted-foreground">{b._count?.phones || 0} phones</p>
+   966→                <p className="text-[10px] text-muted-foreground">{b.country}</p>
+   967→              </div>
+   968→            </CardContent>
+   969→          </Card>
+   970→        ))}
+   971→      </div>
+   972→    </div>
+   973→  );
+   974→}
+   975→
+   976→// ============ BRAND DETAIL PAGE ============
+   977→function BrandDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   978→  const [brand, setBrand] = useState<Brand & { phones: Phone[] } | null>(null);
+   979→  const [loading, setLoading] = useState(true);
+   980→  useEffect(() => { let cancelled = false; fetch(`/api/brands/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setBrand(d.brand); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [slug]);
+   981→
+   982→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>;
+   983→  if (!brand) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><h2 className="text-xl font-bold">Brand not found</h2><Button className="mt-4" onClick={() => onNavigate('/brands')}>All Brands</Button></div>;
+   984→
+   985→  return (
+   986→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+   987→      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   988→        <button onClick={() => onNavigate('/')} className="hover:text-yellow-600">Home</button><ChevronRight className="w-3 h-3" />
+   989→        <button onClick={() => onNavigate('/brands')} className="hover:text-yellow-600">Brands</button><ChevronRight className="w-3 h-3" />
+   990→        <span className="font-medium text-foreground">{brand.name}</span>
+   991→      </div>
+   992→      <div className="flex items-center gap-4">
+   993→        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center"><Smartphone className="w-8 h-8 text-gray-400" /></div>
+   994→        <div>
+   995→          <h1 className="text-2xl font-extrabold">{brand.name}</h1>
+   996→          <p className="text-sm text-muted-foreground">{brand.country} &middot; {brand.phones.length} phones</p>
+   997→          {brand.description && <p className="text-sm text-muted-foreground mt-1">{brand.description}</p>}
+   998→        </div>
+   999→      </div>
+  1000→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1001→        {brand.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1002→      </div>
+  1003→      {brand.phones.length === 0 && <div className="text-center py-16 text-muted-foreground"><Smartphone className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No phones listed yet for this brand</p></div>}
+  1004→    </div>
+  1005→  );
+  1006→}
+  1007→
+  1008→// ============ SEARCH PAGE ============
+  1009→function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: string) => void }) {
+  1010→  const [results, setResults] = useState<{ phones: Phone[]; brands: Brand[]; total?: number } | null>(null);
+  1011→  const [loading, setLoading] = useState(true);
+  1012→  useEffect(() => { let cancelled = false; fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => { if (!cancelled) { setResults(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [query]);
+  1013→
+  1014→  return (
+  1015→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1016→      <div>
+  1017→        <h1 className="text-2xl font-extrabold">Search Results for &ldquo;{query}&rdquo;</h1>
+  1018→        <p className="text-sm text-muted-foreground mt-1">{loading ? 'Searching...' : `${results?.total || 0} results found`}</p>
+  1019→      </div>
+  1020→      {results?.brands && results.brands.length > 0 && (
+  1021→        <section>
+  1022→          <h2 className="font-semibold mb-3">Brands</h2>
+  1023→          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  1024→            {results.brands.map(b => (
+  1025→              <Card key={b.id} className="cursor-pointer" onClick={() => onNavigate(`/brand/${b.slug}`)}>
+  1026→                <CardContent className="p-3 flex items-center gap-3">
+  1027→                  <Smartphone className="w-5 h-5 text-gray-400" />
+  1028→                  <div><p className="font-semibold text-sm">{b.name}</p><p className="text-xs text-muted-foreground">{b._count?.phones || 0} phones</p></div>
+  1029→                </CardContent>
+  1030→              </Card>
+  1031→            ))}
+  1032→          </div>
+  1033→        </section>
+  1034→      )}
+  1035→      {results?.phones && results.phones.length > 0 && (
+  1036→        <section>
+  1037→          <h2 className="font-semibold mb-3">Phones</h2>
+  1038→          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  1039→            {results.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+  1040→          </div>
+  1041→        </section>
+  1042→      )}
+  1043→      {!loading && results && results.phones.length === 0 && results.brands.length === 0 && (
+  1044→        <div className="text-center py-16 text-muted-foreground"><Search className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No results found for &ldquo;{query}&rdquo;</p><Button variant="outline" className="mt-4" onClick={() => onNavigate('/')}>Browse All Phones</Button></div>
+  1045→      )}
+  1046→    </div>
+  1047→  );
+  1048→}
+  1049→
+  1050→// ============ NEWS PAGE ============
+  1051→function NewsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1052→  const [news, setNews] = useState<NewsItem[]>([]);
+  1053→  const [loading, setLoading] = useState(true);
+  1054→  useEffect(() => { fetch('/api/news').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }); }, []);
+  1055→
+  1056→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>;
+  1057→
+  1058→  return (
+  1059→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1060→      <div><h1 className="text-2xl font-extrabold">Latest News</h1><p className="text-sm text-muted-foreground mt-1">Stay updated with the latest smartphone news from Pakistan and around the world</p></div>
+  1061→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1062→        {news.map(n => (
+  1063→          <Card key={n.id} className="overflow-hidden">
+  1064→            <CardContent className="p-5 space-y-3">
+  1065→              <div className="flex items-center gap-2">
+  1066→                <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
+  1067→                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+  1068→              </div>
+  1069→              <h2 className="font-bold text-lg leading-tight">{n.title}</h2>
+  1070→              <p className="text-sm text-muted-foreground leading-relaxed">{n.excerpt}</p>
+  1071→              <p className="text-sm text-muted-foreground leading-relaxed">{n.content}</p>
+  1072→              <div className="flex items-center gap-2 text-xs text-muted-foreground"><Users className="w-3 h-3" />{n.author}</div>
+  1073→            </CardContent>
+  1074→          </Card>
+  1075→        ))}
+  1076→      </div>
+  1077→      {news.length === 0 && <div className="text-center py-16 text-muted-foreground"><Newspaper className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No news articles yet</p></div>}
+  1078→    </div>
+  1079→  );
+  1080→}
+  1081→
+  1082→// ============ ADMIN LOGIN ============
+  1083→function AdminLoginPage({ onLogin }: { onLogin: (admin: AdminUser, token: string) => void }) {
+  1084→  const [email, setEmail] = useState('admin@phonedock.pk');
+  1085→  const [password, setPassword] = useState('admin123');
+  1086→  const [error, setError] = useState('');
+  1087→  const [loading, setLoading] = useState(false);
+  1088→
+  1089→  const handleSubmit = async (e: React.FormEvent) => {
+  1090→    e.preventDefault();
+  1091→    setLoading(true);
+  1092→    setError('');
+  1093→    try {
+  1094→      const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  1095→      const data = await res.json();
+  1096→      if (data.success) { onLogin(data.admin, data.token); window.location.hash = '/admin/dashboard'; }
+  1097→      else { setError(data.error || 'Login failed'); }
+  1098→    } catch { setError('Connection error'); }
+  1099→    setLoading(false);
+  1100→  };
+  1101→
+  1102→  return (
+  1103→    <div className="min-h-[70vh] flex items-center justify-center px-4">
+  1104→      <Card className="w-full max-w-md border-2 border-yellow-400/30 yellow-glow">
+  1105→        <CardContent className="p-6 sm:p-8">
+  1106→          <div className="text-center mb-6">
+  1107→            <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center mx-auto mb-3"><Shield className="w-7 h-7 text-black" /></div>
+  1108→            <h1 className="text-2xl font-extrabold">Admin Panel</h1>
+  1109→            <p className="text-sm text-muted-foreground mt-1">Sign in to manage PhoneDock</p>
+  1110→          </div>
+  1111→          <form onSubmit={handleSubmit} className="space-y-4">
+  1112→            <div><label className="text-sm font-medium mb-1 block">Email</label><Input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
+  1113→            <div><label className="text-sm font-medium mb-1 block">Password</label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} required /></div>
+  1114→            {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
+  1115→            <Button type="submit" className="w-full bg-yellow-400 text-black hover:bg-yellow-300 font-semibold" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
+  1116→          </form>
+  1117→          <p className="text-[10px] text-center text-muted-foreground mt-4">Demo: admin@phonedock.pk / admin123</p>
+  1118→        </CardContent>
+  1119→      </Card>
+  1120→    </div>
+  1121→  );
+  1122→}
+  1123→
+  1124→// ============ ADMIN DASHBOARD ============
+  1125→function AdminDashboard({ admin, onNavigate }: { admin: AdminUser; onNavigate: (p: string) => void }) {
+  1126→  const [stats, setStats] = useState<{ totalPhones?: number; totalBrands?: number; trending?: number; featured?: number; avgPrice?: number } | null>(null);
+  1127→  useEffect(() => { fetch('/api/stats').then(r => r.json()).then(setStats); }, []);
+  1128→
+  1129→  return (
+  1130→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-6">
+  1131→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1132→        <div>
+  1133→          <h1 className="text-2xl font-extrabold">Dashboard</h1>
+  1134→          <p className="text-sm text-muted-foreground">Welcome back, {admin.name || admin.email}</p>
+  1135→        </div>
+  1136→        <Button variant="outline" size="sm" onClick={() => { window.location.hash = '/'; }}><Eye className="w-4 h-4 mr-2" />View Site</Button>
+  1137→      </div>
+  1138→
+  1139→      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1140→        {[
+  1141→          { label: 'Total Phones', value: stats?.totalPhones || 0, icon: Smartphone, color: 'text-blue-600 bg-blue-100 dark:bg-blue-900/30' },
+  1142→          { label: 'Brands', value: stats?.totalBrands || 0, icon: Layers, color: 'text-green-600 bg-green-100 dark:bg-green-900/30' },
+  1143→          { label: 'Trending', value: stats?.trending || 0, icon: TrendingUp, color: 'text-red-600 bg-red-100 dark:bg-red-900/30' },
+  1144→          { label: 'Featured', value: stats?.featured || 0, icon: Star, color: 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30' },
+  1145→        ].map(s => (
+  1146→          <Card key={s.label}>
+  1147→            <CardContent className="p-4 flex items-center gap-3">
+  1148→              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s.color}`}><s.icon className="w-5 h-5" /></div>
+  1149→              <div><p className="text-2xl font-extrabold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
+  1150→            </CardContent>
+  1151→          </Card>
+  1152→        ))}
+  1153→      </div>
+  1154→
+  1155→      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1156→        <Card className="cursor-pointer phone-card" onClick={() => onNavigate('/admin/phones')}>
+  1157→          <CardContent className="p-4 flex items-center gap-3">
+  1158→            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><Smartphone className="w-5 h-5 text-purple-600" /></div>
+  1159→            <div><p className="font-semibold text-sm">Manage Phones</p><p className="text-xs text-muted-foreground">Add, edit, delete phones</p></div>
+  1160→            <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+  1161→          </CardContent>
+  1162→        </Card>
+  1163→        <Card className="cursor-pointer phone-card" onClick={() => onNavigate('/admin/brands')}>
+  1164→          <CardContent className="p-4 flex items-center gap-3">
+  1165→            <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center"><Layers className="w-5 h-5 text-orange-600" /></div>
+  1166→            <div><p className="font-semibold text-sm">Manage Brands</p><p className="text-xs text-muted-foreground">Add, edit, delete brands</p></div>
+  1167→            <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+  1168→          </CardContent>
+  1169→        </Card>
+  1170→        <Card className="cursor-pointer phone-card" onClick={() => onNavigate('/admin/news')}>
+  1171→          <CardContent className="p-4 flex items-center gap-3">
+  1172→            <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center"><Newspaper className="w-5 h-5 text-teal-600" /></div>
+  1173→            <div><p className="font-semibold text-sm">Manage News</p><p className="text-xs text-muted-foreground">Add, edit, delete news</p></div>
+  1174→            <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+  1175→          </CardContent>
+  1176→        </Card>
+  1177→      </div>
+  1178→
+  1179→      {stats?.avgPrice && (
+  1180→        <Card>
+  1181→          <CardContent className="p-4">
+  1182→            <h3 className="font-semibold text-sm mb-1">Average Phone Price</h3>
+  1183→            <p className="text-3xl font-extrabold text-yellow-600 dark:text-yellow-400">{formatPrice(Math.round(stats.avgPrice))}</p>
+  1184→          </CardContent>
+  1185→        </Card>
+  1186→      )}
+  1187→    </div>
+  1188→  );
+  1189→}
+  1190→
+  1191→// ============ ADMIN PHONES ============
+  1192→function AdminPhones({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1193→  const [phones, setPhones] = useState<Phone[]>([]);
+  1194→  const [loading, setLoading] = useState(true);
+  1195→  useEffect(() => { fetch('/api/admin/phones', { headers: { Authorization: 'Bearer token' } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setLoading(false); }); }, []);
+  1196→
+  1197→  return (
+  1198→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1199→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1200→        <div className="flex items-center gap-2">
+  1201→          <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button>
+  1202→          <h1 className="text-xl font-extrabold">Manage Phones ({phones.length})</h1>
+  1203→        </div>
+  1204→        <Button className="bg-yellow-400 text-black hover:bg-yellow-300" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Phone</Button>
+  1205→      </div>
+  1206→      {loading ? <div className="space-y-2">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div> : (
+  1207→        <Card>
+  1208→          <div className="overflow-x-auto">
+  1209→            <table className="w-full text-sm">
+  1210→              <thead><tr className="border-b bg-gray-50 dark:bg-gray-800/50">
+  1211→                <th className="text-left p-3 font-medium">Phone</th>
+  1212→                <th className="text-left p-3 font-medium">Brand</th>
+  1213→                <th className="text-left p-3 font-medium">Price (PKR)</th>
+  1214→                <th className="text-left p-3 font-medium">Rating</th>
+  1215→                <th className="text-left p-3 font-medium">PTA</th>
+  1216→                <th className="text-right p-3 font-medium">Actions</th>
+  1217→              </tr></thead>
+  1218→              <tbody>
+  1219→                {phones.map(p => (
+  1220→                  <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+  1221→                    <td className="p-3"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center shrink-0">{p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="object-contain" unoptimized /> : <Smartphone className="w-5 h-5 text-gray-400" />}</div><span className="font-medium truncate max-w-[200px] block">{p.modelName}</span></div></td>
+  1222→                    <td className="p-3 text-muted-foreground">{p.brand?.name}</td>
+  1223→                    <td className="p-3 font-medium">{formatPrice(p.pricePKR)}</td>
+  1224→                    <td className="p-3"><span className="flex items-center gap-1"><Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />{p.overallRating}</span></td>
+  1225→                    <td className="p-3"><Badge className={p.ptaApproved ? 'pta-approved text-[10px]' : 'pta-unknown text-[10px]'}>{p.ptaStatus}</Badge></td>
+  1226→                    <td className="p-3 text-right">
+  1227→                      <div className="flex items-center justify-end gap-1">
+  1228→                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onNavigate(`/phone/${p.slug}`)}><Eye className="w-3.5 h-3.5" /></Button>
+  1229→                        <Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button>
+  1230→                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+  1231→                      </div>
+  1232→                    </td>
+  1233→                  </tr>
+  1234→                ))}
+  1235→              </tbody>
+  1236→            </table>
+  1237→          </div>
+  1238→        </Card>
+  1239→      )}
+  1240→    </div>
+  1241→  );
+  1242→}
+  1243→
+  1244→// ============ ADMIN BRANDS ============
+  1245→function AdminBrands({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1246→  const [brands, setBrands] = useState<Brand[]>([]);
+  1247→  const [loading, setLoading] = useState(true);
+  1248→  useEffect(() => { fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }); }, []);
+  1249→
+  1250→  return (
+  1251→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1252→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1253→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage Brands ({brands.length})</h1></div>
+  1254→        <Button className="bg-yellow-400 text-black hover:bg-yellow-300" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Brand</Button>
+  1255→      </div>
+  1256→      {loading ? <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div> : (
+  1257→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1258→          {brands.map(b => (
+  1259→            <Card key={b.id}>
+  1260→              <CardContent className="p-4 flex items-center justify-between">
+  1261→                <div className="flex items-center gap-3">
+  1262→                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center"><Smartphone className="w-6 h-6 text-gray-400" /></div>
+  1263→                  <div><p className="font-semibold text-sm">{b.name}</p><p className="text-xs text-muted-foreground">{b.country} &middot; {b._count?.phones || 0} phones</p></div>
+  1264→                </div>
+  1265→                <div className="flex gap-1"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1266→              </CardContent>
+  1267→            </Card>
+  1268→          ))}
+  1269→        </div>
+  1270→      )}
+  1271→    </div>
+  1272→  );
+  1273→}
+  1274→
+  1275→// ============ ADMIN NEWS ============
+  1276→function AdminNews({ onNavigate }: { onNavigate: (p: string) => void }) {
+  1277→  const [news, setNews] = useState<NewsItem[]>([]);
+  1278→  const [loading, setLoading] = useState(true);
+  1279→  useEffect(() => { fetch('/api/news?published=false').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }); }, []);
+  1280→
+  1281→  return (
+  1282→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-4">
+  1283→      <div className="flex items-center justify-between flex-wrap gap-3">
+  1284→        <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/dashboard')}><ChevronLeft className="w-4 h-4" /> Back</Button><h1 className="text-xl font-extrabold">Manage News ({news.length})</h1></div>
+  1285→        <Button className="bg-yellow-400 text-black hover:bg-yellow-300" size="sm"><Plus className="w-4 h-4 mr-1" /> Add Article</Button>
+  1286→      </div>
+  1287→      {loading ? <div className="space-y-2">{Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div> : (
+  1288→        <div className="space-y-2">
+  1289→          {news.map(n => (
+  1290→            <Card key={n.id}>
+  1291→              <CardContent className="p-4 flex items-center justify-between gap-4">
+  1292→                <div className="min-w-0">
+  1293→                  <div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="text-[10px]">{n.category}</Badge><Badge className={`text-[10px] ${n.published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{n.published ? 'Published' : 'Draft'}</Badge></div>
+  1294→                  <p className="font-semibold text-sm truncate">{n.title}</p>
+  1295→                  <p className="text-xs text-muted-foreground">{n.author} &middot; {new Date(n.createdAt).toLocaleDateString()}</p>
+  1296→                </div>
+  1297→                <div className="flex gap-1 shrink-0"><Button size="icon" variant="ghost" className="h-7 w-7"><Edit className="w-3.5 h-3.5" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-red-500"><Trash2 className="w-3.5 h-3.5" /></Button></div>
+  1298→              </CardContent>
+  1299→            </Card>
+
+[showing lines 800-1299 of 1388; use offset=1300 with limit to continue reading]

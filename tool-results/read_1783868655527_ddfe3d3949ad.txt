@@ -1,0 +1,502 @@
+   270→            ) : (
+   271→              <TooltipProvider><Tooltip>
+   272→                <TooltipTrigger asChild>
+   273→                  <Button variant="ghost" size="icon" className="hidden md:flex" onClick={() => onNavigate('/admin/login')}>
+   274→                    <Shield className="w-4 h-4" />
+   275→                  </Button>
+   276→                </TooltipTrigger>
+   277→                <TooltipContent>Admin Login</TooltipContent>
+   278→              </Tooltip></TooltipProvider>
+   279→            )}
+   280→            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
+   281→              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+   282→            </Button>
+   283→          </div>
+   284→        </div>
+   285→
+   286→        {/* Search bar */}
+   287→        {searchOpen && (
+   288→          <div className="pb-3 flex gap-2 animate-in slide-in-from-top-2 duration-200">
+   289→            <Input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="flex-1" autoFocus />
+   290→            <Button onClick={doSearch} className="bg-yellow-400 text-black hover:bg-yellow-300">Search</Button>
+   291→          </div>
+   292→        )}
+   293→      </div>
+   294→
+   295→      {/* Mobile menu */}
+   296→      {mobileOpen && (
+   297→        <div className="md:hidden border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 animate-in slide-in-from-top-2">
+   298→          <nav className="flex flex-col p-4 gap-1">
+   299→            {[
+   300→              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
+   301→              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
+   302→            ].map(item => (
+   303→              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-yellow-600 dark:hover:text-yellow-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+   304→                <item.icon className="w-4 h-4" />{item.label}
+   305→              </button>
+   306→            ))}
+   307→            <Separator className="my-2" />
+   308→            {admin ? (
+   309→              <>
+   310→                <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-yellow-600 dark:text-yellow-400 rounded-lg bg-yellow-50 dark:bg-yellow-900/20">
+   311→                  <Shield className="w-4 h-4" />Admin Panel
+   312→                </button>
+   313→                <button onClick={() => { onLogout(); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+   314→                  <LogOut className="w-4 h-4" />Logout
+   315→                </button>
+   316→              </>
+   317→            ) : (
+   318→              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-yellow-600 dark:hover:text-yellow-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+   319→                <Settings className="w-4 h-4" />Admin Login
+   320→              </button>
+   321→            )}
+   322→          </nav>
+   323→        </div>
+   324→      )}
+   325→    </header>
+   326→  );
+   327→}
+   328→
+   329→// ============ FOOTER ============
+   330→function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
+   331→  return (
+   332→    <footer className="bg-gray-950 text-gray-400 mt-auto">
+   333→      <div className="max-w-7xl mx-auto px-4 py-10 sm:py-14">
+   334→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+   335→          <div className="col-span-2 sm:col-span-1">
+   336→            <div className="flex items-center gap-2 mb-3">
+   337→              <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center"><Smartphone className="w-5 h-5 text-black" /></div>
+   338→              <span className="font-extrabold text-lg text-white">Phone<span className="text-yellow-400">Dock</span></span>
+   339→            </div>
+   340→            <p className="text-sm leading-relaxed">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+   341→          </div>
+   342→          <div>
+   343→            <h4 className="font-semibold text-white mb-3 text-sm">Popular Brands</h4>
+   344→            <div className="space-y-2 text-sm">
+   345→              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+   346→                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block hover:text-yellow-400 transition-colors">{b}</button>
+   347→              ))}
+   348→            </div>
+   349→          </div>
+   350→          <div>
+   351→            <h4 className="font-semibold text-white mb-3 text-sm">Quick Links</h4>
+   352→            <div className="space-y-2 text-sm">
+   353→              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Admin', h: '/admin/login' }].map(item => (
+   354→                <button key={item.h} onClick={() => onNavigate(item.h)} className="block hover:text-yellow-400 transition-colors">{item.l}</button>
+   355→              ))}
+   356→            </div>
+   357→          </div>
+   358→          <div>
+   359→            <h4 className="font-semibold text-white mb-3 text-sm">Price Ranges (PKR)</h4>
+   360→            <div className="space-y-2 text-sm">
+   361→              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
+   362→                <span key={r} className="block">{r}</span>
+   363→              ))}
+   364→            </div>
+   365→          </div>
+   366→        </div>
+   367→        <Separator className="bg-gray-800 mb-6" />
+   368→        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
+   369→          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+   370→          <p className="text-yellow-400 font-medium">Phone prices may vary. Check with retailers.</p>
+   371→        </div>
+   372→      </div>
+   373→    </footer>
+   374→  );
+   375→}
+   376→
+   377→// ============ PHONE SECTION (reusable) ============
+   378→function PhoneSection({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string }) {
+   379→  if (!phones.length) return null;
+   380→  return (
+   381→    <section className="space-y-4">
+   382→      <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
+   383→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   384→        {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
+   385→      </div>
+   386→    </section>
+   387→  );
+   388→}
+   389→
+   390→// ============ HOME PAGE ============
+   391→function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
+   392→  if (loading || !data) {
+   393→    return (
+   394→      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+   395→        <Skeleton className="h-64 sm:h-80 rounded-2xl" />
+   396→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+   397→      </div>
+   398→    );
+   399→  }
+   400→
+   401→  return (
+   402→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-8 sm:space-y-10">
+   403→      {/* Hero */}
+   404→      <section className="hero-gradient rounded-2xl p-6 sm:p-10 text-white relative overflow-hidden">
+   405→        <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+   406→        <div className="relative z-10 max-w-2xl">
+   407→          <Badge className="bg-yellow-400 text-black mb-4">Pakistan&apos;s #1 Phone Database</Badge>
+   408→          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-3 leading-tight">
+   409→            Find Your Perfect <span className="text-yellow-400">Smartphone</span>
+   410→          </h1>
+   411→          <p className="text-gray-300 text-sm sm:text-base mb-6 leading-relaxed">Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.</p>
+   412→          <div className="flex flex-wrap gap-2">
+   413→            <Button className="bg-yellow-400 text-black hover:bg-yellow-300 font-semibold" onClick={() => onNavigate('/brands')}>
+   414→              <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+   415→            </Button>
+   416→            <Button variant="outline" className="border-gray-600 text-white hover:bg-white/10" onClick={() => onNavigate('/compare')}>
+   417→              <GitCompare className="w-4 h-4 mr-2" /> Compare
+   418→            </Button>
+   419→          </div>
+   420→          <div className="flex flex-wrap gap-4 mt-6 text-xs sm:text-sm text-gray-400">
+   421→            <span className="flex items-center gap-1"><Shield className="w-4 h-4 text-green-400" /> PTA Status</span>
+   422→            <span className="flex items-center gap-1"><Tag className="w-4 h-4 text-yellow-400" /> PKR Prices</span>
+   423→            <span className="flex items-center gap-1"><Star className="w-4 h-4 text-yellow-400" /> Expert Reviews</span>
+   424→          </div>
+   425→        </div>
+   426→      </section>
+   427→
+   428→      {/* Featured Phones */}
+   429→      <PhoneSection phones={data.featured} title="Featured Phones" icon={Star} />
+   430→
+   431→      {/* Price Categories */}
+   432→      {data.priceCategories.above100k.length > 0 && (
+   433→        <section className="space-y-4">
+   434→          <SectionHeader title="Phones by Price" icon={Tag} />
+   435→          <Tabs defaultValue="above100k" className="w-full">
+   436→            <TabsList className="h-auto flex flex-wrap gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+   437→              {[
+   438→                { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
+   439→                { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
+   440→                { key: 'under20k', label: 'Under 20K' },
+   441→              ].map(tab => (
+   442→                <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-yellow-400 data-[state=active]:text-black">{tab.label}</TabsTrigger>
+   443→              ))}
+   444→            </TabsList>
+   445→            {['above100k', 'price60to100', 'price40to60', 'price20to40', 'under20k'].map(key => (
+   446→              <TabsContent key={key} value={key}>
+   447→                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+   448→                  {(data.priceCategories as Record<string, Phone[]>)[key]?.length > 0 ? (data.priceCategories as Record<string, Phone[]>)[key].map((p: Phone) => <PhoneCard key={p.id} phone={p} />) : (
+   449→                    <div className="col-span-full text-center py-10 text-muted-foreground"><Smartphone className="w-10 h-10 mx-auto mb-2 opacity-30" /><p>No phones in this range yet</p></div>
+   450→                  )}
+   451→                </div>
+   452→              </TabsContent>
+   453→            ))}
+   454→          </Tabs>
+   455→        </section>
+   456→      )}
+   457→
+   458→      {/* Trending */}
+   459→      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" />
+   460→
+   461→      {/* Best categories */}
+   462→      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   463→        {[
+   464→          { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, color: 'from-purple-500 to-indigo-600' },
+   465→          { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, color: 'from-red-500 to-orange-600' },
+   466→          { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, color: 'from-green-500 to-emerald-600' },
+   467→        ].map(cat => (
+   468→          <Card key={cat.title} className="overflow-hidden border-0 shadow-lg">
+   469→            <div className={`bg-gradient-to-br ${cat.color} p-4 text-white`}>
+   470→              <div className="flex items-center gap-2 mb-1"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
+   471→            </div>
+   472→            <CardContent className="p-3 space-y-2">
+   473→              {cat.phones.slice(0, 3).map((p, i) => (
+   474→                <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg p-1.5 -m-1.5" onClick={() => onNavigate(`/phone/${p.slug}`)}>
+   475→                  <span className="text-xs font-bold text-muted-foreground w-4">#{i + 1}</span>
+   476→                  <div className="flex-1 min-w-0">
+   477→                    <p className="text-xs text-muted-foreground">{p.brand?.name}</p>
+   478→                    <p className="text-sm font-semibold truncate">{p.modelName}</p>
+   479→                  </div>
+   480→                  <p className="text-xs font-bold text-yellow-600 dark:text-yellow-400">{formatPrice(p.pricePKR)}</p>
+   481→                </div>
+   482→              ))}
+   483→            </CardContent>
+   484→          </Card>
+   485→        ))}
+   486→      </div>
+   487→
+   488→      {/* Latest */}
+   489→      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" />
+   490→
+   491→      {/* News */}
+   492→      {data.news.length > 0 && (
+   493→        <section className="space-y-4">
+   494→          <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+   495→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+   496→            {data.news.map(n => (
+   497→              <Card key={n.id} className="cursor-pointer phone-card border hover:border-yellow-400/50" onClick={() => onNavigate('/news')}>
+   498→                <CardContent className="p-4">
+   499→                  <Badge variant="secondary" className="text-[10px] mb-2">{n.category}</Badge>
+   500→                  <h3 className="font-semibold text-sm line-clamp-2 mb-2">{n.title}</h3>
+   501→                  <p className="text-xs text-muted-foreground line-clamp-2">{n.excerpt}</p>
+   502→                  <p className="text-[10px] text-muted-foreground mt-2">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+   503→                </CardContent>
+   504→              </Card>
+   505→            ))}
+   506→          </div>
+   507→        </section>
+   508→      )}
+   509→
+   510→      {/* Upcoming */}
+   511→      {data.upcoming.length > 0 && <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} />}
+   512→    </div>
+   513→  );
+   514→}
+   515→
+   516→// ============ PHONE DETAIL PAGE ============
+   517→function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
+   518→  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
+   519→  const [loading, setLoading] = useState(true);
+   520→  const [activeTab, setActiveTab] = useState('specs');
+   521→
+   522→  useEffect(() => { let cancelled = false; fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); }); return () => { cancelled = true; }; }, [slug]);
+   523→
+   524→  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><Skeleton className="h-96 rounded-2xl" /><div className="mt-6 space-y-4">{Array(5).fill(0).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div></div>;
+   525→  if (!data?.phone) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><Smartphone className="w-16 h-16 mx-auto text-gray-300 mb-4" /><h2 className="text-xl font-bold">Phone not found</h2><Button variant="outline" className="mt-4" onClick={() => onNavigate('/')}>Go Home</Button></div>;
+   526→
+   527→  const { phone, related } = data;
+   528→  const p = phone;
+   529→
+   530→  const specGroups = [
+   531→    { title: 'Display & Design', icon: Monitor, specs: [
+   532→      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
+   533→      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
+   534→      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
+   535→      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
+   536→    ]},
+   537→    { title: 'Performance', icon: Cpu, specs: [
+   538→      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
+   539→      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
+   540→      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
+   541→    ]},
+   542→    { title: 'Camera', icon: Camera, specs: [
+   543→      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
+   544→      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
+   545→      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
+   546→      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
+   547→    ]},
+   548→    { title: 'Battery & Charging', icon: Battery, specs: [
+   549→      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
+   550→      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
+   551→    ]},
+   552→    { title: 'Connectivity', icon: Wifi, specs: [
+   553→      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
+   554→      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
+   555→      { label: 'SIM', value: p.specs?.sim },
+   556→    ]},
+   557→    { title: 'Features & OS', icon: Smartphone, specs: [
+   558→      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
+   559→      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
+   560→      { label: 'Special Features', value: p.specs?.specialFeatures },
+   561→    ]},
+   562→  ];
+   563→
+   564→  return (
+   565→    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
+   566→      {/* Breadcrumb */}
+   567→      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 flex-wrap">
+   568→        <button onClick={() => onNavigate('/')} className="hover:text-yellow-600">Home</button>
+   569→        <ChevronRight className="w-3 h-3" />
+   570→        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-yellow-600">{p.brand?.name}</button>
+   571→        <ChevronRight className="w-3 h-3" />
+   572→        <span className="font-medium text-foreground">{p.modelName}</span>
+   573→      </div>
+   574→
+   575→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   576→        {/* Left: Image + Quick Info */}
+   577→        <div className="lg:col-span-1 space-y-4">
+   578→          <Card className="overflow-hidden">
+   579→            <div className="bg-gray-50 dark:bg-gray-800 aspect-square flex items-center justify-center p-8">
+   580→              {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized /> : <Smartphone className="w-32 h-32 text-gray-300" />}
+   581→            </div>
+   582→          </Card>
+   583→          <Card>
+   584→            <CardContent className="p-4 space-y-3">
+   585→              <div className="flex items-center justify-between">
+   586→                <span className="text-sm text-muted-foreground">Price in Pakistan</span>
+   587→                <span className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{formatPrice(p.pricePKR)}</span>
+   588→              </div>
+   589→              <Separator />
+   590→              <div className="flex items-center justify-between">
+   591→                <span className="text-sm text-muted-foreground">PTA Status</span>
+   592→                <Badge className={p.ptaApproved ? 'pta-approved' : 'pta-unknown'}>
+   593→                  <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
+   594→                </Badge>
+   595→              </div>
+   596→              <Separator />
+   597→              <div className="flex items-center justify-between">
+   598→                <span className="text-sm text-muted-foreground">Release Date</span>
+   599→                <span className="text-sm font-medium">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
+   600→              </div>
+   601→              {p.specs?.colors && <><Separator /><div><span className="text-sm text-muted-foreground">Colors</span><p className="text-sm mt-1">{p.specs.colors}</p></div></>}
+   602→              <Separator />
+   603→              <Button className="w-full bg-yellow-400 text-black hover:bg-yellow-300" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
+   604→                <GitCompare className="w-4 h-4 mr-2" /> Add to Compare
+   605→              </Button>
+   606→            </CardContent>
+   607→          </Card>
+   608→          {/* Store prices */}
+   609→          {p.prices && p.prices.length > 0 && (
+   610→            <Card>
+   611→              <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Best Prices</CardTitle></CardHeader>
+   612→              <CardContent className="p-4 pt-0 space-y-2">
+   613→                {p.prices.map(pr => (
+   614→                  <div key={pr.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+   615→                    <div>
+   616→                      <p className="text-sm font-medium">{pr.storeName}</p>
+   617→                      <p className="text-[10px] text-green-600">{pr.inStock ? 'In Stock' : 'Out of Stock'}</p>
+   618→                    </div>
+   619→                    <span className="font-bold text-sm text-yellow-600 dark:text-yellow-400">{formatPrice(pr.price)}</span>
+   620→                  </div>
+   621→                ))}
+   622→              </CardContent>
+   623→            </Card>
+   624→          )}
+   625→        </div>
+   626→
+   627→        {/* Right: Details */}
+   628→        <div className="lg:col-span-2 space-y-4">
+   629→          <div>
+   630→            <p className="text-sm text-muted-foreground mb-1">{p.brand?.name}</p>
+   631→            <h1 className="text-2xl sm:text-3xl font-extrabold">{p.modelName}</h1>
+   632→            <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{p.description}</p>
+   633→            {p.reviewVerdict && <Badge className="mt-2 bg-yellow-400 text-black"><Trophy className="w-3 h-3 mr-1" /> {p.reviewVerdict}</Badge>}
+   634→          </div>
+   635→
+   636→          {/* Rating Scores */}
+   637→          <Card>
+   638→            <CardContent className="p-4 space-y-3">
+   639→              <div className="flex items-center justify-between mb-2">
+   640→                <h3 className="font-bold">Ratings & Scores</h3>
+   641→                <div className="flex items-center gap-1">
+   642→                  <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+   643→                  <span className="text-2xl font-extrabold">{p.overallRating}</span>
+   644→                  <span className="text-sm text-muted-foreground">/ 10</span>
+   645→                </div>
+   646→              </div>
+   647→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+   648→                <ScoreBar score={p.performanceScore} label="Performance" />
+   649→                <ScoreBar score={p.cameraScore} label="Camera" />
+   650→                <ScoreBar score={p.batteryScore} label="Battery" />
+   651→                <ScoreBar score={p.displayScore} label="Display" />
+   652→                <ScoreBar score={p.valueScore} label="Value" />
+   653→              </div>
+   654→            </CardContent>
+   655→          </Card>
+   656→
+   657→          {/* Tabs: Specs / Benchmarks / Review */}
+   658→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   659→            <TabsList className="w-full justify-start bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+   660→              <TabsTrigger value="specs" className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black text-xs sm:text-sm">Specifications</TabsTrigger>
+   661→              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black text-xs sm:text-sm">Benchmarks</TabsTrigger>
+   662→              <TabsTrigger value="review" className="data-[state=active]:bg-yellow-400 data-[state=active]:text-black text-xs sm:text-sm">Review</TabsTrigger>
+   663→            </TabsList>
+   664→
+   665→            <TabsContent value="specs" className="mt-4 space-y-4">
+   666→              {specGroups.map(group => (
+   667→                <Card key={group.title}>
+   668→                  <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><group.icon className="w-4 h-4 text-yellow-500" />{group.title}</CardTitle></CardHeader>
+   669→                  <CardContent className="p-4 pt-0">
+   670→                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+   671→                      {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
+   672→                        <div key={s.label} className="spec-row flex justify-between py-2.5 px-2 rounded text-sm">
+   673→                          <span className="text-muted-foreground">{s.label}</span>
+   674→                          <span className="font-medium text-right max-w-[60%]">{s.value}</span>
+   675→                        </div>
+   676→                      ))}
+   677→                    </div>
+   678→                  </CardContent>
+   679→                </Card>
+   680→              ))}
+   681→            </TabsContent>
+   682→
+   683→            <TabsContent value="benchmarks" className="mt-4">
+   684→              <Card>
+   685→                <CardContent className="p-4 space-y-6">
+   686→                  {p.benchmarks ? (<>
+   687→                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   688→                      {[
+   689→                        { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'bg-blue-500' },
+   690→                        { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'bg-green-500' },
+   691→                        { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'bg-purple-500' },
+   692→                      ].map(b => (
+   693→                        <div key={b.label} className="text-center p-4 rounded-xl bg-gray-50 dark:bg-gray-800">
+   694→                          <p className="text-xs text-muted-foreground mb-1">{b.label}</p>
+   695→                          <p className="text-2xl font-extrabold">{b.value}</p>
+   696→                          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+   697→                            <div className={`h-full ${b.color} rounded-full`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
+   698→                          </div>
+   699→                        </div>
+   700→                      ))}
+   701→                    </div>
+   702→                    <div>
+   703→                      <h4 className="font-semibold mb-3">Gaming Performance</h4>
+   704→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   705→                        {[
+   706→                          { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
+   707→                          { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
+   708→                          { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
+   709→                        ].map(g => (
+   710→                          <div key={g.label} className="p-3 rounded-lg border text-center">
+   711→                            <p className="text-xs text-muted-foreground mt-1">{g.label}</p>
+   712→                            <p className="text-sm font-bold mt-0.5">{g.value || 'N/A'}</p>
+   713→                          </div>
+   714→                        ))}
+   715→                      </div>
+   716→                    </div>
+   717→                    <div>
+   718→                      <h4 className="font-semibold mb-3">Battery Tests</h4>
+   719→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   720→                        {[
+   721→                          { label: 'Video Playback', value: p.benchmarks.videoPlayback },
+   722→                          { label: 'Gaming', value: p.benchmarks.gamingBattery },
+   723→                          { label: 'Browsing', value: p.benchmarks.browsingBattery },
+   724→                        ].map(b => (
+   725→                          <div key={b.label} className="p-3 rounded-lg border text-center">
+   726→                            <p className="text-xs text-muted-foreground mt-1">{b.label}</p>
+   727→                            <p className="text-sm font-bold mt-0.5">{b.value || 'N/A'}</p>
+   728→                          </div>
+   729→                        ))}
+   730→                      </div>
+   731→                    </div>
+   732→                  </>) : <p className="text-muted-foreground text-center py-8">No benchmark data available</p>}
+   733→                </CardContent>
+   734→              </Card>
+   735→            </TabsContent>
+   736→
+   737→            <TabsContent value="review" className="mt-4 space-y-4">
+   738→              <Card>
+   739→                <CardContent className="p-4 space-y-4">
+   740→                  {p.reviewSummary && <p className="text-sm leading-relaxed">{p.reviewSummary}</p>}
+   741→                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   742→                    {p.pros && (
+   743→                      <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+   744→                        <h4 className="font-semibold text-green-700 dark:text-green-400 text-sm mb-2 flex items-center gap-1"><Check className="w-4 h-4" /> Pros</h4>
+   745→                        <ul className="space-y-1">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-green-600 dark:text-green-300 flex items-start gap-1"><Plus className="w-3 h-3 mt-1 shrink-0" />{pro.trim()}</li>)}</ul>
+   746→                      </div>
+   747→                    )}
+   748→                    {p.cons && (
+   749→                      <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+   750→                        <h4 className="font-semibold text-red-700 dark:text-red-400 text-sm mb-2 flex items-center gap-1"><Minus className="w-4 h-4" /> Cons</h4>
+   751→                        <ul className="space-y-1">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-600 dark:text-red-300 flex items-start gap-1"><Minus className="w-3 h-3 mt-1 shrink-0" />{con.trim()}</li>)}</ul>
+   752→                      </div>
+   753→                    )}
+   754→                  </div>
+   755→                </CardContent>
+   756→              </Card>
+   757→            </TabsContent>
+   758→          </Tabs>
+   759→
+   760→          {/* Related Phones */}
+   761→          {related.length > 0 && (
+   762→            <section className="space-y-4 pt-4">
+   763→              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
+   764→              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}</div>
+   765→            </section>
+   766→          )}
+   767→        </div>
+   768→      </div>
+   769→    </div>
+
+[showing lines 270-769 of 1388; use offset=770 with limit to continue reading]
