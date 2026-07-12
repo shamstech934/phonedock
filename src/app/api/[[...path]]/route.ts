@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { Brand, Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, Review, PhonePrice, News, Sponsor, Admin, ActivityLog } from '@/lib/models';
+import connectDB from '@/lib/mongodb';
 import { compare } from 'bcryptjs';
 
 // ============ TOKEN STORE ============
@@ -24,18 +25,18 @@ function cacheHeaders(maxAge = 60) {
 async function handleAuth(req: NextRequest, action: string) {
   if (req.method === 'POST' && action === 'login') {
     try {
+      await connectDB();
       const { email, password } = await req.json();
       if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
-      const admin = await db.admin.findUnique({ where: { email } });
+      const admin = await Admin.findOne({ email });
       if (!admin || !admin.active) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       const valid = await compare(password, admin.password);
       if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      await db.admin.update({ where: { id: admin.id }, data: { lastLogin: new Date() } });
+      await Admin.findByIdAndUpdate(admin._id, { lastLogin: new Date() });
       const token = generateToken();
       activeTokens.add(token);
-      // Log activity
-      await db.activityLog.create({ data: { adminId: admin.id, action: 'login', details: `Admin ${admin.email} logged in`, entityType: 'admin' } });
-      return NextResponse.json({ success: true, token, admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role } });
+      await ActivityLog.create({ adminId: admin._id, action: 'login', details: `Admin ${admin.email} logged in`, entityType: 'admin' });
+      return NextResponse.json({ success: true, token, admin: { id: admin._id, email: admin.email, name: admin.name, role: admin.role } });
     } catch {
       return NextResponse.json({ error: 'Server error' }, { status: 500 });
     }
@@ -46,6 +47,7 @@ async function handleAuth(req: NextRequest, action: string) {
 // ============ PHONES ============
 async function handlePhones(req: NextRequest, pathParts: string[]) {
   if (req.method === 'GET' && pathParts.length <= 1) {
+    await connectDB();
     const { searchParams } = new URL(req.url);
     const brand = searchParams.get('brand');
     const search = searchParams.get('search');
@@ -64,34 +66,38 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
     if (trending === 'true') where.trending = true;
     if (upcoming === 'true') where.upcoming = true;
     if (search) {
-      where.OR = [
-        { modelName: { contains: search } },
-        { description: { contains: search } },
+      where.$or = [
+        { modelName: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
       ];
     }
     if (minPrice || maxPrice) {
       where.pricePKR = {};
-      if (minPrice) where.pricePKR.gte = parseInt(minPrice);
-      if (maxPrice) where.pricePKR.lte = parseInt(maxPrice);
+      if (minPrice) where.pricePKR.$gte = parseInt(minPrice);
+      if (maxPrice) where.pricePKR.$lte = parseInt(maxPrice);
     }
 
-    const orderBy: any = { createdAt: 'desc' };
-    if (sort === 'price-asc') orderBy.pricePKR = 'asc';
-    if (sort === 'price-desc') orderBy.pricePKR = 'desc';
-    if (sort === 'rating') orderBy.overallRating = 'desc';
-    if (sort === 'name') orderBy.modelName = 'asc';
-    if (sort === 'views') orderBy.views = 'desc';
+    const sortObj: any = { createdAt: -1 };
+    if (sort === 'price-asc') sortObj.pricePKR = 1;
+    else if (sort === 'price-desc') sortObj.pricePKR = -1;
+    else if (sort === 'rating') sortObj.overallRating = -1;
+    else if (sort === 'name') sortObj.modelName = 1;
+    else if (sort === 'views') sortObj.views = -1;
 
     const [phones, total] = await Promise.all([
-      db.phone.findMany({
-        where,
-        include: { brand: true, specs: true, benchmarks: true },
-        orderBy,
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      db.phone.count({ where }),
+      Phone.find(where).populate({ path: 'brand', select: 'name slug logo country' }).sort(sortObj).skip((page - 1) * limit).limit(limit).lean(),
+      Phone.countDocuments(where),
     ]);
+
+    // Attach specs and benchmarks to each phone
+    for (const phone of phones) {
+      const [specs, benchmarks] = await Promise.all([
+        PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+        PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+      ]);
+      (phone as any).specs = specs || null;
+      (phone as any).benchmarks = benchmarks || null;
+    }
 
     return NextResponse.json({ phones, total, page, pages: Math.ceil(total / limit) }, { headers: cacheHeaders(60) });
   }
@@ -99,8 +105,9 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
   if (req.method === 'POST') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     try {
+      await connectDB();
       const data = await req.json();
-      const phone = await db.phone.create({ data });
+      const phone = await Phone.create(data);
       return NextResponse.json({ phone }, { status: 201 });
     } catch (e: any) {
       return NextResponse.json({ error: e.message || 'Create failed' }, { status: 400 });
@@ -113,31 +120,32 @@ async function handlePhones(req: NextRequest, pathParts: string[]) {
 // ============ PHONE DETAIL ============
 async function handlePhoneDetail(req: NextRequest, slug: string) {
   if (req.method === 'GET') {
-    const phone = await db.phone.findUnique({
-      where: { slug },
-      include: {
-        brand: true, specs: true, benchmarks: true,
-        images: { orderBy: { sortOrder: 'asc' } },
-        reviews: { where: { published: true } },
-        prices: { orderBy: { price: 'asc' } },
-      },
-    });
+    await connectDB();
+    const phone = await Phone.findOne({ slug }).populate({ path: 'brand', select: 'name slug logo country' }).lean();
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
     // Increment views
-    await db.phone.update({ where: { slug }, data: { views: { increment: 1 } } });
-    const related = await db.phone.findMany({
-      where: { brandId: phone.brandId, id: { not: phone.id }, active: true, status: 'published' },
-      include: { brand: true },
-      take: 6,
-      orderBy: { overallRating: 'desc' },
-    });
-    return NextResponse.json({ phone, related }, { headers: cacheHeaders(30) });
+    await Phone.findOneAndUpdate({ slug }, { $inc: { views: 1 } });
+    // Fetch related data
+    const [specs, benchmarks, images, reviews, prices] = await Promise.all([
+      PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+      PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+      PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
+      Review.find({ phoneId: phone._id, published: true }).lean(),
+      PhonePrice.find({ phoneId: phone._id }).sort({ price: 1 }).lean(),
+    ]);
+    const phoneWithDetails = { ...phone, specs: specs || null, benchmarks: benchmarks || null, images, reviews, prices };
+    const related = await Phone.find({ brandId: phone.brandId, _id: { $ne: phone._id }, active: true, status: 'published' })
+      .populate({ path: 'brand', select: 'name slug logo country' })
+      .sort({ overallRating: -1 }).limit(6).lean();
+    return NextResponse.json({ phone: phoneWithDetails, related }, { headers: cacheHeaders(30) });
   }
   if (req.method === 'PUT') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     try {
+      await connectDB();
       const data = await req.json();
-      const phone = await db.phone.update({ where: { slug }, data });
+      const phone = await Phone.findOneAndUpdate({ slug }, data, { new: true });
+      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
       return NextResponse.json({ phone });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -145,7 +153,8 @@ async function handlePhoneDetail(req: NextRequest, slug: string) {
   }
   if (req.method === 'DELETE') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    await db.phone.delete({ where: { slug } });
+    await connectDB();
+    await Phone.findOneAndDelete({ slug });
     return NextResponse.json({ success: true });
   }
   return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -153,34 +162,45 @@ async function handlePhoneDetail(req: NextRequest, slug: string) {
 
 // ============ BEST PHONES BY CATEGORY ============
 async function handleBestPhones(req: NextRequest, category: string) {
+  await connectDB();
   let where: any = { active: true, status: 'published' };
-  if (category === 'camera') where = { ...where, cameraScore: { gte: 85 } };
-  else if (category === 'gaming') where = { ...where, performanceScore: { gte: 88 } };
-  else if (category === 'battery') where = { ...where, batteryScore: { gte: 85 } };
-  else if (category === 'flagship') where = { ...where, pricePKR: { gte: 150000 } };
-  else if (category === 'budget') where = { ...where, pricePKR: { lte: 40000 } };
-  else if (category === 'display') where = { ...where, displayScore: { gte: 90 } };
+  if (category === 'camera') where.cameraScore = { $gte: 85 };
+  else if (category === 'gaming') where.performanceScore = { $gte: 88 };
+  else if (category === 'battery') where.batteryScore = { $gte: 85 };
+  else if (category === 'flagship') where.pricePKR = { $gte: 150000 };
+  else if (category === 'budget') where.pricePKR = { $lte: 40000 };
+  else if (category === 'display') where.displayScore = { $gte: 90 };
 
-  const phones = await db.phone.findMany({
-    where,
-    include: { brand: true, specs: true },
-    orderBy: { overallRating: 'desc' },
-    take: 20,
-  });
+  const phones = await Phone.find(where)
+    .populate({ path: 'brand', select: 'name slug logo country' })
+    .sort({ overallRating: -1 }).limit(20).lean();
+  // Attach specs
+  for (const phone of phones) {
+    const specs = await PhoneSpecs.findOne({ phoneId: phone._id }).lean();
+    (phone as any).specs = specs || null;
+  }
   return NextResponse.json({ phones, category }, { headers: cacheHeaders(120) });
 }
 
 // ============ BRANDS ============
 async function handleBrands(req: NextRequest) {
   if (req.method === 'GET') {
-    const brands = await db.brand.findMany({ where: { active: true }, include: { _count: { select: { phones: true } } }, orderBy: { sortOrder: 'asc' } });
+    await connectDB();
+    const brands = await Brand.aggregate([
+      { $match: { active: true } },
+      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+      { $addFields: { phoneCount: { $size: '$_phones' } } },
+      { $unset: '_phones' },
+      { $sort: { sortOrder: 1 } },
+    ]);
     return NextResponse.json({ brands }, { headers: cacheHeaders(300) });
   }
   if (req.method === 'POST') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     try {
+      await connectDB();
       const data = await req.json();
-      const brand = await db.brand.create({ data });
+      const brand = await Brand.create(data);
       return NextResponse.json({ brand }, { status: 201 });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -192,14 +212,23 @@ async function handleBrands(req: NextRequest) {
 // ============ COMPARE ============
 async function handleCompare(req: NextRequest) {
   if (req.method === 'GET') {
+    await connectDB();
     const { searchParams } = new URL(req.url);
     const ids = searchParams.get('ids')?.split(',').filter(Boolean) || [];
     if (ids.length < 2) return NextResponse.json({ error: 'Provide at least 2 phone IDs' }, { status: 400 });
     if (ids.length > 4) return NextResponse.json({ error: 'Max 4 phones' }, { status: 400 });
-    const phones = await db.phone.findMany({
-      where: { id: { in: ids } },
-      include: { brand: true, specs: true, benchmarks: true },
-    });
+    const phones = await Phone.find({ _id: { $in: ids } })
+      .populate({ path: 'brand', select: 'name slug logo country' })
+      .lean();
+    // Attach specs and benchmarks
+    for (const phone of phones) {
+      const [specs, benchmarks] = await Promise.all([
+        PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+        PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+      ]);
+      (phone as any).specs = specs || null;
+      (phone as any).benchmarks = benchmarks || null;
+    }
     return NextResponse.json({ phones }, { headers: cacheHeaders(60) });
   }
   return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -207,39 +236,43 @@ async function handleCompare(req: NextRequest) {
 
 // ============ SEARCH ============
 async function handleSearch(req: NextRequest) {
+  await connectDB();
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q') || '';
   if (!q.trim()) return NextResponse.json({ results: [], total: 0 });
-  const phones = await db.phone.findMany({
-    where: { active: true, status: 'published', OR: [{ modelName: { contains: q } }, { description: { contains: q } }] },
-    include: { brand: true, specs: true },
-    take: 20,
-    orderBy: { overallRating: 'desc' },
-  });
-  const brands = await db.brand.findMany({
-    where: { active: true, OR: [{ name: { contains: q } }] },
-    include: { _count: { select: { phones: true } } },
-  });
-  return NextResponse.json({ phones, brands, total: phones.length + brands.length }, { headers: cacheHeaders(30) });
+  const [phones, brandsRaw] = await Promise.all([
+    Phone.find({ active: true, status: 'published', $or: [{ modelName: { $regex: q, $options: 'i' } }, { description: { $regex: q, $options: 'i' } }] })
+      .populate({ path: 'brand', select: 'name slug logo country' })
+      .sort({ overallRating: -1 }).limit(20).lean(),
+    Brand.aggregate([
+      { $match: { active: true, name: { $regex: q, $options: 'i' } } },
+      { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+      { $addFields: { phoneCount: { $size: '$_phones' } } },
+      { $unset: '_phones' },
+    ]),
+  ]);
+  return NextResponse.json({ phones, brands: brandsRaw, total: phones.length + brandsRaw.length }, { headers: cacheHeaders(30) });
 }
 
 // ============ NEWS ============
 async function handleNews(req: NextRequest) {
   if (req.method === 'GET') {
+    await connectDB();
     const { searchParams } = new URL(req.url);
     const published = searchParams.get('published') !== 'false';
     const category = searchParams.get('category');
-    const where: any = { published, status: 'published' };
-    if (!published) delete where.status;
+    const where: any = { published };
+    if (published) where.status = 'published';
     if (category) where.category = category;
-    const news = await db.news.findMany({ where, orderBy: { createdAt: 'desc' }, take: 20 });
+    const news = await News.find(where).sort({ createdAt: -1 }).limit(20).lean();
     return NextResponse.json({ news }, { headers: cacheHeaders(60) });
   }
   if (req.method === 'POST') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     try {
+      await connectDB();
       const data = await req.json();
-      const news = await db.news.create({ data });
+      const news = await News.create(data);
       return NextResponse.json({ news }, { status: 201 });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -251,17 +284,19 @@ async function handleNews(req: NextRequest) {
 // ============ SPONSORS ============
 async function handleSponsors(req: NextRequest) {
   if (req.method === 'GET') {
+    await connectDB();
     const position = new URL(req.url).searchParams.get('position');
     const where: any = { active: true };
     if (position) where.position = position;
-    const sponsors = await db.sponsor.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const sponsors = await Sponsor.find(where).sort({ createdAt: -1 }).lean();
     return NextResponse.json({ sponsors }, { headers: cacheHeaders(300) });
   }
   if (req.method === 'POST') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     try {
+      await connectDB();
       const data = await req.json();
-      const sponsor = await db.sponsor.create({ data });
+      const sponsor = await Sponsor.create(data);
       return NextResponse.json({ sponsor }, { status: 201 });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -272,24 +307,25 @@ async function handleSponsors(req: NextRequest) {
 
 // ============ STATS ============
 async function handleStats() {
-  const [totalPhones, totalBrands, totalReviews, totalNews, avgPrice, trending, featured, upcoming, under20k, price20to40, price40to60, price60to100, above100k] = await Promise.all([
-    db.phone.count({ where: { active: true, status: 'published' } }),
-    db.brand.count({ where: { active: true } }),
-    db.review.count(),
-    db.news.count({ where: { published: true } }),
-    db.phone.aggregate({ _avg: { pricePKR: true }, where: { active: true, status: 'published' } }),
-    db.phone.count({ where: { trending: true, active: true } }),
-    db.phone.count({ where: { featured: true, active: true } }),
-    db.phone.count({ where: { upcoming: true, active: true } }),
-    db.phone.count({ where: { active: true, pricePKR: { lte: 20000 } } }),
-    db.phone.count({ where: { active: true, pricePKR: { gt: 20000, lte: 40000 } } }),
-    db.phone.count({ where: { active: true, pricePKR: { gt: 40000, lte: 60000 } } }),
-    db.phone.count({ where: { active: true, pricePKR: { gt: 60000, lte: 100000 } } }),
-    db.phone.count({ where: { active: true, pricePKR: { gt: 100000 } } }),
+  await connectDB();
+  const [totalPhones, totalBrands, totalReviews, totalNews, avgResult, trending, featured, upcoming, under20k, price20to40, price40to60, price60to100, above100k] = await Promise.all([
+    Phone.countDocuments({ active: true, status: 'published' }),
+    Brand.countDocuments({ active: true }),
+    Review.countDocuments(),
+    News.countDocuments({ published: true }),
+    Phone.aggregate([{ $match: { active: true, status: 'published' } }, { $group: { _id: null, avgPrice: { $avg: '$pricePKR' } } }]),
+    Phone.countDocuments({ trending: true, active: true }),
+    Phone.countDocuments({ featured: true, active: true }),
+    Phone.countDocuments({ upcoming: true, active: true }),
+    Phone.countDocuments({ active: true, pricePKR: { $lte: 20000 } }),
+    Phone.countDocuments({ active: true, pricePKR: { $gt: 20000, $lte: 40000 } }),
+    Phone.countDocuments({ active: true, pricePKR: { $gt: 40000, $lte: 60000 } }),
+    Phone.countDocuments({ active: true, pricePKR: { $gt: 60000, $lte: 100000 } }),
+    Phone.countDocuments({ active: true, pricePKR: { $gt: 100000 } }),
   ]);
   return NextResponse.json({
     totalPhones, totalBrands, totalReviews, totalNews,
-    avgPrice: avgPrice._avg.pricePKR || 0,
+    avgPrice: avgResult[0]?.avgPrice || 0,
     trending, featured, upcoming,
     priceDistribution: [
       { range: 'under20k', count: under20k },
@@ -303,11 +339,13 @@ async function handleStats() {
 
 // ============ SEO SITEMAP ============
 async function handleSitemap() {
-  const [phones, brands, news] = await Promise.all([
-    db.phone.findMany({ where: { active: true, status: 'published' }, select: { slug: true, updatedAt: true, brand: { select: { slug: true } } } }),
-    db.brand.findMany({ where: { active: true }, select: { slug: true } }),
-    db.news.findMany({ where: { published: true, status: 'published' }, select: { slug: true, updatedAt: true } }),
+  await connectDB();
+  const [phoneDocs, brands, news] = await Promise.all([
+    Phone.find({ active: true, status: 'published' }).select('slug updatedAt brandId').populate({ path: 'brand', select: 'slug' }).lean(),
+    Brand.find({ active: true }).select('slug').lean(),
+    News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
   ]);
+  const phones = phoneDocs.map((p: any) => ({ slug: p.slug, updatedAt: p.updatedAt, brand: p.brand ? { slug: p.brand.slug } : null }));
   return NextResponse.json({ phones, brands, news }, { headers: cacheHeaders(3600) });
 }
 
@@ -349,9 +387,17 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
 
   if (seg0 === 'brands' && pathParts.length <= 1) return handleBrands(req);
   if (seg0 === 'brands' && pathParts.length === 2) {
-    const brand = await db.brand.findUnique({ where: { slug: pathParts[1] }, include: { phones: { where: { active: true }, include: { specs: true }, orderBy: { pricePKR: 'desc' } } } });
+    await connectDB();
+    const brand = await Brand.findOne({ slug: pathParts[1] }).lean();
     if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
-    return NextResponse.json({ brand }, { headers: cacheHeaders(120) });
+    const phones = await Phone.find({ brandId: brand._id, active: true }).populate({ path: 'brand', select: 'name slug logo country' }).sort({ pricePKR: -1 }).lean();
+    // Attach specs to each phone
+    for (const phone of phones) {
+      const specs = await PhoneSpecs.findOne({ phoneId: phone._id }).lean();
+      (phone as any).specs = specs || null;
+    }
+    const brandWithPhones = { ...brand, phones };
+    return NextResponse.json({ brand: brandWithPhones }, { headers: cacheHeaders(120) });
   }
 
   if (seg0 === 'compare') return handleCompare(req);
@@ -361,25 +407,31 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
   // ============ ADMIN ROUTES ============
   if (seg0 === 'admin') {
     if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    await connectDB();
 
     if (pathParts[1] === 'phones' && method === 'GET') {
-      const phones = await db.phone.findMany({ include: { brand: true }, orderBy: { createdAt: 'desc' }, take: 50 });
+      const phones = await Phone.find().populate({ path: 'brand', select: 'name slug logo country' }).sort({ createdAt: -1 }).limit(50).lean();
       return NextResponse.json({ phones });
     }
     if (pathParts[1] === 'brands' && method === 'GET') {
-      const brands = await db.brand.findMany({ include: { _count: { select: { phones: true } } }, orderBy: { sortOrder: 'asc' } });
+      const brands = await Brand.aggregate([
+        { $lookup: { from: 'phones', localField: '_id', foreignField: 'brandId', as: '_phones' } },
+        { $addFields: { phoneCount: { $size: '$_phones' } } },
+        { $unset: '_phones' },
+        { $sort: { sortOrder: 1 } },
+      ]);
       return NextResponse.json({ brands });
     }
     if (pathParts[1] === 'news' && method === 'GET') {
-      const news = await db.news.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });
+      const news = await News.find().sort({ createdAt: -1 }).limit(50).lean();
       return NextResponse.json({ news });
     }
     if (pathParts[1] === 'sponsors' && method === 'GET') {
-      const sponsors = await db.sponsor.findMany({ orderBy: { createdAt: 'desc' } });
+      const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
       return NextResponse.json({ sponsors });
     }
     if (pathParts[1] === 'activity-logs' && method === 'GET') {
-      const logs = await db.activityLog.findMany({ include: { admin: { select: { name: true, email: true } } }, orderBy: { createdAt: 'desc' }, take: 50 });
+      const logs = await ActivityLog.find().populate({ path: 'admin', select: 'name email' }).sort({ createdAt: -1 }).limit(50).lean();
       return NextResponse.json({ logs });
     }
     if (pathParts[1] === 'stats') return handleStats();
@@ -388,24 +440,24 @@ async function routeRequest(req: NextRequest, method: string, pathParts: string[
   // ============ HOME ============
   if (seg0 === 'home') {
     try {
-      // Fetch all published phones once, then filter in-memory (SQLite-safe)
-      const allPhones = await db.phone.findMany({
-        where: { active: true, status: 'published' },
-        include: { brand: true },
-        orderBy: { overallRating: 'desc' },
-      });
+      await connectDB();
+      const allPhones = await Phone.find({ active: true, status: 'published' })
+        .populate({ path: 'brand', select: 'name slug logo country' })
+        .sort({ overallRating: -1 }).lean();
       const p = (fn: (x: any) => boolean, take: number) => allPhones.filter(fn).slice(0, take);
       const featured = p(x => x.featured, 8);
-      const trending = [...allPhones].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).filter(x => x.trending).slice(0, 8);
-      const upcoming = await db.phone.findMany({ where: { upcoming: true, active: true }, include: { brand: true }, take: 6 });
+      const trending = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).filter(x => x.trending).slice(0, 8);
+      const upcoming = await Phone.find({ upcoming: true, active: true }).populate({ path: 'brand', select: 'name slug logo country' }).sort({ createdAt: -1 }).limit(6).lean();
       const bestCamera = p(x => x.cameraScore >= 85, 6);
       const bestGaming = p(x => x.performanceScore >= 88, 6);
       const bestBattery = p(x => x.batteryScore >= 85, 6);
       const flagship = p(x => x.pricePKR >= 150000, 6);
       const budget = p(x => x.pricePKR <= 40000, 6);
-      const latest = [...allPhones].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 10);
-      const news = await db.news.findMany({ where: { published: true, status: 'published' }, take: 4, orderBy: { createdAt: 'desc' } });
-      const sponsors = await db.sponsor.findMany({ where: { active: true, position: { in: ['homepage_banner', 'homepage_sidebar'] } } });
+      const latest = [...allPhones].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
+      const [news, sponsors] = await Promise.all([
+        News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(4).lean(),
+        Sponsor.find({ active: true, position: { $in: ['homepage_banner', 'homepage_sidebar'] } }).lean(),
+      ]);
       return NextResponse.json({
         featured, trending, upcoming, bestCamera, bestGaming, bestBattery, flagship, budget, latest, news, sponsors: sponsors || [],
         priceCategories: {

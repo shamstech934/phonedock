@@ -1,5 +1,10 @@
-import { db } from '../src/lib/db';
+import mongoose from 'mongoose';
 import { hash } from 'bcryptjs';
+import { Brand } from '../src/lib/models/Brand';
+import { Phone } from '../src/lib/models/Phone';
+import { PhoneSpecs } from '../src/lib/models/PhoneSpecs';
+import { PhoneImage, PhoneBenchmark, PhonePrice } from '../src/lib/models/PhoneSub';
+import { News, Admin, ActivityLog } from '../src/lib/models/Other';
 
 const BRANDS = [
   { name: 'Samsung', slug: 'samsung', country: 'South Korea', description: 'World\'s largest smartphone manufacturer known for Galaxy series', logo: '', sortOrder: 1 },
@@ -336,50 +341,31 @@ const NEWS_DATA = [
 ];
 
 async function main() {
+  console.log('Connecting to MongoDB...');
+  await mongoose.connect(process.env.MONGODB_URI!);
+  console.log('Connected to MongoDB');
   console.log('Seeding PhoneDock database...');
 
-  // Create brands
+  // Seed brands
+  console.log('Seeding brands...');
   for (const b of BRANDS) {
-    await db.brand.upsert({
-      where: { slug: b.slug },
-      update: b,
-      create: b,
-    });
+    await Brand.findOneAndUpdate({ slug: b.slug }, b, { upsert: true, new: true });
   }
   console.log(`Created ${BRANDS.length} brands`);
 
-  // Create phones
+  // Seed phones
+  console.log('Seeding phones...');
   for (const p of PHONES) {
-    const brand = await db.brand.findUnique({ where: { slug: p.brand.toLowerCase() } });
-    if (!brand) { console.error(`Brand not found: ${p.brand}`); continue; }
+    const brand = await Brand.findOne({ slug: p.brand.toLowerCase() });
+    if (!brand) {
+      console.error(`Brand not found: ${p.brand}`);
+      continue;
+    }
 
-    const phone = await db.phone.upsert({
-      where: { slug: p.slug },
-      update: {
-        brandId: brand.id,
-        modelName: p.model,
-        pricePKR: p.pricePKR,
-        ptaStatus: p.ptaStatus,
-        ptaApproved: p.ptaApproved,
-        featured: p.featured,
-        trending: p.trending,
-        upcoming: p.upcoming,
-        thumbnail: p.thumbnail,
-        description: p.description,
-        cameraScore: p.cameraScore,
-        performanceScore: p.performanceScore,
-        batteryScore: p.batteryScore,
-        displayScore: p.displayScore,
-        valueScore: p.valueScore,
-        overallRating: p.overallRating,
-        pros: p.pros,
-        cons: p.cons,
-        reviewSummary: p.reviewSummary,
-        reviewVerdict: p.reviewVerdict,
-        releaseDate: p.releaseDate,
-      },
-      create: {
-        brandId: brand.id,
+    const phone = await Phone.findOneAndUpdate(
+      { slug: p.slug },
+      {
+        brandId: brand._id,
         modelName: p.model,
         slug: p.slug,
         pricePKR: p.pricePKR,
@@ -402,66 +388,71 @@ async function main() {
         reviewVerdict: p.reviewVerdict,
         releaseDate: p.releaseDate,
       },
-    });
+      { upsert: true, new: true }
+    );
 
-    // Create specs
+    // Seed specs
     if (p.specs) {
-      await db.phoneSpecs.upsert({
-        where: { phoneId: phone.id },
-        update: { phoneId: phone.id, ...p.specs },
-        create: { phoneId: phone.id, ...p.specs },
-      });
+      await PhoneSpecs.findOneAndUpdate(
+        { phoneId: phone._id },
+        { phoneId: phone._id, ...p.specs },
+        { upsert: true, new: true }
+      );
     }
 
-    // Create benchmarks
+    // Seed benchmarks
     if (p.benchmarks) {
-      await db.phoneBenchmark.upsert({
-        where: { phoneId: phone.id },
-        update: { phoneId: phone.id, ...p.benchmarks },
-        create: { phoneId: phone.id, ...p.benchmarks },
-      });
+      await PhoneBenchmark.findOneAndUpdate(
+        { phoneId: phone._id },
+        { phoneId: phone._id, ...p.benchmarks },
+        { upsert: true, new: true }
+      );
     }
 
-    // Create default images
-    await db.phoneImage.deleteMany({ where: { phoneId: phone.id } });
-    await db.phoneImage.create({
-      data: { phoneId: phone.id, url: p.thumbnail, altText: `${p.model} - Front View`, sortOrder: 0 },
+    // Seed images (delete + create)
+    await PhoneImage.deleteMany({ phoneId: phone._id });
+    await PhoneImage.create({
+      phoneId: phone._id,
+      url: p.thumbnail,
+      altText: `${p.model} - Front View`,
+      sortOrder: 0,
     });
 
-    // Create default store prices
-    await db.phonePrice.deleteMany({ where: { phoneId: phone.id } });
-    await db.phonePrice.createMany({
-      data: [
-        { phoneId: phone.id, storeName: 'Daraz', price: Math.round(p.pricePKR * 0.98), url: '#', inStock: true },
-        { phoneId: phone.id, storeName: 'Whatmobile', price: p.pricePKR, url: '#', inStock: true },
-        { phoneId: phone.id, storeName: 'PriceOye', price: Math.round(p.pricePKR * 1.02), url: '#', inStock: true },
-      ],
-    });
+    // Seed prices (delete + insertMany)
+    await PhonePrice.deleteMany({ phoneId: phone._id });
+    await PhonePrice.insertMany([
+      { phoneId: phone._id, storeName: 'Daraz', price: Math.round(p.pricePKR * 0.98), url: '#', inStock: true },
+      { phoneId: phone._id, storeName: 'Whatmobile', price: p.pricePKR, url: '#', inStock: true },
+      { phoneId: phone._id, storeName: 'PriceOye', price: Math.round(p.pricePKR * 1.02), url: '#', inStock: true },
+    ]);
+
+    console.log(`  Seeded: ${p.model}`);
   }
   console.log(`Created ${PHONES.length} phones with specs, benchmarks, images, and prices`);
 
-  // Create news
+  // Seed news
+  console.log('Seeding news...');
   for (const n of NEWS_DATA) {
-    await db.news.upsert({
-      where: { slug: n.slug },
-      update: n,
-      create: n,
-    });
+    await News.findOneAndUpdate({ slug: n.slug }, n, { upsert: true, new: true });
   }
   console.log(`Created ${NEWS_DATA.length} news articles`);
 
-  // Create admin user
+  // Seed admin user
+  console.log('Seeding admin user...');
   const hashedPassword = await hash('admin123', 12);
-  await db.admin.upsert({
-    where: { email: 'admin@phonedock.pk' },
-    update: {},
-    create: { email: 'admin@phonedock.pk', password: hashedPassword, name: 'Admin', role: 'superadmin' },
-  });
+  await Admin.findOneAndUpdate(
+    { email: 'admin@phonedock.pk' },
+    { email: 'admin@phonedock.pk', password: hashedPassword, name: 'Admin', role: 'superadmin' },
+    { upsert: true, new: true }
+  );
   console.log('Created admin user (admin@phonedock.pk / admin123)');
 
   console.log('Database seeded successfully!');
 }
 
 main()
-  .catch(console.error)
-  .finally(() => db.$disconnect());
+  .catch((err) => {
+    console.error('Seeding failed:', err);
+    process.exit(1);
+  })
+  .finally(() => mongoose.disconnect());
