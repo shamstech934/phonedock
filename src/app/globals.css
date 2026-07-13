@@ -650,3 +650,111 @@ body {
   0%, 100% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(20px, -30px) scale(1.06); }
 }
+
+/* ============================================
+   HERO ANIMATIONS — Staggered Entrance
+   ============================================ */
+
+@keyframes heroSlideUp {
+  from { opacity: 0; transform: translateY(30px) scale(0.97); filter: blur(6px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes heroFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes heroTextReveal {
+  from { opacity: 0; transform: translateY(18px); clip-path: inset(100% 0 0 0); }
+  to { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); }
+}
+@keyframes heroGlowPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+@keyframes heroShimmer {
+  0% { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(200%) skewX(-15deg); }
+}
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes heroParticleFloat {
+  0% { transform: translateY(0) translateX(0) scale(0); opacity: 0; }
+  15% { opacity: 1; transform: scale(1); }
+  85% { opacity: 0.6; }
+  100% { transform: translateY(-120px) translateX(var(--drift, 20px)) scale(0); opacity: 0; }
+}
+@keyframes heroSearchSlide {
+  from { opacity: 0; transform: translateY(20px) scaleX(0.9); }
+  to { opacity: 1; transform: translateY(0) scaleX(1); }
+}
+@keyframes heroBadgePop {
+  from { opacity: 0; transform: scale(0.7) translateY(10px); }
+  60% { transform: scale(1.05) translateY(-2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes heroFeatureSlide {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.hero-animate {
+  animation: heroSlideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.hero-text-reveal {
+  animation: heroTextReveal 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.hero-badge-pop {
+  animation: heroBadgePop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.hero-search-slide {
+  animation: heroSearchSlide 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.hero-float {
+  animation: heroFloat 6s ease-in-out infinite;
+}
+.hero-feature-slide {
+  animation: heroFeatureSlide 0.5s ease-out both;
+}
+
+/* Hero shimmer sweep on the gradient */
+.hero-shimmer-effect {
+  position: relative;
+  overflow: hidden;
+}
+.hero-shimmer-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 60%, transparent 100%);
+  animation: heroShimmer 4s ease-in-out 1.5s infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Hero floating particles */
+.hero-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.hero-particle {
+  position: absolute;
+  bottom: -10px;
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  animation: heroParticleFloat var(--duration, 6s) ease-out var(--delay, 0s) infinite;
+}
+
+/* Hero glow animation for the background */
+.hero-glow-anim {
+  animation: heroGlowPulse 4s ease-in-out infinite;
+}
