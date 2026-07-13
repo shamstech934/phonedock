@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import {
   Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
@@ -12,6 +13,7 @@ import {
   AlertTriangle, Upload, Download, RefreshCw, FileJson, FileSpreadsheet, RotateCcw, History, Database,
   UploadCloud, Pause, CheckCircle, XCircle, AlertCircle, FileText, Radio, Globe, ShieldCheck, Wrench, ClipboardCheck, ChevronRight as ChevronRightIcon
 } from 'lucide-react';
+const PhoneForm = dynamic(() => import('@/components/admin/PhoneForm'), { ssr: false });
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +41,7 @@ interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; best
 interface AdminUser { id: string; email: string; name: string; role: string; }
 
 // ============ ROUTER ============
-type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync' | 'admin-collector' | 'admin-collector-sources' | 'admin-collector-jobs' | 'admin-collector-review' | 'admin-collector-review-detail';
+type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-phone-add' | 'admin-phone-edit' | 'admin-phone-view' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync' | 'admin-collector' | 'admin-collector-sources' | 'admin-collector-jobs' | 'admin-collector-review' | 'admin-collector-review-detail';
 
 function useHashRouter() {
   const [view, setView] = useState<View>('home');
@@ -58,6 +60,9 @@ function useHashRouter() {
       if (parts[0] === 'news') { setView('news'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'add') { setView('admin-phone-add'); setParams({}); return; }
+      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'edit' && parts[3]) { setView('admin-phone-edit'); setParams({ id: parts[3] }); return; }
+      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'view' && parts[3]) { setView('admin-phone-view'); setParams({ id: parts[3] }); return; }
       if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
       if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
@@ -1669,23 +1674,63 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
 }
 
 // ============ ADMIN PHONES PAGE ============
-function AdminPhonesPage({ token }: { token: string | null }) {
+function AdminPhonesPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
   const [phones, setPhones] = useState<Phone[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  const fetchPhones = useCallback(() => {
     if (!token) return;
-    fetch('/api/admin/phones', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setLoading(false); }).catch(() => setLoading(false));
+    Promise.all([
+      fetch('/api/admin/phones', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+      fetch('/api/admin/brands', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+    ]).then(([pd, bd]) => { setPhones(pd.phones || []); setBrands(bd.brands || []); setLoading(false); }).catch(() => setLoading(false));
   }, [token]);
+
+  useEffect(() => { fetchPhones(); }, [fetchPhones]);
+
+  const handleDelete = async () => {
+    if (!deleteId || !token) return;
+    setDeleting(true);
+    try {
+      const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      if (r.ok) { setPhones(prev => prev.filter(p => p.id !== deleteId)); setDeleteId(null); }
+    } catch {}
+    setDeleting(false);
+  };
+
+  const filtered = phones.filter(p => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return p.modelName.toLowerCase().includes(q) || p.brand?.name?.toLowerCase().includes(q) || p.slug.includes(q);
+  });
 
   if (loading) return <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-14 rounded-xl" />)}</div>;
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-extrabold text-gray-900">Manage Phones</h1>
-        <span className="text-xs text-muted-foreground">{phones.length} phones</span>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-extrabold text-gray-900">Manage Phones</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">{phones.length} phones total, {filtered.length} shown</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-48" />
+          </div>
+          <button onClick={() => onNavigate('/admin/phones/add')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
+            <Plus className="w-4 h-4" /> Add Phone
+          </button>
+          <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); alert(`Seed complete!\nBrands: ${d.brands}\nPhones: ${d.phones}\nSpecs: ${d.specs}\nBenchmarks: ${d.benchmarks}\nPrices: ${d.prices}\nSkipped: ${d.skipped}`); fetchPhones(); } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors">
+            <Database className="w-4 h-4" /> Seed Data
+          </button>
+        </div>
       </div>
+
       {/* Desktop Table */}
       <div className="hidden sm:block card-premium overflow-hidden">
         <div className="overflow-x-auto">
@@ -1696,49 +1741,194 @@ function AdminPhonesPage({ token }: { token: string | null }) {
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Price</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">PTA</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rating</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
               <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr></thead>
             <tbody className="divide-y divide-gray-50">
-              {phones.map((p, i) => (
-                <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]/50'}>
+              {filtered.map((p, i) => (
+                <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]/50'} hover:bg-blue-50/30 transition-colors`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={32} height={32} className="w-8 h-8 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
-                      <span className="font-medium text-gray-900 truncate max-w-[200px]">{p.modelName}</span>
+                      <div className="min-w-0"><span className="font-medium text-gray-900 truncate block max-w-[200px]">{p.modelName}</span><span className="text-[10px] text-gray-400">{p.slug}</span></div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{p.brand?.name}</td>
-                  <td className="px-4 py-3 font-semibold text-blue-600">{formatPrice(p.pricePKR)}</td>
-                  <td className="px-4 py-3">{p.ptaApproved ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">Approved</Badge> : <Badge variant="secondary" className="text-[10px]">{p.ptaStatus}</Badge>}</td>
-                  <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating}</span></div></td>
+                  <td className="px-4 py-3 font-semibold text-blue-600">{p.pricePKR > 0 ? formatPrice(p.pricePKR) : '—'}</td>
+                  <td className="px-4 py-3">{p.ptaApproved ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">PTA</Badge> : <Badge variant="secondary" className="text-[10px]">{p.ptaStatus || 'Unknown'}</Badge>}</td>
+                  <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating || '—'}</span></div></td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1 flex-wrap">
+                      {p.featured && <Badge className="bg-amber-50 text-amber-700 text-[10px] border-amber-200/50">Featured</Badge>}
+                      {p.trending && <Badge className="bg-blue-50 text-blue-700 text-[10px] border-blue-200/50">Trending</Badge>}
+                      {p.upcoming && <Badge className="bg-purple-50 text-purple-700 text-[10px] border-purple-200/50">Upcoming</Badge>}
+                      {!p.featured && !p.trending && !p.upcoming && <span className="text-[10px] text-gray-400">—</span>}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"><Eye className="w-4 h-4" /></button>
-                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors"><Edit className="w-4 h-4" /></button>
-                      <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => onNavigate(`/admin/phones/view/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors" title="View"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => onNavigate(`/admin/phones/edit/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No phones found</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
       {/* Mobile Cards */}
       <div className="sm:hidden space-y-2">
-        {phones.map(p => (
+        {filtered.map(p => (
           <div key={p.id} className="card-premium p-3 flex items-center gap-3">
             {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="w-10 h-10 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
-              <p className="text-[10px] text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p>
+              <p className="text-[10px] text-muted-foreground">{p.brand?.name} · {p.pricePKR > 0 ? formatPrice(p.pricePKR) : '—'}</p>
             </div>
             <div className="flex items-center gap-0.5">
-              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Edit className="w-4 h-4" /></button>
-              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => onNavigate(`/admin/phones/view/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Eye className="w-4 h-4" /></button>
+              <button onClick={() => onNavigate(`/admin/phones/edit/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Edit className="w-4 h-4" /></button>
+              <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Trash2 className="w-4 h-4" /></button>
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteId(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-500" /></div>
+              <div><h3 className="font-bold text-gray-900">Delete Phone</h3><p className="text-xs text-muted-foreground">This action cannot be undone</p></div>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete this phone and all its specs, benchmarks, images, and prices?</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors disabled:opacity-50">{deleting ? 'Deleting...' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ ADMIN PHONE VIEW PAGE ============
+function AdminPhoneViewPage({ token, id, onNavigate }: { token: string | null; id: string; onNavigate: (p: string) => void }) {
+  const [phone, setPhone] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!token || !id) return;
+    fetch(`/api/admin/phones/${id}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhone(d); setLoading(false); }).catch(() => setLoading(false));
+  }, [token, id]);
+
+  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
+  if (!phone) return <div className="text-center py-12 text-muted-foreground">Phone not found</div>;
+
+  const SpecRow = ({ label, value }: { label: string; value?: string }) => value ? <div className="flex justify-between py-1.5 border-b border-gray-50"><span className="text-xs text-muted-foreground">{label}</span><span className="text-xs font-medium text-gray-900 text-right max-w-[60%]">{value || '—'}</span></div> : null;
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => onNavigate('/admin/phones')} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"><ChevronLeft className="w-5 h-5" /></button>
+          <div>
+            <h1 className="text-xl font-extrabold text-gray-900">{phone.brand?.name} {phone.modelName}</h1>
+            <p className="text-xs text-muted-foreground">{phone.slug} · {phone.releaseDate || 'No date'}</p>
+          </div>
+        </div>
+        <button onClick={() => onNavigate(`/admin/phones/edit/${id}`)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"><Edit className="w-4 h-4" /> Edit</button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left: Scores & Status */}
+        <div className="space-y-4">
+          <div className="card-premium p-5 space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Scores & Rating</h3>
+            {[['Camera', phone.cameraScore], ['Performance', phone.performanceScore], ['Battery', phone.batteryScore], ['Display', phone.displayScore], ['Value', phone.valueScore]].map(([l, v]) => <ScoreBar key={l} score={v || 0} label={l as string} />)}
+            <div className="pt-2 border-t border-gray-100"><ScoreBar score={phone.overallRating || 0} label="Overall" /></div>
+          </div>
+          <div className="card-premium p-5 space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Status & Flags</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">PTA Status</span><Badge className={phone.ptaApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' : ''}>{phone.ptaStatus}</Badge></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Featured</span><span className={phone.featured ? 'text-emerald-600 font-medium' : 'text-gray-400'}>{phone.featured ? 'Yes' : 'No'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Trending</span><span className={phone.trending ? 'text-blue-600 font-medium' : 'text-gray-400'}>{phone.trending ? 'Yes' : 'No'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Upcoming</span><span className={phone.upcoming ? 'text-purple-600 font-medium' : 'text-gray-400'}>{phone.upcoming ? 'Yes' : 'No'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span className="font-bold text-blue-600">{phone.pricePKR > 0 ? formatPrice(phone.pricePKR) : 'Not set'}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Specs */}
+        <div className="lg:col-span-2 space-y-4">
+          {phone.description && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Description</h3><p className="text-sm text-gray-600 leading-relaxed">{phone.description}</p></div>}
+          {phone.specs && <div className="card-premium p-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Specifications</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+              {phone.specs.display && <SpecRow label="Display" value={phone.specs.display} />}
+              {phone.specs.displayType && <SpecRow label="Display Type" value={phone.specs.displayType} />}
+              {phone.specs.resolution && <SpecRow label="Resolution" value={phone.specs.resolution} />}
+              {phone.specs.refreshRate && <SpecRow label="Refresh Rate" value={phone.specs.refreshRate} />}
+              {phone.specs.protection && <SpecRow label="Protection" value={phone.specs.protection} />}
+              {phone.specs.brightness && <SpecRow label="Brightness" value={phone.specs.brightness} />}
+              {phone.specs.chipset && <SpecRow label="Chipset" value={phone.specs.chipset} />}
+              {phone.specs.cpu && <SpecRow label="CPU" value={phone.specs.cpu} />}
+              {phone.specs.gpu && <SpecRow label="GPU" value={phone.specs.gpu} />}
+              {phone.specs.process && <SpecRow label="Process" value={phone.specs.process} />}
+              {phone.specs.ram && <SpecRow label="RAM" value={phone.specs.ram} />}
+              {phone.specs.ramType && <SpecRow label="RAM Type" value={phone.specs.ramType} />}
+              {phone.specs.storage && <SpecRow label="Storage" value={phone.specs.storage} />}
+              {phone.specs.cardSlot && <SpecRow label="Card Slot" value={phone.specs.cardSlot} />}
+              {phone.specs.mainCamera && <SpecRow label="Main Camera" value={phone.specs.mainCamera} />}
+              {phone.specs.mainCameraSensor && <SpecRow label="Camera Sensor" value={phone.specs.mainCameraSensor} />}
+              {phone.specs.aperture && <SpecRow label="Aperture" value={phone.specs.aperture} />}
+              {phone.specs.ois && <SpecRow label="OIS" value={phone.specs.ois} />}
+              {phone.specs.selfieCamera && <SpecRow label="Selfie" value={phone.specs.selfieCamera} />}
+              {phone.specs.videoRecording && <SpecRow label="Video" value={phone.specs.videoRecording} />}
+              {phone.specs.battery && <SpecRow label="Battery" value={phone.specs.battery} />}
+              {phone.specs.chargingSpeed && <SpecRow label="Charging" value={phone.specs.chargingSpeed} />}
+              {phone.specs.weight && <SpecRow label="Weight" value={phone.specs.weight} />}
+              {phone.specs.dimensions && <SpecRow label="Dimensions" value={phone.specs.dimensions} />}
+              {phone.specs.build && <SpecRow label="Build" value={phone.specs.build} />}
+              {phone.specs.os && <SpecRow label="OS" value={`${phone.specs.os} ${phone.specs.osVersion || ''}`.trim()} />}
+              {phone.specs.network && <SpecRow label="Network" value={phone.specs.network} />}
+              {phone.specs.fiveG && <SpecRow label="5G" value={phone.specs.fiveG} />}
+              {phone.specs.wifi && <SpecRow label="WiFi" value={phone.specs.wifi} />}
+              {phone.specs.bluetooth && <SpecRow label="Bluetooth" value={phone.specs.bluetooth} />}
+              {phone.specs.nfc && <SpecRow label="NFC" value={phone.specs.nfc} />}
+              {phone.specs.fingerprint && <SpecRow label="Fingerprint" value={phone.specs.fingerprint} />}
+              {phone.specs.colors && <SpecRow label="Colors" value={phone.specs.colors} />}
+            </div>
+          </div>}
+          {phone.benchmarks && (phone.benchmarks.antutu || phone.benchmarks.geekbenchSingle) && <div className="card-premium p-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Benchmarks</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {phone.benchmarks.antutu > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.antutu.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">AnTuTu</p></div>}
+              {phone.benchmarks.geekbenchSingle > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchSingle.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Single</p></div>}
+              {phone.benchmarks.geekbenchMulti > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchMulti.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Multi</p></div>}
+            </div>
+          </div>}
+          {phone.prices && phone.prices.length > 0 && <div className="card-premium p-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Store Prices</h3>
+            <div className="space-y-2">{phone.prices.map((pr: any, i: number) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <span className="text-sm font-medium text-gray-900">{pr.storeName}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-blue-600">{pr.price > 0 ? formatPrice(pr.price) : '—'}</span>
+                  <Badge className={pr.inStock ? 'bg-emerald-50 text-emerald-700 text-[10px]' : 'bg-red-50 text-red-700 text-[10px]'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</Badge>
+                </div>
+              </div>
+            ))}</div>
+          </div>}
+          {phone.pros && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Pros</h3><p className="text-sm text-gray-600">{phone.pros}</p></div>}
+          {phone.cons && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Cons</h3><p className="text-sm text-gray-600">{phone.cons}</p></div>}
+          {phone.reviewSummary && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Review Summary</h3><p className="text-sm text-gray-600">{phone.reviewSummary}</p></div>}
+        </div>
       </div>
     </div>
   );
@@ -1925,174 +2115,201 @@ function AdminActivityPage({ token }: { token: string | null }) {
 function AdminImportPage({ token }: { token: string | null }) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [validating, setValidating] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [validation, setValidation] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('upload');
-  const [autoSEO, setAutoSEO] = useState(true);
-  const [autoReview, setAutoReview] = useState(true);
-  const [skipExisting, setSkipExisting] = useState(false);
+  const [importMode, setImportMode] = useState<'skip_duplicates' | 'update_existing' | 'new_only'>('skip_duplicates');
+  const [previewRecords, setPreviewRecords] = useState<any[]>([]);
+  const [previewDuplicates, setPreviewDuplicates] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [parseError, setParseError] = useState('');
 
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
-    fetch('/api/import/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setStats(d.stats || {})).catch(() => {});
-  }, [token, result]);
-
-  const handleFile = (f: File) => {
+  const handleFile = async (f: File) => {
     const ext = f.name.split('.').pop()?.toLowerCase();
-    if (!['json', 'csv', 'xlsx', 'xls'].includes(ext || '')) { alert('Please upload a .json, .csv, or .xlsx file'); return; }
-    setFile(f); setResult(null); setValidation(null); setActiveTab('upload');
-  };
-
-  const handleValidate = async () => {
-    if (!file || !token) return;
-    setValidating(true);
+    if (!['json', 'csv'].includes(ext || '')) { setParseError('Only JSON and CSV files are supported for direct import. Use the Collector system for other formats.'); return; }
+    setFile(f); setResult(null); setValidation(null); setParseError(''); setActiveTab('upload');
+    // Parse file locally for preview
     try {
-      const fd = new FormData(); fd.append('file', file);
-      const res = await fetch('/api/import/validate', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
-      const data = await res.json();
-      setValidation(data); setActiveTab('preview');
-    } catch (e: any) { setValidation({ errors: [{ message: e.message }] }); }
-    setValidating(false);
+      const text = await f.text();
+      let records: any[] = [];
+      if (ext === 'json') {
+        const parsed = JSON.parse(text);
+        records = Array.isArray(parsed) ? parsed : (parsed.phones || parsed.data || parsed.records || [parsed]);
+      } else if (ext === 'csv') {
+        const Papa = await import('papaparse');
+        const res = Papa.default.parse(text, { header: true, skipEmptyLines: true });
+        records = res.data;
+      }
+      setPreviewRecords(records);
+      // Basic validation
+      const errors: string[] = [];
+      const valid: any[] = [];
+      records.forEach((r: any, i: number) => {
+        const brand = String(r.brand || r.brandName || '').trim();
+        const model = String(r.model || r.modelName || r.name || '').trim();
+        if (!brand || !model) errors.push(`Row ${i+1}: Missing brand or model`);
+        else valid.push({ ...r, _brand: brand, _model: model, _row: i+1 });
+      });
+      setValidation({ total: records.length, validCount: valid.length, errorCount: errors.length, errors, preview: valid.slice(0, 10) });
+    } catch (e: any) { setParseError('Failed to parse file: ' + e.message); setPreviewRecords([]); }
   };
 
   const handleImport = async () => {
-    if (!file || !token) return;
-    setUploading(true);
+    if (!file || !token || previewRecords.length === 0) return;
+    setUploading(true); setActiveTab('results');
+    const startTime = Date.now();
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      if (autoSEO) fd.append('autoSEO', 'true');
-      if (autoReview) fd.append('autoReview', 'true');
-      if (skipExisting) fd.append('skipExisting', 'true');
-      const res = await fetch('/api/import', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+      const res = await fetch('/api/admin/phones/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ records: previewRecords, mode: importMode }),
+      });
       const data = await res.json();
-      setResult(data); setActiveTab('results');
-      // Refresh history
-      fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
-      fetch('/api/import/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setStats(d.stats || {})).catch(() => {});
-    } catch (e: any) { setResult({ error: e.message }); }
+      data.duration = Date.now() - startTime;
+      setResult(data);
+    } catch (e: any) { setResult({ error: e.message, duration: Date.now() - startTime }); }
     setUploading(false);
-  };
-
-  const handleRollback = async (historyId: string) => {
-    if (!token || !confirm('Rollback this import? Phones created during this import will be deleted.')) return;
-    try {
-      const res = await fetch('/api/import/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ historyId }) });
-      const data = await res.json();
-      alert(data.message || (data.success ? 'Rollback completed' : 'Rollback failed'));
-      if (data.success) {
-        fetch('/api/import/history', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
-      }
-    } catch (e: any) { alert('Rollback failed: ' + e.message); }
   };
 
   const downloadErrorReport = () => {
     if (!result?.errors?.length) return;
-    const csv = 'Row,Model,Error\n' + result.errors.map((e: any) => `${e.row},"${(e.model || '').replace(/"/g, '""')}","${e.error.replace(/"/g, '""')}"`).join('\n');
+    const csv = 'Row,Error\n' + result.errors.map((e: string) => `"${e.replace(/"/g, '""')}"`).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'import-errors.csv'; a.click(); URL.revokeObjectURL(url);
   };
 
-  const statusColor = (s: string) => s === 'completed' ? 'text-emerald-600 bg-emerald-50' : s === 'partial' ? 'text-amber-600 bg-amber-50' : s === 'failed' ? 'text-red-600 bg-red-50' : s === 'rolled_back' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 bg-gray-50';
+  const downloadSampleJson = () => {
+    const sample = [
+      { brand: "Samsung", model: "Galaxy S25 Ultra", pricePKR: 385000, ptaStatus: "PTA Approved", releaseDate: "2025-01-17", ram: "12 GB", storage: "256 GB", chipset: "Snapdragon 8 Elite", display: '6.9"', resolution: "3120x1440", refreshRate: "120Hz", mainCamera: "200 MP", selfieCamera: "12 MP", battery: "5000 mAh", chargingSpeed: "45W", os: "Android 15", weight: "218g", featured: true, trending: true, prices: [{ storeName: "PriceOye", price: 385000, inStock: true }] },
+      { brand: "Xiaomi", model: "Redmi Note 14 Pro", pricePKR: 54999, ptaStatus: "Non-PTA", releaseDate: "2025-01-10", ram: "8 GB", storage: "256 GB", chipset: "MediaTek Helio G100 Ultra", display: '6.67"', resolution: "2400x1080", refreshRate: "120Hz", mainCamera: "200 MP", selfieCamera: "20 MP", battery: "5500 mAh", chargingSpeed: "45W", os: "Android 14", weight: "190g" },
+    ];
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'sample-phones.json'; a.click(); URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-gray-900">Phone Import</h1>
-          <p className="text-xs text-muted-foreground mt-1">Upload JSON, CSV, or XLSX files to bulk import phones</p>
+          <h1 className="text-xl font-extrabold text-gray-900">Bulk Import Phones</h1>
+          <p className="text-xs text-muted-foreground mt-1">Upload JSON or CSV files with phone data. Records are validated and imported directly.</p>
         </div>
+        <button onClick={downloadSampleJson} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+          <Download className="w-3.5 h-3.5" /> Sample JSON
+        </button>
       </div>
 
-      {/* Stats Row */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Imported Today', value: stats.importedToday, icon: Upload, color: 'text-emerald-600 bg-emerald-50' },
-            { label: 'Updated Today', value: stats.updatedToday, icon: RefreshCw, color: 'text-blue-600 bg-blue-50' },
-            { label: 'Failed Today', value: stats.failedToday, icon: XCircle, color: 'text-red-600 bg-red-50' },
-            { label: 'Missing Images', value: stats.missingImages, icon: ImageIcon, color: 'text-amber-600 bg-amber-50' },
-          ].map(s => (
-            <div key={s.label} className="card-premium p-4">
-              <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
-              <p className="text-lg font-bold text-gray-900">{s.value}</p>
-              <p className="text-[10px] text-muted-foreground">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-gray-100">
           <TabsTrigger value="upload"><Upload className="w-3.5 h-3.5 mr-1.5" />Upload</TabsTrigger>
-          <TabsTrigger value="preview" disabled={!validation}><FileText className="w-3.5 h-3.5 mr-1.5" />Preview</TabsTrigger>
+          <TabsTrigger value="preview" disabled={!validation}><FileText className="w-3.5 h-3.5 mr-1.5" />Preview ({validation?.validCount || 0})</TabsTrigger>
           <TabsTrigger value="results" disabled={!result}><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Results</TabsTrigger>
-          <TabsTrigger value="history"><History className="w-3.5 h-3.5 mr-1.5" />History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="upload" className="mt-4">
           <Card className="border-gray-100">
             <CardContent className="p-6">
-              {/* Drop Zone */}
-              <div
-                className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 cursor-pointer ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50/50'}`}
+              {parseError && <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">{parseError}</div>}
+              <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 cursor-pointer ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50/50'}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
-                onClick={() => fileRef.current?.click()}
-              >
-                <input ref={fileRef} type="file" accept=".json,.csv,.xlsx,.xls" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
-                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                  <UploadCloud className="w-7 h-7 text-blue-500" />
-                </div>
-                <p className="text-sm font-semibold text-gray-900">Drop your file here or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-1">Supports JSON, CSV, XLSX (max 50MB)</p>
+                onClick={() => fileRef.current?.click()}>
+                <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><UploadCloud className="w-7 h-7 text-blue-500" /></div>
+                <p className="text-sm font-semibold text-gray-900">Drop your JSON or CSV file here or click to browse</p>
+                <p className="text-xs text-muted-foreground mt-1">JSON and CSV supported</p>
                 {file && (
                   <div className="mt-3 inline-flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-gray-100 shadow-sm">
                     <FileText className="w-4 h-4 text-blue-500" />
                     <span className="text-sm font-medium text-gray-900">{file.name}</span>
                     <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
-                    <button onClick={e => { e.stopPropagation(); setFile(null); setValidation(null); setResult(null); }} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                    <button onClick={e => { e.stopPropagation(); setFile(null); setValidation(null); setResult(null); setPreviewRecords([]); }} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
               </div>
 
-              {/* Options */}
-              {file && (
-                <div className="mt-5 flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={autoSEO} onChange={e => setAutoSEO(e.target.checked)} className="rounded" /> Auto-generate SEO</label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={autoReview} onChange={e => setAutoReview(e.target.checked)} className="rounded" /> Auto-generate Reviews</label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={skipExisting} onChange={e => setSkipExisting(e.target.checked)} className="rounded" /> Skip Existing Phones</label>
+              {file && validation && (
+                <div className="mt-5 space-y-4">
+                  {/* Validation Summary */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid Records</p></div>
+                    <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
+                    <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total Records</p></div>
+                  </div>
+
+                  {/* Import Mode Selection */}
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-gray-700 mb-3">Import Mode</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {([
+                        { value: 'skip_duplicates', label: 'Skip Duplicates', desc: 'Ignore phones that already exist (by slug or brand+model)', icon: '🚫' },
+                        { value: 'update_existing', label: 'Update Existing', desc: 'Update specs & prices of existing phones with new data', icon: '🔄' },
+                        { value: 'new_only', label: 'New Only', desc: 'Same as skip — only import brand new phones', icon: '✨' },
+                      ] as const).map(m => (
+                        <label key={m.value} className={`block cursor-pointer rounded-xl border-2 p-3 transition-all ${importMode === m.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <input type="radio" name="importMode" value={m.value} checked={importMode === m.value} onChange={e => setImportMode(e.target.value as any)} className="sr-only" />
+                          <div className="flex items-center gap-2 mb-1"><span className="text-base">{m.icon}</span><span className="text-sm font-semibold text-gray-900">{m.label}</span></div>
+                          <p className="text-[10px] text-muted-foreground">{m.desc}</p>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Duplicate Detection Preview */}
+                  {validation.preview?.length > 0 && (
+                    <Card className="border-gray-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">Data Preview (first {Math.min(validation.preview.length, 10)} records)</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead><tr className="border-b border-gray-100">
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price (PKR)</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Status</th>
+                            </tr></thead>
+                            <tbody>
+                              {validation.preview.map((r: any, i: number) => (
+                                <tr key={i} className="border-b border-gray-50">
+                                  <td className="py-1.5 px-2 text-gray-400">{r._row || i+1}</td>
+                                  <td className="py-1.5 px-2 text-gray-900">{r._brand || r.brand || '-'}</td>
+                                  <td className="py-1.5 px-2 font-medium text-gray-900">{r._model || r.modelName || r.model || '-'}</td>
+                                  <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
+                                  <td className="py-1.5 px-2"><Badge className="bg-emerald-50 text-emerald-700 text-[10px]">Valid</Badge></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {validation.errors?.length > 0 && (
+                    <Card className="border-red-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Errors ({validation.errors.length})</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0 max-h-40 overflow-y-auto">
+                        {validation.errors.map((e: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="flex gap-3">
+                    <Button onClick={() => setActiveTab('preview')} variant="outline" className="gap-1.5"><FileText className="w-4 h-4" />Review Preview</Button>
+                    <Button onClick={handleImport} disabled={validation.validCount === 0 || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                      {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                      Import {validation.validCount} Phones
+                    </Button>
+                  </div>
                 </div>
               )}
-
-              {/* Actions */}
-              <div className="mt-5 flex gap-3">
-                <Button onClick={handleValidate} disabled={!file || validating} variant="outline" className="gap-1.5">
-                  {validating ? <span className="animate-spin">...</span> : <AlertCircle className="w-4 h-4" />}
-                  Validate First
-                </Button>
-                <Button onClick={handleImport} disabled={!file || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
-                  {uploading ? <span className="animate-spin">...</span> : <Upload className="w-4 h-4" />}
-                  Import Now
-                </Button>
-              </div>
-
-              {/* Sample Format */}
-              <div className="mt-5 bg-gray-50 rounded-xl p-4">
-                <p className="text-xs font-semibold text-gray-700 mb-2">Expected Format (JSON example):</p>
-                <pre className="text-[11px] text-gray-600 overflow-x-auto">{JSON.stringify([
-                  { brand: "Samsung", model: "Galaxy S25 Ultra", pricePKR: 385000, ptaStatus: "PTA Approved", ram: "12 GB", storage: "256 GB", chipset: "Snapdragon 8 Elite", display: "6.9\" Dynamic AMOLED", battery: "5000 mAh", mainCamera: "200 MP", thumbnail: "https://example.com/image.jpg" }
-                ], null, 2)}</pre>
-              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -2101,61 +2318,66 @@ function AdminImportPage({ token }: { token: string | null }) {
           {validation && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid Records</p></div>
+                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid</p></div>
                 <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
-                <div className="bg-amber-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-amber-700">{validation.warnings?.length || 0}</p><p className="text-[10px] text-amber-600">Warnings</p></div>
+                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total</p></div>
               </div>
-              {validation.preview?.length > 0 && (
-                <Card className="border-gray-100">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Preview (first {validation.preview.length} valid records)</CardTitle></CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead><tr className="border-b border-gray-100">
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Slug</th>
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price</th>
-                          <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Image</th>
-                        </tr></thead>
-                        <tbody>
-                          {validation.preview.map((r: any, i: number) => (
-                            <tr key={i} className="border-b border-gray-50">
-                              <td className="py-1.5 px-2 text-gray-900">{r.brand || '-'}</td>
-                              <td className="py-1.5 px-2 font-medium text-gray-900">{r.modelName || r.model || '-'}</td>
-                              <td className="py-1.5 px-2 text-gray-500">{r.slug || '-'}</td>
-                              <td className="py-1.5 px-2">{r.pricePKR ? `PKR ${Number(r.pricePKR).toLocaleString()}` : '-'}</td>
-                              <td className="py-1.5 px-2">{r.thumbnail ? <Check className="w-3.5 h-3.5 text-emerald-500 inline" /> : <X className="w-3.5 h-3.5 text-red-400 inline" />}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-              {validation.errors?.length > 0 && (
-                <Card className="border-red-100">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Errors</CardTitle></CardHeader>
-                  <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
-                    {validation.errors.map((e: any, i: number) => (
-                      <div key={i} className="text-xs py-1 border-b border-gray-50 flex gap-3">
-                        <span className="text-red-500 font-mono shrink-0">Row {e.row}</span>
-                        <span className="text-gray-600">{e.field}: {e.message}</span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-              <Button onClick={handleImport} disabled={!file || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
-                {uploading ? <span className="animate-spin">...</span> : <Upload className="w-4 h-4" />}
-                Proceed with Import
-              </Button>
+
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <p className="text-xs text-amber-800">Import mode: <strong>{importMode === 'skip_duplicates' ? 'Skip Duplicates' : importMode === 'update_existing' ? 'Update Existing Phones' : 'New Only'}</strong>. Duplicate detection uses phone slug and brand+model name matching.</p>
+              </div>
+
+              <Card className="border-gray-100">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">All Valid Records ({validation.validCount})</CardTitle></CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100">
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Chipset</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">RAM</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Camera</th>
+                      </tr></thead>
+                      <tbody>
+                        {validation.preview.map((r: any, i: number) => (
+                          <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1.5 px-2 text-gray-400">{r._row || i+1}</td>
+                            <td className="py-1.5 px-2 text-gray-900">{r._brand || '-'}</td>
+                            <td className="py-1.5 px-2 font-medium">{r._model || '-'}</td>
+                            <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-600">{r.chipset || '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-600">{r.ram || '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-600">{r.mainCamera || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex gap-3">
+                <Button onClick={() => setActiveTab('upload')} variant="outline">Back</Button>
+                <Button onClick={handleImport} disabled={uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                  {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                  Import Now
+                </Button>
+              </div>
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="results" className="mt-4">
+          {uploading && !result && (
+            <div className="text-center py-16">
+              <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Importing phones...</p>
+            </div>
+          )}
           {result && (
             <div className="space-y-4">
               {result.error ? (
@@ -2164,79 +2386,38 @@ function AdminImportPage({ token }: { token: string | null }) {
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                     {[
-                      { label: 'Total', value: result.total, color: 'text-gray-900 bg-gray-50' },
-                      { label: 'Inserted', value: result.inserted, color: 'text-emerald-700 bg-emerald-50' },
+                      { label: 'Total Records', value: result.total, color: 'text-gray-900 bg-gray-50' },
+                      { label: 'Imported', value: result.imported, color: 'text-emerald-700 bg-emerald-50' },
                       { label: 'Updated', value: result.updated, color: 'text-blue-700 bg-blue-50' },
                       { label: 'Skipped', value: result.skipped, color: 'text-amber-700 bg-amber-50' },
                       { label: 'Failed', value: result.failed, color: 'text-red-700 bg-red-50' },
                     ].map(s => (
-                      <div key={s.label} className={`rounded-xl p-3 text-center ${s.color}`}>
-                        <p className="text-xl font-bold">{s.value}</p>
+                      <div key={s.label} className={`rounded-xl p-4 text-center ${s.color}`}>
+                        <p className="text-2xl font-bold">{s.value}</p>
                         <p className="text-[10px] font-medium">{s.label}</p>
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>
+                  {result.duration && <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>}
                   {result.errors?.length > 0 && (
                     <Card className="border-red-100">
                       <CardHeader className="pb-2 flex flex-row items-center justify-between">
                         <CardTitle className="text-sm text-red-700">Errors ({result.errors.length})</CardTitle>
-                        <Button size="sm" variant="outline" onClick={downloadErrorReport} className="gap-1 text-xs"><Download className="w-3 h-3" />Download Report</Button>
+                        <Button size="sm" variant="outline" onClick={downloadErrorReport} className="gap-1 text-xs"><Download className="w-3 h-3" />Download CSV</Button>
                       </CardHeader>
                       <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
-                        {result.errors.map((e: any, i: number) => (
-                          <div key={i} className="text-xs py-1 border-b border-gray-50 flex gap-3">
-                            <span className="text-red-500 font-mono shrink-0">Row {e.row}</span>
-                            <span className="text-gray-500">{e.model}</span>
-                            <span className="text-gray-700">{e.error}</span>
-                          </div>
+                        {result.errors.map((e: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
                         ))}
                       </CardContent>
                     </Card>
                   )}
-                  {result.warnings?.length > 0 && (
-                    <Card className="border-amber-100">
-                      <CardHeader className="pb-2"><CardTitle className="text-sm text-amber-700">Warnings ({result.warnings.length})</CardTitle></CardHeader>
-                      <CardContent className="p-4 pt-0 max-h-40 overflow-y-auto">
-                        {result.warnings.slice(0, 20).map((w: string, i: number) => (
-                          <p key={i} className="text-xs text-amber-600 py-0.5">{w}</p>
-                        ))}
-                        {result.warnings.length > 20 && <p className="text-xs text-muted-foreground">...and {result.warnings.length - 20} more</p>}
-                      </CardContent>
-                    </Card>
-                  )}
+                  <div className="flex gap-3">
+                    <Button onClick={() => { setFile(null); setResult(null); setValidation(null); setPreviewRecords([]); setActiveTab('upload'); }} variant="outline">Import Another File</Button>
+                  </div>
                 </>
               )}
             </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="history" className="mt-4">
-          {history.length > 0 ? (
-            <div className="space-y-2">
-              {history.map((h: any) => (
-                <div key={h.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-                      {h.fileType === 'json' ? <FileJson className="w-4 h-4 text-gray-500" /> : h.fileType === 'csv' ? <FileText className="w-4 h-4 text-gray-500" /> : <FileSpreadsheet className="w-4 h-4 text-gray-500" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{h.filename}</p>
-                      <p className="text-[10px] text-muted-foreground">{h.totalRecords} records | Inserted: {h.inserted} | Updated: {h.updated} | Failed: {h.failed} | {(h.duration / 1000).toFixed(1)}s</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className={`text-[10px] ${statusColor(h.status)}`}>{h.status}</Badge>
-                    <span className="text-[10px] text-muted-foreground">{h.createdAt ? new Date(h.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                    {h.status !== 'rolled_back' && (
-                      <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRollback(h.id)}><RotateCcw className="w-3 h-3 mr-1" />Rollback</Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-16 text-muted-foreground"><History className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No import history yet</p></div>
           )}
         </TabsContent>
       </Tabs>
@@ -2823,7 +3004,10 @@ export default function PhoneDockApp() {
               <div className="flex-1 p-4 sm:p-6 max-w-6xl w-full">
                 <div className="animate-fade-in">
                   {view === 'admin-dashboard' && <AdminDashboard token={token} admin={admin} onNavigate={navigate} homeData={homeData} />}
-                  {view === 'admin-phones' && <AdminPhonesPage token={token} />}
+                  {view === 'admin-phones' && <AdminPhonesPage token={token} onNavigate={navigate} />}
+                  {view === 'admin-phone-add' && <div className="animate-fade-in"><PhoneForm token={token || ''} brands={[]} onSave={() => navigate('/admin/phones')} onCancel={() => navigate('/admin/phones')} /></div>}
+                  {view === 'admin-phone-edit' && <div className="animate-fade-in"><PhoneForm token={token || ''} phoneId={params.id} brands={[]} onSave={() => navigate('/admin/phones')} onCancel={() => navigate('/admin/phones')} /></div>}
+                  {view === 'admin-phone-view' && <AdminPhoneViewPage token={token} id={params.id || ''} onNavigate={navigate} />}
                   {view === 'admin-brands' && <AdminBrandsPage token={token} />}
                   {view === 'admin-news' && <AdminNewsPage token={token} />}
                   {view === 'admin-sponsors' && <AdminSponsorsPage token={token} />}
