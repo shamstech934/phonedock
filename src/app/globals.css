@@ -253,17 +253,31 @@
 
 /* Premium elevated card */
 .card-premium {
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(20px) saturate(200%);
-  -webkit-backdrop-filter: blur(20px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 1.25rem;
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.03),
-    0 4px 20px rgba(0, 0, 0, 0.04),
-    0 12px 40px rgba(14, 165, 233, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 12px 40px rgba(14, 165, 233, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.02);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.card-premium::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 1.25rem 1.25rem 0 0;
 }
 .dark .card-premium {
   background: rgba(17, 24, 39, 0.55);
@@ -559,41 +573,80 @@
    GLASS PAGE WRAPPER — decorative bg orbs
    ============================================ */
 
+body {
+  background: #dce4f0 !important;
+}
+
 .glass-page-bg {
   position: relative;
 }
 .glass-page-bg::before {
   content: '';
   position: fixed;
-  top: 10%;
-  right: -5%;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.07) 0%, transparent 65%);
+  top: -10%;
+  right: -10%;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.45) 0%, rgba(14, 165, 233, 0.12) 45%, transparent 70%);
   pointer-events: none;
   z-index: 0;
-  animation: bgOrb1 20s ease-in-out infinite;
+  animation: bgOrb1 18s ease-in-out infinite;
+  filter: blur(30px);
 }
 .glass-page-bg::after {
   content: '';
   position: fixed;
-  bottom: 10%;
-  left: -5%;
-  width: 450px;
-  height: 450px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 65%);
+  bottom: -10%;
+  left: -10%;
+  width: 650px;
+  height: 650px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.38) 0%, rgba(139, 92, 246, 0.1) 45%, transparent 70%);
   pointer-events: none;
   z-index: 0;
-  animation: bgOrb2 25s ease-in-out infinite;
+  animation: bgOrb2 22s ease-in-out infinite;
+  filter: blur(30px);
+}
+
+/* Extra orbs injected via page.tsx .glass-orb divs */
+.glass-orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(30px);
+}
+.glass-orb-cyan {
+  top: 35%;
+  left: 45%;
+  width: 550px;
+  height: 550px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.32) 0%, transparent 65%);
+  animation: bgOrb3 20s ease-in-out infinite;
+}
+.glass-orb-yellow {
+  top: 65%;
+  right: 15%;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.28) 0%, transparent 65%);
+  animation: bgOrb4 24s ease-in-out infinite;
 }
 
 @keyframes bgOrb1 {
-  0%, 100% { transform: translate(0, 0); }
-  33% { transform: translate(-30px, 20px); }
-  66% { transform: translate(20px, -15px); }
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.05); }
+  66% { transform: translate(30px, -20px) scale(0.97); }
 }
 @keyframes bgOrb2 {
-  0%, 100% { transform: translate(0, 0); }
-  33% { transform: translate(25px, -20px); }
-  66% { transform: translate(-15px, 25px); }
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(35px, -25px) scale(1.04); }
+  66% { transform: translate(-20px, 30px) scale(0.96); }
+}
+@keyframes bgOrb3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-25px, 15px) scale(1.08); }
+}
+@keyframes bgOrb4 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -30px) scale(1.06); }
 }

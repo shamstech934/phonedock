@@ -501,6 +501,10 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
   };
 
   return (
+    <div className="relative">
+      {/* Background gradient orbs for Liquid Glass effect */}
+      <div className="glass-orb glass-orb-cyan" />
+      <div className="glass-orb glass-orb-yellow" />
     <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
       {/* Hero */}
       <section className="hero-gradient rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
@@ -680,6 +684,7 @@ function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loadin
 
       {/* Upcoming Phones */}
       <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} showEmpty />
+    </div>
     </div>
   );
 }
