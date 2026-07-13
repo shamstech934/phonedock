@@ -1624,6 +1624,24 @@ function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string 
         ))}
       </div>
 
+      {/* Empty DB - Seed Prompt */}
+      {(stats.totalPhones === 0 || stats.totalPhones === undefined) && (
+        <div className="card-premium p-6 border-2 border-dashed border-emerald-300 bg-emerald-50/50">
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center shrink-0">
+              <Database className="w-7 h-7 text-emerald-600" />
+            </div>
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="font-bold text-gray-900 text-base">Database is Empty</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Click below to seed 35+ verified real phones with specs, benchmarks & Pakistani prices</p>
+            </div>
+            <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands, ${d.specs} specs, ${d.benchmarks} benchmarks, ${d.prices} prices added.`); window.location.reload(); } else { alert('Seed failed: ' + (d.error || 'Unknown error')); } } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="shrink-0 flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/25">
+              <Database className="w-5 h-5" /> Seed Database Now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {quickActions.map(a => (
@@ -1717,16 +1735,16 @@ function AdminPhonesPage({ token, onNavigate }: { token: string | null; onNaviga
           <h1 className="text-xl font-extrabold text-gray-900">Manage Phones</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{phones.length} phones total, {filtered.length} shown</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-48" />
+            <input type="text" placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full sm:w-48" />
           </div>
           <button onClick={() => onNavigate('/admin/phones/add')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
-            <Plus className="w-4 h-4" /> Add Phone
+            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add Phone</span><span className="sm:hidden">Add</span>
           </button>
-          <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); alert(`Seed complete!\nBrands: ${d.brands}\nPhones: ${d.phones}\nSpecs: ${d.specs}\nBenchmarks: ${d.benchmarks}\nPrices: ${d.prices}\nSkipped: ${d.skipped}`); fetchPhones(); } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors">
-            <Database className="w-4 h-4" /> Seed Data
+          <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); fetchPhones(); } else { alert('Seed failed: ' + (d.error || 'Unknown error')); } } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-500/25">
+            <Database className="w-4 h-4" /> <span className="hidden sm:inline">Seed Data</span><span className="sm:hidden">Seed</span>
           </button>
         </div>
       </div>
