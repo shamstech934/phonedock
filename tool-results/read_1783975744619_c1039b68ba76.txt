@@ -1,0 +1,1541 @@
+     1→import { Brand, Phone, PhoneSpecs, PhoneBenchmark, PhonePrice } from './models';
+     2→import { connectDB } from './mongodb';
+     3→import { Types } from 'mongoose';
+     4→
+     5→/* ------------------------------------------------------------------ */
+     6→/*  Type definitions for seed input                                    */
+     7→/* ------------------------------------------------------------------ */
+     8→
+     9→interface SeedBrand {
+    10→  name: string;
+    11→  slug: string;
+    12→  country: string;
+    13→  description: string;
+    14→  sortOrder: number;
+    15→}
+    16→
+    17→interface SeedSpecs {
+    18→  display?: string;
+    19→  displayType?: string;
+    20→  resolution?: string;
+    21→  refreshRate?: string;
+    22→  protection?: string;
+    23→  brightness?: string;
+    24→  chipset?: string;
+    25→  cpu?: string;
+    26→  gpu?: string;
+    27→  process?: string;
+    28→  ram?: string;
+    29→  ramType?: string;
+    30→  storage?: string;
+    31→  cardSlot?: string;
+    32→  mainCamera?: string;
+    33→  mainCameraSensor?: string;
+    34→  aperture?: string;
+    35→  ois?: string;
+    36→  eis?: string;
+    37→  ultrawide?: string;
+    38→  telephoto?: string;
+    39→  zoom?: string;
+    40→  cameraFeatures?: string;
+    41→  videoRecording?: string;
+    42→  selfieCamera?: string;
+    43→  selfieSensor?: string;
+    44→  selfieVideo?: string;
+    45→  battery?: string;
+    46→  charging?: string;
+    47→  chargingSpeed?: string;
+    48→  wirelessCharge?: string;
+    49→  wirelessSpeed?: string;
+    50→  reverseCharge?: string;
+    51→  weight?: string;
+    52→  dimensions?: string;
+    53→  build?: string;
+    54→  sim?: string;
+    55→  ipRating?: string;
+    56→  network?: string;
+    57→  fiveG?: string;
+    58→  wifi?: string;
+    59→  bluetooth?: string;
+    60→  nfc?: string;
+    61→  usb?: string;
+    62→  fingerprint?: string;
+    63→  faceUnlock?: string;
+    64→  sensors?: string;
+    65→  colors?: string;
+    66→  os?: string;
+    67→  osVersion?: string;
+    68→  osUI?: string;
+    69→  updatePolicy?: string;
+    70→  specialFeatures?: string;
+    71→}
+    72→
+    73→interface SeedBenchmark {
+    74→  antutu?: number;
+    75→  geekbenchSingle?: number;
+    76→  geekbenchMulti?: number;
+    77→  gamingScore?: number;
+    78→  pubgFps?: string;
+    79→  codMobileFps?: string;
+    80→  genshinFps?: string;
+    81→  videoPlayback?: string;
+    82→  gamingBattery?: string;
+    83→  browsingBattery?: string;
+    84→}
+    85→
+    86→interface SeedPrice {
+    87→  storeName: string;
+    88→  price: number;
+    89→  inStock?: boolean;
+    90→}
+    91→
+    92→interface SeedPhone {
+    93→  brand: string;              // brand name to match
+    94→  modelName: string;
+    95→  slug: string;
+    96→  releaseDate: string;
+    97→  pricePKR: number;
+    98→  ptaStatus: 'PTA Approved' | 'Non-PTA' | 'Unknown';
+    99→  featured: boolean;
+   100→  trending: boolean;
+   101→  upcoming: boolean;
+   102→  description: string;
+   103→  cameraScore: number;
+   104→  performanceScore: number;
+   105→  batteryScore: number;
+   106→  displayScore: number;
+   107→  valueScore: number;
+   108→  overallRating: number;
+   109→  pros: string;
+   110→  cons: string;
+   111→  reviewSummary: string;
+   112→  reviewVerdict: string;
+   113→  specs: SeedSpecs;
+   114→  benchmarks?: SeedBenchmark;
+   115→  prices?: SeedPrice[];
+   116→}
+   117→
+   118→/* ------------------------------------------------------------------ */
+   119→/*  Brand data                                                         */
+   120→/* ------------------------------------------------------------------ */
+   121→
+   122→const BRANDS: SeedBrand[] = [
+   123→  { name: 'Samsung', slug: 'samsung', country: 'South Korea', description: 'Leading global smartphone manufacturer known for Galaxy S, A, and M series with AMOLED displays and One UI.', sortOrder: 1 },
+   124→  { name: 'Apple', slug: 'apple', country: 'United States', description: 'Premium smartphone maker known for the iPhone lineup, iOS ecosystem, and industry-leading silicon.', sortOrder: 2 },
+   125→  { name: 'Xiaomi', slug: 'xiaomi', country: 'China', description: 'Value-focused brand offering Redmi, POCO, and Xiaomi series with aggressive pricing and HyperOS.', sortOrder: 3 },
+   126→  { name: 'OnePlus', slug: 'oneplus', country: 'China', description: 'Performance-oriented brand known for fast charging, OxygenOS, and flagship-grade hardware at competitive prices.', sortOrder: 4 },
+   127→  { name: 'Vivo', slug: 'vivo', country: 'China', description: 'Camera-focused brand with Zeiss partnerships, strong in Pakistani mid-range and flagship segments.', sortOrder: 5 },
+   128→  { name: 'Oppo', slug: 'oppo', country: 'China', description: 'Design and camera-centric brand with Hasselblad partnerships and the Reno and Find X series.', sortOrder: 6 },
+   129→  { name: 'Realme', slug: 'realme', country: 'China', description: 'Youth-focused brand offering aggressive specs-to-price ratio in GT, Number, and C series.', sortOrder: 7 },
+   130→  { name: 'Infinix', slug: 'infinix', country: 'China', description: 'Budget-friendly brand popular in Pakistan for Note and Hot series with big batteries and AMOLED displays.', sortOrder: 8 },
+   131→  { name: 'Tecno', slug: 'tecno', country: 'China', description: 'Emerging brand in Pakistan known for Camon camera phones and Spark budget series.', sortOrder: 9 },
+   132→  { name: 'Nothing', slug: 'nothing', country: 'United Kingdom', description: 'London-based brand known for transparent Glyph LED design, clean Nothing OS, and unique aesthetics.', sortOrder: 10 },
+   133→];
+   134→
+   135→/* ------------------------------------------------------------------ */
+   136→/*  Phone data (36 phones, 10 brands)                                  */
+   137→/* ------------------------------------------------------------------ */
+   138→
+   139→const PHONES: SeedPhone[] = [
+   140→  /* ================================================================ */
+   141→  /*  SAMSUNG (8 phones)                                               */
+   142→  /* ================================================================ */
+   143→  {
+   144→    brand: 'Samsung', modelName: 'Galaxy S25 Ultra', slug: 'samsung-galaxy-s25-ultra',
+   145→    releaseDate: '2025-02-07', pricePKR: 375000, ptaStatus: 'PTA Approved',
+   146→    featured: true, trending: true, upcoming: false,
+   147→    description: 'Samsung\'s 2025 flagship with Snapdragon 8 Elite, 200MP quad-camera system with S Pen, titanium frame, and 7-year update promise.',
+   148→    cameraScore: 94, performanceScore: 95, batteryScore: 85, displayScore: 94, valueScore: 58, overallRating: 89,
+   149→    pros: 'Excellent 200MP camera with versatile zoom range, Snapdragon 8 Elite power, S Pen, 7 years of updates, premium titanium build',
+   150→    cons: 'No major camera sensor upgrade over S24 Ultra, expensive, no galaxy AI exclusivity',
+   151→    reviewSummary: 'The Galaxy S25 Ultra refines an already excellent formula with the Snapdragon 8 Elite across all markets, improved AI features, and a slightly lighter titanium body. It remains the best Android phone for productivity and versatility.',
+   152→    reviewVerdict: 'Best Android flagship for power users who want S Pen, long updates, and a complete camera system.',
+   153→    specs: {
+   154→      display: '6.9"', displayType: 'Dynamic AMOLED 2X', resolution: '3120 x 1440 (Quad HD+)', refreshRate: '1-120Hz LTPO',
+   155→      protection: 'Gorilla Armor 2', brightness: '2600 nits peak',
+   156→      chipset: 'Snapdragon 8 Elite for Galaxy', process: '3 nm',
+   157→      cpu: '1x 4.32 GHz Oryon + 3x 3.53 GHz Oryon + 2x 3.15 GHz Oryon + 2x 2.36 GHz Oryon',
+   158→      gpu: 'Adreno 830',
+   159→      ram: '12 GB', ramType: 'LPDDR5X', storage: '256/512 GB / 1 TB', cardSlot: 'No',
+   160→      mainCamera: '200 MP, f/1.7, OIS', mainCameraSensor: 'Samsung ISOCELL HP2',
+   161→      ultrawide: '50 MP, f/1.9, 120°', telephoto: '50 MP, f/2.5, 5x optical periscope, OIS + 10 MP, f/2.4, 3x optical, OIS',
+   162→      zoom: 'Optical: 3x & 5x, Digital: up to 100x Space Zoom',
+   163→      cameraFeatures: 'Advanced ProVisual Engine, 8K video, 4K 120fps, Nightography, Portrait Studio, AI photo editing',
+   164→      videoRecording: '8K@30fps, 4K@120fps, 1080p@240fps',
+   165→      selfieCamera: '12 MP, f/2.2, Dual Pixel AF',
+   166→      battery: '5000 mAh', charging: '45W Wired', chargingSpeed: '45W', wirelessCharge: 'Yes', wirelessSpeed: '15W Qi2',
+   167→      weight: '218 g', dimensions: '162.8 x 77.6 x 8.2 mm', build: 'Titanium frame, Gorilla Glass 2 front & back',
+   168→      sim: 'Dual Nano-SIM', ipRating: 'IP68', network: '5G SA/NSA', fiveG: 'Yes (Sub-6 GHz)',
+   169→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   170→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   171→      sensors: 'Accelerometer, Gyroscope, Proximity, Compass, Barometer',
+   172→      colors: 'Titanium Black, Titanium Grey, Titanium Silver Blue, Titanium White Silver',
+   173→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '7 years OS and security updates',
+   174→      specialFeatures: 'S Pen built-in, Galaxy AI, Advanced ProVisual Engine',
+   175→    },
+   176→    benchmarks: { antutu: 2650000, geekbenchSingle: 3100, geekbenchMulti: 10200, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   177→    prices: [
+   178→      { storeName: 'Daraz', price: 378000 },
+   179→      { storeName: 'PriceOye', price: 375000 },
+   180→      { storeName: 'Whatmobile', price: 372000 },
+   181→    ],
+   182→  },
+   183→  {
+   184→    brand: 'Samsung', modelName: 'Galaxy S25+', slug: 'samsung-galaxy-s25-plus',
+   185→    releaseDate: '2025-02-07', pricePKR: 275000, ptaStatus: 'PTA Approved',
+   186→    featured: false, trending: true, upcoming: false,
+   187→    description: 'Large-screen flagship with Snapdragon 8 Elite, QHD+ 120Hz display, and triple camera system.',
+   188→    cameraScore: 86, performanceScore: 94, batteryScore: 86, displayScore: 92, valueScore: 65, overallRating: 86,
+   189→    pros: 'Snapdragon 8 Elite globally, excellent QHD+ display, strong battery life, 7-year updates',
+   190→    cons: 'No telephoto beyond 3x, same design language as S24+, no S Pen',
+   191→    reviewSummary: 'The S25+ gets the same Snapdragon 8 Elite treatment as the Ultra but in a slimmer form with a flat display. Great for those who want flagship performance without the Ultra price.',
+   192→    reviewVerdict: 'Excellent large-screen flagship that offers almost everything the Ultra does at a lower price.',
+   193→    specs: {
+   194→      display: '6.7"', displayType: 'Dynamic AMOLED 2X', resolution: '3120 x 1440 (Quad HD+)', refreshRate: '1-120Hz LTPO',
+   195→      protection: 'Gorilla Armor 2', brightness: '2600 nits peak',
+   196→      chipset: 'Snapdragon 8 Elite for Galaxy', process: '3 nm',
+   197→      cpu: '1x 4.32 GHz + 3x 3.53 GHz + 2x 3.15 GHz + 2x 2.36 GHz Oryon',
+   198→      gpu: 'Adreno 830',
+   199→      ram: '12 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+   200→      mainCamera: '50 MP, f/1.7, OIS', mainCameraSensor: 'Samsung ISOCELL GN3',
+   201→      ultrawide: '12 MP, f/2.2, 120°', telephoto: '10 MP, f/2.4, 3x optical, OIS',
+   202→      zoom: 'Optical: 3x, Digital: up to 30x',
+   203→      cameraFeatures: 'Nightography, AI Zoom, 8K video',
+   204→      videoRecording: '8K@30fps, 4K@120fps, 1080p@240fps',
+   205→      selfieCamera: '12 MP, f/2.2',
+   206→      battery: '4900 mAh', charging: '45W Wired', chargingSpeed: '45W', wirelessCharge: 'Yes', wirelessSpeed: '15W Qi2',
+   207→      weight: '190 g', dimensions: '158.4 x 75.8 x 7.3 mm', build: 'Armor Aluminum frame, Gorilla Glass 2',
+   208→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   209→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   210→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   211→      colors: 'Icy Blue, Mint Green, Navy, Silver Shadow',
+   212→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '7 years OS and security updates',
+   213→      specialFeatures: 'Galaxy AI, ProVisual Engine',
+   214→    },
+   215→    benchmarks: { antutu: 2600000, geekbenchSingle: 3050, geekbenchMulti: 9900, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   216→    prices: [
+   217→      { storeName: 'Daraz', price: 278000 },
+   218→      { storeName: 'PriceOye', price: 275000 },
+   219→      { storeName: 'Whatmobile', price: 272000 },
+   220→    ],
+   221→  },
+   222→  {
+   223→    brand: 'Samsung', modelName: 'Galaxy S25', slug: 'samsung-galaxy-s25',
+   224→    releaseDate: '2025-02-07', pricePKR: 235000, ptaStatus: 'PTA Approved',
+   225→    featured: false, trending: true, upcoming: false,
+   226→    description: 'Compact flagship with Snapdragon 8 Elite, 6.2" flat display, and versatile triple camera in a lightweight body.',
+   227→    cameraScore: 84, performanceScore: 93, batteryScore: 74, displayScore: 88, valueScore: 70, overallRating: 83,
+   228→    pros: 'Compact and lightweight, Snapdragon 8 Elite performance, excellent display, 7 years of updates',
+   229→    cons: 'Small 4000mAh battery, 25W charging is slow for flagship, only FHD+ display',
+   230→    reviewSummary: 'The most compact Galaxy S25 packs the full Snapdragon 8 Elite chip and a solid triple camera. Battery life is the main compromise for the small size.',
+   231→    reviewVerdict: 'Best compact Android flagship for users who prioritize one-handed use and portability.',
+   232→    specs: {
+   233→      display: '6.2"', displayType: 'Dynamic AMOLED 2X', resolution: '2340 x 1080 (Full HD+)', refreshRate: '1-120Hz LTPO',
+   234→      protection: 'Gorilla Armor 2', brightness: '2600 nits peak',
+   235→      chipset: 'Snapdragon 8 Elite for Galaxy', process: '3 nm',
+   236→      ram: '8/12 GB', ramType: 'LPDDR5X', storage: '128/256 GB', cardSlot: 'No',
+   237→      mainCamera: '50 MP, f/1.7, OIS', mainCameraSensor: '',
+   238→      ultrawide: '12 MP, f/2.2, 120°', telephoto: '10 MP, f/2.4, 3x optical, OIS',
+   239→      zoom: 'Optical: 3x, Digital: up to 30x',
+   240→      selfieCamera: '12 MP, f/2.2',
+   241→      battery: '4000 mAh', charging: '25W Wired', chargingSpeed: '25W', wirelessCharge: 'Yes', wirelessSpeed: '15W Qi2',
+   242→      weight: '163 g', dimensions: '146.9 x 70.4 x 7.2 mm', build: 'Armor Aluminum frame, Gorilla Glass 2',
+   243→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   244→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   245→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   246→      colors: 'Icy Blue, Mint Green, Navy, Silver Shadow',
+   247→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '7 years OS and security updates',
+   248→      specialFeatures: 'Galaxy AI, ProVisual Engine',
+   249→    },
+   250→    benchmarks: { antutu: 2550000, geekbenchSingle: 3000, geekbenchMulti: 9600, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   251→    prices: [
+   252→      { storeName: 'Daraz', price: 238000 },
+   253→      { storeName: 'PriceOye', price: 235000 },
+   254→      { storeName: 'Whatmobile', price: 232000 },
+   255→    ],
+   256→  },
+   257→  {
+   258→    brand: 'Samsung', modelName: 'Galaxy S24 FE', slug: 'samsung-galaxy-s24-fe',
+   259→    releaseDate: '2024-10-03', pricePKR: 145000, ptaStatus: 'PTA Approved',
+   260→    featured: false, trending: false, upcoming: false,
+   261→    description: 'Fan Edition flagship with Exynos 2400e, 6.7" 120Hz AMOLED, triple camera, and IP68 at a more accessible price.',
+   262→    cameraScore: 80, performanceScore: 78, batteryScore: 82, displayScore: 84, valueScore: 82, overallRating: 80,
+   263→    pros: 'Flagship-level display and build, IP68, long 6-year update support, good triple camera',
+   264→    cons: 'Exynos instead of Snapdragon in some markets, 25W charging, plastic back',
+   265→    reviewSummary: 'The S24 FE delivers a flagship-like experience at a mid-range price with a great display, solid cameras, and long software support.',
+   266→    reviewVerdict: 'Best value Samsung flagship for buyers who want premium features without paying Ultra prices.',
+   267→    specs: {
+   268→      display: '6.7"', displayType: 'Dynamic AMOLED 2X', resolution: '2340 x 1080 (Full HD+)', refreshRate: '1-120Hz',
+   269→      protection: 'Gorilla Glass Victus+', brightness: '1900 nits peak',
+   270→      chipset: 'Exynos 2400e', process: '4 nm',
+   271→      ram: '8 GB', ramType: 'LPDDR5X', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   272→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: '',
+   273→      ultrawide: '12 MP, f/2.2, 123°', telephoto: '8 MP, f/2.4, 3x optical, OIS',
+   274→      zoom: 'Optical: 3x, Digital: up to 30x',
+   275→      selfieCamera: '10 MP, f/2.4',
+   276→      battery: '4700 mAh', charging: '25W Wired', chargingSpeed: '25W', wirelessCharge: 'Yes', wirelessSpeed: '15W',
+   277→      weight: '199 g', dimensions: '162.0 x 77.7 x 8.6 mm', build: 'Plastic back, Armor Aluminum frame',
+   278→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   279→      wifi: 'Wi-Fi 6e', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   280→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   281→      colors: 'Blue, Graphite, Gray, Yellow',
+   282→      os: 'Android', osVersion: '14', osUI: 'One UI 6.1', updatePolicy: '6 years OS and security updates',
+   283→      specialFeatures: 'Galaxy AI features',
+   284→    },
+   285→    benchmarks: { antutu: 1580000, geekbenchSingle: 2100, geekbenchMulti: 6500, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '45-60 FPS (High)' },
+   286→    prices: [
+   287→      { storeName: 'Daraz', price: 148000 },
+   288→      { storeName: 'PriceOye', price: 145000 },
+   289→    ],
+   290→  },
+   291→  {
+   292→    brand: 'Samsung', modelName: 'Galaxy A56', slug: 'samsung-galaxy-a56',
+   293→    releaseDate: '2025-03-21', pricePKR: 105000, ptaStatus: 'PTA Approved',
+   294→    featured: false, trending: true, upcoming: false,
+   295→    description: 'Upper mid-range A-series with Exynos 1580, 6.7" 120Hz Super AMOLED, 50MP triple camera, and 5000mAh battery.',
+   296→    cameraScore: 74, performanceScore: 72, batteryScore: 84, displayScore: 82, valueScore: 78, overallRating: 77,
+   297→    pros: 'Great Super AMOLED display, IP67 water resistance, 6 years of OS updates, solid mid-range performance',
+   298→    cons: '25W charging is slow, Exynos 1580 not flagship-tier, no wireless charging',
+   299→    reviewSummary: 'The Galaxy A56 is a well-rounded upper mid-range phone with an excellent display, good cameras, and Samsung\'s industry-leading update promise at a reasonable price.',
+   300→    reviewVerdict: 'One of the best upper mid-range phones in Pakistan with long-term update support.',
+   301→    specs: {
+   302→      display: '6.7"', displayType: 'Super AMOLED', resolution: '2340 x 1080 (Full HD+)', refreshRate: '1-120Hz',
+   303→      protection: 'Gorilla Glass Victus+', brightness: '2000 nits peak',
+   304→      chipset: 'Exynos 1580', process: '4 nm',
+   305→      ram: '8 GB', ramType: 'LPDDR5', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   306→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: '',
+   307→      ultrawide: '12 MP, f/2.2, 123°', telephoto: '',
+   308→      selfieCamera: '12 MP, f/2.2',
+   309→      battery: '5000 mAh', charging: '25W Wired', chargingSpeed: '25W',
+   310→      weight: '195 g', dimensions: '', build: 'Glass back, Plastic side frame',
+   311→      sim: 'Dual Nano-SIM', ipRating: 'IP67', fiveG: 'Yes (Sub-6 GHz)',
+   312→      wifi: 'Wi-Fi 6', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   313→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   314→      colors: 'Awesome Iceblue, Awesome Lilac, Awesome Dark Blue, Awesome Black',
+   315→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '6 years OS and security updates',
+   316→      specialFeatures: 'Samsung Knox, Samsung Pay',
+   317→    },
+   318→    benchmarks: { antutu: 900000, geekbenchSingle: 1800, geekbenchMulti: 4800 },
+   319→    prices: [
+   320→      { storeName: 'Daraz', price: 108000 },
+   321→      { storeName: 'PriceOye', price: 105000 },
+   322→      { storeName: 'Whatmobile', price: 103000 },
+   323→    ],
+   324→  },
+   325→  {
+   326→    brand: 'Samsung', modelName: 'Galaxy A36', slug: 'samsung-galaxy-a36',
+   327→    releaseDate: '2025-03-21', pricePKR: 80000, ptaStatus: 'PTA Approved',
+   328→    featured: false, trending: false, upcoming: false,
+   329→    description: 'Mid-range phone with Snapdragon 6 Gen 3, 6.7" 120Hz Super AMOLED, 50MP camera system, and IP67 rating.',
+   330→    cameraScore: 70, performanceScore: 68, batteryScore: 84, displayScore: 80, valueScore: 82, overallRating: 75,
+   331→    pros: 'IP67 water resistance, great Super AMOLED display, 6-year update support, good battery life',
+   332→    cons: '25W charging, no telephoto camera, Snapdragon 6 Gen 3 is mid-range',
+   333→    reviewSummary: 'The Galaxy A36 is a reliable mid-range option with Samsung\'s signature AMOLED display, solid build quality with IP67, and long update support.',
+   334→    reviewVerdict: 'Solid mid-range choice for users who want Samsung quality and long-term updates on a budget.',
+   335→    specs: {
+   336→      display: '6.7"', displayType: 'Super AMOLED', resolution: '2340 x 1080 (Full HD+)', refreshRate: '1-120Hz',
+   337→      protection: 'Gorilla Glass Victus+', brightness: '800 nits HBM',
+   338→      chipset: 'Snapdragon 6 Gen 3', process: '4 nm',
+   339→      ram: '8 GB', ramType: 'LPDDR5', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   340→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: '',
+   341→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '',
+   342→      selfieCamera: '13 MP, f/2.0',
+   343→      battery: '5000 mAh', charging: '25W Wired', chargingSpeed: '25W',
+   344→      weight: '194 g', dimensions: '', build: 'Glass back, Plastic frame',
+   345→      sim: 'Dual Nano-SIM', ipRating: 'IP67', fiveG: 'Yes (Sub-6 GHz)',
+   346→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   347→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   348→      colors: 'Awesome Lavender, Awesome Light Green, Awesome White, Awesome Navy',
+   349→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '6 years OS and security updates',
+   350→      specialFeatures: '',
+   351→    },
+   352→    benchmarks: { antutu: 750000, geekbenchSingle: 1500, geekbenchMulti: 4200 },
+   353→    prices: [
+   354→      { storeName: 'Daraz', price: 82000 },
+   355→      { storeName: 'PriceOye', price: 80000 },
+   356→      { storeName: 'Whatmobile', price: 78500 },
+   357→    ],
+   358→  },
+   359→  {
+   360→    brand: 'Samsung', modelName: 'Galaxy A16', slug: 'samsung-galaxy-a16',
+   361→    releaseDate: '2024-10-09', pricePKR: 45000, ptaStatus: 'PTA Approved',
+   362→    featured: false, trending: false, upcoming: false,
+   363→    description: 'Budget-friendly Samsung with 6.7" Super AMOLED 90Hz display, Helio G99, 50MP triple camera, and 5000mAh battery.',
+   364→    cameraScore: 62, performanceScore: 52, batteryScore: 82, displayScore: 72, valueScore: 88, overallRating: 70,
+   365→    pros: 'Super AMOLED display at this price, IP54 splash resistance, 4 years of OS updates, 25W charging',
+   366→    cons: 'Helio G99 is dated, no 5G, slow charging, thick bezels',
+   367→    reviewSummary: 'The Galaxy A16 brings Samsung\'s Super AMOLED display and long update support to the budget segment. Not a performance powerhouse, but great for everyday use.',
+   368→    reviewVerdict: 'Best budget Samsung phone with AMOLED display and long update commitment.',
+   369→    specs: {
+   370→      display: '6.7"', displayType: 'Super AMOLED', resolution: '2340 x 1080 (Full HD+)', refreshRate: '90Hz',
+   371→      protection: 'Gorilla Glass 5', brightness: '800 nits peak',
+   372→      chipset: 'MediaTek Helio G99', process: '6 nm',
+   373→      ram: '4/6/8 GB', ramType: 'LPDDR4X', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   374→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: '',
+   375→      ultrawide: '8 MP, f/2.2, 123°', telephoto: '',
+   376→      selfieCamera: '13 MP, f/2.0',
+   377→      battery: '5000 mAh', charging: '25W Wired', chargingSpeed: '25W',
+   378→      weight: '200 g', dimensions: '164.4 x 77.9 x 8.2 mm', build: 'Plastic back, Plastic frame',
+   379→      sim: 'Dual Nano-SIM', ipRating: 'IP54', fiveG: 'No',
+   380→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   381→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+   382→      colors: 'Gold, Light Green, Blue Black, Gray',
+   383→      os: 'Android', osVersion: '14', osUI: 'One UI 6.1', updatePolicy: '4 years OS and 5 years security updates',
+   384→      specialFeatures: '',
+   385→    },
+   386→    prices: [
+   387→      { storeName: 'Daraz', price: 46500 },
+   388→      { storeName: 'PriceOye', price: 45000 },
+   389→      { storeName: 'Whatmobile', price: 44000 },
+   390→    ],
+   391→  },
+   392→  {
+   393→    brand: 'Samsung', modelName: 'Galaxy M16', slug: 'samsung-galaxy-m16',
+   394→    releaseDate: '2025-04-15', pricePKR: 40000, ptaStatus: 'PTA Approved',
+   395→    featured: false, trending: false, upcoming: false,
+   396→    description: 'Budget M-series phone with 6.7" Super AMOLED display, MediaTek chipset, 50MP camera, and 5000mAh battery.',
+   397→    cameraScore: 58, performanceScore: 50, batteryScore: 82, displayScore: 70, valueScore: 90, overallRating: 67,
+   398→    pros: 'Super AMOLED display at budget price, 5000mAh battery, Samsung reliability',
+   399→    cons: 'Basic processor, no 5G, 25W charging, plastic build',
+   400→    reviewSummary: 'The Galaxy M16 offers Samsung\'s Super AMOLED display and reliable software at a very competitive budget price point.',
+   401→    reviewVerdict: 'Good entry-level Samsung phone for basic users who value display quality.',
+   402→    specs: {
+   403→      display: '6.7"', displayType: 'Super AMOLED', resolution: '2340 x 1080 (Full HD+)', refreshRate: '60Hz',
+   404→      protection: '', brightness: '',
+   405→      chipset: 'MediaTek Dimensity 6300', process: '6 nm',
+   406→      ram: '4/6/8 GB', ramType: '', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   407→      mainCamera: '50 MP, f/1.8', mainCameraSensor: '',
+   408→      ultrawide: '8 MP, f/2.2', telephoto: '',
+   409→      selfieCamera: '13 MP',
+   410→      battery: '5000 mAh', charging: '25W Wired', chargingSpeed: '25W',
+   411→      weight: '205 g', dimensions: '', build: 'Plastic back, Plastic frame',
+   412→      sim: 'Dual Nano-SIM', ipRating: '', fiveG: 'No',
+   413→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'No', usb: 'USB Type-C 2.0',
+   414→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+   415→      colors: 'Light Green, Blue Black, Gray',
+   416→      os: 'Android', osVersion: '15', osUI: 'One UI 7', updatePolicy: '',
+   417→      specialFeatures: '',
+   418→    },
+   419→    prices: [
+   420→      { storeName: 'Daraz', price: 41500 },
+   421→      { storeName: 'PriceOye', price: 40000 },
+   422→    ],
+   423→  },
+   424→
+   425→  /* ================================================================ */
+   426→  /*  APPLE (5 phones)                                                  */
+   427→  /* ================================================================ */
+   428→  {
+   429→    brand: 'Apple', modelName: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max',
+   430→    releaseDate: '2024-09-20', pricePKR: 555000, ptaStatus: 'PTA Approved',
+   431→    featured: true, trending: true, upcoming: false,
+   432→    description: 'Apple\'s largest and most capable iPhone with A18 Pro chip, 48MP triple camera system with 5x optical zoom, 6.9" ProMotion display, and titanium design.',
+   433→    cameraScore: 95, performanceScore: 93, batteryScore: 88, displayScore: 90, valueScore: 52, overallRating: 88,
+   434→    pros: 'Best-in-class video recording, excellent 5x telephoto, A18 Pro performance, longest battery life on any iPhone, titanium build',
+   435→    cons: 'Very expensive in Pakistan, iOS still lacks some customization, slow charging compared to Android flagships',
+   436→    reviewSummary: 'The iPhone 16 Pro Max is the ultimate iPhone with the best cameras, biggest battery, and largest display. The 5x tetraprism telephoto and A18 Pro make it a powerhouse for content creators.',
+   437→    reviewVerdict: 'Best iPhone for camera enthusiasts and power users who want maximum screen real estate and battery.',
+   438→    specs: {
+   439→      display: '6.9"', displayType: 'Super Retina XDR OLED (LTPO)', resolution: '2868 x 1320', refreshRate: '1-120Hz ProMotion',
+   440→      protection: 'Ceramic Shield', brightness: '2000 nits peak (HDR)',
+   441→      chipset: 'Apple A18 Pro', process: '3 nm',
+   442→      cpu: '2x Performance + 4x Efficiency cores',
+   443→      gpu: 'Apple GPU (6-core)', ram: '8 GB', ramType: 'LPDDR5X', storage: '256/512 GB / 1 TB', cardSlot: 'No',
+   444→      mainCamera: '48 MP, f/1.78, sensor-shift OIS', mainCameraSensor: 'Sony IMX803',
+   445→      ultrawide: '48 MP, f/2.2, 120°', telephoto: '12 MP, f/2.8, 5x optical zoom (tetraprism), OIS',
+   446→      zoom: 'Optical: 5x, Digital: up to 25x',
+   447→      cameraFeatures: 'Photographic Styles, Camera Control button, ProRAW, ProRes video, Spatial video',
+   448→      videoRecording: '4K@120fps, 1080p@240fps',
+   449→      selfieCamera: '12 MP, f/1.9, AF',
+   450→      battery: '4685 mAh', charging: '27W Wired (USB-C)', chargingSpeed: '27W', wirelessCharge: 'Yes', wirelessSpeed: '25W MagSafe',
+   451→      weight: '227 g', dimensions: '163.0 x 77.6 x 8.25 mm', build: 'Grade 5 Titanium frame, Ceramic Shield front',
+   452→      sim: 'Dual Nano-SIM (eSIM + Nano-SIM)', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   453→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C (USB 3.2 Gen 2)',
+   454→      fingerprint: 'No', faceUnlock: 'Yes (Face ID)',
+   455→      sensors: 'Accelerometer, Gyroscope, Proximity, Ambient Light, LiDAR, Barometer',
+   456→      colors: 'Desert Titanium, Natural Titanium, White Titanium, Black Titanium',
+   457→      os: 'iOS', osVersion: '18', osUI: 'iOS', updatePolicy: '5+ years of OS updates',
+   458→      specialFeatures: 'Action Button, Camera Control, Apple Intelligence',
+   459→    },
+   460→    benchmarks: { geekbenchSingle: 3500, geekbenchMulti: 8700, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   461→    prices: [
+   462→      { storeName: 'Daraz', price: 560000 },
+   463→      { storeName: 'PriceOye', price: 555000 },
+   464→      { storeName: 'Whatmobile', price: 548000 },
+   465→    ],
+   466→  },
+   467→  {
+   468→    brand: 'Apple', modelName: 'iPhone 16 Pro', slug: 'iphone-16-pro',
+   469→    releaseDate: '2024-09-20', pricePKR: 455000, ptaStatus: 'PTA Approved',
+   470→    featured: false, trending: true, upcoming: false,
+   471→    description: 'Pro-level iPhone with A18 Pro chip, 48MP triple camera with 3x telephoto, 6.3" ProMotion display, and titanium build.',
+   472→    cameraScore: 92, performanceScore: 93, batteryScore: 78, displayScore: 88, valueScore: 55, overallRating: 85,
+   473→    pros: 'Compact Pro body, A18 Pro chip, excellent 48MP cameras, ProMotion 120Hz display, titanium build',
+   474→    cons: 'Battery life is just adequate, expensive, 3x zoom instead of 5x on Pro Max',
+   475→    reviewSummary: 'The iPhone 16 Pro packs the A18 Pro and 48MP triple cameras into a compact 6.3" body. Great performance but battery life is not as impressive as the Pro Max.',
+   476→    reviewVerdict: 'Best compact flagship iPhone for users who want Pro cameras in a smaller form factor.',
+   477→    specs: {
+   478→      display: '6.3"', displayType: 'Super Retina XDR OLED (LTPO)', resolution: '2622 x 1206', refreshRate: '1-120Hz ProMotion',
+   479→      protection: 'Ceramic Shield', brightness: '2000 nits peak (HDR)',
+   480→      chipset: 'Apple A18 Pro', process: '3 nm',
+   481→      cpu: '2x Performance + 4x Efficiency cores',
+   482→      gpu: 'Apple GPU (6-core)', ram: '8 GB', ramType: 'LPDDR5X', storage: '128/256/512 GB / 1 TB', cardSlot: 'No',
+   483→      mainCamera: '48 MP, f/1.78, sensor-shift OIS', mainCameraSensor: 'Sony IMX803',
+   484→      ultrawide: '48 MP, f/2.2, 120°', telephoto: '12 MP, f/2.8, 3x optical zoom (tetraprism), OIS',
+   485→      zoom: 'Optical: 3x, Digital: up to 15x',
+   486→      selfieCamera: '12 MP, f/1.9, AF',
+   487→      battery: '3582 mAh', charging: '27W Wired (USB-C)', chargingSpeed: '27W', wirelessCharge: 'Yes', wirelessSpeed: '25W MagSafe',
+   488→      weight: '199 g', dimensions: '150.8 x 71.5 x 8.25 mm', build: 'Grade 5 Titanium frame, Ceramic Shield front',
+   489→      sim: 'Dual Nano-SIM (eSIM + Nano-SIM)', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   490→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C (USB 3.2 Gen 2)',
+   491→      fingerprint: 'No', faceUnlock: 'Yes (Face ID)',
+   492→      colors: 'Desert Titanium, Natural Titanium, White Titanium, Black Titanium',
+   493→      os: 'iOS', osVersion: '18', osUI: 'iOS', updatePolicy: '5+ years of OS updates',
+   494→      specialFeatures: 'Action Button, Camera Control, Apple Intelligence',
+   495→    },
+   496→    benchmarks: { geekbenchSingle: 3400, geekbenchMulti: 8400, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   497→    prices: [
+   498→      { storeName: 'Daraz', price: 460000 },
+   499→      { storeName: 'PriceOye', price: 455000 },
+   500→      { storeName: 'Whatmobile', price: 448000 },
+   501→    ],
+   502→  },
+   503→  {
+   504→    brand: 'Apple', modelName: 'iPhone 16', slug: 'iphone-16',
+   505→    releaseDate: '2024-09-20', pricePKR: 340000, ptaStatus: 'PTA Approved',
+   506→    featured: false, trending: true, upcoming: false,
+   507→    description: 'The standard iPhone 16 with A18 chip, 48MP dual camera, Action Button, Camera Control, and Apple Intelligence in a lightweight design.',
+   508→    cameraScore: 78, performanceScore: 85, batteryScore: 72, displayScore: 80, valueScore: 60, overallRating: 77,
+   509→    pros: 'A18 chip performance, Action Button, Camera Control, Apple Intelligence, lighter weight, good main camera',
+   510→    cons: 'Only 60Hz display, no telephoto lens, battery life is average, base storage is 128GB',
+   511→    reviewSummary: 'The iPhone 16 brings the A18 chip and new Camera Control to the standard model. The 60Hz display is the biggest compromise at this price point.',
+   512→    reviewVerdict: 'Good for iPhone upgraders who want latest features without paying Pro prices.',
+   513→    specs: {
+   514→      display: '6.1"', displayType: 'Super Retina XDR OLED', resolution: '2556 x 1179', refreshRate: '60Hz',
+   515→      protection: 'Ceramic Shield', brightness: '2000 nits peak (HDR)',
+   516→      chipset: 'Apple A18', process: '3 nm',
+   517→      cpu: '2x Performance + 4x Efficiency cores',
+   518→      gpu: 'Apple GPU (5-core)', ram: '8 GB', ramType: 'LPDDR5X', storage: '128/256/512 GB', cardSlot: 'No',
+   519→      mainCamera: '48 MP, f/1.6, sensor-shift OIS', mainCameraSensor: '',
+   520→      ultrawide: '12 MP, f/2.2, 120°', telephoto: '',
+   521→      selfieCamera: '12 MP, f/1.9, AF',
+   522→      battery: '3561 mAh', charging: '27W Wired (USB-C)', chargingSpeed: '27W', wirelessCharge: 'Yes', wirelessSpeed: '25W MagSafe',
+   523→      weight: '170 g', dimensions: '147.6 x 71.6 x 7.8 mm', build: 'Aluminum frame, Ceramic Shield front, Glass back',
+   524→      sim: 'Dual Nano-SIM (eSIM + Nano-SIM)', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   525→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C (USB 2)',
+   526→      fingerprint: 'No', faceUnlock: 'Yes (Face ID)',
+   527→      colors: 'Black, White, Pink, Teal, Ultramarine',
+   528→      os: 'iOS', osVersion: '18', osUI: 'iOS', updatePolicy: '5+ years of OS updates',
+   529→      specialFeatures: 'Action Button, Camera Control, Apple Intelligence',
+   530→    },
+   531→    benchmarks: { geekbenchSingle: 3300, geekbenchMulti: 7900, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '60 FPS (High)' },
+   532→    prices: [
+   533→      { storeName: 'Daraz', price: 345000 },
+   534→      { storeName: 'PriceOye', price: 340000 },
+   535→      { storeName: 'Whatmobile', price: 335000 },
+   536→    ],
+   537→  },
+   538→  {
+   539→    brand: 'Apple', modelName: 'iPhone 16 Plus', slug: 'iphone-16-plus',
+   540→    releaseDate: '2024-09-20', pricePKR: 385000, ptaStatus: 'PTA Approved',
+   541→    featured: false, trending: false, upcoming: false,
+   542→    description: 'Big-screen iPhone 16 with A18 chip, 48MP dual camera, 6.7" display, and excellent battery life in a larger form factor.',
+   543→    cameraScore: 78, performanceScore: 85, batteryScore: 86, displayScore: 82, valueScore: 58, overallRating: 78,
+   544→    pros: 'Large 6.7" display, excellent battery life, A18 chip, lighter than 16 Pro Max, Apple Intelligence',
+   545→    cons: 'Only 60Hz display, no telephoto, no ProMotion, no always-on display',
+   546→    reviewSummary: 'The iPhone 16 Plus is the battery king of the standard iPhone lineup, combining the big 6.7" screen with A18 chip performance and long battery life.',
+   547→    reviewVerdict: 'Best for users who want a big-screen iPhone with great battery life without paying Pro Max prices.',
+   548→    specs: {
+   549→      display: '6.7"', displayType: 'Super Retina XDR OLED', resolution: '2796 x 1290', refreshRate: '60Hz',
+   550→      protection: 'Ceramic Shield', brightness: '2000 nits peak (HDR)',
+   551→      chipset: 'Apple A18', process: '3 nm',
+   552→      cpu: '2x Performance + 4x Efficiency cores',
+   553→      gpu: 'Apple GPU (5-core)', ram: '8 GB', ramType: 'LPDDR5X', storage: '128/256/512 GB', cardSlot: 'No',
+   554→      mainCamera: '48 MP, f/1.6, sensor-shift OIS', mainCameraSensor: '',
+   555→      ultrawide: '12 MP, f/2.2, 120°', telephoto: '',
+   556→      selfieCamera: '12 MP, f/1.9, AF',
+   557→      battery: '4674 mAh', charging: '27W Wired (USB-C)', chargingSpeed: '27W', wirelessCharge: 'Yes', wirelessSpeed: '25W MagSafe',
+   558→      weight: '199 g', dimensions: '160.9 x 77.8 x 7.8 mm', build: 'Aluminum frame, Ceramic Shield front, Glass back',
+   559→      sim: 'Dual Nano-SIM (eSIM + Nano-SIM)', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   560→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C (USB 2)',
+   561→      fingerprint: 'No', faceUnlock: 'Yes (Face ID)',
+   562→      colors: 'Black, White, Pink, Teal, Ultramarine',
+   563→      os: 'iOS', osVersion: '18', osUI: 'iOS', updatePolicy: '5+ years of OS updates',
+   564→      specialFeatures: 'Action Button, Camera Control, Apple Intelligence',
+   565→    },
+   566→    benchmarks: { geekbenchSingle: 3350, geekbenchMulti: 8000, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '60 FPS (High)' },
+   567→    prices: [
+   568→      { storeName: 'Daraz', price: 390000 },
+   569→      { storeName: 'PriceOye', price: 385000 },
+   570→    ],
+   571→  },
+   572→  {
+   573→    brand: 'Apple', modelName: 'iPhone 15', slug: 'iphone-15',
+   574→    releaseDate: '2023-09-22', pricePKR: 285000, ptaStatus: 'PTA Approved',
+   575→    featured: false, trending: false, upcoming: false,
+   576→    description: 'Previous generation iPhone with A16 Bionic chip, 48MP dual camera, Dynamic Island, USB-C, and iOS 18 support.',
+   577→    cameraScore: 74, performanceScore: 78, batteryScore: 70, displayScore: 78, valueScore: 62, overallRating: 73,
+   578→    pros: 'USB-C finally, Dynamic Island, 48MP main camera, still gets iOS updates, A16 Bionic is capable',
+   579→    cons: 'Only 60Hz display, no telephoto, A16 is last-gen, 6GB RAM',
+   580→    reviewSummary: 'The iPhone 15 remains a solid option in Pakistan after price drops. The A16 Bionic, 48MP camera, and USB-C make it a worthwhile purchase over newer mid-range phones.',
+   581→    reviewVerdict: 'Good value iPhone for budget-conscious Apple buyers, especially at reduced prices.',
+   582→    specs: {
+   583→      display: '6.1"', displayType: 'Super Retina XDR OLED', resolution: '2556 x 1179', refreshRate: '60Hz',
+   584→      protection: 'Ceramic Shield', brightness: '2000 nits peak (HDR)',
+   585→      chipset: 'Apple A16 Bionic', process: '4 nm',
+   586→      cpu: '2x Performance + 4x Efficiency cores',
+   587→      gpu: 'Apple GPU (5-core)', ram: '6 GB', ramType: 'LPDDR5', storage: '128/256/512 GB', cardSlot: 'No',
+   588→      mainCamera: '48 MP, f/1.6, sensor-shift OIS', mainCameraSensor: '',
+   589→      ultrawide: '12 MP, f/2.4, 120°', telephoto: '',
+   590→      selfieCamera: '12 MP, f/1.9, AF',
+   591→      battery: '3349 mAh', charging: '27W Wired (USB-C)', chargingSpeed: '20W', wirelessCharge: 'Yes', wirelessSpeed: '15W MagSafe',
+   592→      weight: '171 g', dimensions: '147.6 x 71.6 x 7.8 mm', build: 'Aluminum frame, Ceramic Shield front, Color-infused glass back',
+   593→      sim: 'Dual Nano-SIM (eSIM + Nano-SIM)', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   594→      wifi: 'Wi-Fi 6 (802.11ax)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C (USB 2)',
+   595→      fingerprint: 'No', faceUnlock: 'Yes (Face ID)',
+   596→      colors: 'Black, Blue, Green, Yellow, Pink',
+   597→      os: 'iOS', osVersion: '18', osUI: 'iOS', updatePolicy: '5+ years of OS updates',
+   598→      specialFeatures: 'Dynamic Island, USB-C, Emergency SOS via satellite',
+   599→    },
+   600→    benchmarks: { geekbenchSingle: 2800, geekbenchMulti: 6900, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (Max)', genshinFps: '40-60 FPS (High)' },
+   601→    prices: [
+   602→      { storeName: 'Daraz', price: 290000 },
+   603→      { storeName: 'PriceOye', price: 285000 },
+   604→      { storeName: 'Whatmobile', price: 278000 },
+   605→    ],
+   606→  },
+   607→
+   608→  /* ================================================================ */
+   609→  /*  XIAOMI (5 phones)                                                */
+   610→  /* ================================================================ */
+   611→  {
+   612→    brand: 'Xiaomi', modelName: '14 Ultra', slug: 'xiaomi-14-ultra',
+   613→    releaseDate: '2024-03-01', pricePKR: 275000, ptaStatus: 'Non-PTA',
+   614→    featured: true, trending: false, upcoming: false,
+   615→    description: 'Xiaomi\'s photography flagship with Leica Summilux quad camera, 1-inch 50MP main sensor, Snapdragon 8 Gen 3, and 90W charging.',
+   616→    cameraScore: 96, performanceScore: 92, batteryScore: 82, displayScore: 90, valueScore: 62, overallRating: 87,
+   617→    pros: 'Best-in-class Leica camera system with 1-inch sensor, versatile periscope zooms, 90W+80W charging, premium ceramic build',
+   618→    cons: 'Very heavy at 227g, expensive for Xiaomi, limited availability in Pakistan',
+   619→    reviewSummary: 'The Xiaomi 14 Ultra is a photographer\'s dream phone with Leica-tuned quad cameras including a 1-inch main sensor and dual periscope telephotos. Performance is flagship-grade with Snapdragon 8 Gen 3.',
+   620→    reviewVerdict: 'Best camera phone for photography enthusiasts who want Leica color science and pro-grade flexibility.',
+   621→    specs: {
+   622→      display: '6.73"', displayType: 'LTPO AMOLED', resolution: '3200 x 1440 (2K)', refreshRate: '1-120Hz LTPO',
+   623→      protection: 'Gorilla Glass Victus 2', brightness: '3000 nits peak',
+   624→      chipset: 'Snapdragon 8 Gen 3', process: '4 nm',
+   625→      cpu: '1x 3.3 GHz Cortex-X4 + 3x 3.15 GHz + 2x 2.96 GHz + 4x 2.27 GHz',
+   626→      gpu: 'Adreno 750',
+   627→      ram: '16 GB', ramType: 'LPDDR5X', storage: '256/512 GB / 1 TB', cardSlot: 'No',
+   628→      mainCamera: '50 MP, f/1.63, variable aperture (f/1.63-f/4.0), OIS', mainCameraSensor: 'Sony LYT-900 (1-inch)',
+   629→      ultrawide: '50 MP, f/1.8, 122°', telephoto: '50 MP, f/1.8, 3.2x periscope, OIS + 50 MP, f/2.5, 5x periscope, OIS',
+   630→      zoom: 'Optical: 3.2x & 5x, Digital: up to 120x',
+   631→      cameraFeatures: 'Leica Summilux, Leica Authentic & Vibrant modes, 8K video, Dolby Vision',
+   632→      videoRecording: '8K@24fps, 4K@60fps, 1080p@960fps',
+   633→      selfieCamera: '32 MP, f/2.0',
+   634→      battery: '5000 mAh', charging: '90W Wired', chargingSpeed: '90W', wirelessCharge: 'Yes', wirelessSpeed: '80W',
+   635→      weight: '227 g', dimensions: '161.4 x 75.3 x 9.2 mm', build: 'Ceramic back, Aluminum frame',
+   636→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   637→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   638→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   639→      colors: 'Black, White',
+   640→      os: 'Android', osVersion: '14', osUI: 'HyperOS', updatePolicy: '4 OS updates, 5 years security',
+   641→      specialFeatures: 'Leica camera system, Professional photography mode',
+   642→    },
+   643→    benchmarks: { antutu: 2150000, geekbenchSingle: 2300, geekbenchMulti: 7400, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   644→    prices: [
+   645→      { storeName: 'Daraz', price: 280000 },
+   646→      { storeName: 'PriceOye', price: 275000 },
+   647→    ],
+   648→  },
+   649→  {
+   650→    brand: 'Xiaomi', modelName: '14', slug: 'xiaomi-14',
+   651→    releaseDate: '2024-03-01', pricePKR: 185000, ptaStatus: 'Non-PTA',
+   652→    featured: false, trending: false, upcoming: false,
+   653→    description: 'Compact flagship with Snapdragon 8 Gen 3, Leica triple camera with 50MP main, 6.36" 2K LTPO display, and 90W wired charging.',
+   654→    cameraScore: 88, performanceScore: 92, batteryScore: 76, displayScore: 88, valueScore: 72, overallRating: 84,
+   655→    pros: 'Compact 6.36" size, Snapdragon 8 Gen 3, Leica cameras, 90W+50W charging, IP68',
+   656→    cons: 'Battery life is just adequate, smaller screen may not suit everyone, limited global availability',
+   657→    reviewSummary: 'The Xiaomi 14 is a compact flagship powerhouse with Leica-tuned cameras, Snapdragon 8 Gen 3 performance, and fast charging in a pocketable form.',
+   658→    reviewVerdict: 'Best compact flagship for users who want top performance and Leica cameras in a small body.',
+   659→    specs: {
+   660→      display: '6.36"', displayType: 'LTPO AMOLED', resolution: '2670 x 1200 (1.5K)', refreshRate: '1-120Hz LTPO',
+   661→      protection: 'Gorilla Glass Victus', brightness: '3000 nits peak',
+   662→      chipset: 'Snapdragon 8 Gen 3', process: '4 nm',
+   663→      cpu: '1x 3.3 GHz Cortex-X4 + 3x 3.15 GHz + 2x 2.96 GHz + 4x 2.27 GHz',
+   664→      gpu: 'Adreno 750',
+   665→      ram: '12/16 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+   666→      mainCamera: '50 MP, f/1.6, OIS', mainCameraSensor: 'OmniVision OV50H / Light Hunter 900',
+   667→      ultrawide: '50 MP, f/2.2, 115°', telephoto: '50 MP, f/2.0, 3.2x floating telephoto, OIS',
+   668→      zoom: 'Optical: 3.2x, Digital: up to 60x',
+   669→      selfieCamera: '32 MP, f/2.0',
+   670→      battery: '4610 mAh', charging: '90W Wired', chargingSpeed: '90W', wirelessCharge: 'Yes', wirelessSpeed: '50W',
+   671→      weight: '193 g', dimensions: '152.8 x 71.5 x 8.2 mm', build: 'Glass back, Aluminum frame',
+   672→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   673→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   674→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   675→      colors: 'Black, White, Jade Green',
+   676→      os: 'Android', osVersion: '14', osUI: 'HyperOS', updatePolicy: '4 OS updates, 5 years security',
+   677→      specialFeatures: 'Leica optics, HyperOS',
+   678→    },
+   679→    benchmarks: { antutu: 2050000, geekbenchSingle: 2250, geekbenchMulti: 7200, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   680→    prices: [
+   681→      { storeName: 'Daraz', price: 190000 },
+   682→      { storeName: 'PriceOye', price: 185000 },
+   683→    ],
+   684→  },
+   685→  {
+   686→    brand: 'Xiaomi', modelName: 'Redmi Note 14 Pro+', slug: 'xiaomi-redmi-note-14-pro-plus',
+   687→    releaseDate: '2024-10-10', pricePKR: 78000, ptaStatus: 'Non-PTA',
+   688→    featured: false, trending: true, upcoming: false,
+   689→    description: 'Upper mid-range with 200MP main camera, Snapdragon 7s Gen 3, 6.67" 120Hz 3D curved AMOLED, massive 6200mAh battery with 90W charging, and IP68.',
+   690→    cameraScore: 80, performanceScore: 68, batteryScore: 92, displayScore: 83, valueScore: 82, overallRating: 79,
+   691→    pros: 'Massive 6200mAh battery, 200MP camera, IP68 water resistance, 90W charging, curved AMOLED display',
+   692→    cons: 'Snapdragon 7s Gen 3 is mid-range, heavy at 210g, thick body, HyperOS ads',
+   693→    reviewSummary: 'The Redmi Note 14 Pro+ offers incredible battery life with 6200mAh, a versatile 200MP camera, and IP68 rating - specs usually reserved for much more expensive phones.',
+   694→    reviewVerdict: 'Best mid-range phone for battery life enthusiasts who also want a capable camera.',
+   695→    specs: {
+   696→      display: '6.67"', displayType: 'AMOLED, 3D curved', resolution: '2712 x 1220 (1.5K)', refreshRate: '1-120Hz',
+   697→      protection: 'Corning Gorilla Glass Victus 2', brightness: '3000 nits peak',
+   698→      chipset: 'Snapdragon 7s Gen 3', process: '4 nm',
+   699→      ram: '8/12 GB', ramType: 'LPDDR5', storage: '256/512 GB', cardSlot: 'No',
+   700→      mainCamera: '200 MP, f/1.65, OIS', mainCameraSensor: 'Samsung ISOCELL HP3',
+   701→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '',
+   702→      selfieCamera: '20 MP, f/2.2',
+   703→      battery: '6200 mAh', charging: '90W Wired', chargingSpeed: '90W',
+   704→      weight: '210 g', dimensions: '162.3 x 74.6 x 8.66 mm', build: 'Glass back, Plastic frame',
+   705→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   706→      wifi: 'Wi-Fi 5', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   707→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   708→      colors: 'Purple, Green, White, Black',
+   709→      os: 'Android', osVersion: '14', osUI: 'HyperOS', updatePolicy: '3 OS updates, 4 years security',
+   710→      specialFeatures: '',
+   711→    },
+   712→    benchmarks: { antutu: 850000, geekbenchSingle: 1150, geekbenchMulti: 3500, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (High)', genshinFps: '30-45 FPS (Medium)' },
+   713→    prices: [
+   714→      { storeName: 'Daraz', price: 80000 },
+   715→      { storeName: 'PriceOye', price: 78000 },
+   716→      { storeName: 'Whatmobile', price: 76000 },
+   717→    ],
+   718→  },
+   719→  {
+   720→    brand: 'Xiaomi', modelName: 'Redmi Note 14 Pro', slug: 'xiaomi-redmi-note-14-pro',
+   721→    releaseDate: '2024-10-10', pricePKR: 60000, ptaStatus: 'Non-PTA',
+   722→    featured: false, trending: true, upcoming: false,
+   723→    description: 'Mid-range value king with 50MP Sony IMX882 main camera, MediaTek Dimensity 7300-Ultra, 1.5K 120Hz AMOLED, IP68, and 45W charging.',
+   724→    cameraScore: 74, performanceScore: 62, batteryScore: 84, displayScore: 80, valueScore: 90, overallRating: 76,
+   725→    pros: 'IP68 at this price, excellent 1.5K AMOLED display, good 50MP Sony camera, clean design',
+   726→    cons: 'Dimensity 7300-Ultra is lower mid-range, only 45W charging, no charger in box (varies by market)',
+   727→    reviewSummary: 'The Redmi Note 14 Pro is one of the best value phones in Pakistan, offering IP68 water resistance, a bright 1.5K AMOLED display, and capable 50MP camera at an affordable price.',
+   728→    reviewVerdict: 'Best value mid-range phone with flagship-level features like IP68.',
+   729→    specs: {
+   730→      display: '6.67"', displayType: 'AMOLED, 3D curved', resolution: '2712 x 1220 (1.5K)', refreshRate: '1-120Hz',
+   731→      protection: 'Corning Gorilla Glass Victus 2', brightness: '3000 nits peak',
+   732→      chipset: 'MediaTek Dimensity 7300-Ultra', process: '4 nm',
+   733→      ram: '8/12 GB', ramType: 'LPDDR5', storage: '128/256/512 GB', cardSlot: 'MicroSD up to 2 TB',
+   734→      mainCamera: '50 MP, f/1.6, OIS', mainCameraSensor: 'Sony IMX882',
+   735→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '',
+   736→      selfieCamera: '20 MP, f/2.2',
+   737→      battery: '5110 mAh', charging: '45W Wired', chargingSpeed: '45W',
+   738→      weight: '190 g', dimensions: '160.3 x 74.2 x 7.8 mm', build: 'Glass back, Plastic frame',
+   739→      sim: 'Dual Nano-SIM', ipRating: 'IP68', fiveG: 'Yes (Sub-6 GHz)',
+   740→      wifi: 'Wi-Fi 5', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   741→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   742→      colors: 'Purple, Green, White, Black',
+   743→      os: 'Android', osVersion: '14', osUI: 'HyperOS', updatePolicy: '3 OS updates, 4 years security',
+   744→      specialFeatures: '',
+   745→    },
+   746→    benchmarks: { antutu: 650000, geekbenchSingle: 1050, geekbenchMulti: 3200, pubgFps: '60 FPS (HD)', codMobileFps: '60 FPS (Medium)', genshinFps: '30 FPS (Medium)' },
+   747→    prices: [
+   748→      { storeName: 'Daraz', price: 62000 },
+   749→      { storeName: 'PriceOye', price: 60000 },
+   750→      { storeName: 'Whatmobile', price: 58000 },
+   751→    ],
+   752→  },
+   753→  {
+   754→    brand: 'Xiaomi', modelName: 'Redmi Note 13', slug: 'xiaomi-redmi-note-13',
+   755→    releaseDate: '2024-01-15', pricePKR: 42000, ptaStatus: 'Non-PTA',
+   756→    featured: false, trending: false, upcoming: false,
+   757→    description: 'Budget mid-ranger with 108MP main camera, Helio G91 Ultra, 6.67" 120Hz AMOLED display, and 5030mAh battery.',
+   758→    cameraScore: 66, performanceScore: 48, batteryScore: 80, displayScore: 74, valueScore: 88, overallRating: 70,
+   759→    pros: 'AMOLED display at budget price, 108MP camera, 5000+ mAh battery, glass back design',
+   760→    cons: 'Helio G91 Ultra is entry-level, 33W charging is slow, no 5G',
+   761→    reviewSummary: 'The Redmi Note 13 is a solid budget option with a nice AMOLED display and 108MP camera. Performance is basic but adequate for everyday tasks.',
+   762→    reviewVerdict: 'Best budget AMOLED phone for casual users who prioritize display and camera over performance.',
+   763→    specs: {
+   764→      display: '6.67"', displayType: 'AMOLED', resolution: '2400 x 1080 (Full HD+)', refreshRate: '120Hz',
+   765→      protection: 'Gorilla Glass Victus', brightness: '1000 nits peak',
+   766→      chipset: 'MediaTek Helio G91 Ultra', process: '12 nm',
+   767→      ram: '6/8 GB', ramType: '', storage: '128/256 GB', cardSlot: 'MicroSD up to 1 TB',
+   768→      mainCamera: '108 MP, f/1.7', mainCameraSensor: '',
+   769→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '',
+   770→      selfieCamera: '16 MP, f/2.4',
+   771→      battery: '5030 mAh', charging: '33W Wired', chargingSpeed: '33W',
+   772→      weight: '187 g', dimensions: '161.1 x 75.0 x 7.6 mm', build: 'Glass back, Plastic frame',
+   773→      sim: 'Dual Nano-SIM', ipRating: 'IP54', fiveG: 'No',
+   774→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'No', usb: 'USB Type-C 2.0',
+   775→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+   776→      colors: 'Midnight Black, Mint Green, Ocean Teal, Ice Blue',
+   777→      os: 'Android', osVersion: '13', osUI: 'MIUI 14', updatePolicy: '2 OS updates',
+   778→      specialFeatures: '',
+   779→    },
+   780→    benchmarks: { antutu: 350000, geekbenchSingle: 650, geekbenchMulti: 1900, pubgFps: '40 FPS (HD)', codMobileFps: '40 FPS (Medium)', genshinFps: '20-30 FPS (Low)' },
+   781→    prices: [
+   782→      { storeName: 'Daraz', price: 43500 },
+   783→      { storeName: 'PriceOye', price: 42000 },
+   784→      { storeName: 'Whatmobile', price: 41000 },
+   785→    ],
+   786→  },
+   787→
+   788→  /* ================================================================ */
+   789→  /*  ONEPLUS (3 phones)                                               */
+   790→  /* ================================================================ */
+   791→  {
+   792→    brand: 'OnePlus', modelName: '13', slug: 'oneplus-13',
+   793→    releaseDate: '2025-01-07', pricePKR: 275000, ptaStatus: 'Non-PTA',
+   794→    featured: true, trending: true, upcoming: false,
+   795→    description: 'OnePlus 2025 flagship with Snapdragon 8 Elite, 6000mAh battery, 100W+50W charging, 6.82" 2K LTPO display, and Hasselblad cameras.',
+   796→    cameraScore: 88, performanceScore: 95, batteryScore: 94, displayScore: 93, valueScore: 65, overallRating: 89,
+   797→    pros: 'Massive 6000mAh battery, Snapdragon 8 Elite, 100W wired + 50W wireless, excellent 2K display, IP68+IP69, alert slider',
+   798→    cons: 'No telephoto beyond 3x, camera not quite at S25 Ultra/Xiaomi 14 Ultra level, heavy',
+   799→    reviewSummary: 'The OnePlus 13 is a near-perfect flagship with incredible battery life, top-tier Snapdragon 8 Elite performance, and ultra-fast charging. One of the best Android phones of 2025.',
+   800→    reviewVerdict: 'Best all-rounder flagship of 2025 with unmatched battery life and charging speed.',
+   801→    specs: {
+   802→      display: '6.82"', displayType: 'LTPO AMOLED (Haitian)', resolution: '3168 x 1440 (2K)', refreshRate: '1-120Hz LTPO',
+   803→      protection: 'Gorilla Glass Victus 2', brightness: '4500 nits peak',
+   804→      chipset: 'Snapdragon 8 Elite', process: '3 nm',
+   805→      cpu: '2x 4.32 GHz Oryon + 6x 3.53 GHz Oryon',
+   806→      gpu: 'Adreno 830',
+   807→      ram: '12/16/24 GB', ramType: 'LPDDR5X', storage: '256/512 GB / 1 TB', cardSlot: 'No',
+   808→      mainCamera: '50 MP, f/1.6, OIS', mainCameraSensor: 'Sony LYT-700',
+   809→      ultrawide: '50 MP, f/2.2, 120°', telephoto: '50 MP, f/2.6, 3x periscope, OIS',
+   810→      zoom: 'Optical: 3x, Digital: up to 120x',
+   811→      cameraFeatures: 'Hasselblad Camera for Mobile, Hasselblad Natural & Vibrant',
+   812→      videoRecording: '8K@30fps, 4K@120fps, Dolby Vision',
+   813→      selfieCamera: '32 MP, f/2.4',
+   814→      battery: '6000 mAh', charging: '100W Wired', chargingSpeed: '100W', wirelessCharge: 'Yes', wirelessSpeed: '50W',
+   815→      reverseCharge: 'Yes',
+   816→      weight: '213 g', dimensions: '162.9 x 76.5 x 8.5 mm', build: 'Glass back, Aluminum frame',
+   817→      sim: 'Dual Nano-SIM', ipRating: 'IP68 / IP69', fiveG: 'Yes (Sub-6 GHz)',
+   818→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   819→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   820→      colors: 'Lunar Dusk, Nebula Green, Black',
+   821→      os: 'Android', osVersion: '15', osUI: 'OxygenOS 15', updatePolicy: '4 OS updates, 6 years security',
+   822→      specialFeatures: 'Alert Slider, 100W SUPERVOOC, Aqua Touch',
+   823→    },
+   824→    benchmarks: { antutu: 2650000, geekbenchSingle: 3100, geekbenchMulti: 10200, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   825→    prices: [
+   826→      { storeName: 'Daraz', price: 280000 },
+   827→      { storeName: 'PriceOye', price: 275000 },
+   828→      { storeName: 'Whatmobile', price: 270000 },
+   829→    ],
+   830→  },
+   831→  {
+   832→    brand: 'OnePlus', modelName: '13R', slug: 'oneplus-13r',
+   833→    releaseDate: '2025-01-07', pricePKR: 180000, ptaStatus: 'Non-PTA',
+   834→    featured: false, trending: true, upcoming: false,
+   835→    description: 'Sub-flagship with Snapdragon 8 Gen 3, 6000mAh battery, 80W SUPERVOOC charging, and 6.78" 1.5K AMOLED display.',
+   836→    cameraScore: 76, performanceScore: 86, batteryScore: 92, displayScore: 84, valueScore: 78, overallRating: 83,
+   837→    pros: '6000mAh battery, Snapdragon 8 Gen 3 performance, 80W fast charging, good display, clean OxygenOS',
+   838→    cons: 'Camera system is basic, no wireless charging, only IP65',
+   839→    reviewSummary: 'The OnePlus 13R brings last-gen flagship performance (Snapdragon 8 Gen 3) with a massive 6000mAh battery at a more accessible price than the OnePlus 13.',
+   840→    reviewVerdict: 'Best value OnePlus phone for users who want flagship performance and incredible battery life.',
+   841→    specs: {
+   842→      display: '6.78"', displayType: 'LTPO AMOLED', resolution: '2780 x 1264 (1.5K)', refreshRate: '1-120Hz LTPO',
+   843→      protection: 'Gorilla Glass Victus 2', brightness: '',
+   844→      chipset: 'Snapdragon 8 Gen 3', process: '4 nm',
+   845→      ram: '12/16 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+   846→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: 'Sony LYT-700',
+   847→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '50 MP, f/2.0, 2x telephoto',
+   848→      selfieCamera: '16 MP, f/2.4',
+   849→      battery: '6000 mAh', charging: '80W Wired', chargingSpeed: '80W',
+   850→      weight: '207 g', dimensions: '161.7 x 75.8 x 8.1 mm', build: 'Glass back, Plastic frame',
+   851→      sim: 'Dual Nano-SIM', ipRating: 'IP65', fiveG: 'Yes (Sub-6 GHz)',
+   852→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   853→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   854→      colors: 'Astral Trail, Nebula Green',
+   855→      os: 'Android', osVersion: '15', osUI: 'OxygenOS 15', updatePolicy: '3 OS updates, 4 years security',
+   856→      specialFeatures: 'Alert Slider',
+   857→    },
+   858→    benchmarks: { antutu: 2100000, geekbenchSingle: 2250, geekbenchMulti: 7300, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   859→    prices: [
+   860→      { storeName: 'Daraz', price: 185000 },
+   861→      { storeName: 'PriceOye', price: 180000 },
+   862→    ],
+   863→  },
+   864→  {
+   865→    brand: 'OnePlus', modelName: 'Nord 4', slug: 'oneplus-nord-4',
+   866→    releaseDate: '2024-08-01', pricePKR: 105000, ptaStatus: 'Non-PTA',
+   867→    featured: false, trending: true, upcoming: false,
+   868→    description: 'Upper mid-range with unique full-metal unibody, Snapdragon 7+ Gen 3, 6.74" 120Hz AMOLED, 5500mAh battery, and 100W charging.',
+   869→    cameraScore: 72, performanceScore: 78, batteryScore: 90, displayScore: 82, valueScore: 80, overallRating: 80,
+   870→    pros: 'Premium metal unibody design, excellent Snapdragon 7+ Gen 3, 100W SUPERVOOC, 5500mAh battery, 6 years updates',
+   871→    cons: 'No telephoto camera, camera system is basic, no wireless charging, only IP65',
+   872→    reviewSummary: 'The OnePlus Nord 4 stands out with its unique full-metal unibody design and delivers flagship-level performance with Snapdragon 7+ Gen 3, excellent battery, and ultra-fast charging.',
+   873→    reviewVerdict: 'Best mid-range phone with premium build quality and top-tier performance in its segment.',
+   874→    specs: {
+   875→      display: '6.74"', displayType: 'LTPO AMOLED', resolution: '2772 x 1240 (1.5K)', refreshRate: '1-120Hz LTPO',
+   876→      protection: 'Gorilla Glass Victus+', brightness: '2150 nits peak',
+   877→      chipset: 'Snapdragon 7+ Gen 3', process: '4 nm',
+   878→      cpu: '1x 3.0 GHz Cortex-A715 + 3x 2.8 GHz + 4x 2.2 GHz',
+   879→      gpu: 'Adreno 732',
+   880→      ram: '8/12/16 GB', ramType: 'LPDDR5X', storage: '128/256/512 GB', cardSlot: 'No',
+   881→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: 'Sony LYT-600',
+   882→      ultrawide: '8 MP, f/2.2, 120°', telephoto: '',
+   883→      selfieCamera: '16 MP, f/2.4',
+   884→      battery: '5500 mAh', charging: '100W Wired', chargingSpeed: '100W SUPERVOOC',
+   885→      weight: '199 g', dimensions: '162.6 x 75.2 x 8.0 mm', build: 'Full-metal unibody',
+   886→      sim: 'Dual Nano-SIM', ipRating: 'IP65', fiveG: 'Yes (Sub-6 GHz)',
+   887→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   888→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   889→      colors: 'Mercurial Silver, Oasis Green, Obsidian Midnight',
+   890→      os: 'Android', osVersion: '14', osUI: 'OxygenOS 14', updatePolicy: '4 OS updates, 6 years security',
+   891→      specialFeatures: 'Alert Slider, Full-metal unibody, 100W SUPERVOOC, AI features',
+   892→    },
+   893→    benchmarks: { antutu: 1400000, geekbenchSingle: 1900, geekbenchMulti: 5500, pubgFps: '90 FPS (Ultra HD)', codMobileFps: '90 FPS (Max)', genshinFps: '45-60 FPS (High)' },
+   894→    prices: [
+   895→      { storeName: 'Daraz', price: 108000 },
+   896→      { storeName: 'PriceOye', price: 105000 },
+   897→      { storeName: 'Whatmobile', price: 102000 },
+   898→    ],
+   899→  },
+   900→
+   901→  /* ================================================================ */
+   902→  /*  VIVO (2 phones)                                                  */
+   903→  /* ================================================================ */
+   904→  {
+   905→    brand: 'Vivo', modelName: 'X200 Pro', slug: 'vivo-x200-pro',
+   906→    releaseDate: '2024-11-01', pricePKR: 320000, ptaStatus: 'Non-PTA',
+   907→    featured: true, trending: false, upcoming: false,
+   908→    description: 'Vivo\'s camera flagship with Zeiss optics, 200MP 3.7x periscope telephoto, Dimensity 9400, 5800mAh battery, and IP69 rating.',
+   909→    cameraScore: 95, performanceScore: 93, batteryScore: 88, displayScore: 90, valueScore: 58, overallRating: 88,
+   910→    pros: 'Incredible 200MP periscope telephoto, Zeiss APO optics, Dimensity 9400 performance, 5800mAh battery, IP69',
+   911→    cons: 'Very expensive for a Dimensity phone, Funtouch OS has bloatware, limited Pakistan availability',
+   912→    reviewSummary: 'The Vivo X200 Pro is one of the best camera phones of 2024 with a stunning 200MP periscope telephoto co-developed with Zeiss. The Dimensity 9400 delivers flagship performance with excellent battery efficiency.',
+   913→    reviewVerdict: 'Top camera phone for telephoto photography enthusiasts and mobile photographers.',
+   914→    specs: {
+   915→      display: '6.78"', displayType: 'LTPO AMOLED', resolution: '2800 x 1260 (1.5K)', refreshRate: '1-120Hz LTPO',
+   916→      protection: 'Gorilla Glass Victus 2', brightness: '4500 nits peak',
+   917→      chipset: 'MediaTek Dimensity 9400', process: '3 nm',
+   918→      cpu: '1x 3.63 GHz Cortex-X925 + 3x 3.3 GHz + 4x 2.4 GHz',
+   919→      gpu: 'Immortalis-G925',
+   920→      ram: '16 GB', ramType: 'LPDDR5X', storage: '256/512 GB / 1 TB', cardSlot: 'No',
+   921→      mainCamera: '50 MP, f/1.57, OIS', mainCameraSensor: 'Sony LYT-818',
+   922→      ultrawide: '50 MP, f/2.0, 119°', telephoto: '200 MP, f/2.67, 3.7x periscope, OIS',
+   923→      zoom: 'Optical: 3.7x, Digital: up to 100x',
+   924→      cameraFeatures: 'Zeiss APO Telephoto, Zeiss T* Coating, Zeiss Natural & Vivid',
+   925→      videoRecording: '8K@30fps, 4K@120fps, Dolby Vision, Log video',
+   926→      selfieCamera: '50 MP, f/2.0',
+   927→      battery: '5800 mAh', charging: '90W Wired', chargingSpeed: '90W', wirelessCharge: 'Yes', wirelessSpeed: '30W',
+   928→      weight: '221 g', dimensions: '162.4 x 75.5 x 8.5 mm', build: 'Glass back, Titanium frame',
+   929→      sim: 'Dual Nano-SIM', ipRating: 'IP69', fiveG: 'Yes (Sub-6 GHz)',
+   930→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+   931→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+   932→      colors: 'Titanium Green, Black, White',
+   933→      os: 'Android', osVersion: '15', osUI: 'Funtouch OS 15', updatePolicy: '4 OS updates',
+   934→      specialFeatures: 'Zeiss APO periscope, BlueLM on-device AI',
+   935→    },
+   936→    benchmarks: { antutu: 2500000, geekbenchSingle: 2800, geekbenchMulti: 8200, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+   937→    prices: [
+   938→      { storeName: 'Daraz', price: 325000 },
+   939→      { storeName: 'PriceOye', price: 320000 },
+   940→    ],
+   941→  },
+   942→  {
+   943→    brand: 'Vivo', modelName: 'V40', slug: 'vivo-v40',
+   944→    releaseDate: '2024-08-01', pricePKR: 120000, ptaStatus: 'Non-PTA',
+   945→    featured: false, trending: false, upcoming: false,
+   946→    description: 'Mid-range camera phone with Zeiss optics, 50MP main + 50MP ultrawide cameras, Snapdragon 7 Gen 3, 5500mAh battery, and 80W charging.',
+   947→    cameraScore: 80, performanceScore: 68, batteryScore: 86, displayScore: 80, valueScore: 72, overallRating: 77,
+   948→    pros: 'Zeiss-tuned dual 50MP cameras, slim and lightweight design, 5500mAh battery, 80W charging',
+   949→    cons: 'Snapdragon 7 Gen 3 is mid-range, no telephoto, Funtouch OS bloatware',
+   950→    reviewSummary: 'The Vivo V40 focuses on camera quality with Zeiss-optimized 50MP dual cameras in a sleek design. The 5500mAh battery provides excellent endurance.',
+   951→    reviewVerdict: 'Best mid-range camera phone for portrait and photography enthusiasts.',
+   952→    specs: {
+   953→      display: '6.78"', displayType: 'AMOLED', resolution: '2800 x 1260 (1.5K)', refreshRate: '120Hz',
+   954→      protection: '', brightness: '4500 nits peak',
+   955→      chipset: 'Snapdragon 7 Gen 3', process: '4 nm',
+   956→      ram: '8/12 GB', ramType: 'LPDDR5', storage: '256/512 GB', cardSlot: 'No',
+   957→      mainCamera: '50 MP, f/1.88, OIS', mainCameraSensor: 'Sony IMX921',
+   958→      ultrawide: '50 MP, f/2.0, 119°', telephoto: '',
+   959→      cameraFeatures: 'Zeiss Optics, Zeiss Portrait, Zeiss Color Science',
+   960→      selfieCamera: '50 MP, f/2.0',
+   961→      battery: '5500 mAh', charging: '80W Wired', chargingSpeed: '80W',
+   962→      weight: '183 g', dimensions: '164.2 x 75.1 x 7.5 mm', build: 'Glass back, Plastic frame',
+   963→      sim: 'Dual Nano-SIM', ipRating: 'IP64', fiveG: 'Yes (Sub-6 GHz)',
+   964→      wifi: 'Wi-Fi 6', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+   965→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+   966→      colors: 'Royal Bronze, Blue, Black',
+   967→      os: 'Android', osVersion: '14', osUI: 'Funtouch OS 14', updatePolicy: '3 OS updates',
+   968→      specialFeatures: 'Zeiss camera, Slim design',
+   969→    },
+   970→    benchmarks: { antutu: 870000, geekbenchSingle: 1150, geekbenchMulti: 3500, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (High)', genshinFps: '30-45 FPS (Medium)' },
+   971→    prices: [
+   972→      { storeName: 'Daraz', price: 125000 },
+   973→      { storeName: 'PriceOye', price: 120000 },
+   974→      { storeName: 'Whatmobile', price: 118000 },
+   975→    ],
+   976→  },
+   977→
+   978→  /* ================================================================ */
+   979→  /*  OPPO (2 phones)                                                  */
+   980→  /* ================================================================ */
+   981→  {
+   982→    brand: 'Oppo', modelName: 'Find X8 Pro', slug: 'oppo-find-x8-pro',
+   983→    releaseDate: '2024-11-01', pricePKR: 345000, ptaStatus: 'Non-PTA',
+   984→    featured: false, trending: false, upcoming: false,
+   985→    description: 'Oppo\'s flagship with Dimensity 9400, Hasselblad quad camera with dual periscope telephotos, 5910mAh battery, 80W+50W charging, and IP69.',
+   986→    cameraScore: 94, performanceScore: 93, batteryScore: 90, displayScore: 90, valueScore: 55, overallRating: 87,
+   987→    pros: 'Dual periscope telephoto system (3x & 6x), Hasselblad tuning, massive 5910mAh battery, IP69, great build quality',
+   988→    cons: 'Very expensive in Pakistan, ColorOS has bloatware, Dimensity 9400 instead of Snapdragon',
+   989→    reviewSummary: 'The Oppo Find X8 Pro offers one of the most versatile camera systems with dual periscope telephotos and Hasselblad color science. Battery life is outstanding thanks to the 5910mAh cell.',
+   990→    reviewVerdict: 'Top-tier camera phone for photography enthusiasts who want maximum zoom versatility.',
+   991→    specs: {
+   992→      display: '6.78"', displayType: 'LTPO AMOLED', resolution: '2776 x 1280 (1.5K)', refreshRate: '1-120Hz LTPO',
+   993→      protection: 'Gorilla Glass Victus 2', brightness: '4500 nits peak',
+   994→      chipset: 'MediaTek Dimensity 9400', process: '3 nm',
+   995→      ram: '16 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+   996→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: 'Sony LYT-818',
+   997→      ultrawide: '50 MP, f/2.2, 119°', telephoto: '50 MP, f/2.6, 3x telephoto, OIS + 50 MP, f/4.3, 6x periscope, OIS',
+   998→      zoom: 'Optical: 3x & 6x, Digital: up to 120x',
+   999→      cameraFeatures: 'Hasselblad Master Camera, Hasselblad Natural Solution, 4K Dolby Vision',
+  1000→      videoRecording: '4K@120fps, Dolby Vision, Log video',
+  1001→      selfieCamera: '32 MP, f/2.0',
+  1002→      battery: '5910 mAh', charging: '80W Wired', chargingSpeed: '80W SUPERVOOC', wirelessCharge: 'Yes', wirelessSpeed: '50W AIRVOOC',
+  1003→      weight: '215 g', dimensions: '162.3 x 76.1 x 8.2 mm', build: 'Glass back, Aluminum frame',
+  1004→      sim: 'Dual Nano-SIM', ipRating: 'IP68 / IP69', fiveG: 'Yes (Sub-6 GHz)',
+  1005→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+  1006→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+  1007→      colors: 'Pearl White, Space Black, Breathing Blue',
+  1008→      os: 'Android', osVersion: '15', osUI: 'ColorOS 15', updatePolicy: '4 OS updates',
+  1009→      specialFeatures: 'Hasselblad camera, AI features',
+  1010→    },
+  1011→    benchmarks: { antutu: 2480000, geekbenchSingle: 2780, geekbenchMulti: 8100, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+  1012→    prices: [
+  1013→      { storeName: 'Daraz', price: 350000 },
+  1014→      { storeName: 'PriceOye', price: 345000 },
+  1015→    ],
+  1016→  },
+  1017→  {
+  1018→    brand: 'Oppo', modelName: 'Reno 13 Pro', slug: 'oppo-reno-13-pro',
+  1019→    releaseDate: '2025-02-20', pricePKR: 152000, ptaStatus: 'Non-PTA',
+  1020→    featured: false, trending: false, upcoming: false,
+  1021→    description: 'Upper mid-range with Dimensity 8350, 50MP main camera with telephoto, 6.78" 120Hz AMOLED, 5800mAh battery, and 80W charging.',
+  1022→    cameraScore: 78, performanceScore: 72, batteryScore: 88, displayScore: 82, valueScore: 68, overallRating: 77,
+  1023→    pros: 'Dedicated telephoto lens, 5800mAh battery, IP65 water resistance, good design',
+  1024→    cons: 'Dimensity 8350 is mid-range, ColorOS bloatware, expensive for the chipset',
+  1025→    reviewSummary: 'The Oppo Reno 13 Pro offers a complete camera system including a telephoto lens, excellent battery life, and a nice AMOLED display in a slim, stylish body.',
+  1026→    reviewVerdict: 'Good mid-range camera phone for users who want telephoto capability without flagship pricing.',
+  1027→    specs: {
+  1028→      display: '6.78"', displayType: 'AMOLED', resolution: '2776 x 1280 (1.5K)', refreshRate: '120Hz',
+  1029→      protection: '', brightness: '',
+  1030→      chipset: 'MediaTek Dimensity 8350', process: '4 nm',
+  1031→      ram: '12 GB', ramType: 'LPDDR5', storage: '256/512 GB', cardSlot: 'No',
+  1032→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: '',
+  1033→      ultrawide: '8 MP, f/2.2', telephoto: '50 MP, f/2.0, 3.2x telephoto',
+  1034→      selfieCamera: '50 MP, f/2.0',
+  1035→      battery: '5800 mAh', charging: '80W Wired', chargingSpeed: '80W SUPERVOOC',
+  1036→      weight: '', dimensions: '', build: '',
+  1037→      sim: 'Dual Nano-SIM', ipRating: 'IP65', fiveG: 'Yes (Sub-6 GHz)',
+  1038→      wifi: 'Wi-Fi 6', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 2.0',
+  1039→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+  1040→      colors: 'Luminous Blue, Plume Purple, Black',
+  1041→      os: 'Android', osVersion: '15', osUI: 'ColorOS 15', updatePolicy: '',
+  1042→      specialFeatures: 'AI features, AI Photo Enhancement',
+  1043→    },
+  1044→    benchmarks: { antutu: 1300000, geekbenchSingle: 1700, geekbenchMulti: 4900 },
+  1045→    prices: [
+  1046→      { storeName: 'Daraz', price: 155000 },
+  1047→      { storeName: 'PriceOye', price: 152000 },
+  1048→    ],
+  1049→  },
+  1050→
+  1051→  /* ================================================================ */
+  1052→  /*  REALME (4 phones)                                                */
+  1053→  /* ================================================================ */
+  1054→  {
+  1055→    brand: 'Realme', modelName: 'GT 7 Pro', slug: 'realme-gt-7-pro',
+  1056→    releaseDate: '2024-12-01', pricePKR: 240000, ptaStatus: 'Non-PTA',
+  1057→    featured: false, trending: true, upcoming: false,
+  1058→    description: 'Performance flagship with Snapdragon 8 Elite, 6500mAh massive battery, 120W charging, Samsung 2K AMOLED display, and 50MP periscope camera.',
+  1059→    cameraScore: 80, performanceScore: 94, batteryScore: 95, displayScore: 90, valueScore: 72, overallRating: 87,
+  1060→    pros: 'Snapdragon 8 Elite at a lower price, 6500mAh battery is massive, 120W charging, excellent 2K Samsung AMOLED',
+  1061→    cons: 'Camera system is not flagship-tier, no wireless charging, Realme UI has bloatware',
+  1062→    reviewSummary: 'The Realme GT 7 Pro offers Snapdragon 8 Elite performance with an industry-leading 6500mAh battery and 120W charging. The best value flagship for performance seekers.',
+  1063→    reviewVerdict: 'Best value Snapdragon 8 Elite phone with unmatched battery life and charging.',
+  1064→    specs: {
+  1065→      display: '6.78"', displayType: 'Samsung AMOLED (E7 LTPO)', resolution: '2780 x 1264 (1.5K)', refreshRate: '1-120Hz LTPO',
+  1066→      protection: 'Gorilla Glass Victus 2', brightness: '6000 nits peak',
+  1067→      chipset: 'Snapdragon 8 Elite', process: '3 nm',
+  1068→      cpu: '2x 4.32 GHz Oryon + 6x 3.53 GHz Oryon',
+  1069→      gpu: 'Adreno 830',
+  1070→      ram: '12/16 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+  1071→      mainCamera: '50 MP, f/1.8, OIS', mainCameraSensor: 'Sony IMX882',
+  1072→      ultrawide: '8 MP, f/2.2, 112°', telephoto: '50 MP, f/2.6, 3x periscope, OIS',
+  1073→      zoom: 'Optical: 3x, Digital: up to 120x',
+  1074→      selfieCamera: '16 MP, f/2.4',
+  1075→      battery: '6500 mAh', charging: '120W Wired', chargingSpeed: '120W SUPERVOOC',
+  1076→      weight: '223 g', dimensions: '162.3 x 76.1 x 8.6 mm', build: 'Glass/Silicone leather back, Aluminum frame',
+  1077→      sim: 'Dual Nano-SIM', ipRating: 'IP68 / IP69', fiveG: 'Yes (Sub-6 GHz)',
+  1078→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+  1079→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+  1080→      colors: 'Moon White, Mars Orange, Green',
+  1081→      os: 'Android', osVersion: '15', osUI: 'Realme UI 6', updatePolicy: '3 OS updates, 4 years security',
+  1082→      specialFeatures: '120W SUPERVOOC, GT Mode, Gaming features',
+  1083→    },
+  1084→    benchmarks: { antutu: 2600000, geekbenchSingle: 3050, geekbenchMulti: 10000, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+  1085→    prices: [
+  1086→      { storeName: 'Daraz', price: 245000 },
+  1087→      { storeName: 'PriceOye', price: 240000 },
+  1088→    ],
+  1089→  },
+  1090→  {
+  1091→    brand: 'Realme', modelName: '13+', slug: 'realme-13-plus',
+  1092→    releaseDate: '2024-09-01', pricePKR: 62000, ptaStatus: 'Non-PTA',
+  1093→    featured: false, trending: false, upcoming: false,
+  1094→    description: 'Mid-range with Dimensity 7300, 50MP Sony main camera, 6.67" 120Hz AMOLED display, and solid battery life.',
+  1095→    cameraScore: 70, performanceScore: 60, batteryScore: 82, displayScore: 76, valueScore: 85, overallRating: 73,
+  1096→    pros: 'Good AMOLED display, decent 50MP camera, competitive pricing, lightweight design',
+  1097→    cons: 'Dimensity 7300 is lower mid-range, no telephoto, no NFC in some regions',
+  1098→    reviewSummary: 'The Realme 13+ offers a good balance of display quality, camera performance, and battery life at an affordable mid-range price.',
+  1099→    reviewVerdict: 'Solid mid-range option for users who want a balanced phone at a competitive price.',
+  1100→    specs: {
+  1101→      display: '6.67"', displayType: 'AMOLED', resolution: '2400 x 1080 (Full HD+)', refreshRate: '120Hz',
+  1102→      protection: '', brightness: '',
+  1103→      chipset: 'MediaTek Dimensity 7300', process: '4 nm',
+  1104→      ram: '8/12 GB', ramType: 'LPDDR5', storage: '128/256/512 GB', cardSlot: 'MicroSD up to 2 TB',
+  1105→      mainCamera: '50 MP, f/1.8', mainCameraSensor: '',
+  1106→      ultrawide: '8 MP, f/2.2', telephoto: '',
+  1107→      selfieCamera: '16 MP, f/2.4',
+  1108→      battery: '5200 mAh', charging: '45W Wired', chargingSpeed: '45W',
+  1109→      weight: '185 g', dimensions: '', build: 'Glass back, Plastic frame',
+  1110→      sim: 'Dual Nano-SIM', ipRating: 'IP64', fiveG: 'Yes (Sub-6 GHz)',
+  1111→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+  1112→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1113→      colors: 'Monet Purple, Monet Gold, Dark Purple',
+  1114→      os: 'Android', osVersion: '14', osUI: 'Realme UI 5', updatePolicy: '2 OS updates',
+  1115→      specialFeatures: '',
+  1116→    },
+  1117→    prices: [
+  1118→      { storeName: 'Daraz', price: 64000 },
+  1119→      { storeName: 'PriceOye', price: 62000 },
+  1120→    ],
+  1121→  },
+  1122→  {
+  1123→    brand: 'Realme', modelName: '13', slug: 'realme-13',
+  1124→    releaseDate: '2024-08-01', pricePKR: 47000, ptaStatus: 'Non-PTA',
+  1125→    featured: false, trending: false, upcoming: false,
+  1126→    description: 'Budget mid-range with Dimensity 6300, 50MP AI camera, 6.72" 90Hz display, and 5000mAh battery with 45W charging.',
+  1127→    cameraScore: 62, performanceScore: 50, batteryScore: 80, displayScore: 68, valueScore: 88, overallRating: 68,
+  1128→    pros: 'Affordable price, 45W fast charging, good battery life, clean design',
+  1129→    cons: 'IPS LCD display (not AMOLED), Dimensity 6300 is entry-level, basic camera, no NFC',
+  1130→    reviewSummary: 'The Realme 13 is a budget-friendly phone that covers the basics well - decent battery, adequate display, and 45W charging. Not for power users.',
+  1131→    reviewVerdict: 'Good budget phone for basic use with fast charging as a standout feature.',
+  1132→    specs: {
+  1133→      display: '6.72"', displayType: 'IPS LCD', resolution: '2400 x 1080 (Full HD+)', refreshRate: '90Hz',
+  1134→      protection: '', brightness: '',
+  1135→      chipset: 'MediaTek Dimensity 6300', process: '6 nm',
+  1136→      ram: '6/8 GB', ramType: '', storage: '128/256 GB', cardSlot: 'MicroSD up to 2 TB',
+  1137→      mainCamera: '50 MP, f/1.8', mainCameraSensor: '',
+  1138→      ultrawide: '', telephoto: '',
+  1139→      selfieCamera: '16 MP, f/2.4',
+  1140→      battery: '5000 mAh', charging: '45W Wired', chargingSpeed: '45W',
+  1141→      weight: '190 g', dimensions: '', build: 'Glass back, Plastic frame',
+  1142→      sim: 'Dual Nano-SIM', ipRating: 'IP54', fiveG: 'No',
+  1143→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'No', usb: 'USB Type-C 2.0',
+  1144→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1145→      colors: 'Dark Purple, Gold',
+  1146→      os: 'Android', osVersion: '14', osUI: 'Realme UI 5', updatePolicy: '',
+  1147→      specialFeatures: '',
+  1148→    },
+  1149→    prices: [
+  1150→      { storeName: 'Daraz', price: 48500 },
+  1151→      { storeName: 'PriceOye', price: 47000 },
+  1152→      { storeName: 'Whatmobile', price: 46000 },
+  1153→    ],
+  1154→  },
+  1155→  {
+  1156→    brand: 'Realme', modelName: 'C75', slug: 'realme-c75',
+  1157→    releaseDate: '2025-02-01', pricePKR: 38500, ptaStatus: 'Non-PTA',
+  1158→    featured: false, trending: false, upcoming: false,
+  1159→    description: 'Budget phone with large display, 5600mAh battery, 45W fast charging, and 50MP AI camera at an affordable price.',
+  1160→    cameraScore: 55, performanceScore: 42, batteryScore: 88, displayScore: 62, valueScore: 92, overallRating: 65,
+  1161→    pros: 'Massive 5600mAh battery, 45W fast charging at budget price, IP64 dust/water resistance',
+  1162→    cons: 'Entry-level performance, IPS LCD, basic camera, no NFC, no 5G',
+  1163→    reviewSummary: 'The Realme C75 is a budget workhorse with exceptional battery life and fast charging. Performance is basic but sufficient for everyday tasks.',
+  1164→    reviewVerdict: 'Best ultra-budget phone for users who prioritize battery life above all else.',
+  1165→    specs: {
+  1166→      display: '6.72"', displayType: 'IPS LCD', resolution: '1600 x 720 (HD+)', refreshRate: '90Hz',
+  1167→      protection: '', brightness: '',
+  1168→      chipset: 'MediaTek Helio G92', process: '12 nm',
+  1169→      ram: '6 GB', ramType: '', storage: '128/256 GB', cardSlot: 'MicroSD up to 2 TB',
+  1170→      mainCamera: '50 MP, f/1.8', mainCameraSensor: '',
+  1171→      ultrawide: '', telephoto: '',
+  1172→      selfieCamera: '8 MP, f/2.0',
+  1173→      battery: '5600 mAh', charging: '45W Wired', chargingSpeed: '45W',
+  1174→      weight: '195 g', dimensions: '', build: 'Plastic back, Plastic frame',
+  1175→      sim: 'Dual Nano-SIM', ipRating: 'IP64', fiveG: 'No',
+  1176→      wifi: 'Wi-Fi 5', bluetooth: '5.4', nfc: 'No', usb: 'USB Type-C 2.0',
+  1177→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1178→      colors: 'Light Green, Light Blue, Black',
+  1179→      os: 'Android', osVersion: '14', osUI: 'Realme UI 5', updatePolicy: '',
+  1180→      specialFeatures: 'Rainwater Smart Control, AI features',
+  1181→    },
+  1182→    prices: [
+  1183→      { storeName: 'Daraz', price: 39500 },
+  1184→      { storeName: 'PriceOye', price: 38500 },
+  1185→    ],
+  1186→  },
+  1187→
+  1188→  /* ================================================================ */
+  1189→  /*  INFINIX (2 phones)                                               */
+  1190→  /* ================================================================ */
+  1191→  {
+  1192→    brand: 'Infinix', modelName: 'Note 40 Pro', slug: 'infinix-note-40-pro',
+  1193→    releaseDate: '2024-03-01', pricePKR: 56500, ptaStatus: 'Non-PTA',
+  1194→    featured: false, trending: false, upcoming: false,
+  1195→    description: 'Mid-range with 108MP camera, 6.78" 120Hz AMOLED, 5000mAh battery, 68W wired + 20W wireless charging - rare wireless charging at this price.',
+  1196→    cameraScore: 72, performanceScore: 52, batteryScore: 78, displayScore: 78, valueScore: 86, overallRating: 72,
+  1197→    pros: 'Wireless charging at this price is rare, good 108MP camera, 120Hz AMOLED display, 68W fast charging',
+  1198→    cons: 'Helio G99 is dated, no 5G, heavy UI, mediocre video recording',
+  1199→    reviewSummary: 'The Infinix Note 40 Pro stands out by offering wireless charging, a 120Hz AMOLED display, and 108MP camera at a very competitive price point.',
+  1200→    reviewVerdict: 'Best value phone with wireless charging and AMOLED display in the budget segment.',
+  1201→    specs: {
+  1202→      display: '6.78"', displayType: 'AMOLED', resolution: '2436 x 1080 (Full HD+)', refreshRate: '120Hz',
+  1203→      protection: '', brightness: '1300 nits peak',
+  1204→      chipset: 'MediaTek Helio G99', process: '6 nm',
+  1205→      ram: '8 GB', ramType: 'LPDDR4X', storage: '256 GB', cardSlot: 'MicroSD up to 2 TB',
+  1206→      mainCamera: '108 MP, f/1.7, OIS', mainCameraSensor: '',
+  1207→      ultrawide: '', telephoto: '',
+  1208→      selfieCamera: '32 MP, f/2.2',
+  1209→      battery: '5000 mAh', charging: '68W Wired', chargingSpeed: '68W', wirelessCharge: 'Yes', wirelessSpeed: '20W',
+  1210→      reverseCharge: 'Yes (5W)',
+  1211→      weight: '197 g', dimensions: '164.4 x 74.1 x 7.6 mm', build: 'Glass back, Plastic frame',
+  1212→      sim: 'Dual Nano-SIM', ipRating: '', fiveG: 'No',
+  1213→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+  1214→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1215→      colors: 'Titan Gold, Obsidian Black, Vintage Green',
+  1216→      os: 'Android', osVersion: '14', osUI: 'XOS 14', updatePolicy: '',
+  1217→      specialFeatures: 'Wireless charging, MagSafe-compatible back, JBL-tuned speakers',
+  1218→    },
+  1219→    benchmarks: { antutu: 400000, geekbenchSingle: 750, geekbenchMulti: 2100, pubgFps: '40 FPS (HD)', codMobileFps: '40 FPS (Medium)', genshinFps: '20-30 FPS (Low)' },
+  1220→    prices: [
+  1221→      { storeName: 'Daraz', price: 58000 },
+  1222→      { storeName: 'PriceOye', price: 56500 },
+  1223→      { storeName: 'Whatmobile', price: 55000 },
+  1224→    ],
+  1225→  },
+  1226→  {
+  1227→    brand: 'Infinix', modelName: 'Hot 50 Pro+', slug: 'infinix-hot-50-pro-plus',
+  1228→    releaseDate: '2024-10-01', pricePKR: 45500, ptaStatus: 'Non-PTA',
+  1229→    featured: false, trending: false, upcoming: false,
+  1230→    description: 'Budget phone with 108MP camera, 120Hz display, 5000mAh battery, and stylish design at a very affordable price.',
+  1231→    cameraScore: 65, performanceScore: 48, batteryScore: 80, displayScore: 68, valueScore: 88, overallRating: 68,
+  1232→    pros: '108MP camera at budget price, 120Hz display, good design, decent battery life',
+  1233→    cons: 'IPS LCD not AMOLED, Helio G100 is entry-level, no 5G, no NFC',
+  1234→    reviewSummary: 'The Infinix Hot 50 Pro+ offers impressive specs on paper for the price including 108MP camera and 120Hz display. Real-world performance is basic but adequate.',
+  1235→    reviewVerdict: 'Good budget phone for users who want high megapixel count and modern features on a tight budget.',
+  1236→    specs: {
+  1237→      display: '6.78"', displayType: 'IPS LCD', resolution: '2460 x 1080 (Full HD+)', refreshRate: '120Hz',
+  1238→      protection: '', brightness: '',
+  1239→      chipset: 'MediaTek Helio G100', process: '',
+  1240→      ram: '8 GB', ramType: '', storage: '256 GB', cardSlot: 'MicroSD up to 2 TB',
+  1241→      mainCamera: '108 MP, f/1.7', mainCameraSensor: '',
+  1242→      ultrawide: '', telephoto: '',
+  1243→      selfieCamera: '8 MP, f/2.0',
+  1244→      battery: '5000 mAh', charging: '33W Wired', chargingSpeed: '33W',
+  1245→      weight: '190 g', dimensions: '', build: 'Glass back, Plastic frame',
+  1246→      sim: 'Dual Nano-SIM', ipRating: 'IP64', fiveG: 'No',
+  1247→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'No', usb: 'USB Type-C 2.0',
+  1248→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1249→      colors: 'Sage Green, Titanium Grey, Rose Gold',
+  1250→      os: 'Android', osVersion: '14', osUI: 'XOS 14', updatePolicy: '',
+  1251→      specialFeatures: '',
+  1252→    },
+  1253→    benchmarks: { antutu: 380000, geekbenchSingle: 700, geekbenchMulti: 2000 },
+  1254→    prices: [
+  1255→      { storeName: 'Daraz', price: 47000 },
+  1256→      { storeName: 'PriceOye', price: 45500 },
+  1257→      { storeName: 'Whatmobile', price: 44500 },
+  1258→    ],
+  1259→  },
+  1260→
+  1261→  /* ================================================================ */
+  1262→  /*  TECNO (2 phones)                                                 */
+  1263→  /* ================================================================ */
+  1264→  {
+  1265→    brand: 'Tecno', modelName: 'Camon 30 Premier', slug: 'tecno-camon-30-premier',
+  1266→    releaseDate: '2024-04-01', pricePKR: 108000, ptaStatus: 'Non-PTA',
+  1267→    featured: false, trending: false, upcoming: false,
+  1268→    description: 'Camera-focused flagship with Sony IMX890 main sensor, triple 50MP camera system, Dimensity 8200 Ultimate, and LTPO AMOLED display.',
+  1269→    cameraScore: 84, performanceScore: 76, batteryScore: 78, displayScore: 82, valueScore: 72, overallRating: 78,
+  1270→    pros: 'Triple 50MP camera system with Sony IMX890, LTPO AMOLED display, good design, competitive price for specs',
+  1271→    cons: 'HiOS has bloatware, Dimensity 8200 is not latest flagship, limited brand recognition',
+  1272→    reviewSummary: 'The Tecno Camon 30 Premier is a surprisingly capable camera phone with a triple 50MP setup headlined by the Sony IMX890 sensor, offering flagship-like camera performance at a mid-range price.',
+  1273→    reviewVerdict: 'Best camera phone value for photography enthusiasts on a budget.',
+  1274→    specs: {
+  1275→      display: '6.78"', displayType: 'LTPO AMOLED', resolution: '2436 x 1080 (Full HD+)', refreshRate: '1-120Hz LTPO',
+  1276→      protection: '', brightness: '2000 nits peak',
+  1277→      chipset: 'MediaTek Dimensity 8200 Ultimate', process: '4 nm',
+  1278→      ram: '12 GB', ramType: 'LPDDR5', storage: '256/512 GB', cardSlot: 'No',
+  1279→      mainCamera: '50 MP, f/1.9, OIS', mainCameraSensor: 'Sony IMX890',
+  1280→      ultrawide: '50 MP, f/2.2, 120°', telephoto: '50 MP, f/2.9, 3x periscope, OIS',
+  1281→      zoom: 'Optical: 3x, Digital: up to 60x',
+  1282→      selfieCamera: '50 MP, f/2.2, AF',
+  1283→      battery: '5000 mAh', charging: '70W Wired', chargingSpeed: '70W',
+  1284→      weight: '195 g', dimensions: '164.1 x 74.6 x 8.2 mm', build: 'Glass back, Aluminum frame',
+  1285→      sim: 'Dual Nano-SIM', ipRating: '', fiveG: 'Yes (Sub-6 GHz)',
+  1286→      wifi: 'Wi-Fi 6', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 3.0',
+  1287→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+  1288→      colors: 'Dark Jade, Himalayan Blue',
+  1289→      os: 'Android', osVersion: '14', osUI: 'HiOS 14', updatePolicy: '',
+  1290→      specialFeatures: 'AI camera features, 4K video recording',
+  1291→    },
+  1292→    benchmarks: { antutu: 950000, geekbenchSingle: 1200, geekbenchMulti: 3800, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (High)', genshinFps: '30-45 FPS (Medium-High)' },
+  1293→    prices: [
+  1294→      { storeName: 'Daraz', price: 112000 },
+  1295→      { storeName: 'PriceOye', price: 108000 },
+  1296→    ],
+  1297→  },
+  1298→  {
+  1299→    brand: 'Tecno', modelName: 'Spark 30 Pro', slug: 'tecno-spark-30-pro',
+  1300→    releaseDate: '2024-09-01', pricePKR: 42000, ptaStatus: 'Non-PTA',
+  1301→    featured: false, trending: false, upcoming: false,
+  1302→    description: 'Budget phone with 108MP main camera, 120Hz IPS display, MediaTek Helio G99 Ultimate, and 5000mAh battery.',
+  1303→    cameraScore: 64, performanceScore: 52, batteryScore: 78, displayScore: 66, valueScore: 88, overallRating: 68,
+  1304→    pros: '108MP camera, 120Hz display, Helio G99, good value for money, stylish design',
+  1305→    cons: 'IPS LCD display, no 5G, basic build quality, HiOS bloatware',
+  1306→    reviewSummary: 'The Tecno Spark 30 Pro offers a 108MP camera and 120Hz display at a budget-friendly price. Performance is adequate for everyday tasks.',
+  1307→    reviewVerdict: 'Good budget option for camera-focused buyers who want a high megapixel count.',
+  1308→    specs: {
+  1309→      display: '6.78"', displayType: 'IPS LCD', resolution: '2460 x 1080 (Full HD+)', refreshRate: '120Hz',
+  1310→      protection: '', brightness: '',
+  1311→      chipset: 'MediaTek Helio G99 Ultimate', process: '6 nm',
+  1312→      ram: '8 GB', ramType: '', storage: '256 GB', cardSlot: 'MicroSD up to 2 TB',
+  1313→      mainCamera: '108 MP, f/1.7', mainCameraSensor: '',
+  1314→      ultrawide: '', telephoto: '',
+  1315→      selfieCamera: '13 MP, f/2.0',
+  1316→      battery: '5000 mAh', charging: '33W Wired', chargingSpeed: '33W',
+  1317→      weight: '200 g', dimensions: '', build: 'Glass back, Plastic frame',
+  1318→      sim: 'Dual Nano-SIM', ipRating: 'IP64', fiveG: 'No',
+  1319→      wifi: 'Wi-Fi 5', bluetooth: '5.3', nfc: 'No', usb: 'USB Type-C 2.0',
+  1320→      fingerprint: 'Side-mounted', faceUnlock: 'Yes',
+  1321→      colors: 'Glossy White, Denim Blue, Starlit Black',
+  1322→      os: 'Android', osVersion: '14', osUI: 'HiOS 14', updatePolicy: '',
+  1323→      specialFeatures: '',
+  1324→    },
+  1325→    benchmarks: { antutu: 420000, geekbenchSingle: 760, geekbenchMulti: 2150 },
+  1326→    prices: [
+  1327→      { storeName: 'Daraz', price: 43500 },
+  1328→      { storeName: 'PriceOye', price: 42000 },
+  1329→      { storeName: 'Whatmobile', price: 41000 },
+  1330→    ],
+  1331→  },
+  1332→
+  1333→  /* ================================================================ */
+  1334→  /*  NOTHING (2 phones)                                               */
+  1335→  /* ================================================================ */
+  1336→  {
+  1337→    brand: 'Nothing', modelName: 'Phone (2a) Plus', slug: 'nothing-phone-2a-plus',
+  1338→    releaseDate: '2024-09-01', pricePKR: 92000, ptaStatus: 'Non-PTA',
+  1339→    featured: false, trending: true, upcoming: false,
+  1340→    description: 'Unique mid-ranger with iconic Glyph LED interface, Dimensity 7350 Pro, 50MP dual camera, clean Nothing OS, and 50W charging.',
+  1341→    cameraScore: 74, performanceScore: 66, batteryScore: 80, displayScore: 78, valueScore: 75, overallRating: 74,
+  1342→    pros: 'Unique Glyph LED design, clean Nothing OS with no bloatware, good 50MP Sony cameras, smooth performance',
+  1343→    cons: 'Dimensity 7350 Pro is mid-range, no wireless charging, no telephoto, IP54 only',
+  1344→    reviewSummary: 'The Nothing Phone (2a) Plus combines the iconic Glyph LED design with clean software, capable cameras, and solid mid-range performance in a distinctive package.',
+  1345→    reviewVerdict: 'Best phone for users who want unique design and clean software without bloatware.',
+  1346→    specs: {
+  1347→      display: '6.7"', displayType: 'AMOLED', resolution: '2424 x 1080 (Full HD+)', refreshRate: '120Hz',
+  1348→      protection: 'Gorilla Glass 5', brightness: '1300 nits peak',
+  1349→      chipset: 'MediaTek Dimensity 7350 Pro', process: '4 nm',
+  1350→      ram: '8/12 GB', ramType: 'LPDDR5', storage: '128/256/512 GB', cardSlot: 'No',
+  1351→      mainCamera: '50 MP, f/1.88, OIS', mainCameraSensor: 'Sony IMX920',
+  1352→      ultrawide: '50 MP, f/2.2, 114°', telephoto: '',
+  1353→      selfieCamera: '50 MP, f/2.4',
+  1354→      battery: '5000 mAh', charging: '50W Wired', chargingSpeed: '50W',
+  1355→      weight: '190 g', dimensions: '161.7 x 76.3 x 8.5 mm', build: 'Plastic back, Aluminum frame',
+  1356→      sim: 'Dual Nano-SIM', ipRating: 'IP54', fiveG: 'Yes (Sub-6 GHz)',
+  1357→      wifi: 'Wi-Fi 6', bluetooth: '5.3', nfc: 'Yes', usb: 'USB Type-C 2.0',
+  1358→      fingerprint: 'Optical in-display', faceUnlock: 'Yes',
+  1359→      colors: 'Grey, White',
+  1360→      os: 'Android', osVersion: '14', osUI: 'Nothing OS 2.6', updatePolicy: '3 OS updates, 4 years security',
+  1361→      specialFeatures: 'Glyph Interface (LED lights on back), clean Nothing OS',
+  1362→    },
+  1363→    benchmarks: { antutu: 750000, geekbenchSingle: 1150, geekbenchMulti: 3500, pubgFps: '60 FPS (Ultra HD)', codMobileFps: '60 FPS (High)', genshinFps: '30-45 FPS (Medium)' },
+  1364→    prices: [
+  1365→      { storeName: 'Daraz', price: 95000 },
+  1366→      { storeName: 'PriceOye', price: 92000 },
+  1367→    ],
+  1368→  },
+  1369→  {
+  1370→    brand: 'Nothing', modelName: 'Phone (3)', slug: 'nothing-phone-3',
+  1371→    releaseDate: '2025-07-15', pricePKR: 260000, ptaStatus: 'Unknown',
+  1372→    featured: false, trending: true, upcoming: true,
+  1373→    description: 'Nothing\'s 2025 flagship with Snapdragon 8 Elite, evolved Glyph interface, 50MP triple camera, and clean Nothing OS in a premium design.',
+  1374→    cameraScore: 85, performanceScore: 94, batteryScore: 84, displayScore: 86, valueScore: 65, overallRating: 85,
+  1375→    pros: 'Snapdragon 8 Elite performance, evolved Glyph interface, clean Nothing OS, premium design, good cameras',
+  1376→    cons: 'Expensive for the brand, limited after-sales network in Pakistan, camera not quite S25 Ultra level',
+  1377→    reviewSummary: 'The Nothing Phone (3) is the brand\'s most ambitious phone yet, combining Snapdragon 8 Elite power with the iconic Glyph interface and clean software philosophy.',
+  1378→    reviewVerdict: 'Best phone for tech enthusiasts who want top performance with unique design and clean software.',
+  1379→    specs: {
+  1380→      display: '6.5"', displayType: 'LTPO AMOLED', resolution: '2424 x 1080 (Full HD+)', refreshRate: '1-120Hz LTPO',
+  1381→      protection: '', brightness: '',
+  1382→      chipset: 'Snapdragon 8 Elite', process: '3 nm',
+  1383→      ram: '12/16 GB', ramType: 'LPDDR5X', storage: '256/512 GB', cardSlot: 'No',
+  1384→      mainCamera: '50 MP, f/1.88, OIS', mainCameraSensor: '',
+  1385→      ultrawide: '50 MP, f/2.2', telephoto: '50 MP, f/2.8, 3x periscope, OIS',
+  1386→      selfieCamera: '50 MP, f/2.4',
+  1387→      battery: '5000 mAh', charging: '50W Wired', chargingSpeed: '50W',
+  1388→      weight: '', dimensions: '', build: '',
+  1389→      sim: 'Dual Nano-SIM', ipRating: 'IP65', fiveG: 'Yes (Sub-6 GHz)',
+  1390→      wifi: 'Wi-Fi 7 (802.11be)', bluetooth: '5.4', nfc: 'Yes', usb: 'USB Type-C 3.2',
+  1391→      fingerprint: 'Ultrasonic in-display', faceUnlock: 'Yes',
+  1392→      colors: 'Grey, White',
+  1393→      os: 'Android', osVersion: '15', osUI: 'Nothing OS 3', updatePolicy: '4 OS updates',
+  1394→      specialFeatures: 'Evolved Glyph Interface, Nothing OS 3',
+  1395→    },
+  1396→    benchmarks: { antutu: 2550000, geekbenchSingle: 3050, geekbenchMulti: 10000, pubgFps: '120 FPS (Ultra HD)', codMobileFps: '120 FPS (Max)', genshinFps: '60 FPS (Highest)' },
+  1397→    prices: [
+  1398→      { storeName: 'PriceOye', price: 260000 },
+  1399→    ],
+  1400→  },
+  1401→];
+  1402→
+  1403→/* ------------------------------------------------------------------ */
+  1404→/*  Seed function                                                      */
+  1405→/* ------------------------------------------------------------------ */
+  1406→
+  1407→export async function seedPhones(): Promise<{
+  1408→  brands: number;
+  1409→  phones: number;
+  1410→  specs: number;
+  1411→  benchmarks: number;
+  1412→  prices: number;
+  1413→  skipped: number;
+  1414→}> {
+  1415→  await connectDB();
+  1416→
+  1417→  let brands = 0;
+  1418→  let phones = 0;
+  1419→  let specs = 0;
+  1420→  let benchmarks = 0;
+  1421→  let prices = 0;
+  1422→  let skipped = 0;
+  1423→
+  1424→  /* ---- 1. Upsert brands ---- */
+  1425→  const brandMap = new Map<string, Types.ObjectId>();
+  1426→
+  1427→  for (const b of BRANDS) {
+  1428→    const doc = await (Brand as any).findOneAndUpdate(
+  1429→      { slug: b.slug },
+  1430→      {
+  1431→        name: b.name,
+  1432→        slug: b.slug,
+  1433→        logo: '',
+  1434→        country: b.country,
+  1435→        description: b.description,
+  1436→        sortOrder: b.sortOrder,
+  1437→        active: true,
+  1438→      },
+  1439→      { upsert: true, new: true, setDefaultsOnInsert: true },
+  1440→    );
+  1441→    brandMap.set(b.name, doc._id as Types.ObjectId);
+  1442→    brands++;
+  1443→  }
+  1444→
+  1445→  /* ---- 2. Upsert phones + related docs ---- */
+  1446→  for (const p of PHONES) {
+  1447→    const brandId = brandMap.get(p.brand);
+  1448→    if (!brandId) {
+  1449→      console.warn(`[seed] Skipping "${p.modelName}" — brand "${p.brand}" not found`);
+  1450→      skipped++;
+  1451→      continue;
+  1452→    }
+  1453→
+  1454→    // Upsert phone
+  1455→    const phoneDoc = await (Phone as any).findOneAndUpdate(
+  1456→      { slug: p.slug },
+  1457→      {
+  1458→        brandId,
+  1459→        modelName: p.modelName,
+  1460→        slug: p.slug,
+  1461→        releaseDate: p.releaseDate,
+  1462→        pricePKR: p.pricePKR,
+  1463→        ptaStatus: p.ptaStatus,
+  1464→        ptaApproved: p.ptaStatus === 'PTA Approved',
+  1465→        featured: p.featured,
+  1466→        trending: p.trending,
+  1467→        upcoming: p.upcoming,
+  1468→        thumbnail: '',
+  1469→        description: p.description,
+  1470→        cameraScore: p.cameraScore,
+  1471→        performanceScore: p.performanceScore,
+  1472→        batteryScore: p.batteryScore,
+  1473→        displayScore: p.displayScore,
+  1474→        valueScore: p.valueScore,
+  1475→        overallRating: p.overallRating,
+  1476→        active: true,
+  1477→        status: 'published',
+  1478→        pros: p.pros,
+  1479→        cons: p.cons,
+  1480→        reviewSummary: p.reviewSummary,
+  1481→        reviewVerdict: p.reviewVerdict,
+  1482→      },
+  1483→      { upsert: true, new: true, setDefaultsOnInsert: true },
+  1484→    );
+  1485→    phones++;
+  1486→
+  1487→    const phoneId = phoneDoc._id as Types.ObjectId;
+  1488→
+  1489→    // Upsert specs
+  1490→    const specsData: Record<string, string> = {};
+  1491→    for (const [key, val] of Object.entries(p.specs)) {
+  1492→      specsData[key] = (val as string) ?? '';
+  1493→    }
+  1494→    await (PhoneSpecs as any).findOneAndUpdate(
+  1495→      { phoneId },
+  1496→      { phoneId, ...specsData },
+  1497→      { upsert: true, new: true, setDefaultsOnInsert: true },
+  1498→    );
+  1499→    specs++;
+  1500→
+  1501→    // Upsert benchmark
+  1502→    if (p.benchmarks) {
+  1503→      await (PhoneBenchmark as any).findOneAndUpdate(
+  1504→        { phoneId },
+  1505→        {
+  1506→          phoneId,
+  1507→          antutu: p.benchmarks.antutu ?? 0,
+  1508→          geekbenchSingle: p.benchmarks.geekbenchSingle ?? 0,
+  1509→          geekbenchMulti: p.benchmarks.geekbenchMulti ?? 0,
+  1510→          gamingScore: p.benchmarks.gamingScore ?? 0,
+  1511→          pubgFps: p.benchmarks.pubgFps ?? '',
+  1512→          codMobileFps: p.benchmarks.codMobileFps ?? '',
+  1513→          genshinFps: p.benchmarks.genshinFps ?? '',
+  1514→          videoPlayback: p.benchmarks.videoPlayback ?? '',
+  1515→          gamingBattery: p.benchmarks.gamingBattery ?? '',
+  1516→          browsingBattery: p.benchmarks.browsingBattery ?? '',
+  1517→        },
+  1518→        { upsert: true, new: true, setDefaultsOnInsert: true },
+  1519→      );
+  1520→      benchmarks++;
+  1521→    }
+  1522→
+  1523→    // Handle prices: delete old, insert new
+  1524→    if (p.prices && p.prices.length > 0) {
+  1525→      await PhonePrice.deleteMany({ phoneId });
+  1526→      const priceDocs = p.prices.map((pr) => ({
+  1527→        phoneId,
+  1528→        storeName: pr.storeName,
+  1529→        price: pr.price,
+  1530→        url: '',
+  1531→        inStock: pr.inStock ?? true,
+  1532→      }));
+  1533→      const inserted = await PhonePrice.insertMany(priceDocs as any);
+  1534→      prices += inserted.length;
+  1535→    }
+  1536→  }
+  1537→
+  1538→  const summary = { brands, phones, specs, benchmarks, prices, skipped };
+  1539→  console.log('[seedPhones] Done:', JSON.stringify(summary, null, 2));
+  1540→  return summary;
+  1541→}
