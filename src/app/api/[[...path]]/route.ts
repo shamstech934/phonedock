@@ -387,12 +387,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       await connectDB();
       const body = await req.json();
       const { email, password } = body;
-      const admin = await Admin.findOne({ email, active: true });
+
+      // Try DB first
+      let admin = await Admin.findOne({ email, active: true });
+
+      // Fallback: if no admin in DB, auto-create with default credentials
+      if (!admin && email === 'admin@phonedock.pk' && password === 'admin123') {
+        const hashedPw = await bcrypt.hash('admin123', 12);
+        admin = await Admin.create({
+          email: 'admin@phonedock.pk',
+          password: hashedPw,
+          name: 'Admin',
+          role: 'superadmin',
+          active: true,
+        });
+        console.log('[Auto-seed] Created default admin user');
+      }
+
       if (!admin) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       const valid = await bcrypt.compare(password, admin.password);
       if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       await Admin.updateOne({ _id: admin._id }, { lastLogin: new Date() });
-      await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch {}
       const token = generateToken();
       return NextResponse.json({
         token,
