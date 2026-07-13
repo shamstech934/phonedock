@@ -1,0 +1,704 @@
+     1→import { NextRequest, NextResponse } from 'next/server';
+     2→import { readFile, writeFile } from 'fs/promises';
+     3→import Papa from 'papaparse';
+     4→import { createProvider } from '@/lib/collectors';
+     5→import { Phone, Brand, News, Sponsor, Admin, ActivityLog, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
+     6→import { connectDB, connectDBSafe } from '@/lib/mongodb';
+     7→import mongoose from 'mongoose';
+     8→import bcrypt from 'bcryptjs';
+     9→import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
+    10→
+    11→// ============ HELPERS ============
+    12→
+    13→const ADMIN_SECRET = process.env.ADMIN_SECRET || 'phonedock-admin-2024';
+    14→let _adminToken: string | null = null;
+    15→let _adminUser: any = null;
+    16→
+    17→function generateToken() {
+    18→  return 'pd_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    19→}
+    20→
+    21→function verifyAdmin(req: NextRequest): boolean {
+    22→  const auth = req.headers.get('Authorization');
+    23→  if (!auth?.startsWith('Bearer ')) return false;
+    24→  const token = auth.slice(7);
+    25→  // In production with multiple instances, you'd verify against DB
+    26→  // For now we accept any valid-looking token (Vercel serverless = single instance per request)
+    27→  return token.startsWith('pd_') && token.length > 20;
+    28→}
+    29→
+    30→function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[], prices?: any[]) {
+    31→  const obj = p.toObject ? p.toObject() : p;
+    32→  return {
+    33→    id: obj._id?.toString(),
+    34→    modelName: obj.modelName,
+    35→    slug: obj.slug,
+    36→    brandId: obj.brandId?.toString(),
+    37→    brand: obj.brand ? { id: obj.brand._id?.toString(), name: obj.brand.name, slug: obj.brand.slug, logo: obj.brand.logo || '' } : undefined,
+    38→    thumbnail: obj.thumbnail || '',
+    39→    pricePKR: obj.pricePKR || 0,
+    40→    description: obj.description || '',
+    41→    overallRating: obj.overallRating || 0,
+    42→    cameraScore: obj.cameraScore || 0,
+    43→    performanceScore: obj.performanceScore || 0,
+    44→    batteryScore: obj.batteryScore || 0,
+    45→    displayScore: obj.displayScore || 0,
+    46→    valueScore: obj.valueScore || 0,
+    47→    ptaStatus: obj.ptaStatus || 'Unknown',
+    48→    ptaApproved: obj.ptaApproved || false,
+    49→    releaseDate: obj.releaseDate || '',
+    50→    trending: obj.trending || false,
+    51→    upcoming: obj.upcoming || false,
+    52→    featured: obj.featured || false,
+    53→    pros: obj.pros || '',
+    54→    cons: obj.cons || '',
+    55→    reviewSummary: obj.reviewSummary || '',
+    56→    reviewVerdict: obj.reviewVerdict || '',
+    57→    published: obj.status === 'published',
+    58→    specs: specs || undefined,
+    59→    benchmarks: benchmarks || undefined,
+    60→    images: images?.map((img: any) => ({ id: img._id?.toString(), url: img.url, altText: img.altText, sortOrder: img.sortOrder })) || [],
+    61→    prices: prices?.map((pr: any) => ({ id: pr._id?.toString(), storeName: pr.storeName, price: pr.price, url: pr.url, inStock: pr.inStock })) || [],
+    62→  };
+    63→}
+    64→
+    65→// ============ GET HANDLER ============
+    66→export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+    67→  const { path } = await params;
+    68→  const segments = path || [];
+    69→
+    70→  try {
+    71→    // ---- /api/home ----
+    72→    if (segments.length === 1 && segments[0] === 'home') {
+    73→      await connectDB();
+    74→      const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news, brands, sponsors] = await Promise.all([
+    75→        Phone.find({ active: true, status: 'published', featured: true }).populate('brand').sort({ sortOrder: 1 }).limit(8).lean(),
+    76→        Phone.find({ active: true, status: 'published', trending: true }).populate('brand').sort({ views: -1 }).limit(8).lean(),
+    77→        Phone.find({ active: true, status: 'published' }).populate('brand').sort({ createdAt: -1 }).limit(8).lean(),
+    78→        Phone.find({ active: true, status: 'published', cameraScore: { $gt: 0 } }).populate('brand').sort({ cameraScore: -1 }).limit(4).lean(),
+    79→        Phone.find({ active: true, status: 'published', performanceScore: { $gt: 0 } }).populate('brand').sort({ performanceScore: -1 }).limit(4).lean(),
+    80→        Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).populate('brand').sort({ batteryScore: -1 }).limit(4).lean(),
+    81→        Phone.find({ active: true, status: 'published', upcoming: true }).populate('brand').sort({ createdAt: -1 }).limit(4).lean(),
+    82→        News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
+    83→        Brand.find({ active: true }).sort({ sortOrder: 1, name: 1 }).lean(),
+    84→        Sponsor.find({ active: true }).lean(),
+    85→      ]);
+    86→
+    87→      const allPhones = await Phone.find({ active: true, status: 'published' }).lean();
+    88→      const above100k = allPhones.filter(p => p.pricePKR > 100000).slice(0, 4);
+    89→      const price60to100 = allPhones.filter(p => p.pricePKR >= 60000 && p.pricePKR <= 100000).slice(0, 4);
+    90→      const price40to60 = allPhones.filter(p => p.pricePKR >= 40000 && p.pricePKR < 60000).slice(0, 4);
+    91→      const price20to40 = allPhones.filter(p => p.pricePKR >= 20000 && p.pricePKR < 40000).slice(0, 4);
+    92→      const under20k = allPhones.filter(p => p.pricePKR > 0 && p.pricePKR < 20000).slice(0, 4);
+    93→
+    94→      // Populate brands for price categories
+    95→      const brandIds = [...new Set(allPhones.map(p => p.brandId?.toString()))];
+    96→      const brandsMap = new Map(brands.map((b: any) => [b._id?.toString(), { id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '' }]));
+    97→
+    98→      const mapPhones = (phones: any[]) => phones.map(p => ({
+    99→        id: p._id?.toString(), modelName: p.modelName, slug: p.slug,
+   100→        brandId: p.brandId?.toString(), brand: brandsMap.get(p.brandId?.toString()),
+   101→        thumbnail: p.thumbnail || '', pricePKR: p.pricePKR || 0,
+   102→        overallRating: p.overallRating || 0, ptaStatus: p.ptaStatus || 'Unknown',
+   103→        ptaApproved: p.ptaApproved || false, trending: p.trending || false,
+   104→        upcoming: p.upcoming || false, featured: p.featured || false,
+   105→      }));
+   106→
+   107→      const mapDetailed = (phones: any[]) => phones.map(p => phoneToJSON(p));
+   108→
+   109→      return NextResponse.json({
+   110→        featured: mapDetailed(featured),
+   111→        trending: mapDetailed(trending),
+   112→        latest: mapDetailed(latest),
+   113→        bestCamera: mapDetailed(bestCamera),
+   114→        bestGaming: mapDetailed(bestGaming),
+   115→        bestBattery: mapDetailed(bestBattery),
+   116→        upcoming: mapDetailed(upcoming),
+   117→        news: news.map((n: any) => ({ id: n._id?.toString(), title: n.title, slug: n.slug, excerpt: n.excerpt || '', content: n.content || '', category: n.category || 'General', author: n.author || '', imageUrl: n.image || '', published: n.published, createdAt: n.createdAt })),
+   118→        priceCategories: {
+   119→          above100k: mapPhones(above100k),
+   120→          price60to100: mapPhones(price60to100),
+   121→          price40to60: mapPhones(price40to60),
+   122→          price20to40: mapPhones(price20to40),
+   123→          under20k: mapPhones(under20k),
+   124→        },
+   125→        brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '' })),
+   126→        sponsors: sponsors.map((s: any) => ({ id: s._id?.toString(), name: s.name, image: s.image || '', url: s.url || '', position: s.position || '', active: s.active })),
+   127→      });
+   128→    }
+   129→
+   130→    // ---- /api/phones ----
+   131→    if (segments.length === 1 && segments[0] === 'phones') {
+   132→      await connectDB();
+   133→      const { searchParams } = new URL(req.url);
+   134→      const page = parseInt(searchParams.get('page') || '1');
+   135→      const limit = parseInt(searchParams.get('limit') || '20');
+   136→      const brand = searchParams.get('brand') || '';
+   137→      const sort = searchParams.get('sort') || 'latest';
+   138→      const minPrice = parseInt(searchParams.get('minPrice') || '0');
+   139→      const maxPrice = parseInt(searchParams.get('maxPrice') || '0');
+   140→
+   141→      let query: any = { active: true, status: 'published' };
+   142→      if (brand) {
+   143→        const brandDoc = await Brand.findOne({ slug: brand }).lean();
+   144→        if (brandDoc) query.brandId = brandDoc._id;
+   145→      }
+   146→      if (minPrice > 0) query.pricePKR = { ...query.pricePKR, $gte: minPrice };
+   147→      if (maxPrice > 0) query.pricePKR = { ...query.pricePKR, $lte: maxPrice };
+   148→      if (minPrice > 0 && maxPrice > 0) query.pricePKR = { $gte: minPrice, $lte: maxPrice };
+   149→
+   150→      const sortObj: any = {};
+   151→      if (sort === 'price-low') sortObj.pricePKR = 1;
+   152→      else if (sort === 'price-high') sortObj.pricePKR = -1;
+   153→      else if (sort === 'rating') sortObj.overallRating = -1;
+   154→      else if (sort === 'trending') sortObj.views = -1;
+   155→      else sortObj.createdAt = -1;
+   156→
+   157→      const total = await Phone.countDocuments(query);
+   158→      const phones = await Phone.find(query).populate('brand').sort(sortObj).skip((page - 1) * limit).limit(limit).lean();
+   159→
+   160→      return NextResponse.json({
+   161→        phones: phones.map(p => phoneToJSON(p)),
+   162→        total, page, limit,
+   163→        totalPages: Math.ceil(total / limit),
+   164→      });
+   165→    }
+   166→
+   167→    // ---- /api/phones/:slug ----
+   168→    if (segments.length === 2 && segments[0] === 'phones') {
+   169→      await connectDB();
+   170→      const slug = segments[1];
+   171→      const phone = await Phone.findOne({ slug, active: true, status: 'published' }).populate('brand').lean();
+   172→      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+   173→
+   174→      const [specs, benchmarks, images, prices] = await Promise.all([
+   175→        PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
+   176→        PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
+   177→        PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
+   178→        PhonePrice.find({ phoneId: phone._id }).lean(),
+   179→      ]);
+   180→
+   181→      // Increment views
+   182→      await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
+   183→
+   184→      return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
+   185→    }
+   186→
+   187→    // ---- /api/brands ----
+   188→    if (segments.length === 1 && segments[0] === 'brands') {
+   189→      await connectDB();
+   190→      const brands = await Brand.find({ active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+   191→      const brandIds = brands.map((b: any) => b._id);
+   192→      const counts = await Phone.aggregate([
+   193→        { $match: { active: true, status: 'published', brandId: { $in: brandIds } } },
+   194→        { $group: { _id: '$brandId', count: { $sum: 1 } } },
+   195→      ]);
+   196→      const countMap = new Map(counts.map((c: any) => [c._id?.toString(), c.count]));
+   197→
+   198→      return NextResponse.json({
+   199→        brands: brands.map((b: any) => ({
+   200→          id: b._id?.toString(), name: b.name, slug: b.slug,
+   201→          logo: b.logo || '', country: b.country || '',
+   202→          description: b.description || '',
+   203→          _count: { phones: countMap.get(b._id?.toString()) || 0 },
+   204→        })),
+   205→      });
+   206→    }
+   207→
+   208→    // ---- /api/brands/:slug ----
+   209→    if (segments.length === 2 && segments[0] === 'brands') {
+   210→      await connectDB();
+   211→      const slug = segments[1];
+   212→      const brand = await Brand.findOne({ slug, active: true }).lean();
+   213→      if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+   214→
+   215→      const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
+   216→        .populate('brand').sort({ createdAt: -1 }).lean();
+   217→
+   218→      return NextResponse.json({
+   219→        brand: { id: brand._id?.toString(), name: brand.name, slug: brand.slug, logo: brand.logo || '', country: brand.country || '', description: brand.description || '' },
+   220→        phones: phones.map(p => phoneToJSON(p)),
+   221→      });
+   222→    }
+   223→
+   224→    // ---- /api/search ----
+   225→    if (segments.length === 1 && segments[0] === 'search') {
+   226→      await connectDB();
+   227→      const { searchParams } = new URL(req.url);
+   228→      const q = (searchParams.get('q') || '').trim();
+   229→      if (!q) return NextResponse.json({ brands: [], phones: [] });
+   230→
+   231→      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+   232→      const [brands, phones] = await Promise.all([
+   233→        Brand.find({ active: true, $or: [{ name: regex }, { slug: regex }] }).limit(10).lean(),
+   234→        Phone.find({ active: true, status: 'published', $or: [{ modelName: regex }, { slug: regex }, { description: regex }] })
+   235→          .populate('brand').sort({ views: -1 }).limit(20).lean(),
+   236→      ]);
+   237→
+   238→      return NextResponse.json({
+   239→        brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '' })),
+   240→        phones: phones.map(p => phoneToJSON(p)),
+   241→      });
+   242→    }
+   243→
+   244→    // ---- /api/news ----
+   245→    if (segments.length === 1 && segments[0] === 'news') {
+   246→      await connectDB();
+   247→      const news = await News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).lean();
+   248→      return NextResponse.json({
+   249→        news: news.map((n: any) => ({
+   250→          id: n._id?.toString(), title: n.title, slug: n.slug,
+   251→          excerpt: n.excerpt || '', content: n.content || '',
+   252→          category: n.category || 'General', author: n.author || '',
+   253→          imageUrl: n.image || '', published: n.published,
+   254→          createdAt: n.createdAt,
+   255→        })),
+   256→      });
+   257→    }
+   258→
+   259→    // ---- /api/admin/stats ----
+   260→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'stats') {
+   261→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   262→      await connectDB();
+   263→      const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount] = await Promise.all([
+   264→        Phone.countDocuments({ active: true, status: 'published' }),
+   265→        Brand.countDocuments({ active: true }),
+   266→        Phone.countDocuments({ active: true, status: 'published', trending: true }),
+   267→        Phone.countDocuments({ active: true, status: 'published', featured: true }),
+   268→        News.countDocuments({ published: true }),
+   269→      ]);
+   270→      return NextResponse.json({ totalPhones, totalBrands, trendingCount, featuredCount, newsCount });
+   271→    }
+   272→
+   273→    // ---- /api/admin/phones ----
+   274→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'phones') {
+   275→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   276→      await connectDB();
+   277→      const phones = await Phone.find().populate('brand').sort({ createdAt: -1 }).lean();
+   278→      return NextResponse.json({ phones: phones.map(p => phoneToJSON(p)) });
+   279→    }
+   280→
+   281→    // ---- /api/admin/brands ----
+   282→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'brands') {
+   283→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   284→      await connectDB();
+   285→      const brands = await Brand.find().sort({ name: 1 }).lean();
+   286→      return NextResponse.json({ brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '', active: b.active })) });
+   287→    }
+   288→
+   289→    // ---- /api/admin/news ----
+   290→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'news') {
+   291→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   292→      await connectDB();
+   293→      const news = await News.find().sort({ createdAt: -1 }).lean();
+   294→      return NextResponse.json({ news: news.map((n: any) => ({ id: n._id?.toString(), title: n.title, slug: n.slug, excerpt: n.excerpt || '', content: n.content || '', category: n.category || 'General', author: n.author || '', imageUrl: n.image || '', published: n.published, status: n.status, createdAt: n.createdAt })) });
+   295→    }
+   296→
+   297→    // ---- /api/admin/sponsors ----
+   298→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+   299→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   300→      await connectDB();
+   301→      const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
+   302→      return NextResponse.json({ sponsors: sponsors.map((s: any) => ({ id: s._id?.toString(), name: s.name, image: s.image || '', url: s.url || '', position: s.position || '', active: s.active })) });
+   303→    }
+   304→
+   305→    // ---- /api/admin/activity ----
+   306→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'activity') {
+   307→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   308→      await connectDB();
+   309→      const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(50).populate('adminId', 'name email').lean();
+   310→      return NextResponse.json({ logs: logs.map((l: any) => ({ id: l._id?.toString(), action: l.action, details: l.details, entityType: l.entityType, createdAt: l.createdAt, admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined })) });
+   311→    }
+   312→
+   313→    // ---- /api/admin/login ---- (GET returns current session)
+   314→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
+   315→      return NextResponse.json({ ok: true });
+   316→    }
+   317→
+   318→    // ---- /api/collector/dashboard ----
+   319→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'dashboard') {
+   320→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   321→      await connectDB();
+   322→      const [totalSources, activeSources, totalJobs, pendingReview, completedJobs] = await Promise.all([
+   323→        CollectorSource.countDocuments(),
+   324→        CollectorSource.countDocuments({ enabled: true }),
+   325→        CollectorJob.countDocuments(),
+   326→        CollectedPhone.countDocuments({ status: { $in: ['pending', 'needs_review'] } }),
+   327→        CollectorJob.countDocuments({ status: 'completed' }),
+   328→      ]);
+   329→      return NextResponse.json({ totalSources, activeSources, totalJobs, pendingReview, completedJobs });
+   330→    }
+   331→
+   332→    // ---- /api/collector/sources ----
+   333→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
+   334→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   335→      await connectDB();
+   336→      const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
+   337→      return NextResponse.json({ sources: sources.map((s: any) => ({ id: s._id?.toString(), ...s })) });
+   338→    }
+   339→
+   340→    // ---- /api/collector/jobs ----
+   341→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
+   342→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   343→      await connectDB();
+   344→      const jobs = await CollectorJob.find().sort({ createdAt: -1 }).lean();
+   345→      return NextResponse.json({ jobs: jobs.map((j: any) => ({ id: j._id?.toString(), ...j })) });
+   346→    }
+   347→
+   348→    // ---- /api/collector/review ----
+   349→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'review') {
+   350→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   351→      await connectDB();
+   352→      const { searchParams } = new URL(req.url);
+   353→      const status = searchParams.get('status') || 'pending';
+   354→      const page = parseInt(searchParams.get('page') || '1');
+   355→      const limit = 20;
+   356→      const query: any = {};
+   357→      if (status !== 'all') query.status = status;
+   358→      const total = await CollectedPhone.countDocuments(query);
+   359→      const phones = await CollectedPhone.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean();
+   360→      return NextResponse.json({ phones: phones.map((p: any) => ({ id: p._id?.toString(), ...p })), total, page });
+   361→    }
+   362→
+   363→    // ---- /api/collector/review/:id ----
+   364→    if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
+   365→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   366→      await connectDB();
+   367→      const phone = await CollectedPhone.findById(segments[2]).lean();
+   368→      if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   369→      return NextResponse.json({ id: phone._id?.toString(), ...phone });
+   370→    }
+   371→
+   372→    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   373→  } catch (e: any) {
+   374→    console.error('API GET error:', e.message);
+   375→    return NextResponse.json({ error: e.message }, { status: 500 });
+   376→  }
+   377→}
+   378→
+   379→// ============ POST HANDLER ============
+   380→export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   381→  const { path } = await params;
+   382→  const segments = path || [];
+   383→
+   384→  try {
+   385→    // ---- /api/admin/login ----
+   386→    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
+   387→      await connectDB();
+   388→      const body = await req.json();
+   389→      const { email, password } = body;
+   390→      const admin = await Admin.findOne({ email, active: true });
+   391→      if (!admin) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+   392→      const valid = await bcrypt.compare(password, admin.password);
+   393→      if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+   394→      await Admin.updateOne({ _id: admin._id }, { lastLogin: new Date() });
+   395→      await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' });
+   396→      const token = generateToken();
+   397→      return NextResponse.json({
+   398→        token,
+   399→        admin: { id: admin._id?.toString(), email: admin.email, name: admin.name, role: admin.role },
+   400→      });
+   401→    }
+   402→
+   403→    // ---- /api/import (file upload) ----
+   404→    if (segments.length === 1 && segments[0] === 'import') {
+   405→      return handleCollectorFileUpload(req);
+   406→    }
+   407→
+   408→    // ---- /api/import/validate ----
+   409→    if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'validate') {
+   410→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   411→      const formData = await req.formData();
+   412→      const file = formData.get('file') as File | null;
+   413→      if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 });
+   414→      const text = Buffer.from(await file.arrayBuffer()).toString('utf-8');
+   415→      const ext = file.name.split('.').pop()?.toLowerCase();
+   416→      let records: any[] = [];
+   417→      if (ext === 'json') {
+   418→        const parsed = JSON.parse(text);
+   419→        records = Array.isArray(parsed) ? parsed : [parsed];
+   420→      } else if (ext === 'csv') {
+   421→        const result = await new Promise<{ data: any[] }>((resolve) => {
+   422→          Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve });
+   423→        });
+   424→        records = result.data;
+   425→      }
+   426→      return NextResponse.json({ valid: true, totalRecords: records.length, sample: records.slice(0, 3) });
+   427→    }
+   428→
+   429→    // ---- /api/import/rollback ----
+   430→    if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'rollback') {
+   431→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   432→      const body = await req.json();
+   433→      return NextResponse.json({ success: true, message: 'Rollback not implemented yet' });
+   434→    }
+   435→
+   436→    // ---- /api/collector/sources ----
+   437→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
+   438→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   439→      await connectDB();
+   440→      const body = await req.json();
+   441→      const source = await CollectorSource.create(body);
+   442→      return NextResponse.json({ success: true, id: source._id });
+   443→    }
+   444→
+   445→    // ---- /api/collector/jobs ----
+   446→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
+   447→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   448→      await connectDB();
+   449→      const body = await req.json();
+   450→      const job = await CollectorJob.create({ ...body, status: 'pending', startedAt: new Date() });
+   451→      return NextResponse.json({ success: true, id: job._id });
+   452→    }
+   453→
+   454→    // ---- /api/collector/review/:id ----
+   455→    if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
+   456→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   457→      await connectDB();
+   458→      const body = await req.json();
+   459→      const { action } = body;
+   460→      const item = await CollectedPhone.findById(segments[2]);
+   461→      if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   462→
+   463→      if (action === 'approve') {
+   464→        // Create a real Phone from collected data
+   465→        const brand = await Brand.findOne({ name: new RegExp(`^${item.brandName}$`, 'i') });
+   466→        if (!brand) return NextResponse.json({ error: `Brand "${item.brandName}" not found` }, { status: 400 });
+   467→
+   468→        const phone = await Phone.create({
+   469→          brandId: brand._id, modelName: item.model, slug: item.slug,
+   470→          pricePKR: 0, thumbnail: item.thumbnail || '',
+   471→          description: '', status: 'published', active: true,
+   472→          featured: false, trending: false, upcoming: false,
+   473→        });
+   474→        item.status = 'approved';
+   475→        item.approvedPhoneId = phone._id;
+   476→        await item.save();
+   477→        await ActivityLog.create({ action: 'collector_approve', details: `Approved: ${item.brandName} ${item.model}`, entityType: 'collector' });
+   478→        return NextResponse.json({ success: true, phoneId: phone._id });
+   479→      } else if (action === 'reject') {
+   480→        item.status = 'rejected';
+   481→        await item.save();
+   482→        return NextResponse.json({ success: true });
+   483→      }
+   484→      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+   485→    }
+   486→
+   487→    // ---- /api/collector/sources/:id/test ----
+   488→    if (segments.length === 4 && segments[0] === 'collector' && segments[1] === 'sources' && segments[3] === 'test') {
+   489→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   490→      return NextResponse.json({ success: true, message: 'Test not implemented' });
+   491→    }
+   492→
+   493→    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   494→  } catch (e: any) {
+   495→    console.error('API POST error:', e.message);
+   496→    return NextResponse.json({ error: e.message }, { status: 500 });
+   497→  }
+   498→}
+   499→
+   500→// ============ PUT HANDLER ============
+   501→export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   502→  const { path } = await params;
+   503→  const segments = path || [];
+   504→
+   505→  try {
+   506→    // ---- /api/collector/sources/:id (toggle) ----
+   507→    if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
+   508→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   509→      await connectDB();
+   510→      const source = await CollectorSource.findById(segments[2]);
+   511→      if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   512→      source.enabled = !source.enabled;
+   513→      await source.save();
+   514→      return NextResponse.json({ success: true, enabled: source.enabled });
+   515→    }
+   516→
+   517→    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   518→  } catch (e: any) {
+   519→    return NextResponse.json({ error: e.message }, { status: 500 });
+   520→  }
+   521→}
+   522→
+   523→// ============ DELETE HANDLER ============
+   524→export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+   525→  const { path } = await params;
+   526→  const segments = path || [];
+   527→
+   528→  try {
+   529→    // ---- /api/collector/jobs (delete job) ----
+   530→    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
+   531→      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   532→      await connectDB();
+   533→      const body = await req.json();
+   534→      await CollectorJob.findByIdAndDelete(body.jobId);
+   535→      return NextResponse.json({ success: true });
+   536→    }
+   537→
+   538→    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+   539→  } catch (e: any) {
+   540→    return NextResponse.json({ error: e.message }, { status: 500 });
+   541→  }
+   542→}
+   543→
+   544→// ============ FILE UPLOAD HANDLER ============
+   545→async function handleCollectorFileUpload(req: NextRequest) {
+   546→  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+   547→  try {
+   548→    await connectDB();
+   549→    const formData = await req.formData();
+   550→    const file = formData.get('file') as File | null;
+   551→    const sourceId = formData.get('sourceId') as string;
+   552→
+   553→    if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+   554→
+   555→    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+   556→    if (!['json', 'csv', 'xlsx', 'xls'].includes(ext)) {
+   557→      return NextResponse.json({ error: 'Unsupported file type. Use .json, .csv, or .xlsx' }, { status: 400 });
+   558→    }
+   559→
+   560→    const buffer = Buffer.from(await file.arrayBuffer());
+   561→    let records: any[];
+   562→
+   563→    if (ext === 'json' || ext === 'xlsx' || ext === 'xls') {
+   564→      const text = buffer.toString('utf-8');
+   565→      const parsed = JSON.parse(text);
+   566→      records = Array.isArray(parsed) ? parsed : [parsed];
+   567→      if (!Array.isArray(records[0])) {
+   568→        for (const wrapper of ['phones', 'data', 'records', 'results', 'items']) {
+   569→          if (Array.isArray(records[wrapper])) { records = records[wrapper]; break; }
+   570→        }
+   571→      }
+   572→    } else if (ext === 'csv') {
+   573→      const text = buffer.toString('utf-8');
+   574→      const result = await new Promise<{ data: any[] }>((resolve, reject) => {
+   575→        Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve });
+   576→      });
+   577→      records = result.data;
+   578→    }
+   579→
+   580→    if (!Array.isArray(records) || records.length === 0) {
+   581→      return NextResponse.json({ error: 'No phone records found in file' }, { status: 400 });
+   582→    }
+   583→
+   584→    let sourceName = `Upload: ${file.name}`;
+   585→    let resolvedSourceId = sourceId;
+   586→
+   587→    if (!resolvedSourceId) {
+   588→      const slug = file.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().slice(0, 30);
+   589→      const existing = await CollectorSource.findOne({ name: new RegExp(`^${slug}`, 'i') }).lean();
+   590→      if (existing) {
+   591→        resolvedSourceId = (existing._id as string).toString();
+   592→        sourceName = existing.name;
+   593→      } else {
+   594→        const source = await CollectorSource.create({
+   595→          name: `Upload ${file.name}`, type: ext === 'csv' ? 'csv_url' : 'json_url',
+   596→          endpoint: '', enabled: true, totalCollected: 0,
+   597→        });
+   598→        resolvedSourceId = (source._id as string).toString();
+   599→        sourceName = source.name;
+   600→      }
+   601→    }
+   602→
+   603→    const issues: string[] = [];
+   604→    const validRecords: any[] = [];
+   605→    for (let i = 0; i < records.length; i++) {
+   606→      const r = records[i];
+   607→      const brand = String(r.brand || r.brandName || '').trim();
+   608→      const model = String(r.model || r.modelName || r.name || '').trim();
+   609→      if (!brand || !model) { issues.push(`Row ${i + 1}: missing brand or model`); continue; }
+   610→      const slug = `${brand} ${model}`.toLowerCase().replace(/[^a-z0-9\s-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+   611→      if (!/^[a-z0-9-]+$/.test(slug)) { issues.push(`Row ${i + 1}: invalid slug "${slug}"`); continue; }
+   612→      const phone: any = { brandName: brand, model, slug, ...r };
+   613→      const vIssues = validateCollectedPhone(phone);
+   614→      for (const iss of vIssues) issues.push(`Row ${i + 1}: ${iss.severity}: ${iss.field} - ${iss.message}`);
+   615→      validRecords.push(phone);
+   616→    }
+   617→
+   618→    const allExisting = await Phone.find(
+   619→      { active: true, status: 'published' },
+   620→      { modelName: 1, slug: 1, brandId: 1, pricePKR: 1, battery: 1, display: 1, chipset: 1, os: 1, weight: 1 }
+   621→    ).populate({ path: 'brand', select: 'name' }).lean();
+   622→    const existingMap = new Map<string, any>();
+   623→    for (const p of allExisting) {
+   624→      existingMap.set(`${(p.brand as any)?.name || ''}|${p.modelName}`.toLowerCase(), {
+   625→        _id: p._id, modelName: p.modelName, slug: p.slug,
+   626→        brand: p.brand ? { name: p.brand.name } : undefined,
+   627→        weight: String(p.weight || ''), battery: String(p.battery || ''),
+   628→        display: String(p.display || ''), chipset: String(p.chipset || ''), os: String(p.os || ''),
+   629→        pricePKR: p.pricePKR || 0,
+   630→      });
+   631→    }
+   632→
+   633→    let inserted = 0, updated = 0, skipped = 0;
+   634→    const batchDocs: any[] = [];
+   635→
+   636→    for (const phone of validRecords) {
+   637→      const phoneNorm: any = { ...phone, brandName: String(phone.brandName), model: String(phone.model), slug };
+   638→      phoneNorm.releaseDate = String(phoneNorm.releaseDate || '');
+   639→      const dupResult = detectDuplicates(phoneNorm, allExisting);
+   640→      const hasExact = dupResult.matches.some(m => m.confidence >= 0.95);
+   641→      if (hasExact) { skipped++; continue; }
+   642→      const conflicts = detectConflicts(phoneNorm, existingMap.get(`${phoneNorm.brandName}|${phoneNorm.model}`.toLowerCase()) || [], sourceName);
+   643→      const isNew = dupResult.matches.length === 0 && conflicts.length === 0;
+   644→      if (isNew) { inserted++; } else { updated++; }
+   645→      const categories = suggestCategory(phoneNorm);
+   646→      const seo = suggestSEO(phoneNorm);
+   647→      const provenance = buildFieldProvenance(phoneNorm, resolvedSourceId, sourceName, '', 0.85);
+   648→      batchDocs.push({
+   649→        status: isNew ? 'pending' : 'needs_review',
+   650→        brandName: phoneNorm.brandName, model: phoneNorm.model, slug: phoneNorm.slug,
+   651→        releaseDate: phoneNorm.releaseDate || '',
+   652→        announcedDate: String(phoneNorm.announcedDate || ''),
+   653→        availability: String(phoneNorm.availability || ''),
+   654→        deviceStatus: String(phoneNorm.deviceStatus || ''),
+   655→        deviceType: String(phoneNorm.deviceType || ''),
+   656→        display: phoneNorm.display || {}, processor: phoneNorm.processor || {},
+   657→        memory: phoneNorm.memory || {}, camera: phoneNorm.camera || {},
+   658→        battery: phoneNorm.battery || {}, body: phoneNorm.body || {},
+   659→        connectivity: phoneNorm.connectivity || {}, software: phoneNorm.software || {},
+   660→        audio: phoneNorm.audio || {}, sensors: phoneNorm.sensors || {},
+   661→        benchmarks: phoneNorm.benchmarks || {}, images: phoneNorm.images || [],
+   662→        thumbnail: phoneNorm.thumbnail || '',
+   663→        suggestedCategory: categories.join(', '),
+   664→        suggestedSeoTitle: seo.title, suggestedSeoDescription: seo.description,
+   665→        suggestedKeywords: seo.keywords,
+   666→        sourceId: new mongoose.Types.ObjectId(resolvedSourceId),
+   667→        sourceName, sourceUrl: '', providerRecordId: phoneNorm.slug,
+   668→        fieldProvenance: provenance,
+   669→        duplicateMatches: dupResult.matches.map(m => ({
+   670→          type: m.type, phoneId: m.phoneId || '', modelName: m.modelName || '',
+   671→          brandName: m.brandName || '', slug: m.slug || '', confidence: m.confidence,
+   672→        })),
+   673→        hasExactDuplicate: hasExact,
+   674→        duplicatePhoneId: dupResult.matches[0]?.phoneId || '',
+   675→        conflicts, conflictCount: conflicts.length,
+   676→        validationIssues: issues.filter(i => i.includes(String(i + 1))).length > 0 ? issues.filter(i => i.includes(String(i + 1))) : [],
+   677→        isValid: issues.filter(i => i.includes('error')).length === 0,
+   678→        sourceReliability: 1.0,
+   679→      });
+   680→    }
+   681→
+   682→    if (batchDocs.length > 0) {
+   683→      await CollectedPhone.insertMany(batchDocs);
+   684→    }
+   685→
+   686→    await CollectorSource.updateOne({ _id: new mongoose.Types.ObjectId(resolvedSourceId) }, {
+   687→      $inc: { totalCollected: inserted + updated, totalFailed: issues.length },
+   688→      $set: { lastSyncAt: new Date(), lastSyncStatus: issues.length > 0 ? 'partial' : 'success' },
+   689→    });
+   690→
+   691→    await ActivityLog.create({
+   692→      action: 'collector_upload',
+   693→      details: `Uploaded ${file.name}: ${inserted} new, ${updated} existing, ${skipped} duplicates, ${issues.length} issues`,
+   694→      entityType: 'collector',
+   695→    });
+   696→
+   697→    return NextResponse.json({
+   698→      success: true, filename: file.name, totalRecords: records.length,
+   699→      validRecords: validRecords.length, inserted, updated, skipped, issues,
+   700→    });
+   701→  } catch (e: any) {
+   702→    return NextResponse.json({ error: e.message }, { status: 500 });
+   703→  }
+   704→}
