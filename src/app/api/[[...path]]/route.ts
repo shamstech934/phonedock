@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile } from 'fs/promises';
 import Papa from 'papaparse';
 import { createProvider } from '@/lib/collectors';
-import { CollectorSource, CollectedPhone, CollectorJob, ActivityLog } from '@/lib/models';
+import { Phone, CollectorSource, CollectedPhone, CollectorJob, ActivityLog } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
+import mongoose from 'mongoose';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
 // ============ FILE UPLOAD HANDLER ============
@@ -154,7 +155,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
         suggestedSeoTitle: seo.title,
         suggestedSeoDescription: seo.description,
         suggestedKeywords: seo.keywords,
-        sourceId: new Types.ObjectId(resolvedSourceId),
+        sourceId: new mongoose.Types.ObjectId(resolvedSourceId),
         sourceName,
         sourceUrl: '',
         providerRecordId: phoneNorm.slug,
@@ -179,7 +180,7 @@ export async function handleCollectorFileUpload(req: NextRequest) {
     }
 
     // Update source stats
-    await CollectorSource.updateOne({ _id: new Types.ObjectId(resolvedSourceId) }, {
+    await CollectorSource.updateOne({ _id: new mongoose.Types.ObjectId(resolvedSourceId) }, {
       $inc: { totalCollected: inserted + updated, totalFailed: issues.length },
       $set: { lastSyncAt: new Date(), lastSyncStatus: issues.length > 0 ? 'partial' : 'success' },
     });
