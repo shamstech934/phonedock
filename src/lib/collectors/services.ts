@@ -37,7 +37,7 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
   }
 
   // Validate URLs
-  const urlFields = [...(phone.images || []), phone.thumbnail].filter(Boolean);
+  const urlFields = [...(phone.images || []), phone.thumbnail].filter((u): u is string => Boolean(u));
   for (const url of urlFields) {
     try {
       const parsed = new URL(url);
@@ -274,7 +274,7 @@ export function suggestSEO(phone: NormalizedPhone): { title: string; description
 
   const title = `${brand} ${model} - Full Specs & Price${specsStr ? ` | ${specs.slice(0, 2).join(', ')}` : ''} | PhoneDock`;
 
-  const description = `${brand} ${model} complete specifications${specsStr ? `: ${specs.join(', ')}` : ''}.${priceStr ? ` ${brand} ${model} price in Pakistan is ${phone.pakistanPrice.toLocaleString()} PKR.` : ''} Compare specs, read reviews, and find the best deals on PhoneDock.`;
+  const description = `${brand} ${model} complete specifications${specsStr ? `: ${specs.join(', ')}` : ''}.${priceStr ? ` ${brand} ${model} price in Pakistan is ${(phone.pakistanPrice ?? 0).toLocaleString()} PKR.` : ''} Compare specs, read reviews, and find the best deals on PhoneDock.`;
 
   const keywords = [
     `${brand} ${model}`, `${model} price in Pakistan`, `${model} specs`,

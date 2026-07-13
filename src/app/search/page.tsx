@@ -1,0 +1,169 @@
+'use client';
+
+import { Suspense, useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+import { Search, Smartphone, Layers } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Header } from '@/components/shared/Header';
+import { Footer } from '@/components/shared/Footer';
+import { PhoneCard } from '@/components/shared/PhoneCard';
+import type { Brand, Phone } from '@/components/shared/types';
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-200/70 text-yellow-900 rounded px-0.5">{part}</mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
+function PhoneCardSkeleton() {
+  return (
+    <div className="card-premium overflow-hidden">
+      <div className="p-3 sm:p-4">
+        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
+        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
+        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
+        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+function SearchContent() {
+  const searchParams = useSearchParams();
+  const query = searchParams.get('q') || '';
+
+  const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!query) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => {
+      if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); }
+    }).catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [query]);
+
+  const total = results.brands.length + results.phones.length;
+
+  const suggestions = ['Samsung', 'iPhone', 'Xiaomi', 'Oppo', 'Vivo', 'OnePlus', 'Tecno', 'Infinix', 'Realme', '5G', 'Camera', 'Budget'];
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="skeleton-shimmer h-8 w-64 rounded-lg mb-2" />
+        <div className="skeleton-shimmer h-5 w-32 rounded-md mb-6" />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+      </div>
+    );
+  }
+
+  if (!query) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-10 animate-fade-in">
+        <div className="text-center mb-10">
+          <Search className="w-14 h-14 mx-auto mb-4 text-gray-300" />
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 mb-2">Search Phones</h1>
+          <p className="text-sm text-muted-foreground">Type in the search bar above to find phones, brands, and more</p>
+        </div>
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Popular Searches</h2>
+          <div className="flex flex-wrap gap-2">
+            {suggestions.map(s => (
+              <Link key={s} href={`/search?q=${encodeURIComponent(s)}`} className="px-4 py-2 rounded-xl bg-white/60 border border-gray-200/60 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors">
+                {s}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-8">
+      <div>
+        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">
+          Search Results for &ldquo;<span className="text-blue-500">{query}</span>&rdquo;
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
+      </div>
+
+      {results.brands.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Layers className="w-5 h-5 text-blue-500" /> Brands ({results.brands.length})</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {results.brands.map(b => (
+              <Link key={b.id} href={`/brands/${b.slug}`} className="phone-card glass-shine p-4 cursor-pointer group flex items-center gap-3 block">
+                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors">
+                  {b.logo ? <Image src={b.logo} alt={b.name} width={28} height={28} className="object-contain" unoptimized /> : <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate"><HighlightText text={b.name} query={query} /></p>
+                  <p className="text-[10px] text-muted-foreground">{b._count?.phones || 0} phones</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {results.phones.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> Phones ({results.phones.length})</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {results.phones.map(p => (
+              <PhoneCard key={p.id} phone={p} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {total === 0 && (
+        <div className="text-center py-20 text-muted-foreground">
+          <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
+          <h3 className="text-lg font-bold text-gray-900 mb-1">No results found for &ldquo;{query}&rdquo;</h3>
+          <p className="text-sm mb-4">Try a different search term or browse our database</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {suggestions.slice(0, 6).map(s => (
+              <Link key={s} href={`/search?q=${encodeURIComponent(s)}`} className="px-3 py-1.5 rounded-lg bg-white/60 border border-gray-200/60 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                {s}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4">
+            <Button variant="outline" className="rounded-xl" asChild><Link href="/phones">Browse All Phones</Link></Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+      <main className="flex-1">
+        <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-64 rounded-2xl" /></div>}>
+          <SearchContent />
+        </Suspense>
+      </main>
+      <Footer />
+    </div>
+  );
+}

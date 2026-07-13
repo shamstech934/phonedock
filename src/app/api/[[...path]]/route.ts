@@ -5,26 +5,33 @@ import { createProvider } from '@/lib/collectors';
 import { Phone, Brand, News, Sponsor, Admin, ActivityLog, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
 import { connectDB, connectDBSafe } from '@/lib/mongodb';
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import { verifyPassword, createSignedSession, getAuthSessionAsync, checkLoginRateLimit, recordFailedLogin, resetLoginRateLimit, isRevoked, sanitizeInput } from '@/lib/auth';
+import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
-// ============ HELPERS ============
+// ============ AUTH HELPERS ============
 
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'phonedock-admin-2024';
-let _adminToken: string | null = null;
-let _adminUser: any = null;
-
-function generateToken() {
-  return 'pd_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: any; error?: NextResponse }> {
+  const session = await getAuthSessionAsync(req);
+  if (!session) {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+  if (session.jti && isRevoked(session.jti)) {
+    return { error: NextResponse.json({ error: 'Session revoked' }, { status: 401 }) };
+  }
+  await connectDB();
+  const admin = await Admin.findById(session.sub).select('-password');
+  if (!admin || !admin.active) {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+  return { admin };
 }
 
-function verifyAdmin(req: NextRequest): boolean {
-  const auth = req.headers.get('Authorization');
-  if (!auth?.startsWith('Bearer ')) return false;
-  const token = auth.slice(7);
-  // In production with multiple instances, you'd verify against DB
-  // For now we accept any valid-looking token (Vercel serverless = single instance per request)
-  return token.startsWith('pd_') && token.length > 20;
+function requirePermission(admin: any, permission: string): NextResponse | null {
+  if (!hasPermission(admin.role as any, permission as any)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  return null;
 }
 
 function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[], prices?: any[]) {
@@ -63,7 +70,7 @@ function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[], pric
 }
 
 // ============ GET HANDLER ============
-export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   const segments = path || [];
 
@@ -258,7 +265,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/stats ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'stats') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
       const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount] = await Promise.all([
         Phone.countDocuments({ active: true, status: 'published' }),
@@ -272,7 +280,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/phones ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'phones') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
       const phones = await Phone.find().populate('brand').sort({ createdAt: -1 }).lean();
       return NextResponse.json({ phones: phones.map(p => phoneToJSON(p)) });
@@ -280,7 +289,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/phones/:id (GET single phone with full data) ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
       const phone = await Phone.findById(segments[2]).populate('brand').lean();
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -295,7 +305,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/brands ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'brands') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'brands:read'); if (permCheck) return permCheck;
       await connectDB();
       const brands = await Brand.find().sort({ name: 1 }).lean();
       return NextResponse.json({ brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '', active: b.active })) });
@@ -303,7 +314,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/news ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'news') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
       await connectDB();
       const news = await News.find().sort({ createdAt: -1 }).lean();
       return NextResponse.json({ news: news.map((n: any) => ({ id: n._id?.toString(), title: n.title, slug: n.slug, excerpt: n.excerpt || '', content: n.content || '', category: n.category || 'General', author: n.author || '', imageUrl: n.image || '', published: n.published, status: n.status, createdAt: n.createdAt })) });
@@ -311,7 +323,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/sponsors ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sponsors') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'sponsors:read'); if (permCheck) return permCheck;
       await connectDB();
       const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
       return NextResponse.json({ sponsors: sponsors.map((s: any) => ({ id: s._id?.toString(), name: s.name, image: s.image || '', url: s.url || '', position: s.position || '', active: s.active })) });
@@ -319,20 +332,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/activity ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'activity') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
       await connectDB();
       const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(50).populate('adminId', 'name email').lean();
       return NextResponse.json({ logs: logs.map((l: any) => ({ id: l._id?.toString(), action: l.action, details: l.details, entityType: l.entityType, createdAt: l.createdAt, admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined })) });
     }
 
-    // ---- /api/admin/login ---- (GET returns current session)
+    // ---- /api/admin/login ---- (GET returns current session info)
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
-      return NextResponse.json({ ok: true });
+      const session = await getAuthSessionAsync(req);
+      if (session) {
+        await connectDB();
+        const admin = await Admin.findById(session.sub).select('-password');
+        if (admin && admin.active) {
+          return NextResponse.json({ authenticated: true, user: { id: admin._id?.toString(), email: admin.email, name: admin.name, role: admin.role } });
+        }
+      }
+      return NextResponse.json({ ok: true, authenticated: false });
     }
 
     // ---- /api/collector/dashboard ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'dashboard') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
       await connectDB();
       const [totalSources, activeSources, totalJobs, pendingReview, completedJobs] = await Promise.all([
         CollectorSource.countDocuments(),
@@ -346,7 +369,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/collector/sources ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
       await connectDB();
       const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
       return NextResponse.json({ sources: sources.map((s: any) => ({ id: s._id?.toString(), ...s })) });
@@ -354,7 +378,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/collector/jobs ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
       await connectDB();
       const jobs = await CollectorJob.find().sort({ createdAt: -1 }).lean();
       return NextResponse.json({ jobs: jobs.map((j: any) => ({ id: j._id?.toString(), ...j })) });
@@ -362,7 +387,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/collector/review ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'review') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
       await connectDB();
       const { searchParams } = new URL(req.url);
       const status = searchParams.get('status') || 'pending';
@@ -377,7 +403,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/collector/review/:id ----
     if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
       await connectDB();
       const phone = await CollectedPhone.findById(segments[2]).lean();
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -392,7 +419,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 }
 
 // ============ POST HANDLER ============
-export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   const segments = path || [];
 
@@ -401,34 +428,99 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
       await connectDB();
       const body = await req.json();
-      const { email, password } = body;
+      const email = sanitizeInput(String(body.email || '')).toLowerCase();
+      const password = String(body.password || '');
 
-      // Try DB first
-      let admin = await Admin.findOne({ email, active: true });
-
-      // Fallback: if no admin in DB, auto-create with default credentials
-      if (!admin && email === 'admin@phonedock.pk' && password === 'admin123') {
-        const hashedPw = await bcrypt.hash('admin123', 12);
-        admin = await Admin.create({
-          email: 'admin@phonedock.pk',
-          password: hashedPw,
-          name: 'Admin',
-          role: 'superadmin',
-          active: true,
-        });
-        console.log('[Auto-seed] Created default admin user');
+      if (!email || !password) {
+        return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
       }
 
-      if (!admin) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      const valid = await bcrypt.compare(password, admin.password);
-      if (!valid) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-      await Admin.updateOne({ _id: admin._id }, { lastLogin: new Date() });
-      try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch {}
-      const token = generateToken();
-      return NextResponse.json({
-        token,
-        admin: { id: admin._id?.toString(), email: admin.email, name: admin.name, role: admin.role },
+      // Check rate limit for this email
+      const rateCheck = checkLoginRateLimit(email);
+      if (!rateCheck.allowed) {
+        const minsLeft = rateCheck.lockedUntil
+          ? Math.ceil((rateCheck.lockedUntil.getTime() - Date.now()) / 60000)
+          : 15;
+        return NextResponse.json({ error: `Too many login attempts. Try again in ${minsLeft} minutes.` }, { status: 429 });
+      }
+
+      const admin = await Admin.findOne({ email }).select('+password');
+      if (!admin) {
+        // Don't reveal whether email exists
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      }
+
+      // Check if account is locked at DB level
+      if (admin.lockedUntil && new Date(admin.lockedUntil) > new Date()) {
+        const minsLeft = Math.ceil((new Date(admin.lockedUntil).getTime() - Date.now()) / 60000);
+        return NextResponse.json({ error: `Account locked. Try again in ${minsLeft} minutes.` }, { status: 423 });
+      }
+
+      if (!admin.active) {
+        return NextResponse.json({ error: 'Account is disabled' }, { status: 403 });
+      }
+
+      const valid = await verifyPassword(password, admin.password);
+      if (!valid) {
+        recordFailedLogin(email);
+        admin.failedAttempts = (admin.failedAttempts || 0) + 1;
+        if (admin.failedAttempts >= 5) {
+          admin.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        }
+        await admin.save();
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      }
+
+      // Successful login — reset failed attempts
+      admin.failedAttempts = 0;
+      admin.lockedUntil = null;
+      admin.lastLogin = new Date();
+      admin.lastLoginIp = req.headers.get('x-forwarded-for')?.split(',')[0] || '';
+      admin.lastLoginUA = req.headers.get('user-agent') || '';
+      await admin.save();
+      resetLoginRateLimit(email);
+
+      const session = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
+
+      const response = NextResponse.json({
+        token: session.accessToken,
+        admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
       });
+
+      // Set refresh token as HTTP-only cookie
+      response.cookies.set('pd_refresh', session.refreshToken, session.cookieOptions);
+
+      try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch {}
+      return response;
+    }
+
+    // ---- /api/admin/logout ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'logout') {
+      const session = await getAuthSessionAsync(req);
+      if (session?.jti) {
+        const { revokeSession } = await import('@/lib/auth');
+        revokeSession(session.jti);
+      }
+      const response = NextResponse.json({ success: true });
+      response.cookies.set('pd_refresh', '', { maxAge: 0, path: '/' });
+      return response;
+    }
+
+    // ---- /api/admin/refresh-token ----
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'refresh-token') {
+      const refreshToken = req.cookies.get('pd_refresh')?.value;
+      if (!refreshToken) return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
+      const { verifyToken } = await import('@/lib/auth');
+      const payload = await verifyToken(refreshToken);
+      if (!payload || payload.type !== 'refresh') return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
+      if (payload.jti && isRevoked(payload.jti)) return NextResponse.json({ error: 'Session revoked' }, { status: 401 });
+      await connectDB();
+      const admin = await Admin.findById(payload.sub).select('-password');
+      if (!admin || !admin.active) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const newSession = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
+      const response = NextResponse.json({ success: true, token: newSession.accessToken });
+      response.cookies.set('pd_refresh', newSession.refreshToken, newSession.cookieOptions);
+      return response;
     }
 
     // ---- /api/import (file upload) ----
@@ -438,7 +530,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/import/validate ----
     if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'validate') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'imports:read'); if (permCheck) return permCheck;
       const formData = await req.formData();
       const file = formData.get('file') as File | null;
       if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 });
@@ -459,14 +552,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/import/rollback ----
     if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'rollback') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
       const body = await req.json();
       return NextResponse.json({ success: true, message: 'Rollback not implemented yet' });
     }
 
     // ---- /api/admin/phones (CREATE) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'phones') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:create'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const { brandId, modelName, slug: inputSlug, pricePKR, ptaStatus, ptaApproved, releaseDate,
@@ -491,7 +586,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/brands (CREATE) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'brands') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'brands:create'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const { name, slug: inputSlug, logo, country, description, sortOrder } = body;
@@ -505,7 +601,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/news (CREATE) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'news') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'news:create'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const { title, slug: inputSlug, content, excerpt, category, image, author, published, featured } = body;
@@ -519,7 +616,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/phones/bulk-import ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'bulk-import') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const { records, mode = 'skip_duplicates' } = body;
@@ -558,7 +656,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/seed ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seed') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:seed'); if (permCheck) return permCheck;
       await connectDB();
       const { seedPhones } = await import('@/lib/seed-data');
       const result = await seedPhones();
@@ -568,7 +667,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/collector/sources ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const source = await CollectorSource.create(body);
@@ -577,7 +677,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/collector/jobs ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const job = await CollectorJob.create({ ...body, status: 'pending', startedAt: new Date() });
@@ -586,7 +687,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/collector/review/:id ----
     if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       const { action } = body;
@@ -619,7 +721,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/collector/sources/:id/test ----
     if (segments.length === 4 && segments[0] === 'collector' && segments[1] === 'sources' && segments[3] === 'test') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       return NextResponse.json({ success: true, message: 'Test not implemented' });
     }
 
@@ -631,14 +734,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 }
 
 // ============ PUT HANDLER ============
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   const segments = path || [];
 
   try {
     // ---- /api/admin/phones/:id (UPDATE) ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
       await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -692,7 +796,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/brands/:id (UPDATE) ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'brands:edit'); if (permCheck) return permCheck;
       await connectDB();
       const brand = await Brand.findById(segments[2]);
       if (!brand) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -710,7 +815,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/news/:id (UPDATE) ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'news:edit'); if (permCheck) return permCheck;
       await connectDB();
       const news = await News.findById(segments[2]);
       if (!news) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -732,7 +838,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/phones/:id/toggle-featured ----
     if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'phones' && segments[3] === 'toggle-featured') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
       await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -742,7 +849,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/admin/phones/:id/toggle-trending ----
     if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'phones' && segments[3] === 'toggle-trending') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
       await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -752,7 +860,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     // ---- /api/collector/sources/:id (toggle) ----
     if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       await connectDB();
       const source = await CollectorSource.findById(segments[2]);
       if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -768,14 +877,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 }
 
 // ============ DELETE HANDLER ============
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   const segments = path || [];
 
   try {
     // ---- /api/admin/phones/:id ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
       await connectDB();
       const id = segments[2];
       const phone = await Phone.findById(id);
@@ -794,7 +904,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
     // ---- /api/admin/brands/:id ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'brands:delete'); if (permCheck) return permCheck;
       await connectDB();
       const id = segments[2];
       const brand = await Brand.findById(id);
@@ -809,7 +920,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
     // ---- /api/admin/news/:id ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'news:delete'); if (permCheck) return permCheck;
       await connectDB();
       const id = segments[2];
       const news = await News.findById(id);
@@ -822,7 +934,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
     // ---- /api/collector/jobs (delete job) ----
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
-      if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       await connectDB();
       const body = await req.json();
       await CollectorJob.findByIdAndDelete(body.jobId);
@@ -837,7 +950,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
 // ============ FILE UPLOAD HANDLER ============
 async function handleCollectorFileUpload(req: NextRequest) {
-  if (!verifyAdmin(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const authResult = await getAdminFromRequest(req);
+  if (authResult.error) return authResult.error;
+  const admin = authResult.admin;
+  const permCheck = requirePermission(admin, 'imports:execute');
+  if (permCheck) return permCheck;
   try {
     await connectDB();
     const formData = await req.formData();
@@ -852,15 +969,16 @@ async function handleCollectorFileUpload(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    let records: any[];
+    let records: any[] = [];
 
     if (ext === 'json' || ext === 'xlsx' || ext === 'xls') {
       const text = buffer.toString('utf-8');
       const parsed = JSON.parse(text);
       records = Array.isArray(parsed) ? parsed : [parsed];
       if (!Array.isArray(records[0])) {
-        for (const wrapper of ['phones', 'data', 'records', 'results', 'items']) {
-          if (Array.isArray(records[wrapper])) { records = records[wrapper]; break; }
+        for (const wrapper of ['phones', 'data', 'records', 'results', 'items'] as const) {
+          const candidate = (records as unknown as Record<string, unknown>)[wrapper];
+          if (Array.isArray(candidate)) { records = candidate as any[]; break; }
         }
       }
     } else if (ext === 'csv') {
@@ -909,7 +1027,7 @@ async function handleCollectorFileUpload(req: NextRequest) {
       validRecords.push(phone);
     }
 
-    const allExisting = await Phone.find(
+    const allExisting: any[] = await Phone.find(
       { active: true, status: 'published' },
       { modelName: 1, slug: 1, brandId: 1, pricePKR: 1, battery: 1, display: 1, chipset: 1, os: 1, weight: 1 }
     ).populate({ path: 'brand', select: 'name' }).lean();
@@ -928,7 +1046,7 @@ async function handleCollectorFileUpload(req: NextRequest) {
     const batchDocs: any[] = [];
 
     for (const phone of validRecords) {
-      const phoneNorm: any = { ...phone, brandName: String(phone.brandName), model: String(phone.model), slug };
+      const phoneNorm: any = { ...phone, brandName: String(phone.brandName), model: String(phone.model), slug: phone.slug };
       phoneNorm.releaseDate = String(phoneNorm.releaseDate || '');
       const dupResult = detectDuplicates(phoneNorm, allExisting);
       const hasExact = dupResult.matches.some(m => m.confidence >= 0.95);

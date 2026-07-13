@@ -31,11 +31,13 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
+.env.local
+.env.production.local
+.env.development.local
 
 # vercel
 .vercel
-
 
 # typescript
 *.tsbuildinfo
@@ -43,12 +45,61 @@ next-env.d.ts
 local-*
 .claude
 .z-ai-config
+
+# Logs
 *.log
 dev.log
 dev.out.log
+server.log
+
+# OS files
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Lock files (keep package-lock.json, remove bun.lock)
+bun.lock
+
+# Tool output
+tool-results/
+agent-ctx/
+
+# Uploads (user content, not source)
+upload/
+
+# Downloads (generated files, not source)
+download/
+
+# Examples (unrelated demos)
+examples/
+
+# Database files
+db/
+*.db
+
+# Test & prompt dirs
 test
 prompt
 
-server.log
 # Skills directory
 /skills/
+
+# Old page parts
+scripts/page_part*.tsx
+
+# Python audit scripts
+scripts/audit-report*.py
+
+# Temporary files
+*.tmp
+*.bak
+
+# Caddy (infra, not source)
+Caddyfile
+
+# Worklog
+worklog.md

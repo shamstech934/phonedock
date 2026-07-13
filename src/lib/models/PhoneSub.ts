@@ -45,6 +45,14 @@ const PhonePriceSchema = new Schema({
   price: { type: Number, default: 0 },
   url: { type: String, default: '' },
   inStock: { type: Boolean, default: true },
+  currency: { type: String, default: 'PKR' },
+  sourceUrl: { type: String, default: '' },
+  warrantyType: { type: String, default: '' },
+  ptaStatus: { type: String, default: '' },
+  lastChecked: { type: Date, default: null },
+  validityStatus: { type: String, enum: ['valid', 'stale', 'unknown'], default: 'unknown' },
 }, { timestamps: true });
+
+PhonePriceSchema.index({ phoneId: 1, storeName: 1 }, { unique: true });
 
 export const PhonePrice = mongoose.models.PhonePrice || mongoose.model('PhonePrice', PhonePriceSchema);

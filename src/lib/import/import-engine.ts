@@ -203,7 +203,7 @@ export async function importPhones(
       } catch (e: any) {
         result.errors.push({
           row,
-          model: phone.modelName || `Row ${row}`,
+          model: validation.phone.modelName || `Row ${row}`,
           error: e.message || 'Unknown error during import',
         });
         result.failed++;
@@ -254,7 +254,7 @@ export async function rollbackImport(historyId: string): Promise<{ success: bool
   });
 
   // Also clean up related specs, benchmarks, images
-  const phoneIds = deleted.map(d => d._id);
+  const phoneIds = (deleted as unknown as any[]).map((d: any) => d._id);
   if (phoneIds.length > 0) {
     await Promise.all([
       PhoneSpecs.deleteMany({ phoneId: { $in: phoneIds } }),

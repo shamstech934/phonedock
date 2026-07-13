@@ -1,0 +1,299 @@
+'use client';
+
+import { useState, useRef } from 'react';
+import { Upload, UploadCloud, FileText, CheckCircle, XCircle, AlertTriangle, Download, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { useAdmin } from '@/lib/useAdmin';
+
+export default function AdminImportPage() {
+  const { token } = useAdmin();
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [validation, setValidation] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('upload');
+  const [importMode, setImportMode] = useState<'skip_duplicates' | 'update_existing' | 'new_only'>('skip_duplicates');
+  const [previewRecords, setPreviewRecords] = useState<any[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [parseError, setParseError] = useState('');
+
+  const handleFile = async (f: File) => {
+    const ext = f.name.split('.').pop()?.toLowerCase();
+    if (!['json', 'csv'].includes(ext || '')) {
+      setParseError('Only JSON and CSV files are supported.');
+      return;
+    }
+    setFile(f); setResult(null); setValidation(null); setParseError(''); setActiveTab('upload');
+    try {
+      const text = await f.text();
+      let records: any[] = [];
+      if (ext === 'json') {
+        const parsed = JSON.parse(text);
+        records = Array.isArray(parsed) ? parsed : (parsed.phones || parsed.data || parsed.records || [parsed]);
+      } else if (ext === 'csv') {
+        const Papa = await import('papaparse');
+        const res = Papa.default.parse(text, { header: true, skipEmptyLines: true });
+        records = res.data;
+      }
+      setPreviewRecords(records);
+      const errors: string[] = [];
+      const valid: any[] = [];
+      records.forEach((r: any, i: number) => {
+        const brand = String(r.brand || r.brandName || '').trim();
+        const model = String(r.model || r.modelName || r.name || '').trim();
+        if (!brand || !model) errors.push(`Row ${i + 1}: Missing brand or model`);
+        else valid.push({ ...r, _brand: brand, _model: model, _row: i + 1 });
+      });
+      setValidation({ total: records.length, validCount: valid.length, errorCount: errors.length, errors, preview: valid.slice(0, 10) });
+    } catch (e: any) { setParseError('Failed to parse file: ' + e.message); setPreviewRecords([]); }
+  };
+
+  const handleImport = async () => {
+    if (!file || !token || previewRecords.length === 0) return;
+    setUploading(true); setActiveTab('results');
+    const startTime = Date.now();
+    try {
+      const res = await fetch('/api/admin/phones/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ records: previewRecords, mode: importMode }),
+      });
+      const data = await res.json();
+      data.duration = Date.now() - startTime;
+      setResult(data);
+    } catch (e: any) { setResult({ error: e.message, duration: Date.now() - startTime }); }
+    setUploading(false);
+  };
+
+  const downloadSampleJson = () => {
+    const sample = [
+      { brand: "Samsung", model: "Galaxy S25 Ultra", pricePKR: 385000, ptaStatus: "PTA Approved", releaseDate: "2025-01-17", ram: "12 GB", storage: "256 GB", chipset: "Snapdragon 8 Elite", display: '6.9"', resolution: "3120x1440", refreshRate: "120Hz", mainCamera: "200 MP", selfieCamera: "12 MP", battery: "5000 mAh", chargingSpeed: "45W", os: "Android 15", weight: "218g", featured: true, trending: true },
+    ];
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'sample-phones.json'; a.click(); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-extrabold text-gray-900">Bulk Import Phones</h1>
+          <p className="text-xs text-muted-foreground mt-1">Upload JSON or CSV files with phone data.</p>
+        </div>
+        <button onClick={downloadSampleJson} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+          <Download className="w-3.5 h-3.5" /> Sample JSON
+        </button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-gray-100">
+          <TabsTrigger value="upload"><Upload className="w-3.5 h-3.5 mr-1.5" />Upload</TabsTrigger>
+          <TabsTrigger value="preview" disabled={!validation}><FileText className="w-3.5 h-3.5 mr-1.5" />Preview ({validation?.validCount || 0})</TabsTrigger>
+          <TabsTrigger value="results" disabled={!result}><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Results</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="upload" className="mt-4">
+          <Card className="border-gray-100">
+            <CardContent className="p-6">
+              {parseError && <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">{parseError}</div>}
+              <div
+                className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 cursor-pointer ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50/50'}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
+                onClick={() => fileRef.current?.click()}>
+                <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><UploadCloud className="w-7 h-7 text-blue-500" /></div>
+                <p className="text-sm font-semibold text-gray-900">Drop your JSON or CSV file here or click to browse</p>
+                <p className="text-xs text-muted-foreground mt-1">JSON and CSV supported</p>
+                {file && (
+                  <div className="mt-3 inline-flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-gray-100 shadow-sm">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm font-medium text-gray-900">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
+                    <button onClick={e => { e.stopPropagation(); setFile(null); setValidation(null); setResult(null); setPreviewRecords([]); }} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+              </div>
+
+              {file && validation && (
+                <div className="mt-5 space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid Records</p></div>
+                    <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
+                    <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total Records</p></div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-gray-700 mb-3">Import Mode</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {([
+                        { value: 'skip_duplicates', label: 'Skip Duplicates', desc: 'Ignore phones that already exist', icon: '🚫' },
+                        { value: 'update_existing', label: 'Update Existing', desc: 'Update specs & prices of existing phones', icon: '🔄' },
+                        { value: 'new_only', label: 'New Only', desc: 'Only import brand new phones', icon: '✨' },
+                      ] as const).map(m => (
+                        <label key={m.value} className={`block cursor-pointer rounded-xl border-2 p-3 transition-all ${importMode === m.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <input type="radio" name="importMode" value={m.value} checked={importMode === m.value} onChange={e => setImportMode(e.target.value as any)} className="sr-only" />
+                          <div className="flex items-center gap-2 mb-1"><span className="text-base">{m.icon}</span><span className="text-sm font-semibold text-gray-900">{m.label}</span></div>
+                          <p className="text-[10px] text-muted-foreground">{m.desc}</p>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {validation.preview?.length > 0 && (
+                    <Card className="border-gray-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">Data Preview (first {Math.min(validation.preview.length, 10)} records)</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead><tr className="border-b border-gray-100">
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price (PKR)</th>
+                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Status</th>
+                            </tr></thead>
+                            <tbody>
+                              {validation.preview.map((r: any, i: number) => (
+                                <tr key={i} className="border-b border-gray-50">
+                                  <td className="py-1.5 px-2 text-gray-400">{r._row || i + 1}</td>
+                                  <td className="py-1.5 px-2 text-gray-900">{r._brand || r.brand || '-'}</td>
+                                  <td className="py-1.5 px-2 font-medium text-gray-900">{r._model || r.modelName || r.model || '-'}</td>
+                                  <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
+                                  <td className="py-1.5 px-2"><Badge className="bg-emerald-50 text-emerald-700 text-[10px]">Valid</Badge></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {validation.errors?.length > 0 && (
+                    <Card className="border-red-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Errors ({validation.errors.length})</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0 max-h-40 overflow-y-auto">
+                        {validation.errors.map((e: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="flex gap-3">
+                    <Button onClick={() => setActiveTab('preview')} variant="outline" className="gap-1.5"><FileText className="w-4 h-4" />Review Preview</Button>
+                    <Button onClick={handleImport} disabled={validation.validCount === 0 || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                      {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                      Import {validation.validCount} Phones
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="preview" className="mt-4">
+          {validation && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid</p></div>
+                <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
+                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total</p></div>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <p className="text-xs text-amber-800">Import mode: <strong>{importMode === 'skip_duplicates' ? 'Skip Duplicates' : importMode === 'update_existing' ? 'Update Existing' : 'New Only'}</strong>.</p>
+              </div>
+              <Card className="border-gray-100">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">All Valid Records ({validation.validCount})</CardTitle></CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100">
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price</th>
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Chipset</th>
+                      </tr></thead>
+                      <tbody>
+                        {validation.preview.map((r: any, i: number) => (
+                          <tr key={i} className="border-b border-gray-50">
+                            <td className="py-1.5 px-2 text-gray-400">{r._row || i + 1}</td>
+                            <td className="py-1.5 px-2 text-gray-900">{r._brand || '-'}</td>
+                            <td className="py-1.5 px-2 font-medium">{r._model || '-'}</td>
+                            <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-600">{r.chipset || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+              <div className="flex gap-3">
+                <Button onClick={() => setActiveTab('upload')} variant="outline">Back</Button>
+                <Button onClick={handleImport} disabled={uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
+                  {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                  Import Now
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="results" className="mt-4">
+          {uploading && !result && (
+            <div className="text-center py-16">
+              <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Importing phones...</p>
+            </div>
+          )}
+          {result && (
+            <div className="space-y-4">
+              {result.error ? (
+                <Card className="border-red-100"><CardContent className="p-6 text-center"><XCircle className="w-10 h-10 text-red-400 mx-auto mb-2" /><p className="text-sm font-medium text-red-700">{result.error}</p></CardContent></Card>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Total Records', value: result.total, color: 'text-gray-900 bg-gray-50' },
+                      { label: 'Imported', value: result.imported, color: 'text-emerald-700 bg-emerald-50' },
+                      { label: 'Updated', value: result.updated, color: 'text-blue-700 bg-blue-50' },
+                      { label: 'Skipped', value: result.skipped, color: 'text-amber-700 bg-amber-50' },
+                      { label: 'Failed', value: result.failed, color: 'text-red-700 bg-red-50' },
+                    ].map(s => (
+                      <div key={s.label} className={`rounded-xl p-4 text-center ${s.color}`}>
+                        <p className="text-2xl font-bold">{s.value}</p>
+                        <p className="text-[10px] font-medium">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {result.duration && <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>}
+                  {result.errors?.length > 0 && (
+                    <Card className="border-red-100">
+                      <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Errors ({result.errors.length})</CardTitle></CardHeader>
+                      <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
+                        {result.errors.map((e: string, i: number) => (
+                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                  <Button onClick={() => { setFile(null); setResult(null); setValidation(null); setPreviewRecords([]); setActiveTab('upload'); }} variant="outline">Import Another File</Button>
+                </>
+              )}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

@@ -56,7 +56,7 @@ export const viewport: Viewport = {
   themeColor: "#3B82F6",
 };
 
-const jsonLd = {
+const jsonLdWebSite = {
   "@context": "https://schema.org",
   "@type": "WebSite",
   name: "PhoneDock",
@@ -64,10 +64,35 @@ const jsonLd = {
   description: "Pakistan's #1 Smartphone Database - Compare specs, prices, PTA status, and read expert reviews",
   potentialAction: {
     "@type": "SearchAction",
-    target: "https://phonedock.pk/#/search/{search_term_string}",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: "https://phonedock.pk/search?q={search_term_string}",
+    },
     "query-input": "required name=search_term_string",
   },
 };
+
+const jsonLdOrg = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "PhoneDock",
+  url: "https://phonedock.pk",
+  logo: "https://phonedock.pk/logo.svg",
+  description: "Pakistan's #1 Smartphone Database - Compare specs, prices, PTA status, and read expert reviews for all major phone brands in Pakistan.",
+  sameAs: [],
+  contactPoint: {
+    "@type": "ContactPoint",
+    contactType: "customer support",
+    email: "info@phonedock.pk",
+    availableLanguage: ["English", "Urdu"],
+  },
+  address: {
+    "@type": "PostalAddress",
+    addressCountry: "PK",
+  },
+};
+
+const jsonLdAll = [jsonLdWebSite, jsonLdOrg];
 
 export default function RootLayout({
   children,
@@ -75,10 +100,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
+        {jsonLdAll.map((item, i) => (
+          <script
+            key={i}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(item) }}
+          />
+        ))}
       </head>
       <body className={`${inter.variable} ${spaceGrotesk.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>

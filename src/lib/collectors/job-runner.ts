@@ -145,7 +145,7 @@ async function processCollectedPhone(
   const fieldProvenance = buildFieldProvenance(phone, sourceId, sourceName, sourceUrl, reliability);
 
   // Determine status
-  let status: CollectedPhone['status'] = 'pending';
+  let status: 'pending' | 'needs_review' | 'approved' | 'rejected' | 'imported' | 'failed' = 'pending';
   if (!isValid) status = 'needs_review';
   else if (dupResult.isDuplicate && conflicts.length > 0) status = 'needs_review';
   else if (dupResult.isDuplicate) status = 'needs_review';

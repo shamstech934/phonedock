@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+import mongoose, { Schema, Document, Types, Model } from 'mongoose';
 
 export interface IBrand {
   _id: Types.ObjectId;
@@ -40,8 +40,21 @@ export interface IPhone extends Document {
   keywords: string;
   views: number;
   status: string;
+  sourceName: string;
+  sourceUrl: string;
+  lastVerifiedAt: Date | null;
+  dataConfidence: 'verified' | 'unverified' | 'auto-imported' | 'user-submitted';
+  createdBy: Types.ObjectId | null;
+  updatedBy: Types.ObjectId | null;
+  publishedBy: Types.ObjectId | null;
+  publishedAt: Date | null;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface IPhoneModel extends Model<IPhone> {
+  findActive(): typeof Model.find;
 }
 
 const PhoneSchema = new Schema<IPhone>({
@@ -74,6 +87,15 @@ const PhoneSchema = new Schema<IPhone>({
   keywords: { type: String, default: '' },
   views: { type: Number, default: 0 },
   status: { type: String, default: 'published' },
+  sourceName: { type: String, default: '' },
+  sourceUrl: { type: String, default: '' },
+  lastVerifiedAt: { type: Date, default: null },
+  dataConfidence: { type: String, enum: ['verified', 'unverified', 'auto-imported', 'user-submitted'], default: 'unverified' },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+  updatedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+  publishedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+  publishedAt: { type: Date, default: null },
+  deletedAt: { type: Date, default: null },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -88,19 +110,25 @@ PhoneSchema.virtual('brand', {
   justOne: true,
 });
 
-PhoneSchema.pre('save', async function(next) {
+(PhoneSchema as any).pre('save', function(this: any, next: (err?: any) => void) {
   if (!this.slug && this.modelName) {
     this.slug = this.modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
   next();
 });
 
-PhoneSchema.index({ slug: 1, unique: true });
-PhoneSchema.index({ brandId: 1 });
+PhoneSchema.index({ slug: 1 }, { unique: true });
+PhoneSchema.index({ brandId: 1, status: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ status: 1 });
 PhoneSchema.index({ active: 1, status: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
+PhoneSchema.index({ modelName: 'text', slug: 'text' });
 
-export const Phone = mongoose.models.Phone || mongoose.model<IPhone>('Phone', PhoneSchema);
+// Static method to find only non-soft-deleted documents
+PhoneSchema.statics.findActive = function() {
+  return this.find({ deletedAt: null });
+};
+
+export const Phone = (mongoose.models.Phone as IPhoneModel) || mongoose.model<IPhone, IPhoneModel>('Phone', PhoneSchema);

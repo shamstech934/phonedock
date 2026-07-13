@@ -16,7 +16,7 @@ const NewsSchema = new Schema({
   status: { type: String, default: 'published' },
 }, { timestamps: true });
 
-NewsSchema.index({ slug: 1, unique: true });
+NewsSchema.index({ slug: 1 }, { unique: true });
 NewsSchema.index({ status: 1 });
 NewsSchema.index({ published: 1, status: 1 });
 
@@ -37,13 +37,21 @@ const SponsorSchema = new Schema({
 export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', SponsorSchema);
 
 const AdminSchema = new Schema({
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  name: { type: String, default: '' },
-  role: { type: String, default: 'admin' },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, required: true, select: false }, // select:false means password not included by default
+  name: { type: String, default: '', trim: true },
+  role: { type: String, enum: ['superadmin', 'admin', 'editor', 'reviewer'], default: 'admin' },
   active: { type: Boolean, default: true },
   lastLogin: { type: Date },
+  lastLoginIp: { type: String, default: '' },
+  lastLoginUA: { type: String, default: '' },
+  failedAttempts: { type: Number, default: 0 },
+  lockedUntil: { type: Date },
+  passwordChangedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
+
+AdminSchema.index({ email: 1 }, { unique: true });
+AdminSchema.index({ role: 1 });
 
 export const Admin = mongoose.models.Admin || mongoose.model('Admin', AdminSchema);
 
@@ -56,5 +64,6 @@ const ActivityLogSchema = new Schema({
 }, { timestamps: true });
 
 ActivityLogSchema.index({ createdAt: -1 });
+ActivityLogSchema.index({ createdAt: -1 }, { expireAfterSeconds: 7776000 });
 
 export const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);

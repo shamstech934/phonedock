@@ -1,459 +1,25 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useTheme } from 'next-themes';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import {
-  Search, Star, ChevronRight, ChevronDown, Menu, X, Shield, Zap, Camera, Battery, Cpu, Trophy,
-  TrendingUp, Clock, ArrowUpRight, Phone, Smartphone, BarChart3, Users, Newspaper, Settings,
-  LogOut, Plus, Trash2, Edit, Eye, Sun, Moon, Home, GitCompare, Layers, Heart, Check,
-  ChevronLeft, Minus, Filter, SlidersHorizontal, Play, ExternalLink, Tag, Package,
-  Monitor, Wifi, Bluetooth, Fingerprint, Cpu as Chip, Image as ImageIcon, Activity, Star as StarIcon,
-  AlertTriangle, Upload, Download, RefreshCw, FileJson, FileSpreadsheet, RotateCcw, History, Database,
-  UploadCloud, Pause, CheckCircle, XCircle, AlertCircle, FileText, Radio, Globe, ShieldCheck, Wrench, ClipboardCheck, ChevronRight as ChevronRightIcon
+  Search, Star, Shield, Zap, Camera, Battery, Cpu, Trophy,
+  TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
+  Check, ChevronRight, Users, BarChart3, Target, Newspaper,
 } from 'lucide-react';
-const PhoneForm = dynamic(() => import('@/components/admin/PhoneForm'), { ssr: false });
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Header } from '@/components/shared/Header';
+import { Footer } from '@/components/shared/Footer';
+import { PhoneCard } from '@/components/shared/PhoneCard';
+import { SectionHeader } from '@/components/shared/SectionHeader';
+import { formatPrice } from '@/components/shared/formatPrice';
+import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
-// ============ TYPES ============
-interface Brand { id: string; name: string; slug: string; logo: string; country: string; description: string; _count?: { phones: number } }
-interface PhoneSpecs { display?: string; displayType?: string; resolution?: string; refreshRate?: string; protection?: string; brightness?: string; chipset?: string; cpu?: string; gpu?: string; process?: string; ram?: string; ramType?: string; storage?: string; cardSlot?: string; mainCamera?: string; mainCameraSensor?: string; aperture?: string; ois?: string; eis?: string; ultrawide?: string; telephoto?: string; zoom?: string; cameraFeatures?: string; videoRecording?: string; selfieCamera?: string; selfieSensor?: string; selfieVideo?: string; battery?: string; charging?: string; chargingSpeed?: string; wirelessCharge?: string; wirelessSpeed?: string; reverseCharge?: string; weight?: string; dimensions?: string; build?: string; sim?: string; ipRating?: string; network?: string; fiveG?: string; wifi?: string; bluetooth?: string; nfc?: string; usb?: string; fingerprint?: string; faceUnlock?: string; sensors?: string; colors?: string; os?: string; osVersion?: string; osUI?: string; updatePolicy?: string; specialFeatures?: string; }
-interface PhoneBenchmark { antutu: number; geekbenchSingle: number; geekbenchMulti: number; gamingScore: number; pubgFps?: string; codMobileFps?: string; genshinFps?: string; videoPlayback?: string; gamingBattery?: string; browsingBattery?: string; }
-interface PhoneImage { id: string; url: string; altText: string; sortOrder: number; }
-interface PhonePrice { id: string; storeName: string; price: number; url: string; inStock: boolean; }
-interface Phone { id: string; modelName: string; slug: string; brandId: string; brand?: Brand; thumbnail: string; pricePKR: number; description: string; overallRating: number; cameraScore: number; performanceScore: number; batteryScore: number; displayScore: number; valueScore: number; ptaStatus: string; ptaApproved: boolean; releaseDate: string; trending: boolean; upcoming: boolean; featured: boolean; specs?: PhoneSpecs; benchmarks?: PhoneBenchmark; images?: PhoneImage[]; prices?: PhonePrice[]; pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string; published?: boolean; }
-interface NewsItem { id: string; title: string; slug: string; excerpt: string; content: string; category: string; author: string; imageUrl: string; published: boolean; createdAt: string; }
-interface Sponsor { id: string; name: string; image: string; url: string; position: string; active: boolean; }
-interface ActivityLog { id: string; action: string; details: string; entityType: string; createdAt: string; admin?: { name: string; email: string }; }
-interface HomeData { featured: Phone[]; trending: Phone[]; latest: Phone[]; bestCamera: Phone[]; bestGaming: Phone[]; bestBattery: Phone[]; upcoming: Phone[]; news: NewsItem[]; priceCategories: { above100k: Phone[]; price60to100: Phone[]; price40to60: Phone[]; price20to40: Phone[]; under20k: Phone[] }; brands: Brand[]; sponsors?: Sponsor[]; }
-interface AdminUser { id: string; email: string; name: string; role: string; }
-
-// ============ ROUTER ============
-type View = 'home' | 'phone' | 'compare' | 'brand' | 'search' | 'brands' | 'news' | 'admin' | 'admin-login' | 'admin-phones' | 'admin-phone-add' | 'admin-phone-edit' | 'admin-phone-view' | 'admin-brands' | 'admin-news' | 'admin-dashboard' | 'admin-sponsors' | 'admin-activity' | 'admin-import' | 'admin-sync' | 'admin-collector' | 'admin-collector-sources' | 'admin-collector-jobs' | 'admin-collector-review' | 'admin-collector-review-detail';
-
-function useHashRouter() {
-  const [view, setView] = useState<View>('home');
-  const [params, setParams] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    const parseHash = () => {
-      const hash = window.location.hash.slice(1) || '/';
-      const parts = hash.split('/').filter(Boolean);
-      if (parts.length === 0) { setView('home'); setParams({}); return; }
-      if (parts[0] === 'phone' && parts[1]) { setView('phone'); setParams({ slug: parts[1] }); return; }
-      if (parts[0] === 'compare') { setView('compare'); setParams(Object.fromEntries(new URLSearchParams(parts.slice(1).join('/')))); return; }
-      if (parts[0] === 'brand' && parts[1]) { setView('brand'); setParams({ slug: parts[1] }); return; }
-      if (parts[0] === 'search') { setView('search'); setParams({ q: parts.slice(1).join('/') }); return; }
-      if (parts[0] === 'brands') { setView('brands'); setParams({}); return; }
-      if (parts[0] === 'news') { setView('news'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'login') { setView('admin-login'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'phones') { setView('admin-phones'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'add') { setView('admin-phone-add'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'edit' && parts[3]) { setView('admin-phone-edit'); setParams({ id: parts[3] }); return; }
-      if (parts[0] === 'admin' && parts[1] === 'phones' && parts[2] === 'view' && parts[3]) { setView('admin-phone-view'); setParams({ id: parts[3] }); return; }
-      if (parts[0] === 'admin' && parts[1] === 'brands') { setView('admin-brands'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'news') { setView('admin-news'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'sponsors') { setView('admin-sponsors'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'activity') { setView('admin-activity'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'dashboard') { setView('admin-dashboard'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'import') { setView('admin-import'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'sync') { setView('admin-sync'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'collector' && !parts[2]) { setView('admin-collector'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'sources') { setView('admin-collector-sources'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'jobs') { setView('admin-collector-jobs'); setParams({}); return; }
-      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'review' && parts[3]) { setView('admin-collector-review-detail'); setParams({ id: parts[3] }); return; }
-      if (parts[0] === 'admin' && parts[1] === 'collector' && parts[2] === 'review') { setView('admin-collector-review'); setParams({}); return; }
-      if (parts[0] === 'admin') { setView('admin'); setParams({}); return; }
-      setView('home'); setParams({});
-    };
-    parseHash();
-    window.addEventListener('hashchange', parseHash);
-    return () => window.removeEventListener('hashchange', parseHash);
-  }, []);
-
-  const navigate = useCallback((path: string) => {
-    window.location.hash = path;
-  }, []);
-
-  return { view, params, navigate };
-}
-
-// ============ HELPERS ============
-function formatPrice(price: number): string {
-  return 'PKR ' + price.toLocaleString('en-PK');
-}
-
-// ============ SCORE BAR ============
-function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
-  if (mini) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground w-14 shrink-0">{label}</span>
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
-        </div>
-        <span className="text-xs font-bold w-8 text-right">{score}</span>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-semibold">{score}/100</span>
-      </div>
-      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className="score-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-700 ease-out" style={{ width: `${score}%` }} />
-      </div>
-    </div>
-  );
-}
-
-// ============ PHONE CARD ============
-function PhoneCard({ phone, onSelect }: { phone: Phone; onSelect?: (id: string) => void }) {
-  const nav = () => { if (onSelect) onSelect(phone.id); else window.location.hash = `/phone/${phone.slug}`; };
-  return (
-    <div className="phone-card glass-shine cursor-pointer group" onClick={nav}>
-      <div className="p-3 sm:p-4">
-        <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
-          {phone.thumbnail ? (
-            <Image src={phone.thumbnail} alt={phone.modelName} width={200} height={200} className="object-contain p-4 group-hover:scale-[1.03] transition-transform duration-500 ease-out" unoptimized />
-          ) : (
-            <Smartphone className="w-16 h-16 text-gray-300" />
-          )}
-          {phone.ptaApproved && (
-            <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
-              <Shield className="w-3 h-3 mr-0.5" /> PTA
-            </Badge>
-          )}
-          {phone.overallRating >= 8 && !phone.upcoming && (
-            <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-semibold shadow-sm shadow-blue-500/30">
-              <Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}
-            </Badge>
-          )}
-          {phone.upcoming && (
-            <Badge className="absolute top-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
-              <Clock className="w-3 h-3 mr-0.5" /> Upcoming
-            </Badge>
-          )}
-          {phone.trending && (
-            <Badge className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
-              <TrendingUp className="w-3 h-3 mr-0.5" /> Hot
-            </Badge>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
-          <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
-          <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
-          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
-            {phone.specs?.ram && (
-              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
-              </span>
-            )}
-            {phone.specs?.storage && (
-              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                <Layers className="w-2.5 h-2.5" />{phone.specs.storage}
-              </span>
-            )}
-            {phone.specs?.chipset && (
-              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md hidden sm:flex items-center gap-0.5">
-                <Cpu className="w-2.5 h-2.5" />{phone.specs.chipset.split(' ').slice(0, 2).join(' ')}
-              </span>
-            )}
-            {phone.specs?.battery && (
-              <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                <Battery className="w-2.5 h-2.5" />{phone.specs.battery}
-              </span>
-            )}
-          </div>
-        </div>
-        <Button className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg h-9 text-xs font-semibold transition-colors">
-          View Details <ChevronRight className="w-3.5 h-3.5 ml-1" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ============ PHONE CARD SKELETON ============
-function PhoneCardSkeleton() {
-  return (
-    <div className="card-premium overflow-hidden">
-      <div className="p-3 sm:p-4">
-        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
-        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
-        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
-        <div className="skeleton-shimmer h-4 w-3/4 mb-2 rounded-md" />
-        <div className="skeleton-shimmer h-3 w-20 mb-1 rounded-md" />
-        <div className="skeleton-shimmer h-3 w-16 mb-3 rounded-md" />
-        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
-      </div>
-    </div>
-  );
-}
-
-// ============ SECTION HEADER ============
-function SectionHeader({ title, icon: Icon, link, linkText }: { title: string; icon: React.ElementType; link?: string; linkText?: string }) {
-  return (
-    <div className="flex items-center justify-between mb-5">
-      <div className="flex items-center gap-3">
-        {Icon && <Icon className="w-5 h-5 text-blue-500" />}
-        <h2 className="section-title text-lg sm:text-xl text-gray-900">
-          {title}
-        </h2>
-      </div>
-      {link && (
-        <button onClick={() => { window.location.hash = link; }} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
-          {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ============ ADMIN SIDEBAR ============
-function AdminSidebar({ admin, onNavigate, onLogout, currentView }: { admin: AdminUser; onNavigate: (p: string) => void; onLogout: () => void; currentView: string }) {
-  const adminLinks = [
-    { label: 'Dashboard', hash: '/admin/dashboard', icon: BarChart3, view: 'admin-dashboard' },
-    { label: 'Phones', hash: '/admin/phones', icon: Smartphone, view: 'admin-phones' },
-    { label: 'Brands', hash: '/admin/brands', icon: Layers, view: 'admin-brands' },
-    { label: 'News', hash: '/admin/news', icon: Newspaper, view: 'admin-news' },
-    { label: 'Sponsors', hash: '/admin/sponsors', icon: Star, view: 'admin-sponsors' },
-    { label: 'Activity', hash: '/admin/activity', icon: Clock, view: 'admin-activity' },
-    { label: 'Import', hash: '/admin/import', icon: Upload, view: 'admin-import' },
-    { label: 'Sync', hash: '/admin/sync', icon: RefreshCw, view: 'admin-sync' },
-    { label: 'Collector', hash: '/admin/collector', icon: Radio, view: 'admin-collector' },
-  ];
-
-  return (
-    <>
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 glass-modal border-r border-white/30 min-h-[calc(100vh-3.5rem)] sticky top-14">
-        <div className="p-4 border-b border-gray-50">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/20">
-              <Shield className="w-5 h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold truncate">{admin.name || 'Admin'}</p>
-              <p className="text-[10px] text-muted-foreground truncate">{admin.email}</p>
-            </div>
-          </div>
-        </div>
-        <nav className="flex-1 p-3 space-y-1">
-          {adminLinks.map(link => {
-            const isActive = currentView === link.view;
-            return (
-              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive ? 'bg-blue-50 text-blue-600 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
-                <link.icon className="w-4 h-4" />{link.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="p-3 border-t border-gray-50">
-          <button onClick={() => onNavigate('/')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all duration-200 mb-1">
-            <Eye className="w-4 h-4" />View Site
-          </button>
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-200">
-            <LogOut className="w-4 h-4" />Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile horizontal pill tabs */}
-      <div className="lg:hidden border-b border-gray-100 bg-white">
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-              <Shield className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="text-xs font-semibold text-gray-900">{admin.name || admin.email}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={() => onNavigate('/')}><Eye className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Site</span></Button>
-            <Button size="sm" variant="ghost" className="text-red-600" onClick={onLogout}><LogOut className="w-3.5 h-3.5 mr-1" /><span className="text-xs hidden sm:inline">Logout</span></Button>
-          </div>
-        </div>
-        <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
-          {adminLinks.map(link => {
-            const isActive = currentView === link.view;
-            return (
-              <button key={link.hash} onClick={() => onNavigate(link.hash)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${isActive ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
-                <link.icon className="w-3 h-3" />{link.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ============ HEADER (LIQUID GLASS) ============
-function Header({ onNavigate, onSearch, theme, toggleTheme, admin, onLogout }: { onNavigate: (p: string) => void; onSearch: (q: string) => void; theme: string; toggleTheme: () => void; admin: AdminUser | null; onLogout: () => void }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQ, setSearchQ] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
-  useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [location?.hash]);
-
-  const doSearch = () => { if (searchQ.trim()) { onSearch(searchQ.trim()); setSearchOpen(false); setSearchQ(''); } };
-
-  return (
-    <header className="glass-nav sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-14 sm:h-16">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('/')}>
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
-              <Smartphone className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-500">Dock</span></span>
-          </div>
-
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1">
-            {[
-              { label: 'Home', hash: '/' }, { label: 'Brands', hash: '/brands' },
-              { label: 'Compare', hash: '/compare' }, { label: 'News', hash: '/news' },
-            ].map(item => (
-              <button key={item.hash} onClick={() => onNavigate(item.hash)} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200">
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="flex items-center gap-1">
-            {admin ? (
-              <button onClick={() => onNavigate('/admin/dashboard')} className="px-3.5 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-blue-500/25">
-                <Shield className="w-4 h-4" />Dashboard
-              </button>
-            ) : (
-              <button onClick={() => onNavigate('/admin/login')} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
-                <Shield className="w-4 h-4" />Admin
-              </button>
-            )}
-            <button onClick={() => setSearchOpen(!searchOpen)} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
-              <Search className="w-[18px] h-[18px]" />
-            </button>
-            <button onClick={toggleTheme} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
-              {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-            </button>
-            <button className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200 md:hidden" onClick={() => setMobileOpen(!mobileOpen)}>
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Search overlay */}
-        {searchOpen && (
-          <div className="pb-3 flex gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input ref={searchRef} placeholder="Search phones, brands, processors..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doSearch()} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" autoFocus />
-            </div>
-            <button onClick={doSearch} className="btn-primary h-11 px-5 rounded-xl text-sm">
-              Search
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Mobile Drawer */}
-      {mobileOpen && (
-        <div className="md:hidden glass-modal border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200">
-          <nav className="flex flex-col p-4 gap-1">
-            {[
-              { label: 'Home', hash: '/', icon: Home }, { label: 'Brands', hash: '/brands', icon: Layers },
-              { label: 'Compare', hash: '/compare', icon: GitCompare }, { label: 'News', hash: '/news', icon: Newspaper },
-            ].map(item => (
-              <button key={item.hash} onClick={() => { onNavigate(item.hash); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-                <item.icon className="w-4 h-4 text-gray-400" />{item.label}
-              </button>
-            ))}
-            {admin ? (
-              <button onClick={() => { onNavigate('/admin/dashboard'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 bg-blue-50/80">
-                <Shield className="w-4 h-4" />Dashboard
-              </button>
-            ) : (
-              <button onClick={() => { onNavigate('/admin/login'); setMobileOpen(false); }} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-                <Shield className="w-4 h-4 text-gray-400" />Admin
-              </button>
-            )}
-          </nav>
-        </div>
-      )}
-    </header>
-  );
-}
-
-// ============ FOOTER ============
-function Footer({ onNavigate }: { onNavigate: (p: string) => void }) {
-  return (
-    <footer className="bg-[#0F172A] text-gray-400 mt-auto relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16 relative z-10">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
-          <div className="col-span-2 sm:col-span-1">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Smartphone className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-display font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
-            </div>
-            <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
-          </div>
-          <div>
-            <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
-            <div className="space-y-2.5 text-sm">
-              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
-                <button key={b} onClick={() => onNavigate(`/brand/${b.toLowerCase()}`)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
-            <div className="space-y-2.5 text-sm">
-              {[{ l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' }, { l: 'Best Camera', h: '/brands' }, { l: 'Best Gaming', h: '/brands' }, { l: 'Best Battery', h: '/brands' }].map(item => (
-                <button key={item.l} onClick={() => onNavigate(item.h)} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h4 className="font-semibold text-white mb-4 text-sm">Price Ranges (PKR)</h4>
-            <div className="space-y-2.5 text-sm text-gray-500">
-              {['Under 20,000', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'].map(r => (
-                <span key={r} className="block">{r}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="divider-glass mb-6" />
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
-          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
-          <p className="text-cyan-400/60 font-medium">Phone prices may vary. Check with retailers.</p>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-// ============ PHONE SECTION (reusable) ============
+// ============ PHONE SECTION ============
 function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean }) {
   if (!phones.length) {
     if (!showEmpty) return null;
@@ -482,2582 +48,360 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
   );
 }
 
-// ============ HOME PAGE ============
-function HomePage({ data, loading, onNavigate }: { data: HomeData | null; loading: boolean; onNavigate: (p: string) => void }) {
-  const [homeSearchQ, setHomeSearchQ] = useState('');
-
-  if (loading || !data) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
-        <div className="skeleton-shimmer h-72 sm:h-96 rounded-3xl" />
-        <div className="skeleton-shimmer h-14 rounded-2xl max-w-2xl mx-auto" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
-      </div>
-    );
-  }
-
-  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
-  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
-
-  const handleHomeSearch = () => {
-    if (homeSearchQ.trim()) {
-      window.location.hash = `/search/${encodeURIComponent(homeSearchQ.trim())}`;
-    }
-  };
-
+// ============ PHONE CARD SKELETON ============
+function PhoneCardSkeleton() {
   return (
-    <div className="relative">
-      {/* Background gradient orbs for Liquid Glass effect */}
-      <div className="glass-orb glass-orb-cyan" />
-      <div className="glass-orb glass-orb-yellow" />
-    <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
-      {/* Hero — Animated */}
-      <section className="hero-gradient hero-shimmer-effect rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
-        {/* Floating particles */}
-        <div className="hero-particles">
-          {[...Array(12)].map((_, i) => (
-            <div key={i} className="hero-particle" style={{ left: `${8 + (i * 7.5) % 85}%`, '--delay': `${i * 0.5}s`, '--duration': `${5 + (i % 4) * 1.5}s`, '--drift': `${(i % 2 === 0 ? 1 : -1) * (15 + i * 5)}px`, width: `${3 + (i % 3)}px`, height: `${3 + (i % 3)}px` } as React.CSSProperties} />
-          ))}
-        </div>
-        {/* Animated glow orbs inside hero */}
-        <div className="absolute -top-20 -right-20 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl hero-glow-anim" />
-        <div className="absolute -bottom-16 -left-16 w-60 h-60 bg-cyan-400/15 rounded-full blur-3xl hero-glow-anim" style={{ animationDelay: '2s' }} />
-
-        <div className="relative z-10 max-w-2xl">
-          <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
-            <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
-              <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
-            </Badge>
-          </div>
-          <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
-            Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block' }}>Smartphone</span>
-          </h1>
-          <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
-            Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.
-          </p>
-
-          {/* Search Bar Inside Hero */}
-          <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input placeholder="Phone name, brand ya chipset search karein..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
-            </div>
-            <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
-              <Search className="w-4 h-4" /> Search
-            </button>
-          </div>
-
-          <div className="hero-animate flex flex-wrap gap-3 mt-6" style={{ animationDelay: '0.9s' }}>
-            <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => onNavigate('/brands')}>
-              <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
-            <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
-            <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
-            <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Phones */}
-      <section className="space-y-4">
-        <SectionHeader title="Featured Phones" icon={Star} link="/brands" linkText="All Phones" />
-        {data.featured.length > 0 ? (
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
-            {data.featured.slice(0, 8).map(p => (
-              <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
-                <PhoneCard phone={p} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12 card-premium">
-            <Star className="w-10 h-10 mx-auto mb-2 text-gray-200" />
-            <p className="text-sm text-muted-foreground">No featured phones yet</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">We are adding phones to our database</p>
-          </div>
-        )}
-      </section>
-
-      {/* Phones by Price */}
-      {data.priceCategories.above100k.length > 0 && (
-        <section className="space-y-5">
-          <SectionHeader title="Phones by Price" icon={Tag} />
-          <Tabs defaultValue="above100k" className="w-full">
-            <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 p-1.5 rounded-2xl">
-              {[
-                { key: 'above100k', label: 'Above 100K' }, { key: 'price60to100', label: '60K-100K' },
-                { key: 'price40to60', label: '40K-60K' }, { key: 'price20to40', label: '20K-40K' },
-                { key: 'under20k', label: 'Under 20K' },
-              ].map(tab => (
-                <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl">{tab.label}</TabsTrigger>
-              ))}
-            </TabsList>
-            {['above100k', 'price60to100', 'price40to60', 'price20to40', 'under20k'].map(key => (
-              <TabsContent key={key} value={key}>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:overflow-visible">
-                  {(data.priceCategories as Record<string, Phone[]>)[key]?.length > 0 ? (data.priceCategories as Record<string, Phone[]>)[key].map((p: Phone) => (
-                    <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto"><PhoneCard phone={p} /></div>
-                  )) : (
-                    <div className="col-span-full text-center py-16 text-muted-foreground">
-                      <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                      <p className="text-sm">No phones in this range yet</p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
-        </section>
-      )}
-
-      {/* Trending Now */}
-      <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/brands" linkText="All Phones" showEmpty />
-
-      {/* Best in Category */}
-      <section className="space-y-5">
-        <SectionHeader title="Best in Category" icon={Trophy} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, gradient: 'from-violet-500 to-purple-600' },
-            { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, gradient: 'from-blue-500 to-cyan-500' },
-            { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, gradient: 'from-emerald-500 to-green-600' },
-            { phones: flagshipPhones, title: 'Flagship Phones', icon: Star, gradient: 'from-amber-500 to-orange-500' },
-            { phones: budgetPhones, title: 'Budget Phones', icon: Tag, gradient: 'from-green-500 to-emerald-600' },
-            { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, gradient: 'from-indigo-500 to-violet-600' },
-          ].map(cat => (
-            <div key={cat.title} className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
-              <div className={`bg-gradient-to-br ${cat.gradient} p-4 text-white`}>
-                <div className="flex items-center gap-2"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
-              </div>
-              <div className="p-3 space-y-1.5">
-                {cat.phones.length > 0 ? cat.phones.slice(0, 3).map((p, i) => (
-                  <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors" onClick={() => onNavigate(`/phone/${p.slug}`)}>
-                    <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
-                      <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
-                    </div>
-                    <p className="text-xs font-bold text-blue-600">{formatPrice(p.pricePKR)}</p>
-                  </div>
-                )) : (
-                  <div className="text-center py-5 text-xs text-muted-foreground">No phones yet</div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Latest Additions */}
-      <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/brands" linkText="All Phones" showEmpty />
-
-      {/* Latest News */}
-      {data.news.length > 0 && (
-        <section className="space-y-5">
-          <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {data.news.slice(0, 4).map(n => (
-              <div key={n.id} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => onNavigate('/news')}>
-                <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
-                <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
-                <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
-                <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Sponsor Banner */}
-      {data.sponsors && data.sponsors.length > 0 && (
-        <section>
-          <div className="rounded-2xl overflow-hidden">
-            <div className="flex items-center gap-4 p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, #111827, #1F2937)' }}>
-              <div className="flex-1 min-w-0">
-                <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30 mb-2 text-[10px] font-medium">Sponsored</Badge>
-                <div className="flex items-center gap-3">
-                  {data.sponsors[0].image ? (
-                    <Image src={data.sponsors[0].image} alt={data.sponsors[0].name} width={60} height={60} className="rounded-xl object-contain bg-white/10 p-1.5" unoptimized />
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center"><Star className="w-7 h-7 text-blue-400" /></div>
-                  )}
-                  <div>
-                    <h3 className="font-bold text-sm sm:text-base text-white">{data.sponsors[0].name}</h3>
-                    <p className="text-xs text-gray-500">{data.sponsors[0].position || 'Featured Partner'}</p>
-                  </div>
-                </div>
-              </div>
-              {data.sponsors[0].url && (
-                <a href={data.sponsors[0].url} target="_blank" rel="noopener noreferrer">
-                  <Button variant="outline" size="sm" className="border-white/15 text-white hover:bg-white/10 rounded-xl">
-                    Visit <ExternalLink className="w-3 h-3 ml-1" />
-                  </Button>
-                </a>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Upcoming Phones */}
-      <PhoneSection phones={data.upcoming} title="Upcoming Phones" icon={Clock} showEmpty />
-    </div>
+    <div className="card-premium overflow-hidden">
+      <div className="p-3 sm:p-4">
+        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
+        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
+        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
+        <div className="skeleton-shimmer h-4 w-3/4 mb-2 rounded-md" />
+        <div className="skeleton-shimmer h-3 w-20 mb-1 rounded-md" />
+        <div className="skeleton-shimmer h-3 w-16 mb-3 rounded-md" />
+        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
+      </div>
     </div>
   );
 }
 
-// ============ PHONE DETAIL PAGE ============
-function PhoneDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
-  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('specs');
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        <div className="skeleton-shimmer h-6 w-64 rounded-lg" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-4">
-            <div className="skeleton-shimmer aspect-square rounded-2xl" />
-            <div className="skeleton-shimmer h-48 rounded-2xl" />
-          </div>
-          <div className="lg:col-span-2 space-y-4">
-            <div className="skeleton-shimmer h-8 w-3/4 rounded-lg" />
-            <div className="skeleton-shimmer h-4 w-full rounded-lg" />
-            <div className="skeleton-shimmer h-32 rounded-2xl" />
-            <div className="skeleton-shimmer h-64 rounded-2xl" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data?.phone) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
-        <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mx-auto mb-5">
-          <Smartphone className="w-10 h-10 text-gray-300" />
-        </div>
-        <h2 className="text-xl font-bold text-gray-900">Phone not found</h2>
-        <p className="text-sm text-muted-foreground mt-2">The phone you&apos;re looking for doesn&apos;t exist.</p>
-        <Button variant="outline" className="mt-6 rounded-xl" onClick={() => onNavigate('/')}>Go Home</Button>
-      </div>
-    );
-  }
-
-  const { phone, related } = data;
-  const p = phone;
-
-  const specGroups = [
-    { title: 'Display & Design', icon: Monitor, specs: [
-      { label: 'Display', value: p.specs?.display }, { label: 'Type', value: p.specs?.displayType }, { label: 'Resolution', value: p.specs?.resolution },
-      { label: 'Refresh Rate', value: p.specs?.refreshRate }, { label: 'Protection', value: p.specs?.protection }, { label: 'Brightness', value: p.specs?.brightness },
-      { label: 'Dimensions', value: p.specs?.dimensions }, { label: 'Weight', value: p.specs?.weight }, { label: 'Build', value: p.specs?.build },
-      { label: 'Colors', value: p.specs?.colors }, { label: 'IP Rating', value: p.specs?.ipRating },
-    ]},
-    { title: 'Performance', icon: Cpu, specs: [
-      { label: 'Chipset', value: p.specs?.chipset }, { label: 'CPU', value: p.specs?.cpu }, { label: 'GPU', value: p.specs?.gpu },
-      { label: 'Process', value: p.specs?.process }, { label: 'RAM', value: p.specs?.ram }, { label: 'RAM Type', value: p.specs?.ramType },
-      { label: 'Storage', value: p.specs?.storage }, { label: 'Card Slot', value: p.specs?.cardSlot },
-    ]},
-    { title: 'Camera', icon: Camera, specs: [
-      { label: 'Main Camera', value: p.specs?.mainCamera }, { label: 'Sensor', value: p.specs?.mainCameraSensor }, { label: 'Aperture', value: p.specs?.aperture },
-      { label: 'OIS', value: p.specs?.ois }, { label: 'EIS', value: p.specs?.eis }, { label: 'Ultrawide', value: p.specs?.ultrawide },
-      { label: 'Telephoto', value: p.specs?.telephoto }, { label: 'Zoom', value: p.specs?.zoom }, { label: 'Features', value: p.specs?.cameraFeatures },
-      { label: 'Video', value: p.specs?.videoRecording }, { label: 'Selfie', value: p.specs?.selfieCamera }, { label: 'Selfie Video', value: p.specs?.selfieVideo },
-    ]},
-    { title: 'Battery & Charging', icon: Battery, specs: [
-      { label: 'Capacity', value: p.specs?.battery }, { label: 'Charging', value: p.specs?.charging }, { label: 'Charging Speed', value: p.specs?.chargingSpeed },
-      { label: 'Wireless Charging', value: p.specs?.wirelessCharge }, { label: 'Wireless Speed', value: p.specs?.wirelessSpeed }, { label: 'Reverse Charge', value: p.specs?.reverseCharge },
-    ]},
-    { title: 'Connectivity', icon: Wifi, specs: [
-      { label: 'Network', value: p.specs?.network }, { label: '5G', value: p.specs?.fiveG }, { label: 'WiFi', value: p.specs?.wifi },
-      { label: 'Bluetooth', value: p.specs?.bluetooth }, { label: 'NFC', value: p.specs?.nfc }, { label: 'USB', value: p.specs?.usb },
-    ]},
-    { title: 'Features & OS', icon: Smartphone, specs: [
-      { label: 'OS', value: `${p.specs?.os} ${p.specs?.osVersion}` }, { label: 'UI', value: p.specs?.osUI }, { label: 'Update Policy', value: p.specs?.updatePolicy },
-      { label: 'Fingerprint', value: p.specs?.fingerprint }, { label: 'Face Unlock', value: p.specs?.faceUnlock }, { label: 'Sensors', value: p.specs?.sensors },
-      { label: 'Special Features', value: p.specs?.specialFeatures },
-    ]},
-  ];
-
-  const cameraTiles = [
-    { label: 'Sensor', value: p.specs?.mainCameraSensor },
-    { label: 'Aperture', value: p.specs?.aperture },
-    { label: 'OIS', value: p.specs?.ois },
-    { label: 'EIS', value: p.specs?.eis },
-    { label: 'Zoom', value: p.specs?.zoom },
-    { label: 'Video', value: p.specs?.videoRecording },
-    { label: 'Features', value: p.specs?.cameraFeatures },
-  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
-
-  const perfTiles = [
-    { label: 'Process Node', value: p.specs?.process, span: '' },
-    { label: 'Chipset', value: p.specs?.chipset, span: 'sm:col-span-2' },
-    { label: 'CPU', value: p.specs?.cpu, span: 'sm:col-span-2' },
-    { label: 'GPU', value: p.specs?.gpu, span: 'sm:col-span-2' },
-    { label: 'RAM', value: p.specs?.ram, span: '' },
-    { label: 'RAM Type', value: p.specs?.ramType, span: '' },
-    { label: 'Storage', value: p.specs?.storage, span: '' },
-  ].filter(t => t.value && t.value !== 'No' && t.value !== '');
-
-  const batteryTiles = [
-    { label: 'Capacity', value: p.specs?.battery },
-    { label: 'Charging Speed', value: p.specs?.chargingSpeed },
-    { label: 'Wireless Charging', value: p.specs?.wirelessCharge },
-    { label: 'Wireless Speed', value: p.specs?.wirelessSpeed },
-    { label: 'Reverse Charge', value: p.specs?.reverseCharge },
-  ];
-  if (p.benchmarks?.videoPlayback) batteryTiles.push({ label: 'Video Playback', value: p.benchmarks.videoPlayback });
-  if (p.benchmarks?.gamingBattery) batteryTiles.push({ label: 'Gaming Battery', value: p.benchmarks.gamingBattery });
-  if (p.benchmarks?.browsingBattery) batteryTiles.push({ label: 'Browsing Battery', value: p.benchmarks.browsingBattery });
+// ============ BRANDS GRID ============
+function BrandsGrid({ brands }: { brands: Brand[] }) {
+  if (!brands.length) return null;
+  const displayBrands = brands.filter(b => (b._count?.phones || 0) > 0).slice(0, 12);
+  if (!displayBrands.length) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
-        <button onClick={() => onNavigate('/')} className="hover:text-blue-500 transition-colors">Home</button>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <button onClick={() => onNavigate(`/brand/${p.brand?.slug}`)} className="hover:text-blue-500 transition-colors">{p.brand?.name}</button>
-        <ChevronRight className="w-3.5 h-3.5" />
-        <span className="font-medium text-gray-900">{p.modelName}</span>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Sidebar */}
-        <div className="lg:col-span-1 space-y-4">
-          {/* Image Card */}
-          <div className="card-premium overflow-hidden">
-            <div className="bg-[#F8FAFC] aspect-square flex items-center justify-center p-8">
-              {p.thumbnail ? (
-                <Image src={p.thumbnail} alt={p.modelName} width={300} height={300} className="object-contain" unoptimized />
+    <section className="space-y-4">
+      <SectionHeader title="Popular Brands" icon={Layers} link="/brands" linkText="All Brands" />
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+        {displayBrands.map(brand => (
+          <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium p-4 flex flex-col items-center justify-center gap-2 group hover:shadow-lg hover:shadow-black/5 transition-all duration-300 text-center">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+              {brand.logo ? (
+                <Image src={brand.logo} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
               ) : (
-                <div className="w-32 h-32 rounded-3xl bg-gray-100 flex items-center justify-center">
-                  <Smartphone className="w-16 h-16 text-gray-300" />
-                </div>
+                <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
               )}
             </div>
-          </div>
-
-          {/* Quick Info Card */}
-          <div className="card-premium p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Price in Pakistan</span>
-              <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
-            </div>
-            <Separator className="bg-gray-100" />
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">PTA Status</span>
-              <Badge className={p.ptaApproved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50 font-medium' : 'bg-gray-100 text-gray-600 font-medium'}>
-                <Shield className="w-3 h-3 mr-1" /> {p.ptaStatus}
-              </Badge>
-            </div>
-            <Separator className="bg-gray-100" />
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Release Date</span>
-              <span className="text-sm font-medium text-gray-900">{p.releaseDate ? new Date(p.releaseDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}</span>
-            </div>
-            {p.specs?.colors && (
-              <>
-                <Separator className="bg-gray-100" />
-                <div>
-                  <span className="text-sm text-muted-foreground">Colors</span>
-                  <p className="text-sm mt-1 font-medium text-gray-900">{p.specs.colors}</p>
-                </div>
-              </>
-            )}
-            <Separator className="bg-gray-100" />
-            <button className="w-full bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25" onClick={() => onNavigate(`/compare?ids=${p.id}`)}>
-              <GitCompare className="w-4 h-4" /> Add to Compare
-            </button>
-          </div>
-
-          {/* Store Prices */}
-          {p.prices && p.prices.length > 0 && (
-            <div className="card-premium p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Best Prices</h3>
-              <div className="space-y-2">
-                {p.prices.map(pr => (
-                  <div key={pr.id} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC]">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{pr.storeName}</p>
-                      <p className="text-[10px] mt-0.5 flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                        <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
-                      </p>
-                    </div>
-                    <span className="font-bold text-sm text-blue-600">{formatPrice(pr.price)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Content */}
-        <div className="lg:col-span-2 space-y-5">
-          <div>
-            <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
-            {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
-          </div>
-
-          {/* Quick Verdict Card */}
-          {p.reviewVerdict && (
-            <div className="bg-white rounded-2xl border border-blue-100 overflow-hidden">
-              <div className="h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
-              <div className="p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/25">
-                      <div className="text-center">
-                        <span className="text-xl font-extrabold">{p.overallRating}</span>
-                        <span className="text-[10px] block opacity-70">/ 10</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Trophy className="w-4 h-4 text-blue-500" />
-                        <h3 className="font-bold text-sm sm:text-base text-gray-900">Quick Verdict</h3>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{p.reviewVerdict}</p>
-                    </div>
-                  </div>
-                  <div className="sm:ml-auto sm:w-64 space-y-2">
-                    <ScoreBar score={p.cameraScore} label="Camera" mini />
-                    <ScoreBar score={p.performanceScore} label="Performance" mini />
-                    <ScoreBar score={p.displayScore} label="Display" mini />
-                    <ScoreBar score={p.batteryScore} label="Battery" mini />
-                    <ScoreBar score={p.valueScore} label="Value" mini />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Camera Details */}
-          {(p.specs?.mainCamera || p.specs?.mainCameraSensor) && (
-            <div className="card-premium p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Camera className="w-4 h-4 text-blue-600" /></div>
-                Camera Details
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {cameraTiles.map(tile => (
-                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.label === 'Features' ? 'col-span-2 sm:col-span-3' : ''}`}>
-                    <p className="text-xs text-muted-foreground">{tile.label}</p>
-                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Performance Section */}
-          {(p.specs?.chipset || p.specs?.cpu) && (
-            <div className="card-premium p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Cpu className="w-4 h-4 text-blue-600" /></div>
-                Performance
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {perfTiles.map(tile => (
-                  <div key={tile.label} className={`p-3 rounded-xl bg-[#F8FAFC] ${tile.span}`}>
-                    <p className="text-xs text-muted-foreground">{tile.label}</p>
-                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Battery & Charging */}
-          {p.specs?.battery && (
-            <div className="card-premium p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center"><Battery className="w-4 h-4 text-blue-600" /></div>
-                Battery & Charging
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {batteryTiles.filter(t => t.value && t.value !== 'No' && t.value !== '').map(tile => (
-                  <div key={tile.label} className="p-3 rounded-xl bg-[#F8FAFC]">
-                    <p className="text-xs text-muted-foreground">{tile.label}</p>
-                    <p className="text-sm font-semibold mt-0.5 text-gray-900">{tile.value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Ratings & Scores */}
-          <div className="card-premium p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-900">Ratings & Scores</h3>
-              <div className="flex items-center gap-1.5">
-                <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-                <span className="text-2xl font-extrabold text-gray-900">{p.overallRating}</span>
-                <span className="text-sm text-muted-foreground">/ 10</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-              <ScoreBar score={p.performanceScore} label="Performance" />
-              <ScoreBar score={p.cameraScore} label="Camera" />
-              <ScoreBar score={p.batteryScore} label="Battery" />
-              <ScoreBar score={p.displayScore} label="Display" />
-              <ScoreBar score={p.valueScore} label="Value" />
-            </div>
-          </div>
-
-          {/* Tabs: Specs / Benchmarks / Review */}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="glass-filter w-full justify-start rounded-2xl p-1.5 h-auto">
-              <TabsTrigger value="specs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Specifications</TabsTrigger>
-              <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Benchmarks</TabsTrigger>
-              <TabsTrigger value="review" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Review</TabsTrigger>
-            </TabsList>
-
-            {/* Specs Tab */}
-            <TabsContent value="specs" className="mt-5 space-y-4">
-              {specGroups.map(group => (
-                <div key={group.title} className="card-premium overflow-hidden">
-                  <div className="px-4 py-3 flex items-center gap-2.5 border-b border-gray-50">
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
-                      <group.icon className="w-4 h-4 text-white" />
-                    </div>
-                    <h3 className="text-sm font-semibold text-gray-900">{group.title}</h3>
-                  </div>
-                  <div className="divide-y divide-gray-50 px-4 py-1">
-                    {group.specs.filter(s => s.value && s.value !== 'No' && s.value !== '').map(s => (
-                      <div key={s.label} className="flex justify-between py-3 text-sm">
-                        <span className="text-muted-foreground">{s.label}</span>
-                        <span className="font-medium text-right max-w-[60%] text-gray-900">{s.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </TabsContent>
-
-            {/* Benchmarks Tab */}
-            <TabsContent value="benchmarks" className="mt-5">
-              <div className="card-premium p-5 space-y-6">
-                {p.benchmarks ? (<>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {[
-                      { label: 'AnTuTu', value: p.benchmarks.antutu.toLocaleString(), max: 2500000, color: 'from-blue-500 to-blue-600' },
-                      { label: 'Geekbench Single', value: p.benchmarks.geekbenchSingle.toLocaleString(), max: 3500, color: 'from-emerald-500 to-green-600' },
-                      { label: 'Geekbench Multi', value: p.benchmarks.geekbenchMulti.toLocaleString(), max: 8000, color: 'from-violet-500 to-purple-600' },
-                    ].map(b => (
-                      <div key={b.label} className="text-center p-5 rounded-2xl bg-[#F8FAFC] border border-gray-100">
-                        <p className="text-xs text-muted-foreground mb-2 font-medium">{b.label}</p>
-                        <p className="text-3xl font-extrabold text-gray-900">{b.value}</p>
-                        <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full bg-gradient-to-r ${b.color} transition-all duration-700`} style={{ width: `${Math.min((parseInt(b.value.replace(/,/g, '')) / b.max) * 100, 100)}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-3">Gaming Performance</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {[
-                        { label: 'PUBG Mobile', value: p.benchmarks.pubgFps },
-                        { label: 'COD Mobile', value: p.benchmarks.codMobileFps },
-                        { label: 'Genshin Impact', value: p.benchmarks.genshinFps },
-                      ].map(g => (
-                        <div key={g.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
-                          <p className="text-xs text-muted-foreground font-medium">{g.label}</p>
-                          <p className="text-lg font-bold mt-1.5 text-gray-900">{g.value || 'N/A'}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-3">Battery Tests</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {[
-                        { label: 'Video Playback', value: p.benchmarks.videoPlayback },
-                        { label: 'Gaming', value: p.benchmarks.gamingBattery },
-                        { label: 'Browsing', value: p.benchmarks.browsingBattery },
-                      ].map(b => (
-                        <div key={b.label} className="p-4 rounded-2xl border border-gray-100 text-center bg-white">
-                          <p className="text-xs text-muted-foreground font-medium">{b.label}</p>
-                          <p className="text-lg font-bold mt-1.5 text-gray-900">{b.value || 'N/A'}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>) : (
-                  <div className="text-center py-16 text-muted-foreground">
-                    <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm">No benchmark data available</p>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* Review Tab */}
-            <TabsContent value="review" className="mt-5 space-y-4">
-              <div className="card-premium p-5 space-y-5">
-                {p.reviewSummary && <p className="text-sm leading-relaxed text-gray-700">{p.reviewSummary}</p>}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {p.pros && (
-                    <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100">
-                      <h4 className="font-semibold text-emerald-700 text-sm mb-3 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/25"><Check className="w-3.5 h-3.5 text-white" /></div>
-                        Pros
-                      </h4>
-                      <ul className="space-y-2">{p.pros.split(',').map((pro, i) => <li key={i} className="text-sm text-emerald-700 flex items-start gap-2"><Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />{pro.trim()}</li>)}</ul>
-                    </div>
-                  )}
-                  {p.cons && (
-                    <div className="p-5 rounded-2xl bg-red-50 border border-red-100">
-                      <h4 className="font-semibold text-red-700 text-sm mb-3 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-sm shadow-red-500/25"><Minus className="w-3.5 h-3.5 text-white" /></div>
-                        Cons
-                      </h4>
-                      <ul className="space-y-2">{p.cons.split(',').map((con, i) => <li key={i} className="text-sm text-red-700 flex items-start gap-2"><Minus className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />{con.trim()}</li>)}</ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-
-          {/* Related Phones */}
-          {related.length > 0 && (
-            <section className="space-y-5 pt-4">
-              <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============ COMPARE PAGE ============
-function ComparePage({ params, onNavigate }: { params: Record<string, string>; onNavigate: (p: string) => void }) {
-  const [allPhones, setAllPhones] = useState<Phone[]>([]);
-  const [selected, setSelected] = useState<Phone[]>([]);
-  const [search, setSearch] = useState('');
-  const [compared, setCompared] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/phones').then(r => r.json()).then(data => {
-      if (cancelled) return;
-      const phones: Phone[] = data.phones || [];
-      setAllPhones(phones);
-      if (params.ids) {
-        const ids = params.ids.split(',');
-        const pre = phones.filter(p => ids.includes(p.id));
-        setSelected(pre.slice(0, 4));
-        if (pre.length >= 2) setCompared(true);
-      }
-      setLoading(false);
-    }).catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
-
-  const filtered = allPhones.filter(p => p.modelName.toLowerCase().includes(search.toLowerCase()));
-  const isSelected = (id: string) => selected.some(p => p.id === id);
-
-  const togglePhone = (phone: Phone) => {
-    if (isSelected(phone.id)) { setSelected(prev => prev.filter(p => p.id !== phone.id)); setCompared(false); }
-    else if (selected.length < 4) { setSelected(prev => [...prev, phone]); setCompared(false); }
-  };
-
-  const getWinner = (key: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore') => {
-    let best = selected[0]; let max = 0;
-    selected.forEach(p => { if (p[key] > max) { max = p[key]; best = p; } });
-    return best;
-  };
-
-  const catData = [
-    { label: 'Camera', key: 'cameraScore' as const, icon: Camera, gradient: 'from-blue-500 to-blue-600' },
-    { label: 'Performance', key: 'performanceScore' as const, icon: Cpu, gradient: 'from-purple-500 to-purple-600' },
-    { label: 'Battery', key: 'batteryScore' as const, icon: Battery, gradient: 'from-emerald-500 to-green-600' },
-    { label: 'Value', key: 'valueScore' as const, icon: Tag, gradient: 'from-amber-500 to-orange-500' },
-  ];
-
-  const metrics = [
-    { label: 'Overall', get: (p: Phone) => p.overallRating * 10 },
-    { label: 'Camera', get: (p: Phone) => p.cameraScore },
-    { label: 'Performance', get: (p: Phone) => p.performanceScore },
-    { label: 'Battery', get: (p: Phone) => p.batteryScore },
-    { label: 'Value', get: (p: Phone) => p.valueScore },
-    { label: 'Display', get: (p: Phone) => p.displayScore },
-  ];
-
-  const specRows = [
-    { label: 'Display', get: (p: Phone) => p.specs?.display },
-    { label: 'Processor', get: (p: Phone) => p.specs?.chipset },
-    { label: 'RAM', get: (p: Phone) => p.specs?.ram },
-    { label: 'Storage', get: (p: Phone) => p.specs?.storage },
-    { label: 'Main Camera', get: (p: Phone) => p.specs?.mainCamera },
-    { label: 'Battery', get: (p: Phone) => p.specs?.battery },
-    { label: 'OS', get: (p: Phone) => [p.specs?.os, p.specs?.osVersion].filter(Boolean).join(' ') },
-    { label: '5G', get: (p: Phone) => p.specs?.fiveG },
-    { label: 'Fingerprint', get: (p: Phone) => p.specs?.fingerprint },
-  ];
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-64 rounded-2xl" /><div className="skeleton-shimmer h-96 rounded-2xl mt-4" /></div>;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
-      <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
-
-      {!compared ? (<>
-        <div className="card-premium p-4 sm:p-6 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
-          </div>
-          <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
-            {filtered.length === 0 && <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>}
-            {filtered.map(p => (
-              <label key={p.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
-                <input type="checkbox" checked={isSelected(p.id)} onChange={() => togglePhone(p)} disabled={!isSelected(p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
-                {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 object-contain rounded-lg bg-[#F8FAFC] p-0.5" unoptimized /> : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
-                <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p><p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p></div>
-                {isSelected(p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {selected.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground mr-1">Selected:</span>
-            {selected.map(p => (
-              <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full">
-                {p.modelName}
-                <button onClick={() => togglePhone(p)} className="hover:bg-blue-600 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
-              </span>
-            ))}
-            <button onClick={() => setCompared(true)} disabled={selected.length < 2} className="ml-auto bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 h-10 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25 disabled:shadow-none flex items-center gap-2">
-              <GitCompare className="w-4 h-4" /> Compare ({selected.length})
-            </button>
-          </div>
-        )}
-      </>) : (<>
-        <button onClick={() => setCompared(false)} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors">
-          <ChevronLeft className="w-4 h-4" /> Back to picker
-        </button>
-
-        {/* Category Winners */}
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-blue-500" /> Category Winners</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {catData.map(cat => {
-              const winner = getWinner(cat.key);
-              return (
-                <div key={cat.label} className={`bg-gradient-to-br ${cat.gradient} rounded-2xl p-4 text-white relative overflow-hidden`}>
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-xl" />
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-3"><cat.icon className="w-5 h-5" /><span className="text-sm font-semibold">{cat.label}</span></div>
-                    <p className="font-bold text-sm leading-snug">{winner?.modelName || 'N/A'}</p>
-                    <p className="text-xs text-white/70 mt-1">{winner?.brand?.name}</p>
-                    <p className="text-2xl font-extrabold mt-2">{winner?.[cat.key] || 0}<span className="text-sm font-medium text-white/70">/100</span></p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Score Comparison */}
-        <section className="card-premium p-4 sm:p-6 space-y-5">
-          <h2 className="font-bold text-gray-900">Score Comparison</h2>
-          {metrics.map(metric => {
-            const scores = selected.map(p => ({ phone: p, score: metric.get(p) }));
-            const maxScore = Math.max(...scores.map(s => s.score));
-            const winnerId = scores.find(s => s.score === maxScore)?.phone.id;
-            return (
-              <div key={metric.label}>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{metric.label}</p>
-                <div className="space-y-2">
-                  {scores.map(s => (
-                    <div key={s.phone.id} className="flex items-center gap-3">
-                      <span className="text-xs font-medium text-gray-600 w-28 sm:w-40 truncate shrink-0">{s.phone.modelName}</span>
-                      <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-700 ${s.phone.id === winnerId ? 'bg-blue-500' : 'bg-gradient-to-r from-blue-400 to-cyan-400'}`} style={{ width: `${Math.max(s.score, 2)}%` }} />
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 w-16 justify-end">
-                        {s.phone.id === winnerId && <Trophy className="w-3.5 h-3.5 text-blue-500" />}
-                        <span className={`text-xs font-bold ${s.phone.id === winnerId ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </section>
-
-        {/* Specs Table */}
-        <section className="card-premium overflow-hidden">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-100"><h2 className="font-bold text-gray-900">Specifications Comparison</h2></div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[500px] text-sm">
-              <thead>
-                <tr className="bg-[#F8FAFC]">
-                  <th className="sticky left-0 bg-[#F8FAFC] z-10 text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-36">Spec</th>
-                  {selected.map(p => <th key={p.id} className="text-left px-4 py-3 text-xs font-semibold text-gray-900">{p.modelName}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {specRows.map((row, i) => (
-                  <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'}>
-                    <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-inherit">{row.label}</td>
-                    {selected.map(p => <td key={p.id} className="px-4 py-3 text-gray-900">{row.get(p) || <span className="text-muted-foreground">—</span>}</td>)}
-                  </tr>
-                ))}
-                <tr className="bg-white border-t border-gray-100">
-                  <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-white">Price</td>
-                  {selected.map(p => <td key={p.id} className="px-4 py-3 font-bold text-blue-600">{formatPrice(p.pricePKR)}</td>)}
-                </tr>
-                <tr className="bg-[#F8FAFC]">
-                  <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-[#F8FAFC]">PTA</td>
-                  {selected.map(p => <td key={p.id} className="px-4 py-3">{p.ptaApproved ? <span className="text-emerald-600 font-medium flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Approved</span> : <span className="text-muted-foreground">{p.ptaStatus}</span>}</td>)}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </>)}
-    </div>
-  );
-}
-
-// ============ BRANDS PAGE ============
-function BrandsPage({ onNavigate }: { onNavigate: (p: string) => void }) {
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/brands').then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-48 rounded-lg mb-6" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(8).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-40 rounded-2xl" />)}</div></div>;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
-      <div className="mb-6">
-        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">All Brands</h1>
-        <p className="text-sm text-muted-foreground mt-1">{brands.length} brands in our database</p>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {brands.map(brand => (
-          <div key={brand.id} className="phone-card glass-shine p-5 cursor-pointer group" onClick={() => onNavigate(`/brand/${brand.slug}`)}>
-            <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
-              {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />}
-            </div>
-            <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
-            <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
-            {brand.country && <p className="text-[10px] text-muted-foreground mt-0.5">{brand.country}</p>}
-            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 mt-3 transition-colors" />
-          </div>
+            <span className="text-xs font-semibold text-gray-700 group-hover:text-blue-600 transition-colors line-clamp-1">{brand.name}</span>
+            <span className="text-[10px] text-muted-foreground">{brand._count?.phones || 0} phones</span>
+          </Link>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
-// ============ BRAND DETAIL PAGE ============
-function BrandDetailPage({ slug, onNavigate }: { slug: string; onNavigate: (p: string) => void }) {
-  const [brand, setBrand] = useState<Brand | null>(null);
-  const [phones, setPhones] = useState<Phone[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/brands/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setBrand(d.brand || null); setPhones(d.phones || []); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6 space-y-4"><div className="skeleton-shimmer h-6 w-48 rounded-lg" /><div className="skeleton-shimmer h-32 rounded-2xl" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(4).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div></div>;
-
-  if (!brand) return <div className="max-w-7xl mx-auto px-4 py-20 text-center"><Smartphone className="w-12 h-12 text-gray-300 mx-auto mb-3" /><h2 className="text-xl font-bold text-gray-900">Brand not found</h2><Button variant="outline" className="mt-4 rounded-xl" onClick={() => onNavigate('/')}>Go Home</Button></div>;
+// ============ TRUST SECTION ============
+function TrustSection() {
+  const stats = [
+    { icon: Smartphone, label: 'Phones Listed', value: '500+' },
+    { icon: Layers, label: 'Brands Covered', value: '25+' },
+    { icon: BarChart3, label: 'Reviews Written', value: '100+' },
+    { icon: Target, label: 'Prices Tracked', value: 'Daily' },
+  ];
+  const methods = [
+    { icon: Check, text: 'Prices verified from authorized retailers across Pakistan' },
+    { icon: Check, text: 'PTA approval status checked with official PTA database' },
+    { icon: Check, text: 'Benchmark scores from standardized testing procedures' },
+    { icon: Check, text: 'Editorial reviews based on hands-on testing experience' },
+    { icon: Check, text: 'Specs sourced from official manufacturer documentation' },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-        <button onClick={() => onNavigate('/')} className="hover:text-blue-500 transition-colors">Home</button><ChevronRight className="w-3.5 h-3.5" />
-        <button onClick={() => onNavigate('/brands')} className="hover:text-blue-500 transition-colors">Brands</button><ChevronRight className="w-3.5 h-3.5" />
-        <span className="font-medium text-gray-900">{brand.name}</span>
+    <section className="space-y-5">
+      <SectionHeader title="Why PhoneDock?" icon={Shield} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {stats.map(stat => (
+          <div key={stat.label} className="card-premium p-5 text-center">
+            <stat.icon className="w-6 h-6 text-blue-500 mx-auto mb-2" />
+            <p className="text-2xl font-extrabold text-gray-900 font-display">{stat.value}</p>
+            <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>
+          </div>
+        ))}
       </div>
       <div className="card-premium p-5 sm:p-6">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-            {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-7 h-7 text-gray-400" />}
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">{brand.name}</h1>
-            <p className="text-sm text-muted-foreground">{brand.country && `${brand.country} · `}{brand._count?.phones || 0} phones</p>
-            {brand.description && <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">{brand.description}</p>}
-          </div>
-        </div>
-      </div>
-      {phones.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
-        </div>
-      ) : (
-        <div className="text-center py-16 text-muted-foreground"><Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="text-sm">No phones listed for this brand yet</p></div>
-      )}
-    </div>
-  );
-}
-
-// ============ SEARCH PAGE ============
-function SearchPage({ query, onNavigate }: { query: string; onNavigate: (p: string) => void }) {
-  const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => { if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [query]);
-
-  const total = results.brands.length + results.phones.length;
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-64 rounded-lg mb-2" /><div className="skeleton-shimmer h-5 w-32 rounded-md mb-6" /><div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div></div>;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-8">
-      <div>
-        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Search Results for &ldquo;{query}&rdquo;</h1>
-        <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
-      </div>
-
-      {results.brands.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Layers className="w-5 h-5 text-blue-500" /> Brands ({results.brands.length})</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {results.brands.map(b => (
-              <div key={b.id} className="phone-card glass-shine p-4 cursor-pointer group flex items-center gap-3" onClick={() => onNavigate(`/brand/${b.slug}`)}>
-                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 group-hover:bg-blue-50 transition-colors">
-                  {b.logo ? <Image src={b.logo} alt={b.name} width={28} height={28} className="object-contain" unoptimized /> : <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />}
-                </div>
-                <div><p className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{b.name}</p><p className="text-[10px] text-muted-foreground">{b._count?.phones || 0} phones</p></div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {results.phones.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> Phones ({results.phones.length})</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {results.phones.map(p => <PhoneCard key={p.id} phone={p} />)}
-          </div>
-        </section>
-      )}
-
-      {total === 0 && (
-        <div className="text-center py-20 text-muted-foreground">
-          <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
-          <h3 className="text-lg font-bold text-gray-900 mb-1">No results found</h3>
-          <p className="text-sm">Try a different search term</p>
-          <Button variant="outline" className="mt-5 rounded-xl" onClick={() => onNavigate('/')}>Browse All Phones</Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============ NEWS PAGE ============
-function NewsPage() {
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/news').then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-8 w-48 rounded-lg mb-2" /><div className="skeleton-shimmer h-5 w-64 rounded-md mb-6" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-56 rounded-2xl" />)}</div></div>;
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
-      <div>
-        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">News & Updates</h1>
-        <p className="text-sm text-muted-foreground mt-1">Latest smartphone news, leaks, and reviews</p>
-      </div>
-      {news.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {news.map(n => (
-            <article key={n.id} className="card-premium p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
-              <div className="flex items-center gap-2 mb-3">
-                <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-600 font-medium">{n.category}</Badge>
-                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-              </div>
-              <h2 className="font-bold text-base text-gray-900 leading-snug mb-2 line-clamp-2">{n.title}</h2>
-              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 mb-3">{n.excerpt || n.content}</p>
-              {n.author && <p className="text-[10px] text-muted-foreground/70 flex items-center gap-1"><Users className="w-3 h-3" /> {n.author}</p>}
-            </article>
+        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Shield className="w-5 h-5 text-blue-500" /> Our Data Methodology
+        </h3>
+        <ul className="space-y-2.5">
+          {methods.map((m, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-muted-foreground">
+              <m.icon className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+              <span>{m.text}</span>
+            </li>
           ))}
-        </div>
-      ) : (
-        <div className="text-center py-20 text-muted-foreground"><Newspaper className="w-14 h-14 mx-auto mb-4 opacity-15" /><h3 className="text-lg font-bold text-gray-900 mb-1">No news yet</h3><p className="text-sm">Check back later for updates</p></div>
-      )}
-    </div>
+        </ul>
+      </div>
+    </section>
   );
 }
 
-// ============ ADMIN LOGIN PAGE ============
-function AdminLoginPage({ onLogin }: { onLogin: (admin: AdminUser, token: string) => void }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true); setError('');
-    try {
-      const res = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-      const data = await res.json();
-      if (data.token) { onLogin(data.admin, data.token); } else { setError(data.error || 'Invalid credentials'); }
-    } catch { setError('Connection failed. Try again.'); }
-    setLoading(false);
-  };
-
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4 animate-fade-in">
-      <div className="w-full max-w-sm glass-modal rounded-2xl p-6 sm:p-8 shadow-xl shadow-blue-500/10">
-        <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-            <Shield className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-xl font-extrabold text-gray-900">Admin Panel</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sign in to manage your phone database</p>
-        </div>
-        {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs font-medium rounded-xl px-4 py-2.5 mb-4">{error}</div>}
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
-          <button type="submit" disabled={loading} className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white h-11 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-        <p className="text-[10px] text-center text-muted-foreground/70 mt-4">Demo: admin@phonedock.pk / admin123</p>
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN DASHBOARD ============
-function AdminDashboard({ token, admin, onNavigate, homeData }: { token: string | null; admin: AdminUser; onNavigate: (p: string) => void; homeData: HomeData | null }) {
-  const [stats, setStats] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setStats(d); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  const statCards = [
-    { label: 'Total Phones', value: stats.totalPhones ?? homeData?.featured?.length ?? 0, icon: Smartphone, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
-    { label: 'Brands', value: stats.totalBrands ?? homeData?.brands?.length ?? 0, icon: Layers, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
-    { label: 'Trending', value: stats.trendingCount ?? homeData?.trending?.length ?? 0, icon: TrendingUp, bg: 'bg-red-50', iconColor: 'text-red-500' },
-    { label: 'Featured', value: stats.featuredCount ?? homeData?.featured?.length ?? 0, icon: Star, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
-    { label: 'Avg Price', value: stats.avgPrice ? formatPrice(stats.avgPrice) : 'N/A', icon: Tag, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
-    { label: 'News', value: stats.newsCount ?? homeData?.news?.length ?? 0, icon: Newspaper, bg: 'bg-cyan-50', iconColor: 'text-cyan-500' },
-  ];
-
-  const quickActions = [
-    { label: 'Import', icon: Upload, hash: '/admin/import' },
-    { label: 'Sync', icon: RefreshCw, hash: '/admin/sync' },
-    { label: 'Phones', icon: Smartphone, hash: '/admin/phones' },
-    { label: 'Brands', icon: Layers, hash: '/admin/brands' },
-    { label: 'News', icon: Newspaper, hash: '/admin/news' },
-    { label: 'Sponsors', icon: Star, hash: '/admin/sponsors' },
-  ];
-
-  const priceDist = stats.priceDistribution || [
-    { range: 'Under 20K', count: 0 }, { range: '20K - 40K', count: 0 }, { range: '40K - 60K', count: 0 },
-    { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
-  ];
-  const maxPriceCount = Math.max(...priceDist.map((d: any) => d.count || 0), 1);
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {admin.name || 'Admin'}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with PhoneDock</p>
-        </div>
-        <button onClick={() => onNavigate('/')} className="self-start bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 h-9 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
-          <Eye className="w-4 h-4" /> View Site
-        </button>
-      </div>
-
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {statCards.map(s => (
-          <div key={s.label} className="card-premium p-4">
-            <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor}`} /></div>
-            <p className="text-2xl font-extrabold text-gray-900">{s.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Empty DB - Seed Prompt */}
-      {(stats.totalPhones === 0 || stats.totalPhones === undefined) && (
-        <div className="card-premium p-6 border-2 border-dashed border-emerald-300 bg-emerald-50/50">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center shrink-0">
-              <Database className="w-7 h-7 text-emerald-600" />
-            </div>
-            <div className="flex-1 text-center sm:text-left">
-              <h3 className="font-bold text-gray-900 text-base">Database is Empty</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">Click below to seed 35+ verified real phones with specs, benchmarks & Pakistani prices</p>
-            </div>
-            <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands, ${d.specs} specs, ${d.benchmarks} benchmarks, ${d.prices} prices added.`); window.location.reload(); } else { alert('Seed failed: ' + (d.error || 'Unknown error')); } } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="shrink-0 flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/25">
-              <Database className="w-5 h-5" /> Seed Database Now
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-        {quickActions.map(a => (
-          <button key={a.label} onClick={() => onNavigate(a.hash)} className="card-premium p-3 sm:p-4 text-center group">
-            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-50 transition-colors"><a.icon className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors" /></div>
-            <p className="text-xs font-semibold text-gray-700">{a.label}</p>
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Price Distribution */}
-        <div className="card-premium p-5">
-          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500" /> Price Distribution</h3>
-          <div className="space-y-3">
-            {priceDist.map((d: any, i: number) => (
-              <div key={i}>
-                <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">{d.range}</span><span className="font-semibold text-gray-900">{d.count || 0}</span></div>
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-700" style={{ width: `${((d.count || 0) / maxPriceCount) * 100}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="card-premium p-5">
-          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Recent Activity</h3>
-          <div className="space-y-3">
-            {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
-                  {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{log.admin?.name || 'Admin'} · {log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                </div>
-              </div>
-            ))}
-            {(!stats.recentActivity || stats.recentActivity.length === 0) && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN PHONES PAGE ============
-function AdminPhonesPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
-  const [phones, setPhones] = useState<Phone[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const fetchPhones = useCallback(() => {
-    if (!token) return;
-    Promise.all([
-      fetch('/api/admin/phones', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-      fetch('/api/admin/brands', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-    ]).then(([pd, bd]) => { setPhones(pd.phones || []); setBrands(bd.brands || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  useEffect(() => { fetchPhones(); }, [fetchPhones]);
-
-  const handleDelete = async () => {
-    if (!deleteId || !token) return;
-    setDeleting(true);
-    try {
-      const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-      if (r.ok) { setPhones(prev => prev.filter(p => p.id !== deleteId)); setDeleteId(null); }
-    } catch {}
-    setDeleting(false);
-  };
-
-  const filtered = phones.filter(p => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return p.modelName.toLowerCase().includes(q) || p.brand?.name?.toLowerCase().includes(q) || p.slug.includes(q);
-  });
-
-  if (loading) return <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-14 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-gray-900">Manage Phones</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">{phones.length} phones total, {filtered.length} shown</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full sm:w-48" />
-          </div>
-          <button onClick={() => onNavigate('/admin/phones/add')} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
-            <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add Phone</span><span className="sm:hidden">Add</span>
-          </button>
-          <button onClick={async () => { if (!token) return; try { const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); const d = await r.json(); if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); fetchPhones(); } else { alert('Seed failed: ' + (d.error || 'Unknown error')); } } catch(e: any) { alert('Seed failed: ' + e.message); } }} className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-500/25">
-            <Database className="w-4 h-4" /> <span className="hidden sm:inline">Seed Data</span><span className="sm:hidden">Seed</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Desktop Table */}
-      <div className="hidden sm:block card-premium overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-[#F8FAFC] border-b border-gray-100">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Phone</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Brand</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Price</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">PTA</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rating</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {filtered.map((p, i) => (
-                <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]/50'} hover:bg-blue-50/30 transition-colors`}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={32} height={32} className="w-8 h-8 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
-                      <div className="min-w-0"><span className="font-medium text-gray-900 truncate block max-w-[200px]">{p.modelName}</span><span className="text-[10px] text-gray-400">{p.slug}</span></div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{p.brand?.name}</td>
-                  <td className="px-4 py-3 font-semibold text-blue-600">{p.pricePKR > 0 ? formatPrice(p.pricePKR) : '—'}</td>
-                  <td className="px-4 py-3">{p.ptaApproved ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">PTA</Badge> : <Badge variant="secondary" className="text-[10px]">{p.ptaStatus || 'Unknown'}</Badge>}</td>
-                  <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating || '—'}</span></div></td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1 flex-wrap">
-                      {p.featured && <Badge className="bg-amber-50 text-amber-700 text-[10px] border-amber-200/50">Featured</Badge>}
-                      {p.trending && <Badge className="bg-blue-50 text-blue-700 text-[10px] border-blue-200/50">Trending</Badge>}
-                      {p.upcoming && <Badge className="bg-purple-50 text-purple-700 text-[10px] border-purple-200/50">Upcoming</Badge>}
-                      {!p.featured && !p.trending && !p.upcoming && <span className="text-[10px] text-gray-400">—</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => onNavigate(`/admin/phones/view/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors" title="View"><Eye className="w-4 h-4" /></button>
-                      <button onClick={() => onNavigate(`/admin/phones/edit/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No phones found</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {/* Mobile Cards */}
-      <div className="sm:hidden space-y-2">
-        {filtered.map(p => (
-          <div key={p.id} className="card-premium p-3 flex items-center gap-3">
-            {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={40} height={40} className="w-10 h-10 object-contain rounded-lg bg-gray-50 p-0.5" unoptimized /> : <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
-              <p className="text-[10px] text-muted-foreground">{p.brand?.name} · {p.pricePKR > 0 ? formatPrice(p.pricePKR) : '—'}</p>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <button onClick={() => onNavigate(`/admin/phones/view/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Eye className="w-4 h-4" /></button>
-              <button onClick={() => onNavigate(`/admin/phones/edit/${p.id}`)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Edit className="w-4 h-4" /></button>
-              <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><Trash2 className="w-4 h-4" /></button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Delete Confirmation Modal */}
-      {deleteId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteId(null)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-fade-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-500" /></div>
-              <div><h3 className="font-bold text-gray-900">Delete Phone</h3><p className="text-xs text-muted-foreground">This action cannot be undone</p></div>
-            </div>
-            <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete this phone and all its specs, benchmarks, images, and prices?</p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteId(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
-              <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors disabled:opacity-50">{deleting ? 'Deleting...' : 'Delete'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============ ADMIN PHONE VIEW PAGE ============
-function AdminPhoneViewPage({ token, id, onNavigate }: { token: string | null; id: string; onNavigate: (p: string) => void }) {
-  const [phone, setPhone] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    if (!token || !id) return;
-    fetch(`/api/admin/phones/${id}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhone(d); setLoading(false); }).catch(() => setLoading(false));
-  }, [token, id]);
-
-  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
-  if (!phone) return <div className="text-center py-12 text-muted-foreground">Phone not found</div>;
-
-  const SpecRow = ({ label, value }: { label: string; value?: string }) => value ? <div className="flex justify-between py-1.5 border-b border-gray-50"><span className="text-xs text-muted-foreground">{label}</span><span className="text-xs font-medium text-gray-900 text-right max-w-[60%]">{value || '—'}</span></div> : null;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => onNavigate('/admin/phones')} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors"><ChevronLeft className="w-5 h-5" /></button>
-          <div>
-            <h1 className="text-xl font-extrabold text-gray-900">{phone.brand?.name} {phone.modelName}</h1>
-            <p className="text-xs text-muted-foreground">{phone.slug} · {phone.releaseDate || 'No date'}</p>
-          </div>
-        </div>
-        <button onClick={() => onNavigate(`/admin/phones/edit/${id}`)} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"><Edit className="w-4 h-4" /> Edit</button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left: Scores & Status */}
-        <div className="space-y-4">
-          <div className="card-premium p-5 space-y-3">
-            <h3 className="text-sm font-bold text-gray-900">Scores & Rating</h3>
-            {[['Camera', phone.cameraScore], ['Performance', phone.performanceScore], ['Battery', phone.batteryScore], ['Display', phone.displayScore], ['Value', phone.valueScore]].map(([l, v]) => <ScoreBar key={l} score={v || 0} label={l as string} />)}
-            <div className="pt-2 border-t border-gray-100"><ScoreBar score={phone.overallRating || 0} label="Overall" /></div>
-          </div>
-          <div className="card-premium p-5 space-y-3">
-            <h3 className="text-sm font-bold text-gray-900">Status & Flags</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">PTA Status</span><Badge className={phone.ptaApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200/50' : ''}>{phone.ptaStatus}</Badge></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Featured</span><span className={phone.featured ? 'text-emerald-600 font-medium' : 'text-gray-400'}>{phone.featured ? 'Yes' : 'No'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Trending</span><span className={phone.trending ? 'text-blue-600 font-medium' : 'text-gray-400'}>{phone.trending ? 'Yes' : 'No'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Upcoming</span><span className={phone.upcoming ? 'text-purple-600 font-medium' : 'text-gray-400'}>{phone.upcoming ? 'Yes' : 'No'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span className="font-bold text-blue-600">{phone.pricePKR > 0 ? formatPrice(phone.pricePKR) : 'Not set'}</span></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Specs */}
-        <div className="lg:col-span-2 space-y-4">
-          {phone.description && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Description</h3><p className="text-sm text-gray-600 leading-relaxed">{phone.description}</p></div>}
-          {phone.specs && <div className="card-premium p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Specifications</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-              {phone.specs.display && <SpecRow label="Display" value={phone.specs.display} />}
-              {phone.specs.displayType && <SpecRow label="Display Type" value={phone.specs.displayType} />}
-              {phone.specs.resolution && <SpecRow label="Resolution" value={phone.specs.resolution} />}
-              {phone.specs.refreshRate && <SpecRow label="Refresh Rate" value={phone.specs.refreshRate} />}
-              {phone.specs.protection && <SpecRow label="Protection" value={phone.specs.protection} />}
-              {phone.specs.brightness && <SpecRow label="Brightness" value={phone.specs.brightness} />}
-              {phone.specs.chipset && <SpecRow label="Chipset" value={phone.specs.chipset} />}
-              {phone.specs.cpu && <SpecRow label="CPU" value={phone.specs.cpu} />}
-              {phone.specs.gpu && <SpecRow label="GPU" value={phone.specs.gpu} />}
-              {phone.specs.process && <SpecRow label="Process" value={phone.specs.process} />}
-              {phone.specs.ram && <SpecRow label="RAM" value={phone.specs.ram} />}
-              {phone.specs.ramType && <SpecRow label="RAM Type" value={phone.specs.ramType} />}
-              {phone.specs.storage && <SpecRow label="Storage" value={phone.specs.storage} />}
-              {phone.specs.cardSlot && <SpecRow label="Card Slot" value={phone.specs.cardSlot} />}
-              {phone.specs.mainCamera && <SpecRow label="Main Camera" value={phone.specs.mainCamera} />}
-              {phone.specs.mainCameraSensor && <SpecRow label="Camera Sensor" value={phone.specs.mainCameraSensor} />}
-              {phone.specs.aperture && <SpecRow label="Aperture" value={phone.specs.aperture} />}
-              {phone.specs.ois && <SpecRow label="OIS" value={phone.specs.ois} />}
-              {phone.specs.selfieCamera && <SpecRow label="Selfie" value={phone.specs.selfieCamera} />}
-              {phone.specs.videoRecording && <SpecRow label="Video" value={phone.specs.videoRecording} />}
-              {phone.specs.battery && <SpecRow label="Battery" value={phone.specs.battery} />}
-              {phone.specs.chargingSpeed && <SpecRow label="Charging" value={phone.specs.chargingSpeed} />}
-              {phone.specs.weight && <SpecRow label="Weight" value={phone.specs.weight} />}
-              {phone.specs.dimensions && <SpecRow label="Dimensions" value={phone.specs.dimensions} />}
-              {phone.specs.build && <SpecRow label="Build" value={phone.specs.build} />}
-              {phone.specs.os && <SpecRow label="OS" value={`${phone.specs.os} ${phone.specs.osVersion || ''}`.trim()} />}
-              {phone.specs.network && <SpecRow label="Network" value={phone.specs.network} />}
-              {phone.specs.fiveG && <SpecRow label="5G" value={phone.specs.fiveG} />}
-              {phone.specs.wifi && <SpecRow label="WiFi" value={phone.specs.wifi} />}
-              {phone.specs.bluetooth && <SpecRow label="Bluetooth" value={phone.specs.bluetooth} />}
-              {phone.specs.nfc && <SpecRow label="NFC" value={phone.specs.nfc} />}
-              {phone.specs.fingerprint && <SpecRow label="Fingerprint" value={phone.specs.fingerprint} />}
-              {phone.specs.colors && <SpecRow label="Colors" value={phone.specs.colors} />}
-            </div>
-          </div>}
-          {phone.benchmarks && (phone.benchmarks.antutu || phone.benchmarks.geekbenchSingle) && <div className="card-premium p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Benchmarks</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {phone.benchmarks.antutu > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.antutu.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">AnTuTu</p></div>}
-              {phone.benchmarks.geekbenchSingle > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchSingle.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Single</p></div>}
-              {phone.benchmarks.geekbenchMulti > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchMulti.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Multi</p></div>}
-            </div>
-          </div>}
-          {phone.prices && phone.prices.length > 0 && <div className="card-premium p-5">
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Store Prices</h3>
-            <div className="space-y-2">{phone.prices.map((pr: any, i: number) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                <span className="text-sm font-medium text-gray-900">{pr.storeName}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-blue-600">{pr.price > 0 ? formatPrice(pr.price) : '—'}</span>
-                  <Badge className={pr.inStock ? 'bg-emerald-50 text-emerald-700 text-[10px]' : 'bg-red-50 text-red-700 text-[10px]'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</Badge>
-                </div>
-              </div>
-            ))}</div>
-          </div>}
-          {phone.pros && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Pros</h3><p className="text-sm text-gray-600">{phone.pros}</p></div>}
-          {phone.cons && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Cons</h3><p className="text-sm text-gray-600">{phone.cons}</p></div>}
-          {phone.reviewSummary && <div className="card-premium p-5"><h3 className="text-sm font-bold text-gray-900 mb-2">Review Summary</h3><p className="text-sm text-gray-600">{phone.reviewSummary}</p></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN BRANDS PAGE ============
-function AdminBrandsPage({ token }: { token: string | null }) {
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/brands', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  if (loading) return <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-36 rounded-2xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-extrabold text-gray-900">Manage Brands</h1>
-        <span className="text-xs text-muted-foreground">{brands.length} brands</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {brands.map(brand => (
-          <div key={brand.id} className="card-premium p-5 hover:shadow-md hover:shadow-black/5 transition-all duration-300">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                {brand.logo ? <Image src={brand.logo} alt={brand.name} width={32} height={32} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400" />}
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-gray-900">{brand.name}</h3>
-                <p className="text-xs text-muted-foreground font-mono">{brand.slug}</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">{brand.country || 'N/A'}</span>
-              <Badge variant="secondary" className="text-[10px]">{brand._count?.phones || 0} phones</Badge>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN NEWS PAGE ============
-function AdminNewsPage({ token }: { token: string | null }) {
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/news', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-20 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-extrabold text-gray-900">Manage News</h1>
-        <span className="text-xs text-muted-foreground">{news.length} articles</span>
-      </div>
-      <div className="space-y-2">
-        {news.map(n => (
-          <div key={n.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm text-gray-900 truncate">{n.title}</h3>
-              <div className="flex items-center gap-2 mt-1.5">
-                <Badge variant="secondary" className="text-[10px]">{n.category}</Badge>
-                <span className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {n.published ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50"><Check className="w-3 h-3 mr-0.5" /> Published</Badge> : <Badge variant="secondary" className="text-[10px]">Draft</Badge>}
-              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-amber-500 transition-colors"><Edit className="w-4 h-4" /></button>
-              <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-            </div>
-          </div>
-        ))}
-        {news.length === 0 && <div className="text-center py-16 text-muted-foreground"><Newspaper className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No news articles yet</p></div>}
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN SPONSORS PAGE ============
-function AdminSponsorsPage({ token }: { token: string | null }) {
-  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/sponsors', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setSponsors(d.sponsors || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  if (loading) return <div className="space-y-3">{Array(3).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-extrabold text-gray-900">Manage Sponsors</h1>
-        <span className="text-xs text-muted-foreground">{sponsors.length} sponsors</span>
-      </div>
-      <div className="space-y-2">
-        {sponsors.map(s => (
-          <div key={s.id} className="card-premium p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                {s.image ? <Image src={s.image} alt={s.name} width={28} height={28} className="object-contain" unoptimized /> : <Star className="w-5 h-5 text-gray-400" />}
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-sm text-gray-900 truncate">{s.name}</h3>
-                <p className="text-[10px] text-muted-foreground">{s.position || 'No position'}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="text-right hidden sm:block">
-                <p className="text-[10px] text-muted-foreground">Clicks</p>
-                <p className="text-xs font-semibold text-gray-900">{(s as any).clicks || 0}</p>
-              </div>
-              <div className="text-right hidden sm:block">
-                <p className="text-[10px] text-muted-foreground">Impressions</p>
-                <p className="text-xs font-semibold text-gray-900">{(s as any).impressions || 0}</p>
-              </div>
-              {s.active ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">Active</Badge> : <Badge variant="secondary" className="text-[10px]">Inactive</Badge>}
-            </div>
-          </div>
-        ))}
-        {sponsors.length === 0 && <div className="text-center py-16 text-muted-foreground"><Star className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No sponsors yet</p></div>}
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN ACTIVITY PAGE ============
-function AdminActivityPage({ token }: { token: string | null }) {
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/activity', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setLogs(d.logs || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <h1 className="text-xl font-extrabold text-gray-900">Activity Log</h1>
-      <div className="card-premium p-4 sm:p-6">
-        {logs.length > 0 ? (
-          <div className="relative">
-            <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gray-100" />
-            <div className="space-y-4">
-              {logs.map((log, i) => (
-                <div key={log.id || i} className="relative flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0 z-10 ring-4 ring-white">
-                    {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0 pb-1">
-                    <p className="text-sm font-medium text-gray-900">{log.action}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{log.details}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      {log.entityType && <Badge variant="secondary" className="text-[10px]">{log.entityType}</Badge>}
-                      {log.admin && <span className="text-[10px] text-muted-foreground">{log.admin.name}</span>}
-                      <span className="text-[10px] text-muted-foreground/70">{log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-16 text-muted-foreground"><Activity className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No activity logged yet</p></div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN IMPORT PAGE ============
-function AdminImportPage({ token }: { token: string | null }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [validation, setValidation] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState('upload');
-  const [importMode, setImportMode] = useState<'skip_duplicates' | 'update_existing' | 'new_only'>('skip_duplicates');
-  const [previewRecords, setPreviewRecords] = useState<any[]>([]);
-  const [previewDuplicates, setPreviewDuplicates] = useState<string[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [parseError, setParseError] = useState('');
-
-  const handleFile = async (f: File) => {
-    const ext = f.name.split('.').pop()?.toLowerCase();
-    if (!['json', 'csv'].includes(ext || '')) { setParseError('Only JSON and CSV files are supported for direct import. Use the Collector system for other formats.'); return; }
-    setFile(f); setResult(null); setValidation(null); setParseError(''); setActiveTab('upload');
-    // Parse file locally for preview
-    try {
-      const text = await f.text();
-      let records: any[] = [];
-      if (ext === 'json') {
-        const parsed = JSON.parse(text);
-        records = Array.isArray(parsed) ? parsed : (parsed.phones || parsed.data || parsed.records || [parsed]);
-      } else if (ext === 'csv') {
-        const Papa = await import('papaparse');
-        const res = Papa.default.parse(text, { header: true, skipEmptyLines: true });
-        records = res.data;
-      }
-      setPreviewRecords(records);
-      // Basic validation
-      const errors: string[] = [];
-      const valid: any[] = [];
-      records.forEach((r: any, i: number) => {
-        const brand = String(r.brand || r.brandName || '').trim();
-        const model = String(r.model || r.modelName || r.name || '').trim();
-        if (!brand || !model) errors.push(`Row ${i+1}: Missing brand or model`);
-        else valid.push({ ...r, _brand: brand, _model: model, _row: i+1 });
-      });
-      setValidation({ total: records.length, validCount: valid.length, errorCount: errors.length, errors, preview: valid.slice(0, 10) });
-    } catch (e: any) { setParseError('Failed to parse file: ' + e.message); setPreviewRecords([]); }
-  };
-
-  const handleImport = async () => {
-    if (!file || !token || previewRecords.length === 0) return;
-    setUploading(true); setActiveTab('results');
-    const startTime = Date.now();
-    try {
-      const res = await fetch('/api/admin/phones/bulk-import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ records: previewRecords, mode: importMode }),
-      });
-      const data = await res.json();
-      data.duration = Date.now() - startTime;
-      setResult(data);
-    } catch (e: any) { setResult({ error: e.message, duration: Date.now() - startTime }); }
-    setUploading(false);
-  };
-
-  const downloadErrorReport = () => {
-    if (!result?.errors?.length) return;
-    const csv = 'Row,Error\n' + result.errors.map((e: string) => `"${e.replace(/"/g, '""')}"`).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'import-errors.csv'; a.click(); URL.revokeObjectURL(url);
-  };
-
-  const downloadSampleJson = () => {
-    const sample = [
-      { brand: "Samsung", model: "Galaxy S25 Ultra", pricePKR: 385000, ptaStatus: "PTA Approved", releaseDate: "2025-01-17", ram: "12 GB", storage: "256 GB", chipset: "Snapdragon 8 Elite", display: '6.9"', resolution: "3120x1440", refreshRate: "120Hz", mainCamera: "200 MP", selfieCamera: "12 MP", battery: "5000 mAh", chargingSpeed: "45W", os: "Android 15", weight: "218g", featured: true, trending: true, prices: [{ storeName: "PriceOye", price: 385000, inStock: true }] },
-      { brand: "Xiaomi", model: "Redmi Note 14 Pro", pricePKR: 54999, ptaStatus: "Non-PTA", releaseDate: "2025-01-10", ram: "8 GB", storage: "256 GB", chipset: "MediaTek Helio G100 Ultra", display: '6.67"', resolution: "2400x1080", refreshRate: "120Hz", mainCamera: "200 MP", selfieCamera: "20 MP", battery: "5500 mAh", chargingSpeed: "45W", os: "Android 14", weight: "190g" },
-    ];
-    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'sample-phones.json'; a.click(); URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-gray-900">Bulk Import Phones</h1>
-          <p className="text-xs text-muted-foreground mt-1">Upload JSON or CSV files with phone data. Records are validated and imported directly.</p>
-        </div>
-        <button onClick={downloadSampleJson} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
-          <Download className="w-3.5 h-3.5" /> Sample JSON
-        </button>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-gray-100">
-          <TabsTrigger value="upload"><Upload className="w-3.5 h-3.5 mr-1.5" />Upload</TabsTrigger>
-          <TabsTrigger value="preview" disabled={!validation}><FileText className="w-3.5 h-3.5 mr-1.5" />Preview ({validation?.validCount || 0})</TabsTrigger>
-          <TabsTrigger value="results" disabled={!result}><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Results</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="upload" className="mt-4">
-          <Card className="border-gray-100">
-            <CardContent className="p-6">
-              {parseError && <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">{parseError}</div>}
-              <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 cursor-pointer ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50/50'}`}
-                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
-                onClick={() => fileRef.current?.click()}>
-                <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
-                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><UploadCloud className="w-7 h-7 text-blue-500" /></div>
-                <p className="text-sm font-semibold text-gray-900">Drop your JSON or CSV file here or click to browse</p>
-                <p className="text-xs text-muted-foreground mt-1">JSON and CSV supported</p>
-                {file && (
-                  <div className="mt-3 inline-flex items-center gap-2 bg-white rounded-xl px-3 py-1.5 border border-gray-100 shadow-sm">
-                    <FileText className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm font-medium text-gray-900">{file.name}</span>
-                    <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(1)} KB)</span>
-                    <button onClick={e => { e.stopPropagation(); setFile(null); setValidation(null); setResult(null); setPreviewRecords([]); }} className="ml-1 text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                )}
-              </div>
-
-              {file && validation && (
-                <div className="mt-5 space-y-4">
-                  {/* Validation Summary */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid Records</p></div>
-                    <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
-                    <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total Records</p></div>
-                  </div>
-
-                  {/* Import Mode Selection */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-gray-700 mb-3">Import Mode</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {([
-                        { value: 'skip_duplicates', label: 'Skip Duplicates', desc: 'Ignore phones that already exist (by slug or brand+model)', icon: '🚫' },
-                        { value: 'update_existing', label: 'Update Existing', desc: 'Update specs & prices of existing phones with new data', icon: '🔄' },
-                        { value: 'new_only', label: 'New Only', desc: 'Same as skip — only import brand new phones', icon: '✨' },
-                      ] as const).map(m => (
-                        <label key={m.value} className={`block cursor-pointer rounded-xl border-2 p-3 transition-all ${importMode === m.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                          <input type="radio" name="importMode" value={m.value} checked={importMode === m.value} onChange={e => setImportMode(e.target.value as any)} className="sr-only" />
-                          <div className="flex items-center gap-2 mb-1"><span className="text-base">{m.icon}</span><span className="text-sm font-semibold text-gray-900">{m.label}</span></div>
-                          <p className="text-[10px] text-muted-foreground">{m.desc}</p>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Duplicate Detection Preview */}
-                  {validation.preview?.length > 0 && (
-                    <Card className="border-gray-100">
-                      <CardHeader className="pb-2"><CardTitle className="text-sm">Data Preview (first {Math.min(validation.preview.length, 10)} records)</CardTitle></CardHeader>
-                      <CardContent className="p-4 pt-0">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead><tr className="border-b border-gray-100">
-                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
-                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
-                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
-                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price (PKR)</th>
-                              <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Status</th>
-                            </tr></thead>
-                            <tbody>
-                              {validation.preview.map((r: any, i: number) => (
-                                <tr key={i} className="border-b border-gray-50">
-                                  <td className="py-1.5 px-2 text-gray-400">{r._row || i+1}</td>
-                                  <td className="py-1.5 px-2 text-gray-900">{r._brand || r.brand || '-'}</td>
-                                  <td className="py-1.5 px-2 font-medium text-gray-900">{r._model || r.modelName || r.model || '-'}</td>
-                                  <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
-                                  <td className="py-1.5 px-2"><Badge className="bg-emerald-50 text-emerald-700 text-[10px]">Valid</Badge></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {validation.errors?.length > 0 && (
-                    <Card className="border-red-100">
-                      <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Errors ({validation.errors.length})</CardTitle></CardHeader>
-                      <CardContent className="p-4 pt-0 max-h-40 overflow-y-auto">
-                        {validation.errors.map((e: string, i: number) => (
-                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <div className="flex gap-3">
-                    <Button onClick={() => setActiveTab('preview')} variant="outline" className="gap-1.5"><FileText className="w-4 h-4" />Review Preview</Button>
-                    <Button onClick={handleImport} disabled={validation.validCount === 0 || uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
-                      {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
-                      Import {validation.validCount} Phones
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="preview" className="mt-4">
-          {validation && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid</p></div>
-                <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
-                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total</p></div>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <p className="text-xs text-amber-800">Import mode: <strong>{importMode === 'skip_duplicates' ? 'Skip Duplicates' : importMode === 'update_existing' ? 'Update Existing Phones' : 'New Only'}</strong>. Duplicate detection uses phone slug and brand+model name matching.</p>
-              </div>
-
-              <Card className="border-gray-100">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">All Valid Records ({validation.validCount})</CardTitle></CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100">
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">#</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Brand</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Model</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Price</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Chipset</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">RAM</th>
-                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Camera</th>
-                      </tr></thead>
-                      <tbody>
-                        {validation.preview.map((r: any, i: number) => (
-                          <tr key={i} className="border-b border-gray-50">
-                            <td className="py-1.5 px-2 text-gray-400">{r._row || i+1}</td>
-                            <td className="py-1.5 px-2 text-gray-900">{r._brand || '-'}</td>
-                            <td className="py-1.5 px-2 font-medium">{r._model || '-'}</td>
-                            <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
-                            <td className="py-1.5 px-2 text-gray-600">{r.chipset || '-'}</td>
-                            <td className="py-1.5 px-2 text-gray-600">{r.ram || '-'}</td>
-                            <td className="py-1.5 px-2 text-gray-600">{r.mainCamera || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="flex gap-3">
-                <Button onClick={() => setActiveTab('upload')} variant="outline">Back</Button>
-                <Button onClick={handleImport} disabled={uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
-                  {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
-                  Import Now
-                </Button>
-              </div>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="results" className="mt-4">
-          {uploading && !result && (
-            <div className="text-center py-16">
-              <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Importing phones...</p>
-            </div>
-          )}
-          {result && (
-            <div className="space-y-4">
-              {result.error ? (
-                <Card className="border-red-100"><CardContent className="p-6 text-center"><XCircle className="w-10 h-10 text-red-400 mx-auto mb-2" /><p className="text-sm font-medium text-red-700">{result.error}</p></CardContent></Card>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                    {[
-                      { label: 'Total Records', value: result.total, color: 'text-gray-900 bg-gray-50' },
-                      { label: 'Imported', value: result.imported, color: 'text-emerald-700 bg-emerald-50' },
-                      { label: 'Updated', value: result.updated, color: 'text-blue-700 bg-blue-50' },
-                      { label: 'Skipped', value: result.skipped, color: 'text-amber-700 bg-amber-50' },
-                      { label: 'Failed', value: result.failed, color: 'text-red-700 bg-red-50' },
-                    ].map(s => (
-                      <div key={s.label} className={`rounded-xl p-4 text-center ${s.color}`}>
-                        <p className="text-2xl font-bold">{s.value}</p>
-                        <p className="text-[10px] font-medium">{s.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {result.duration && <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>}
-                  {result.errors?.length > 0 && (
-                    <Card className="border-red-100">
-                      <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                        <CardTitle className="text-sm text-red-700">Errors ({result.errors.length})</CardTitle>
-                        <Button size="sm" variant="outline" onClick={downloadErrorReport} className="gap-1 text-xs"><Download className="w-3 h-3" />Download CSV</Button>
-                      </CardHeader>
-                      <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">
-                        {result.errors.map((e: string, i: number) => (
-                          <p key={i} className="text-xs text-red-600 py-0.5 border-b border-red-50">{e}</p>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  )}
-                  <div className="flex gap-3">
-                    <Button onClick={() => { setFile(null); setResult(null); setValidation(null); setPreviewRecords([]); setActiveTab('upload'); }} variant="outline">Import Another File</Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-// ============ ADMIN SYNC PAGE ============
-function AdminSyncPage({ token }: { token: string | null }) {
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [source, setSource] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchJobs = useCallback(() => {
-    if (!token) return;
-    fetch('/api/sync', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-
-  useEffect(() => {
-    fetchJobs();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchJobs]);
-
-  // Auto-poll when there's a running job
-  useEffect(() => {
-    const hasRunning = jobs.some(j => j.status === 'running');
-    if (hasRunning) {
-      pollRef.current = setInterval(fetchJobs, 3000);
-    } else if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobs, fetchJobs]);
-
-  const handleAction = async (action: string) => {
-    if (!token) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ action, source: action === 'start' ? source : undefined }) });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || 'Action failed'); }
-      else { fetchJobs(); if (action === 'start') setSource(''); }
-    } catch (e: any) { alert('Failed: ' + e.message); }
-    setSubmitting(false);
-  };
-
-  const handleDelete = async (jobId: string) => {
-    if (!token || !confirm('Delete this sync job record?')) return;
-    await fetch('/api/sync', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ jobId }) });
-    fetchJobs();
-  };
-
-  const statusBadge = (s: string) => {
-    const map: Record<string, { icon: any; cls: string }> = {
-      pending: { icon: Clock, cls: 'text-gray-600 bg-gray-50' },
-      running: { icon: RefreshCw, cls: 'text-blue-600 bg-blue-50' },
-      paused: { icon: Pause, cls: 'text-amber-600 bg-amber-50' },
-      completed: { icon: CheckCircle, cls: 'text-emerald-600 bg-emerald-50' },
-      failed: { icon: XCircle, cls: 'text-red-600 bg-red-50' },
-    };
-    const cfg = map[s] || map.pending;
-    return <Badge variant="secondary" className={`text-[10px] gap-1 ${cfg.cls}`}><cfg.icon className="w-3 h-3" />{s}</Badge>;
-  };
-
-  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div>
-        <h1 className="text-xl font-extrabold text-gray-900">Data Sync</h1>
-        <p className="text-xs text-muted-foreground mt-1">Synchronize phone data from external JSON API sources</p>
-      </div>
-
-      {/* New Sync */}
-      <Card className="border-gray-100">
-        <CardContent className="p-5">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input placeholder="Enter JSON API source URL..." value={source} onChange={e => setSource(e.target.value)} className="flex-1" />
-            <div className="flex gap-2">
-              <Button onClick={() => handleAction('start')} disabled={!source || submitting} className="bg-blue-500 hover:bg-blue-600 gap-1.5"><Play className="w-4 h-4" />Start Sync</Button>
-              <Button onClick={() => handleAction('pause')} disabled={submitting || !jobs.some(j => j.status === 'running')} variant="outline" className="gap-1.5"><Pause className="w-4 h-4" />Pause</Button>
-              <Button onClick={() => handleAction('resume')} disabled={submitting || !jobs.some(j => j.status === 'paused')} variant="outline" className="gap-1.5"><Play className="w-4 h-4" />Resume</Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Jobs List */}
-      {jobs.length > 0 ? (
-        <div className="space-y-3">
-          {jobs.map((job: any) => (
-            <Card key={job.id} className="border-gray-100">
-              <CardContent className="p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                      <Database className="w-5 h-5 text-blue-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{job.source || 'Unknown source'}</p>
-                      <p className="text-[10px] text-muted-foreground">{job.createdAt ? new Date(job.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {statusBadge(job.status)}
-                    <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(job.id)}><Trash2 className="w-3 h-3" /></Button>
-                  </div>
-                </div>
-                {/* Progress */}
-                {job.totalPhones > 0 && (
-                  <div className="mt-3">
-                    <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                      <span>Progress: {job.processed || 0} / {job.totalPhones}</span>
-                      <span>Inserted: {job.inserted || 0} | Updated: {job.updated || 0} | Errors: {job.errorCount || 0}</span>
-                    </div>
-                    <Progress value={job.totalPhones > 0 ? ((job.processed || 0) / job.totalPhones) * 100 : 0} className="h-1.5" />
-                  </div>
-                )}
-                {/* Error Log */}
-                {job.errorLog?.length > 0 && (
-                  <div className="mt-2 bg-red-50 rounded-lg p-2 max-h-24 overflow-y-auto">
-                    {job.errorLog.map((err: string, i: number) => (
-                      <p key={i} className="text-[10px] text-red-600">{err}</p>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-16 text-muted-foreground">
-          <RefreshCw className="w-10 h-10 mx-auto mb-3 opacity-20" />
-          <p className="text-sm">No sync jobs yet</p>
-          <p className="text-xs mt-1">Enter a JSON API URL above to start syncing</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============ ADMIN COLLECTOR DASHBOARD ============
-function AdminCollectorPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
-  const [dash, setDash] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/collector/dashboard', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setDash(d); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
-  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div><h1 className="text-xl font-extrabold text-gray-900">Data Collector</h1><p className="text-xs text-muted-foreground mt-1">Collect, validate, and review phone data from trusted sources before publishing</p></div>
-      {dash && (<>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Pending Review', value: dash.pending + dash.needsReview, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50' },
-            { label: 'Imported', value: dash.imported, icon: CheckCircle, color: 'text-emerald-600 bg-emerald-50' },
-            { label: 'Total Collected', value: dash.totalCollected, icon: Database, color: 'text-blue-600 bg-blue-50' },
-            { label: 'Sources', value: dash.sourcesCount, icon: Globe, color: 'text-violet-600 bg-violet-50' },
-          ].map(s => (
-            <div key={s.label} className="card-premium p-4">
-              <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mb-2`}><s.icon className="w-4 h-4" /></div>
-              <p className="text-lg font-bold text-gray-900">{s.value}</p>
-              <p className="text-[10px] text-muted-foreground">{s.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[
-            { label: 'Needs Review', value: dash.needsReview, color: 'text-orange-600 bg-orange-50' },
-            { label: 'Rejected', value: dash.rejected, color: 'text-red-600 bg-red-50' },
-            { label: 'Failed', value: dash.failed, color: 'text-red-700 bg-red-100' },
-          ].map(s => (
-            <div key={s.label} className={`rounded-xl p-3 text-center ${s.color}`}><p className="text-xl font-bold">{s.value}</p><p className="text-[10px] font-medium">{s.label}</p></div>
-          ))}
-        </div>
-      </>)}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {[
-          { label: 'Review Queue', desc: 'Review and approve collected phones', hash: '/admin/collector/review', icon: Eye, count: dash?.pending || 0 },
-          { label: 'Sources', desc: 'Manage data providers', hash: '/admin/collector/sources', icon: Globe, count: dash?.sourcesCount || 0 },
-          { label: 'Jobs', desc: 'Sync history and progress', hash: '/admin/collector/jobs', icon: Activity, count: 0 },
-        ].map(s => (
-          <Card key={s.hash} className="border-gray-100 cursor-pointer hover:shadow-md hover:shadow-black/5 transition-all duration-200" onClick={() => onNavigate(s.hash)}>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center shrink-0"><s.icon className="w-5 h-5 text-blue-500" /></div>
-              <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-gray-900">{s.label}</p><p className="text-[10px] text-muted-foreground">{s.desc}</p></div>
-              {s.count > 0 && <Badge variant="secondary" className="bg-blue-50 text-blue-700 text-xs">{s.count}</Badge>}
-              <ChevronRightIcon className="w-4 h-4 text-gray-400" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ============ ADMIN COLLECTOR SOURCES ============
-function AdminCollectorSourcesPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
-  const [sources, setSources] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', type: 'json_url', endpoint: '', apiKeyEnvVar: '', dataPath: '', syncFrequencyHours: 0, brandFilter: '', countryFilter: '', region: '', notes: '' });
-  const [testing, setTesting] = useState<string | null>(null);
-
-  const fetchSources = () => {
-    if (!token) return;
-    fetch('/api/collector/sources', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setSources(d.sources || []); setLoading(false); }).catch(() => setLoading(false));
-  };
-  useEffect(() => { fetchSources(); }, [token]);
-
-  const handleSave = async () => {
-    if (!token || !form.name) return;
-    const data = { ...form, brandFilter: form.brandFilter ? form.brandFilter.split(',').map(s => s.trim()) : [], headers: {}, mappingRules: {} };
-    await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(data) });
-    setShowAdd(false); setForm({ name: '', type: 'json_url', endpoint: '', apiKeyEnvVar: '', dataPath: '', syncFrequencyHours: 0, brandFilter: '', countryFilter: '', region: '', notes: '' });
-    fetchSources();
-  };
-
-  const handleTest = async (sourceId: string) => {
-    setTesting(sourceId);
-    try {
-      const res = await fetch(`/api/collector/sources/${sourceId}/test`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      alert(data.success ? `Connection OK: ${data.message}` : `Failed: ${data.message}`);
-    } catch (e: any) { alert('Test failed: ' + e.message); }
-    setTesting(null);
-  };
-
-  const handleToggle = async (source: any) => {
-    await fetch(`/api/collector/sources/${source.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ enabled: !source.enabled }) });
-    fetchSources();
-  };
-
-  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
-
-  const typeColors: Record<string, string> = { json_url: 'bg-blue-50 text-blue-700', csv_url: 'bg-green-50 text-green-700', api: 'bg-violet-50 text-violet-700', manual_url: 'bg-amber-50 text-amber-700', manufacturer: 'bg-cyan-50 text-cyan-700', file_upload: 'bg-gray-50 text-gray-700' };
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between"><div><h1 className="text-xl font-extrabold text-gray-900">Data Sources</h1><p className="text-xs text-muted-foreground mt-1">Configure trusted data providers</p></div>
-        <Button onClick={() => setShowAdd(!showAdd)} className="gap-1.5 bg-blue-500 hover:bg-blue-600" size="sm"><Plus className="w-4 h-4" />Add Source</Button>
-      </div>
-      {showAdd && (
-        <Card className="border-blue-200 bg-blue-50/30">
-          <CardContent className="p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Input placeholder="Source name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-              <select className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
-                {['json_url', 'csv_url', 'api', 'manual_url', 'manufacturer'].map(t => <option key={t} value={t}>{t.replace('_', ' ').toUpperCase()}</option>)}
-              </select>
-            </div>
-            <Input placeholder="Endpoint URL" value={form.endpoint} onChange={e => setForm(f => ({ ...f, endpoint: e.target.value }))} />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input placeholder="API Key Env Var (e.g. PHONE_DATA_API_KEY)" value={form.apiKeyEnvVar} onChange={e => setForm(f => ({ ...f, apiKeyEnvVar: e.target.value }))} />
-              <Input placeholder="Data path (e.g. data.phones)" value={form.dataPath} onChange={e => setForm(f => ({ ...f, dataPath: e.target.value }))} />
-              <Input placeholder="Brand filter (comma-separated)" value={form.brandFilter} onChange={e => setForm(f => ({ ...f, brandFilter: e.target.value }))} />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleSave} size="sm" className="bg-blue-500 hover:bg-blue-600">Save Source</Button>
-              <Button onClick={() => setShowAdd(false)} size="sm" variant="outline">Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {sources.length > 0 ? sources.map((s: any) => (
-        <Card key={s.id} className="border-gray-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2"><p className="text-sm font-semibold text-gray-900">{s.name}</p><Badge variant="secondary" className={`text-[10px] ${typeColors[s.type] || 'bg-gray-50'}`}>{s.type.replace('_', ' ')}</Badge>{s.enabled ? <Badge variant="secondary" className="text-[10px] bg-emerald-50 text-emerald-700">Active</Badge> : <Badge variant="secondary" className="text-[10px] bg-gray-100 text-gray-500">Disabled</Badge>}</div>
-                <p className="text-[10px] text-muted-foreground mt-1 truncate">{s.endpoint || 'No endpoint'}{s.lastSyncAt ? ` | Last sync: ${new Date(s.lastSyncAt).toLocaleString()}` : ''}</p>
-                {s.lastError && <p className="text-[10px] text-red-500 mt-0.5">Error: {s.lastError}</p>}
-                <p className="text-[10px] text-muted-foreground mt-0.5">Collected: {s.totalCollected} | Failed: {s.totalFailed} | Reliability: {(s.reliabilityScore * 100).toFixed(0)}%</p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" onClick={() => handleTest(s.id)} disabled={testing === s.id}>{testing === s.id ? '...' : <Wrench className="w-3.5 h-3.5" />}</Button>
-                <Button size="sm" variant="ghost" onClick={() => handleToggle(s)}>{s.enabled ? <Pause className="w-3.5 h-3.5 text-amber-500" /> : <Play className="w-3.5 h-3.5 text-emerald-500" />}</Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )) : <div className="text-center py-16 text-muted-foreground"><Globe className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No sources configured yet</p></div>}
-    </div>
-  );
-}
-
-// ============ ADMIN COLLECTOR JOBS ============
-function AdminCollectorJobsPage({ token }: { token: string | null }) {
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [selectedSource, setSelectedSource] = useState('');
-
-  useEffect(() => {
-    if (!token) return;
-    fetch('/api/collector/jobs', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); }).catch(() => setLoading(false));
-    fetch('/api/collector/sources', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { if (d.sources?.[0]?.id) setSelectedSource(d.sources[0].id); }).catch(() => {});
-  }, [token]);
-
-  const handleStartJob = async () => {
-    if (!token || !selectedSource) return;
-    setStarting(true);
-    try {
-      await fetch('/api/collector/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ sourceId: selectedSource, mode: 'single_source' }) });
-      setTimeout(() => fetch('/api/collector/jobs', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => setJobs(d.jobs || [])), 2000);
-    } catch (e: any) { alert('Failed: ' + e.message); }
-    setStarting(false);
-  };
-
-  const statusIcon = (s: string) => {
-    const m: Record<string, any> = { queued: Clock, running: RefreshCw, paused: Pause, completed: CheckCircle, partially_completed: AlertCircle, failed: XCircle };
-    const c: Record<string, string> = { queued: 'text-gray-600 bg-gray-50', running: 'text-blue-600 bg-blue-50', paused: 'text-amber-600 bg-amber-50', completed: 'text-emerald-600 bg-emerald-50', partially_completed: 'text-orange-600 bg-orange-50', failed: 'text-red-600 bg-red-50' };
-    const Icon = m[s] || Clock;
-    return <Badge variant="secondary" className={`text-[10px] gap-1 ${c[s] || ''}`}><Icon className="w-3 h-3" />{s}</Badge>;
-  };
-
-  if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div><h1 className="text-xl font-extrabold text-gray-900">Collector Jobs</h1><p className="text-xs text-muted-foreground mt-1">Sync history and progress</p></div>
-      <Card className="border-gray-100"><CardContent className="p-4 flex gap-3">
-        <select className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm flex-1" value={selectedSource} onChange={e => setSelectedSource(e.target.value)}><option value="">Select source...</option></select>
-        <Button onClick={handleStartJob} disabled={!selectedSource || starting} className="bg-blue-500 hover:bg-blue-600 gap-1.5" size="sm">{starting ? '...' : <><Play className="w-4 h-4" />Run Job</>}</Button>
-      </CardContent></Card>
-      {jobs.length > 0 ? jobs.map((j: any) => (
-        <Card key={j.id} className="border-gray-100"><CardContent className="p-4">
-          <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-sm font-medium text-gray-900">{j.sourceName}</span>{statusIcon(j.status)}</div><span className="text-[10px] text-muted-foreground">{j.createdAt ? new Date(j.createdAt).toLocaleString() : ''}</span></div>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center text-[10px]">
-            {[['Fetched', j.fetched], ['New', j.newPhones], ['Dupes', j.duplicates], ['Conflicts', j.conflictCount], ['Failures', j.failureCount], ['Duration', j.duration ? `${(j.duration / 1000).toFixed(1)}s` : '-']].map(([l, v]) => (
-              <div key={String(l)} className="bg-gray-50 rounded-lg p-1.5"><p className="font-bold text-gray-900">{v}</p><p className="text-muted-foreground">{l}</p></div>
-            ))}
-          </div>
-          {j.totalExpected > 0 && <Progress value={((j.fetched || 0) / j.totalExpected) * 100} className="h-1 mt-2" />}
-          {j.errorLog?.length > 0 && <p className="text-[10px] text-red-500 mt-1 truncate">{j.errorLog[j.errorLog.length - 1]}</p>}
-        </CardContent></Card>
-      )) : <div className="text-center py-16 text-muted-foreground"><Activity className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No jobs yet</p></div>}
-    </div>
-  );
-}
-
-// ============ ADMIN COLLECTOR REVIEW ============
-function AdminCollectorReviewPage({ token, onNavigate }: { token: string | null; onNavigate: (p: string) => void }) {
-  const [phones, setPhones] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('pending,needs_review');
-
-  const fetchPhones = (p: number, f: string) => {
-    if (!token) return;
-    setLoading(true);
-    fetch(`/api/collector/review?status=${f}&page=${p}&limit=20`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setPhones(d.phones || []); setTotal(d.total || 0); setPage(p); setLoading(false); }).catch(() => setLoading(false));
-  };
-  useEffect(() => { fetchPhones(1, filter); }, [token, filter]);
-
-  const handleAction = async (id: string, action: string) => {
-    if (!token) return;
-    if (action === 'approve' && !confirm('Import this phone to the live database?')) return;
-    await fetch(`/api/collector/review/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action }) });
-    fetchPhones(page, filter);
-  };
-
-  const statusBadge = (s: string) => {
-    const m: Record<string, { color: string; label: string }> = {
-      pending: { color: 'bg-blue-50 text-blue-700', label: 'Pending' },
-      needs_review: { color: 'bg-orange-50 text-orange-700', label: 'Needs Review' },
-      approved: { color: 'bg-emerald-50 text-emerald-700', label: 'Approved' },
-      rejected: { color: 'bg-red-50 text-red-700', label: 'Rejected' },
-      imported: { color: 'bg-green-50 text-green-700', label: 'Imported' },
-      failed: { color: 'bg-red-100 text-red-700', label: 'Failed' },
-    };
-    const cfg = m[s] || m.pending;
-    return <Badge variant="secondary" className={`text-[10px] ${cfg.color}`}>{cfg.label}</Badge>;
-  };
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div><h1 className="text-xl font-extrabold text-gray-900">Review Queue</h1><p className="text-xs text-muted-foreground mt-1">{total} phones waiting for review</p></div>
-      <div className="flex gap-2 flex-wrap">
-        {[['pending,needs_review', 'To Review'], ['pending', 'Pending'], ['needs_review', 'Needs Review'], ['imported', 'Imported'], ['rejected', 'Rejected']].map(([val, label]) => (
-          <Button key={String(val)} size="sm" variant={filter === val ? 'default' : 'outline'} onClick={() => fetchPhones(1, val as string)} className={filter === val ? 'bg-blue-500' : ''}>{label}</Button>
-        ))}
-      </div>
-      {loading ? <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-20 rounded-xl" />)}</div> : phones.length > 0 ? phones.map((p: any) => (
-        <Card key={p.id} className="border-gray-100">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                {p.thumbnail ? <img src={p.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover bg-gray-100 shrink-0" /> : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0"><Smartphone className="w-5 h-5 text-gray-400" /></div>}
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{p.brandName} {p.model}</p>
-                  <p className="text-[10px] text-muted-foreground">{p.suggestedCategory || 'No category'} | Source: {p.sourceName}</p>
-                  <div className="flex items-center gap-1.5 mt-1">{statusBadge(p.status)}
-                    {p.hasExactDuplicate && <Badge variant="secondary" className="text-[10px] bg-red-50 text-red-600">Duplicate</Badge>}
-                    {p.conflictCount > 0 && <Badge variant="secondary" className="text-[10px] bg-amber-50 text-amber-600">{p.conflictCount} conflicts</Badge>}
-                    {!p.isValid && <Badge variant="secondary" className="text-[10px] bg-red-50 text-red-600">Invalid</Badge>}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" className="text-xs text-blue-600" onClick={() => onNavigate(`/admin/collector/review/${p.id}`)}><Eye className="w-3.5 h-3.5 mr-1" />Review</Button>
-                <Button size="sm" variant="ghost" className="text-xs text-emerald-600" onClick={() => handleAction(p.id, 'approve')}><CheckCircle className="w-3.5 h-3.5" /></Button>
-                <Button size="sm" variant="ghost" className="text-xs text-red-600" onClick={() => handleAction(p.id, 'reject')}><XCircle className="w-3.5 h-3.5" /></Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )) : <div className="text-center py-16 text-muted-foreground"><ClipboardCheck className="w-10 h-10 mx-auto mb-3 opacity-20" /><p className="text-sm">No phones in queue</p></div>}
-      {total > 20 && <div className="flex justify-center gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => fetchPhones(page - 1, filter)}>Prev</Button><span className="text-xs text-muted-foreground self-center">Page {page} of {Math.ceil(total / 20)}</span><Button size="sm" variant="outline" disabled={page * 20 >= total} onClick={() => fetchPhones(page + 1, filter)}>Next</Button></div>}
-    </div>
-  );
-}
-
-// ============ ADMIN COLLECTOR REVIEW DETAIL ============
-function AdminCollectorReviewDetailPage({ token, id, onNavigate }: { token: string | null; id: string; onNavigate: (p: string) => void }) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState('');
-
-  useEffect(() => {
-    if (!token || !id) return;
-    fetch(`/api/collector/review/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
-  }, [token, id]);
-
-  const handleAction = async (action: string) => {
-    if (!token || !id) return;
-    setActionLoading(action);
-    try {
-      const res = await fetch(`/api/collector/review/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action }) });
-      const result = await res.json();
-      if (action === 'approve' && result.success) { onNavigate('/admin/collector/review'); return; }
-      if (result.success) { fetch(`/api/collector/review/${id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => { setData(d); setActionLoading(''); }); return; }
-      alert(result.error || 'Action failed');
-    } catch (e: any) { alert('Failed: ' + e.message); }
-    setActionLoading('');
-  };
-
-  if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
-  if (!data?.draft) return <div className="text-center py-16 text-muted-foreground"><p>Not found</p><Button variant="link" onClick={() => onNavigate('/admin/collector/review')}>Back to queue</Button></div>;
-
-  const d = data.draft;
-  const ex = data.existingPhone;
-
-  const SpecRow = ({ label, value, existingValue }: { label: string; value?: string; existingValue?: string }) => (
-    <div className="flex items-start gap-2 py-1.5 border-b border-gray-50 text-xs">
-      <span className="text-muted-foreground w-28 shrink-0">{label}</span>
-      <span className="text-gray-900 flex-1">{value || <span className="text-gray-300">-</span>}</span>
-      {existingValue && <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">{existingValue}</span>}
-    </div>
-  );
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => onNavigate('/admin/collector/review')}><ChevronLeft className="w-4 h-4" />Back</Button>
-        <div><h1 className="text-xl font-extrabold text-gray-900">{d.brandName} {d.model}</h1><p className="text-xs text-muted-foreground mt-0.5">{d.suggestedCategory} | Source: {d.sourceName} | Collected: {d.collectedAt ? new Date(d.collectedAt).toLocaleString() : ''}</p></div>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">New Data</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-          <SpecRow label="Brand" value={d.brandName} /><SpecRow label="Model" value={d.model} /><SpecRow label="Slug" value={d.slug} /><SpecRow label="Release Date" value={d.releaseDate} /><SpecRow label="Status" value={d.deviceStatus} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">DISPLAY</p>
-          <SpecRow label="Size" value={d.display?.size} /><SpecRow label="Resolution" value={d.display?.resolution} /><SpecRow label="Refresh Rate" value={d.display?.refreshRate} /><SpecRow label="Protection" value={d.display?.protection} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">PROCESSOR</p>
-          <SpecRow label="Chipset" value={d.processor?.chipset} /><SpecRow label="CPU" value={d.processor?.cpu} /><SpecRow label="GPU" value={d.processor?.gpu} /><SpecRow label="Process" value={d.processor?.process} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">MEMORY</p>
-          <SpecRow label="RAM" value={d.memory?.ram} /><SpecRow label="Storage" value={d.memory?.storage} /><SpecRow label="Card Slot" value={d.memory?.cardSlot} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">CAMERA</p>
-          <SpecRow label="Rear" value={d.camera?.rearModules} /><SpecRow label="Front" value={d.camera?.frontCamera} /><SpecRow label="Aperture" value={d.camera?.aperture} /><SpecRow label="OIS" value={d.camera?.ois} /><SpecRow label="Video" value={d.camera?.videoRecording} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BATTERY</p>
-          <SpecRow label="Capacity" value={d.battery?.capacity} /><SpecRow label="Charging" value={d.battery?.wiredCharging} /><SpecRow label="Wireless" value={d.battery?.wirelessCharging} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BODY</p>
-          <SpecRow label="Dimensions" value={d.body?.dimensions} /><SpecRow label="Weight" value={d.body?.weight} /><SpecRow label="Build" value={d.body?.build} /><SpecRow label="Water Resistance" value={d.body?.waterResistance} /><SpecRow label="Colors" value={d.body?.colors} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">CONNECTIVITY</p>
-          <SpecRow label="Network" value={d.connectivity?.network} /><SpecRow label="5G" value={d.connectivity?.fiveG} /><SpecRow label="Wi-Fi" value={d.connectivity?.wifi} /><SpecRow label="Bluetooth" value={d.connectivity?.bluetooth} /><SpecRow label="NFC" value={d.connectivity?.nfc} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">SOFTWARE</p>
-          <SpecRow label="OS" value={d.software?.os} /><SpecRow label="Version" value={d.software?.osVersion} /><SpecRow label="UI" value={d.software?.osUI} /><SpecRow label="Updates" value={d.software?.updatePolicy} />
-          <p className="text-[10px] font-semibold text-gray-500 mt-3 mb-1">BENCHMARKS</p>
-          <SpecRow label="AnTuTu" value={d.benchmarks?.antutu ? String(d.benchmarks.antutu) : ''} /><SpecRow label="Geekbench S" value={d.benchmarks?.geekbenchSingle ? String(d.benchmarks.geekbenchSingle) : ''} /><SpecRow label="Geekbench M" value={d.benchmarks?.geekbenchMulti ? String(d.benchmarks.geekbenchMulti) : ''} />
-        </CardContent></Card>
-
-        <div className="space-y-4">
-          {d.conflictCount > 0 && <Card className="border-amber-200 bg-amber-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-amber-700">{d.conflictCount} Conflict{d.conflictCount > 1 ? 's' : ''} Detected</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-            {d.conflicts.map((c: any, i: number) => (<div key={i} className="text-xs py-1.5 border-b border-amber-100"><span className="font-medium text-amber-800">{c.field}:</span> <span className="text-gray-600">{String(c.existingValue || '-')}</span> → <span className="text-amber-700">{String(c.newValue || '-')}</span></div>))}
-          </CardContent></Card>}
-
-          {d.duplicateMatches?.length > 0 && <Card className="border-blue-200 bg-blue-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-blue-700">Duplicate Matches</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-            {d.duplicateMatches.map((m: any, i: number) => (<div key={i} className="text-xs py-1 border-b border-blue-100 flex justify-between"><span><Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 mr-1">{m.type}</Badge>{m.brandName} {m.modelName}</span><span className="text-muted-foreground">{(m.confidence * 100).toFixed(0)}%</span></div>))}
-          </CardContent></Card>}
-
-          {d.validationIssues?.length > 0 && <Card className="border-red-200 bg-red-50/30"><CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Validation Issues</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-            {d.validationIssues.map((v: string, i: number) => (<p key={i} className="text-xs text-red-600 py-0.5">{v}</p>))}
-          </CardContent></Card>}
-
-          {d.suggestedSeoTitle && <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">Suggested SEO</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-            <p className="text-xs font-medium text-gray-700 mb-1">Title:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedSeoTitle}</p>
-            <p className="text-xs font-medium text-gray-700 mb-1 mt-2">Description:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedSeoDescription}</p>
-            <p className="text-xs font-medium text-gray-700 mb-1 mt-2">Keywords:</p><p className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-2">{d.suggestedKeywords}</p>
-          </CardContent></Card>}
-
-          {ex && <Card className="border-gray-100"><CardHeader className="pb-2"><CardTitle className="text-sm">Existing Live Phone</CardTitle></CardHeader><CardContent className="p-4 pt-0">
-            <p className="text-xs"><span className="text-muted-foreground">Model:</span> <span className="font-medium text-gray-900">{ex.modelName}</span> | <span className="text-muted-foreground">Brand:</span> <span className="font-medium">{ex.brand?.name || '-'}</span></p>
-            <p className="text-xs mt-1"><span className="text-muted-foreground">Slug:</span> {ex.slug} | <span className="text-muted-foreground">Price:</span> PKR {(ex.pricePKR || 0).toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground mt-1">Amber values in left panel show existing live data</p>
-          </CardContent></Card>}
-        </div>
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        <Button onClick={() => handleAction('approve')} disabled={!!actionLoading} className="bg-emerald-500 hover:bg-emerald-600 gap-1.5"><CheckCircle className="w-4 h-4" />{actionLoading === 'approve' ? 'Importing...' : 'Approve & Import'}</Button>
-        <Button onClick={() => handleAction('reject')} disabled={!!actionLoading} variant="outline" className="gap-1.5 text-red-600 hover:bg-red-50"><XCircle className="w-4 h-4" />{actionLoading === 'reject' ? '...' : 'Reject'}</Button>
-        <Button onClick={() => handleAction('mark_unreliable')} disabled={!!actionLoading} variant="outline" className="gap-1.5"><AlertTriangle className="w-4 h-4" />Mark Source Unreliable</Button>
-      </div>
-    </div>
-  );
-}
-
-// ============ ERROR BOUNDARY ============
-class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
-  state = { hasError: false, error: undefined as Error | undefined };
-  static getDerivedStateFromError(e: Error) { return { hasError: true, error: e }; }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center p-6">
-          <div className="text-center max-w-md space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 flex items-center justify-center"><AlertTriangle className="w-8 h-8 text-red-500" /></div>
-            <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
-            <p className="text-sm text-gray-500">We are connecting to the database. Please refresh in a moment.</p>
-            <button onClick={() => { this.setState({ hasError: false, error: undefined }); window.location.reload(); }} className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold transition-colors">Refresh Page</button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// ============ MAIN APP ============
-export default function PhoneDockApp() {
-  const { view, params, navigate } = useHashRouter();
+// ============ MAIN HOME PAGE ============
+export default function HomePage() {
   const [homeData, setHomeData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [admin, setAdmin] = useState<AdminUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [mounted, setMounted] = useState(false);
-  const { theme, setTheme } = useTheme();
+  const [homeSearchQ, setHomeSearchQ] = useState('');
+  const router = useRouter();
 
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!mounted) return;
     let cancelled = false;
-    fetch('/api/home').then(r => r.json()).then(d => { if (!cancelled) { if (d.error) { console.warn('Home API error:', d.error); setHomeData(null); } else { setHomeData(d); } setLoading(false); } }).catch(() => { if (!cancelled) { console.warn('Home fetch failed'); setLoading(false); } });
+    fetch('/api/home')
+      .then(r => r.json())
+      .then(d => {
+        if (!cancelled) {
+          if (d.error) { setHomeData(null); } else { setHomeData(d); }
+          setLoading(false);
+        }
+      })
+      .catch(() => { if (!cancelled) { setHomeData(null); setLoading(false); } });
     return () => { cancelled = true; };
   }, [mounted]);
 
-  const handleLogin = useCallback((a: AdminUser, t: string) => { setAdmin(a); setToken(t); navigate('/admin/dashboard'); }, [navigate]);
-  const handleLogout = useCallback(() => { setAdmin(null); setToken(null); navigate('/'); }, [navigate]);
-  const handleSearch = useCallback((q: string) => { setSearchQuery(q); navigate(`/search/${encodeURIComponent(q)}`); }, [navigate]);
-  const toggleTheme = useCallback(() => { setTheme(theme === 'dark' ? 'light' : 'dark'); }, [theme, setTheme]);
-
-  const isAdmin = view.startsWith('admin-') && view !== 'admin-login';
+  const handleHomeSearch = () => {
+    if (homeSearchQ.trim()) {
+      router.push(`/search?q=${encodeURIComponent(homeSearchQ.trim())}`);
+    }
+  };
 
   if (!mounted) {
-    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
+  if (loading || !homeData) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1">
+          <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
+            <div className="skeleton-shimmer h-72 sm:h-96 rounded-3xl" />
+            <div className="skeleton-shimmer h-14 rounded-2xl max-w-2xl mx-auto" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  const data = homeData;
+  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 3);
+  const budgetPhones = data.featured.filter(p => p.pricePKR <= 40000).slice(0, 3);
+
+  const hasAnyPriceCategory = data.priceCategories.above100k.length > 0 ||
+    data.priceCategories.price60to100.length > 0 ||
+    data.priceCategories.price40to60.length > 0 ||
+    data.priceCategories.price20to40.length > 0 ||
+    data.priceCategories.under20k.length > 0;
+
   return (
-    <AppErrorBoundary>
     <div className="min-h-screen flex flex-col">
-      <Header onNavigate={navigate} onSearch={handleSearch} theme={theme || 'light'} toggleTheme={toggleTheme} admin={admin} onLogout={handleLogout} />
+      <Header />
       <main className="flex-1">
-        {isAdmin ? (
-          admin ? (
-            <div className="flex">
-              <AdminSidebar admin={admin} onNavigate={navigate} onLogout={handleLogout} currentView={view} />
-              <div className="flex-1 p-4 sm:p-6 max-w-6xl w-full">
-                <div className="animate-fade-in">
-                  {view === 'admin-dashboard' && <AdminDashboard token={token} admin={admin} onNavigate={navigate} homeData={homeData} />}
-                  {view === 'admin-phones' && <AdminPhonesPage token={token} onNavigate={navigate} />}
-                  {view === 'admin-phone-add' && <div className="animate-fade-in"><PhoneForm token={token || ''} brands={[]} onSave={() => navigate('/admin/phones')} onCancel={() => navigate('/admin/phones')} /></div>}
-                  {view === 'admin-phone-edit' && <div className="animate-fade-in"><PhoneForm token={token || ''} phoneId={params.id} brands={[]} onSave={() => navigate('/admin/phones')} onCancel={() => navigate('/admin/phones')} /></div>}
-                  {view === 'admin-phone-view' && <AdminPhoneViewPage token={token} id={params.id || ''} onNavigate={navigate} />}
-                  {view === 'admin-brands' && <AdminBrandsPage token={token} />}
-                  {view === 'admin-news' && <AdminNewsPage token={token} />}
-                  {view === 'admin-sponsors' && <AdminSponsorsPage token={token} />}
-                  {view === 'admin-activity' && <AdminActivityPage token={token} />}
-                  {view === 'admin-import' && <AdminImportPage token={token} />}
-                  {view === 'admin-sync' && <AdminSyncPage token={token} />}
-                  {view === 'admin-collector' && <AdminCollectorPage token={token} onNavigate={navigate} />}
-                  {view === 'admin-collector-sources' && <AdminCollectorSourcesPage token={token} onNavigate={navigate} />}
-                  {view === 'admin-collector-jobs' && <AdminCollectorJobsPage token={token} />}
-                  {view === 'admin-collector-review' && <AdminCollectorReviewPage token={token} onNavigate={navigate} />}
-                  {view === 'admin-collector-review-detail' && <AdminCollectorReviewDetailPage token={token} id={params.id || ''} onNavigate={navigate} />}
+        <div className="relative">
+          <div className="glass-orb glass-orb-cyan" />
+          <div className="glass-orb glass-orb-yellow" />
+          <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
+            {/* Hero */}
+            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
+              <div className="hero-particles">
+                {[...Array(12)].map((_, i) => (
+                  <div key={i} className="hero-particle" style={{ left: `${8 + (i * 7.5) % 85}%`, '--delay': `${i * 0.5}s`, '--duration': `${5 + (i % 4) * 1.5}s`, '--drift': `${(i % 2 === 0 ? 1 : -1) * (15 + i * 5)}px`, width: `${3 + (i % 3)}px`, height: `${3 + (i % 3)}px` } as React.CSSProperties} />
+                ))}
+              </div>
+              <div className="absolute -top-20 -right-20 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl hero-glow-anim" />
+              <div className="absolute -bottom-16 -left-16 w-60 h-60 bg-cyan-400/15 rounded-full blur-3xl hero-glow-anim" style={{ animationDelay: '2s' }} />
+
+              <div className="relative z-10 max-w-2xl">
+                <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
+                  <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+                    <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
+                  </Badge>
+                </div>
+                <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
+                  Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block' }}>Smartphone</span>
+                </h1>
+                <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
+                  Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.
+                </p>
+
+                <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
+                  <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input placeholder="Phone name, brand or chipset..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
+                  </div>
+                  <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
+                    <Search className="w-4 h-4" /> Search
+                  </button>
+                </div>
+
+                <div className="hero-animate flex flex-wrap gap-3 mt-6" style={{ animationDelay: '0.9s' }}>
+                  <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/brands')}>
+                    <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+                  </Button>
+                  <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/compare')}>
+                    <TrendingUp className="w-4 h-4 mr-2" /> Compare
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
+                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
+                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
+                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
                 </div>
               </div>
-            </div>
-          ) : (
-            <AdminLoginPage onLogin={handleLogin} />
-          )
-        ) : (
-          <div className="animate-fade-in">
-            {view === 'home' && <HomePage data={homeData} loading={loading} onNavigate={navigate} />}
-            {view === 'phone' && <PhoneDetailPage slug={params.slug || ''} onNavigate={navigate} />}
-            {view === 'compare' && <ComparePage params={params} onNavigate={navigate} />}
-            {view === 'brand' && <BrandDetailPage slug={params.slug || ''} onNavigate={navigate} />}
-            {view === 'brands' && <BrandsPage onNavigate={navigate} />}
-            {view === 'search' && <SearchPage query={params.q || ''} onNavigate={navigate} />}
-            {view === 'news' && <NewsPage />}
-            {view === 'admin-login' && <AdminLoginPage onLogin={handleLogin} />}
+            </section>
+
+            {/* Featured Phones */}
+            <PhoneSection phones={data.featured} title="Featured Phones" icon={Star} link="/phones" linkText="All Phones" showEmpty />
+
+            {/* Phones by Price */}
+            {hasAnyPriceCategory && (
+              <section className="space-y-5">
+                <SectionHeader title="Phones by Price" icon={Tag} />
+                <Tabs defaultValue={data.priceCategories.above100k.length > 0 ? 'above100k' : data.priceCategories.price60to100.length > 0 ? 'price60to100' : data.priceCategories.price40to60.length > 0 ? 'price40to60' : data.priceCategories.price20to40.length > 0 ? 'price20to40' : 'under20k'} className="w-full">
+                  <TabsList className="glass-filter h-auto flex flex-wrap gap-1.5 p-1.5 rounded-2xl">
+                    {[
+                      { key: 'above100k', label: 'Above 100K', phones: data.priceCategories.above100k },
+                      { key: 'price60to100', label: '60K-100K', phones: data.priceCategories.price60to100 },
+                      { key: 'price40to60', label: '40K-60K', phones: data.priceCategories.price40to60 },
+                      { key: 'price20to40', label: '20K-40K', phones: data.priceCategories.price20to40 },
+                      { key: 'under20k', label: 'Under 20K', phones: data.priceCategories.under20k },
+                    ].filter(t => t.phones.length > 0).map(tab => (
+                      <TabsTrigger key={tab.key} value={tab.key} className="text-xs sm:text-sm data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl">{tab.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                  {[
+                    { key: 'above100k', phones: data.priceCategories.above100k },
+                    { key: 'price60to100', phones: data.priceCategories.price60to100 },
+                    { key: 'price40to60', phones: data.priceCategories.price40to60 },
+                    { key: 'price20to40', phones: data.priceCategories.price20to40 },
+                    { key: 'under20k', phones: data.priceCategories.under20k },
+                  ].filter(t => t.phones.length > 0).map(({ key, phones }) => (
+                    <TabsContent key={key} value={key}>
+                      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 sm:overflow-visible">
+                        {phones.map((p: Phone) => (
+                          <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto"><PhoneCard phone={p} /></div>
+                        ))}
+                      </div>
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </section>
+            )}
+
+            {/* Trending Now */}
+            <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/phones" linkText="All Phones" showEmpty />
+
+            {/* Popular Brands */}
+            <BrandsGrid brands={data.brands} />
+
+            {/* Best in Category */}
+            <section className="space-y-5">
+              <SectionHeader title="Best in Category" icon={Trophy} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[
+                  { phones: data.bestCamera, title: 'Best Camera Phones', icon: Camera, gradient: 'from-blue-500 to-cyan-500' },
+                  { phones: data.bestGaming, title: 'Best Gaming Phones', icon: Cpu, gradient: 'from-violet-500 to-purple-600' },
+                  { phones: data.bestBattery, title: 'Best Battery Phones', icon: Battery, gradient: 'from-emerald-500 to-green-600' },
+                  { phones: flagshipPhones, title: 'Flagship Phones', icon: Star, gradient: 'from-amber-500 to-orange-500' },
+                  { phones: budgetPhones, title: 'Budget Phones', icon: Tag, gradient: 'from-green-500 to-emerald-600' },
+                  { phones: data.upcoming, title: 'Upcoming Phones', icon: Clock, gradient: 'from-indigo-500 to-violet-600' },
+                ].map(cat => (
+                  <div key={cat.title} className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
+                    <div className={`bg-gradient-to-br ${cat.gradient} p-4 text-white`}>
+                      <div className="flex items-center gap-2"><cat.icon className="w-5 h-5" /><h3 className="font-bold text-sm">{cat.title}</h3></div>
+                    </div>
+                    <div className="p-3 space-y-1.5">
+                      {cat.phones.length > 0 ? cat.phones.slice(0, 3).map((p, i) => (
+                        <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors" onClick={() => router.push(`/phones/${p.slug}`)}>
+                          <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
+                            <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
+                          </div>
+                          <p className="text-xs font-bold text-blue-600">{formatPrice(p.pricePKR)}</p>
+                        </div>
+                      )) : (
+                        <div className="text-center py-5 text-xs text-muted-foreground">No phones yet</div>
+                      )}
+                      {cat.phones.length > 0 && (
+                        <Link href="/phones" className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium pt-2 hover:text-blue-600 transition-colors">
+                          See all <ChevronRight className="w-3 h-3" />
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Latest Additions */}
+            <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/phones" linkText="All Phones" showEmpty />
+
+            {/* Latest News */}
+            {data.news.length > 0 && (
+              <section className="space-y-5">
+                <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {data.news.slice(0, 4).map(n => (
+                    <div key={n.id} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300" onClick={() => router.push('/news')}>
+                      <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
+                      <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
+                      <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Sponsor Banner */}
+            {data.sponsors && data.sponsors.length > 0 && (
+              <section>
+                <div className="rounded-2xl overflow-hidden">
+                  <div className="flex items-center gap-4 p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, #111827, #1F2937)' }}>
+                    <div className="flex-1 min-w-0">
+                      <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30 mb-2 text-[10px] font-medium">Sponsored</Badge>
+                      <div className="flex items-center gap-3">
+                        {data.sponsors[0].image ? (
+                          <Image src={data.sponsors[0].image} alt={data.sponsors[0].name} width={60} height={60} className="rounded-xl object-contain bg-white/10 p-1.5" unoptimized />
+                        ) : (
+                          <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center"><Star className="w-7 h-7 text-blue-400" /></div>
+                        )}
+                        <div>
+                          <h3 className="font-bold text-sm sm:text-base text-white">{data.sponsors[0].name}</h3>
+                          <p className="text-xs text-gray-500">{data.sponsors[0].position || 'Featured Partner'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {data.sponsors[0].url && (
+                      <a href={data.sponsors[0].url} target="_blank" rel="noopener noreferrer">
+                        <Button variant="outline" size="sm" className="border-white/15 text-white hover:bg-white/10 rounded-xl">
+                          Visit <ExternalLink className="w-3 h-3 ml-1" />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Trust Section */}
+            <TrustSection />
           </div>
-        )}
+        </div>
       </main>
-      {!isAdmin && <Footer onNavigate={navigate} />}
+      <Footer />
     </div>
-    </AppErrorBoundary>
   );
 }
+

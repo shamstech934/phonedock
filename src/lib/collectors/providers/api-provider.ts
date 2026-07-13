@@ -66,6 +66,6 @@ export class ApiProvider extends BaseProvider {
     const maxPages = this.config.pagination?.maxPages || 50;
     const hasNextPage = page < maxPages && phones.length === pageSize;
 
-    return { phones: this.applyBrandFilter(phones), totalAvailable, hasNextPage };
+    return { phones: this.applyBrandFilter(phones), totalAvailable, hasNextPage, providerErrors: [] };
   }
 }

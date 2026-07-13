@@ -4,7 +4,7 @@ import { RawPhoneRecord, PhoneCategory } from './types';
 export function categorizePhone(phone: RawPhoneRecord): PhoneCategory[] {
   const categories: PhoneCategory[] = [];
   const price = Number(phone.pricePKR) || 0;
-  const hasScores = (phone.cameraScore || 0) > 0 || (phone.performanceScore || 0) > 0 || (phone.batteryScore || 0) > 0;
+  const hasScores = Number(phone.cameraScore || 0) > 0 || Number(phone.performanceScore || 0) > 0 || Number(phone.batteryScore || 0) > 0;
   const ram = extractRamGB(phone.ram);
   const modelName = (phone.modelName || '').toLowerCase();
 
@@ -35,13 +35,13 @@ export function categorizePhone(phone: RawPhoneRecord): PhoneCategory[] {
 
   // Score-based specialty categories
   if (hasScores) {
-    if ((phone.cameraScore || 0) >= 85) {
+    if (Number(phone.cameraScore || 0) >= 85) {
       categories.push('Camera');
     }
-    if ((phone.performanceScore || 0) >= 85) {
+    if (Number(phone.performanceScore || 0) >= 85) {
       categories.push('Gaming');
     }
-    if ((phone.batteryScore || 0) >= 85) {
+    if (Number(phone.batteryScore || 0) >= 85) {
       categories.push('Battery');
     }
   }
@@ -145,7 +145,7 @@ export function generateReviewTemplate(phone: RawPhoneRecord): { pros: string; c
 
   const reviewSummary = `The ${brand} ${model} is a solid offering${price > 0 ? ` at ${price.toLocaleString()} PKR` : ''}. ${display ? `It features a ${display},` : ''} ${chipset ? `powered by the ${chipset},` : ''} ${battery ? `with a ${battery} battery.` : '.'} ${camera ? `The camera setup includes ${camera}.` : ''} Overall, it delivers a well-rounded experience for its price segment.`;
 
-  const score = phone.overallRating || 0;
+  const score = Number(phone.overallRating || 0);
   let verdict = 'A solid choice for most users looking for a reliable smartphone.';
   if (score >= 90) verdict = 'An exceptional smartphone that excels in nearly every category. Highly recommended.';
   else if (score >= 80) verdict = 'An excellent phone that offers great value. One of the best in its segment.';
