@@ -10,7 +10,8 @@
     "seed": "npx tsx scripts/seed.ts",
     "admin:create": "npx tsx scripts/create-admin.ts",
     "admin:reset-password": "npx tsx scripts/create-admin.ts -- --reset-password",
-    "migrate": "npx tsx scripts/migrate-db.ts"
+    "migrate": "npx tsx scripts/migrate-db.ts",
+    "db:check": "npx tsx scripts/db-check.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",

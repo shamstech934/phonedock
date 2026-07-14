@@ -1,6 +1,15 @@
 import mongoose from 'mongoose';
-import * as dotenv from 'dotenv';
-dotenv.config();
+import { loadScriptEnv, validateMongoUri, classifyMongoError, testConnection } from '../src/lib/mongodb-env';
+loadScriptEnv();
+
+const MONGODB_URI = process.env.MONGODB_URI || '';
+const _uriV = validateMongoUri(MONGODB_URI);
+if (!_uriV.valid) {
+  console.error('ERROR: %s', _uriV.error);
+  console.error('  URI: %s', _uriV.masked);
+  process.exit(1);
+}
+
 import { Brand } from '../src/lib/models/Brand';
 import { Phone } from '../src/lib/models/Phone';
 import { PhoneSpecs } from '../src/lib/models/PhoneSpecs';
@@ -286,10 +295,21 @@ const NEWS_DATA = [
 ];
 
 async function main() {
-  console.log('Connecting to MongoDB...');
-  await mongoose.connect(process.env.MONGODB_URI!);
-  console.log('Connected to MongoDB');
-  console.log('Seeding PhoneDock database...');
+  console.log('Testing MongoDB connection...');
+  console.log('  URI: %s', _uriV.masked);
+
+  const connResult = await testConnection(MONGODB_URI);
+  if (!connResult.success) {
+    const classified = classifyMongoError(new Error(connResult.message), _uriV);
+    console.error('\n✗ Cannot connect to MongoDB. Seed aborted.');
+    console.error('  %s\n', classified.message);
+    for (const line of classified.guidance) {
+      console.error('    - %s', line);
+    }
+    process.exit(1);
+  }
+  console.log('  Connected to: %s', connResult.database);
+  console.log('Seeding PhoneDock database...\n');
 
   // Seed brands
   console.log('Seeding brands...');

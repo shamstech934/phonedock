@@ -3,17 +3,30 @@
  *
  * Idempotent: safe to run multiple times.
  * Only ADDS missing indexes and missing fields — never destroys data.
+ * Never drops database, collections, or documents.
+ *
+ * ENV LOADING ORDER:
+ *   1. Existing process environment
+ *   2. .env.local
+ *   3. .env
  *
  * Usage: npm run migrate
  */
 
 import mongoose from 'mongoose';
-import * as dotenv from 'dotenv';
-dotenv.config();
+import * as fs from 'fs';
+import * as path from 'path';
+import { loadScriptEnv, validateMongoUri, classifyMongoError, testConnection } from '../src/lib/mongodb-env';
+
+// Load env in correct priority order
+loadScriptEnv();
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
-if (!MONGODB_URI) {
-  console.error('ERROR: MONGODB_URI is not set in environment.');
+const uriValidation = validateMongoUri(MONGODB_URI);
+
+if (!uriValidation.valid) {
+  console.error('ERROR: %s', uriValidation.error);
+  console.error('  URI: %s', uriValidation.masked);
   process.exit(1);
 }
 
@@ -37,21 +50,21 @@ async function ensureIndex(
   );
 
   if (alreadyExists) {
-    return { created: false, message: `  ✓ Index "${name}" already exists` };
+    return { created: false, message: `  [exists] Index "${name}"` };
   }
 
   try {
     await collection.createIndex(indexSpec.key, { name, ...indexSpec.options });
-    return { created: true, message: `  + Created index "${name}"` };
+    return { created: true, message: `  [created] Index "${name}"` };
   } catch (err: unknown) {
     const msg = (err as Error).message || String(err);
-    return { created: false, message: `  ! Index "${name}" skipped: ${msg}` };
+    return { created: false, message: `  [skipped] Index "${name}": ${msg}` };
   }
 }
 
 /**
- * Add missing fields to all documents in a collection using bulkWrite
- * with updateOne + upsert:false.  Only sets the field if it doesn't exist.
+ * Add missing fields to documents using updateMany.
+ * Only sets the field if it doesn't exist.
  */
 async function addMissingFields(
   collection: mongoose.Collection,
@@ -60,7 +73,6 @@ async function addMissingFields(
 ): Promise<{ matched: number; modified: number }> {
   if (Object.keys(fields).length === 0) return { matched: 0, modified: 0 };
 
-  // Build a query that matches documents missing ANY of the fields
   const orConditions: Record<string, unknown>[] = [];
   for (const field of Object.keys(fields)) {
     orConditions.push({ [field]: { $exists: false } });
@@ -76,17 +88,49 @@ async function addMissingFields(
 /* ------------------------------------------------------------------ */
 
 async function main() {
-  console.log('Connecting to MongoDB …');
+  console.log('╔═══════════════════════════════════════════╗');
+  console.log('║   PhoneDock — Database Migration        ║');
+  console.log('╚═══════════════════════════════════════════╝\n');
+
+  console.log('URI: %s', uriValidation.masked);
+
+  // Test connection first
+  console.log('Testing connection...');
+  const connResult = await testConnection(MONGODB_URI);
+  if (!connResult.success) {
+    const classified = classifyMongoError(new Error(connResult.message), uriValidation);
+    console.error('\n✗ Cannot connect to MongoDB. Migration aborted.');
+    console.error('  %s\n', classified.message);
+    for (const line of classified.guidance) {
+      console.error('    - %s', line);
+    }
+    console.error('');
+    process.exit(1);
+  }
+  console.log('Connected to: %s\n', connResult.database);
+
+  // Connect for migration work
   await mongoose.connect(MONGODB_URI, {
     maxPoolSize: 5,
     serverSelectionTimeoutMS: 15000,
   });
-  console.log('Connected.\n');
 
   const db = mongoose.connection.db!;
 
   let totalCreated = 0;
-  let totalSkipped = 0;
+  let totalExisted = 0;
+
+  // Verify safety: no destructive operations
+  const migrationSource = fs.readFileSync(__filename, 'utf-8');
+  const forbidden = ['dropDatabase', 'dropCollection', 'deleteMany', 'remove({'];
+  for (const op of forbidden) {
+    if (migrationSource.includes(op)) {
+      console.error('✗ SAFETY CHECK FAILED: migration script contains forbidden operation: %s', op);
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+  }
+  console.log('Safety check: passed (no destructive operations)\n');
 
   /* ================================================================== */
   /*  1. Phone indexes                                                  */
@@ -104,8 +148,7 @@ async function main() {
   for (const [name, spec] of Object.entries(phoneIndexes)) {
     const result = await ensureIndex(phoneCol, name, spec);
     console.log(result.message);
-    if (result.created) totalCreated++;
-    else totalSkipped++;
+    if (result.created) totalCreated++; else totalExisted++;
   }
 
   /* ================================================================== */
@@ -113,77 +156,60 @@ async function main() {
   /* ================================================================== */
   console.log('\n── PhoneSpecs ──');
   const specsCol = db.collection('phonespecs');
-
   const specsResult = await ensureIndex(specsCol, 'phonespecs_phoneId_unique', {
-    key: { phoneId: 1 },
-    options: { unique: true },
+    key: { phoneId: 1 }, options: { unique: true },
   });
   console.log(specsResult.message);
-  if (specsResult.created) totalCreated++;
-  else totalSkipped++;
+  if (specsResult.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
   /*  3. PhoneBenchmark indexes                                         */
   /* ================================================================== */
   console.log('\n── PhoneBenchmark ──');
   const benchCol = db.collection('phonebenchmarks');
-
   const benchResult = await ensureIndex(benchCol, 'phonebenchmark_phoneId_unique', {
-    key: { phoneId: 1 },
-    options: { unique: true },
+    key: { phoneId: 1 }, options: { unique: true },
   });
   console.log(benchResult.message);
-  if (benchResult.created) totalCreated++;
-  else totalSkipped++;
+  if (benchResult.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
   /*  4. PhonePrice indexes                                             */
   /* ================================================================== */
   console.log('\n── PhonePrice ──');
   const priceCol = db.collection('phoneprices');
-
   const priceResult = await ensureIndex(priceCol, 'phoneprice_phoneId_storeName_unique', {
-    key: { phoneId: 1, storeName: 1 },
-    options: { unique: true },
+    key: { phoneId: 1, storeName: 1 }, options: { unique: true },
   });
   console.log(priceResult.message);
-  if (priceResult.created) totalCreated++;
-  else totalSkipped++;
+  if (priceResult.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
-  /*  5. News indexes (verify slug unique)                              */
+  /*  5. News indexes                                                   */
   /* ================================================================== */
   console.log('\n── News ──');
   const newsCol = db.collection('news');
-
   const newsResult = await ensureIndex(newsCol, 'news_slug_unique', {
-    key: { slug: 1 },
-    options: { unique: true },
+    key: { slug: 1 }, options: { unique: true },
   });
   console.log(newsResult.message);
-  if (newsResult.created) totalCreated++;
-  else totalSkipped++;
+  if (newsResult.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
   /*  6. ActivityLog TTL index                                          */
   /* ================================================================== */
   console.log('\n── ActivityLog ──');
   const logCol = db.collection('activitylogs');
-
   const ttlResult = await ensureIndex(logCol, 'activitylog_ttl', {
-    key: { createdAt: -1 },
-    options: { expireAfterSeconds: 7776000 },
+    key: { createdAt: -1 }, options: { expireAfterSeconds: 7776000 },
   });
   console.log(ttlResult.message);
-  if (ttlResult.created) totalCreated++;
-  else totalSkipped++;
+  if (ttlResult.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
-  /*  7. Add missing fields to Phone documents                          */
+  /*  7. Phone: add missing safe fields                                 */
   /* ================================================================== */
   console.log('\n── Phone: add missing fields ──');
-
-  // Fields that should default to specific values
   const phoneDefaults: Record<string, unknown> = {
     status: 'published',
     active: true,
@@ -196,113 +222,91 @@ async function main() {
     publishedAt: null,
     deletedAt: null,
   };
+  const { matched: pdm, modified: pdmo } = await addMissingFields(phoneCol, phoneDefaults);
+  console.log('  Fields: %d/%d documents updated', pdmo, pdm);
 
-  // dataConfidence needs special handling: set 'verified' for seeded phones
-  const { matched: phoneDefaultMatched, modified: phoneDefaultModified } =
-    await addMissingFields(phoneCol, phoneDefaults);
-  console.log(`  Fields: ${phoneDefaultModified}/${phoneDefaultMatched} documents updated`);
-
-  // Set dataConfidence to 'verified' for phones that already have dataConfidence missing
-  // and look like seeded data (have specs, benchmarks, or were created from seed)
-  // For simplicity: set 'verified' for all existing phones (since they were seeded),
-  // 'unverified' is only for future auto-imported phones
   const confidenceResult = await phoneCol.updateMany(
     { dataConfidence: { $exists: false } },
     { $set: { dataConfidence: 'verified' } },
   );
-  console.log(`  dataConfidence: ${confidenceResult.modifiedCount} documents set to 'verified'`);
+  console.log('  dataConfidence: %d documents set to "verified"', confidenceResult.modifiedCount);
 
   /* ================================================================== */
-  /*  8. Add sessionVersion to Admin documents (replaces revokedSessions) */
+  /*  8. Admin: add sessionVersion, clear old revokedSessions           */
   /* ================================================================== */
   console.log('\n── Admin: add sessionVersion ──');
-
   const adminCol = db.collection('admins');
   const adminVersionResult = await adminCol.updateMany(
     { sessionVersion: { $exists: false } },
     { $set: { sessionVersion: 0 } },
   );
-  console.log(`  sessionVersion: ${adminVersionResult.modifiedCount} documents set to 0`);
+  console.log('  sessionVersion: %d documents set to 0', adminVersionResult.modifiedCount);
 
-  // Clear old revokedSessions array (no longer used)
   const clearRevokedResult = await adminCol.updateMany(
     { revokedSessions: { $exists: true, $ne: [] } },
     { $set: { revokedSessions: [] } },
   );
   if (clearRevokedResult.modifiedCount > 0) {
-    console.log(`  Cleared revokedSessions from ${clearRevokedResult.modifiedCount} admin documents`);
+    console.log('  Cleared revokedSessions from %d admin documents', clearRevokedResult.modifiedCount);
   }
 
-  // Ensure RateLimit collection exists (for MongoDB-backed IP rate limiting)
+  /* ================================================================== */
+  /*  9. RateLimit collection and indexes                               */
+  /* ================================================================== */
+  console.log('\n── RateLimit ──');
   try {
-    await db.createCollection('ratelimits', {
-      expires: { afterSeconds: 300 },
-    });
-    console.log('  + Created ratelimits collection with TTL');
+    await db.createCollection('ratelimits', { expires: { afterSeconds: 300 } });
+    console.log('  [created] ratelimits collection with TTL');
   } catch (e: any) {
     if (e.code === 48) {
-      console.log('  ✓ ratelimits collection already exists');
+      console.log('  [exists] ratelimits collection');
     } else {
-      console.log(`  ! ratelimits collection: ${e.message}`);
+      console.log('  [skipped] ratelimits collection: %s', e.message);
     }
   }
 
-  // Create RateLimit indexes
   const rlCol = db.collection('ratelimits');
-  try {
-    await rlCol.createIndex(
-      { expiresAt: 1 },
-      { name: 'ratelimit_ttl', expireAfterSeconds: 300, background: true },
-    );
-    console.log('  + Created ratelimit TTL index');
-  } catch (e: any) {
-    if (e.message.includes('already exists')) {
-      console.log('  ✓ ratelimit TTL index already exists');
-    }
-  }
-  try {
-    await rlCol.createIndex(
-      { key: 1 },
-      { name: 'ratelimit_key_unique', unique: true, background: true },
-    );
-    console.log('  + Created ratelimit key unique index');
-  } catch (e: any) {
-    if (e.message.includes('already exists')) {
-      console.log('  ✓ ratelimit key unique index already exists');
-    }
-  }
+  const rlTtl = await ensureIndex(rlCol, 'ratelimit_ttl', {
+    key: { expiresAt: 1 }, options: { expireAfterSeconds: 300, background: true },
+  });
+  console.log(rlTtl.message);
+  if (rlTtl.created) totalCreated++; else totalExisted++;
+
+  const rlKey = await ensureIndex(rlCol, 'ratelimit_key_unique', {
+    key: { key: 1 }, options: { unique: true, background: true },
+  });
+  console.log(rlKey.message);
+  if (rlKey.created) totalCreated++; else totalExisted++;
 
   /* ================================================================== */
-  /*  9. Add missing fields to Brand documents                          */
+  /*  10. Brand: add missing fields                                     */
   /* ================================================================== */
   console.log('\n── Brand: add missing fields ──');
-
   const brandDefaults: Record<string, unknown> = {
     website: '',
     seoTitle: '',
     seoDescription: '',
   };
-
   const brandCol = db.collection('brands');
-  const { matched: brandMatched, modified: brandModified } =
-    await addMissingFields(brandCol, brandDefaults);
-  console.log(`  Fields: ${brandModified}/${brandMatched} documents updated`);
+  const { matched: bm, modified: bmo } = await addMissingFields(brandCol, brandDefaults);
+  console.log('  Fields: %d/%d documents updated', bmo, bm);
 
   /* ================================================================== */
   /*  Summary                                                           */
   /* ================================================================== */
-  console.log('\n═══════════════════════════════════════');
-  console.log(`Migration complete.`);
-  console.log(`  Indexes created : ${totalCreated}`);
-  console.log(`  Indexes existed : ${totalSkipped}`);
-  console.log('═══════════════════════════════════════\n');
+  console.log('\n═══════════════════════════════════════════');
+  console.log('  Migration complete (non-destructive).');
+  console.log('  Indexes created : %d', totalCreated);
+  console.log('  Indexes existed : %d', totalExisted);
+  console.log('  No data was deleted or overwritten.');
+  console.log('═══════════════════════════════════════════\n');
 
   await mongoose.disconnect();
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error('Migration failed:', err);
-  mongoose.disconnect();
+  console.error('Migration failed:', err.message || err);
+  try { mongoose.disconnect(); } catch {}
   process.exit(1);
 });

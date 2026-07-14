@@ -8,30 +8,41 @@
  *  - Email validation + duplicate detection
  *  - Strong password validation (12+ chars, mixed case, number, special)
  *  - If admin exists with same email → safely updates to superadmin + resets password
+ *  - Refuses to run if MongoDB is unreachable (no localhost fallback, no demo DB)
+ *
+ * ENV LOADING ORDER:
+ *   1. Existing process environment (shell export, CI env)
+ *   2. .env.local
+ *   3. .env
  *
  * Usage:
  *   Interactive:  npm run admin:create
- *   Non-interactive (CI/sandbox):
- *     ADMIN_INITIAL_PASSWORD='YourSecureP@ssw0rd!' npm run admin:create -- --name "Shams" --email "user@example.com" --role superadmin
+ *   Non-interactive (CI):
+ *     ADMIN_NAME="Shams" ADMIN_EMAIL="user@example.com" \
+ *     ADMIN_INITIAL_PASSWORD='YourSecureP@ssw0rd!' npm run admin:create -- --role superadmin
+ *   Reset password for existing email:
+ *     ADMIN_INITIAL_PASSWORD='NewP@ssw0rd!' npm run admin:create -- --email "user@example.com" --reset-password
  *   Force additional admin:
  *     npm run admin:create -- --force
- *   Reset password for existing email:
- *     ADMIN_INITIAL_PASSWORD='NewP@ssw0rd!' npm run admin:create -- --name "Shams" --email "user@example.com" --reset-password
  */
 
 import * as readline from 'readline';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { loadScriptEnv, validateMongoUri, classifyMongoError, testConnection } from '../src/lib/mongodb-env';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-dotenv.config();
+// Load environment variables in correct priority order
+loadScriptEnv();
+
+// ============ URI VALIDATION (fail early) ============
 
 const MONGODB_URI = process.env.MONGODB_URI || '';
-if (!MONGODB_URI) {
-  console.error('\n✗ ERROR: MONGODB_URI environment variable is not set.');
-  console.error('  Create a .env.local file in the project root with MONGODB_URI.\n');
+const uriValidation = validateMongoUri(MONGODB_URI);
+
+if (!uriValidation.valid) {
+  console.error('\n✗ ERROR: %s', uriValidation.error);
+  console.error('  URI shown as: %s', uriValidation.masked);
   process.exit(1);
 }
 
@@ -49,10 +60,9 @@ const AdminSchema = new mongoose.Schema({
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date },
   passwordChangedAt: { type: Date, default: Date.now },
-  revokedSessions: [{ jti: String, revokedAt: Date }],
-  resetToken: { type: String, select: false },
-  resetTokenExpires: { type: Date, select: false },
   sessionVersion: { type: Number, default: 0 },
+  resetTokenHash: { type: String, select: false },
+  resetTokenExpires: { type: Date, select: false },
 }, { timestamps: true });
 
 AdminSchema.index({ email: 1 }, { unique: true });
@@ -162,24 +172,25 @@ async function main() {
   console.log('║   PhoneDock — Admin Account Setup   ║');
   console.log('╚══════════════════════════════════════╝\n');
 
-  // Connect to MongoDB
-  console.log('Connecting to database...');
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      maxPoolSize: 5,
-      serverSelectionTimeoutMS: 15000,
-    });
-  } catch (e: any) {
-    console.error('\n✗ Failed to connect to MongoDB:', e.message);
-    console.error('  Check your MONGODB_URI in .env.local\n');
+  // ---- Test MongoDB connection (fail-safe, no partial data) ----
+  console.log('Testing database connection...');
+  console.log(`  URI: ${uriValidation.masked}`);
+
+  const connResult = await testConnection(MONGODB_URI);
+  if (!connResult.success) {
+    const classified = classifyMongoError(new Error(connResult.message), uriValidation);
+    console.error('\n✗ Cannot connect to MongoDB. Admin creation aborted.');
+    console.error(`  ${classified.message}\n`);
+    console.error('  Guidance:');
+    for (const line of classified.guidance) {
+      console.error(`    - ${line}`);
+    }
+    console.error('');
     process.exit(1);
   }
-  console.log('Connected.\n');
+  console.log(`  Connected to database: ${connResult.database}\n`);
 
-  // Check existing admins
-  const existingCount = await Admin.countDocuments();
-
-  // ---- COLLECT INPUTS ----
+  // ---- Collect inputs ----
 
   let name: string;
   let email: string;
@@ -188,18 +199,17 @@ async function main() {
 
   if (nonInteractive) {
     // ---- NON-INTERACTIVE MODE (env vars + CLI flags) ----
-    name = getArg('name') || '';
-    email = (getArg('email') || '').toLowerCase();
+    name = getArg('name') || process.env.ADMIN_NAME || '';
+    email = (getArg('email') || process.env.ADMIN_EMAIL || '').toLowerCase();
     password = process.env.ADMIN_INITIAL_PASSWORD || '';
 
-    // --name is only required for creation, not for --reset-password
     if (!resetPasswordMode && (!name || name.length < 2)) {
-      console.error('\n✗ Non-interactive mode requires: --name "Full Name" (or use --reset-password to skip)\n');
+      console.error('\n✗ Non-interactive mode requires: ADMIN_NAME or --name "Full Name"\n');
       await mongoose.disconnect();
       process.exit(1);
     }
     if (!email || !isValidEmail(email)) {
-      console.error('\n✗ --email "valid@email.com" is required\n');
+      console.error('\n✗ ADMIN_EMAIL or --email "valid@email.com" is required\n');
       await mongoose.disconnect();
       process.exit(1);
     }
@@ -209,7 +219,6 @@ async function main() {
       process.exit(1);
     }
 
-    // Validate password strength
     const validation = validatePassword(password);
     if (!validation.valid) {
       console.error(`\n✗ Password must have: ${validation.errors.join(', ')}\n`);
@@ -217,7 +226,7 @@ async function main() {
       process.exit(1);
     }
 
-    role = getArg('role') || (existingCount === 0 ? 'superadmin' : 'admin');
+    role = getArg('role') || 'superadmin';
     const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
     if (!resetPasswordMode && !validRoles.includes(role)) {
       console.error(`\n✗ Invalid role "${role}". Use: superadmin, admin, editor, reviewer\n`);
@@ -227,6 +236,9 @@ async function main() {
 
   } else {
     // ---- INTERACTIVE MODE ----
+
+    // Check existing admins
+    const existingCount = await Admin.countDocuments();
     if (existingCount > 0 && !forceMode) {
       const existing = await Admin.find().select('-password').lean();
       console.error('✗ Admin account(s) already exist:');
@@ -255,7 +267,6 @@ async function main() {
     }
     email = email.toLowerCase();
 
-    // Password with validation
     while (true) {
       password = await question('Password (min 12 chars, mixed case + number + special): ', true);
       const validation = validatePassword(password);
@@ -273,7 +284,6 @@ async function main() {
       process.exit(1);
     }
 
-    // Determine role
     role = existingCount === 0 ? 'superadmin' : 'admin';
     if (existingCount === 0) {
       console.log(`\n  First admin — assigning role: superadmin\n`);
@@ -291,33 +301,15 @@ async function main() {
   const existing = await Admin.findOne({ email });
   if (existing) {
     if (resetPasswordMode) {
-      // Reset password only — keep existing name, promote to superadmin
       console.log(`\n  Admin "${email}" found. Resetting password...`);
       const hashedPassword = await bcrypt.hash(password, 12);
 
       // Clear password from memory immediately
       password = '';
-      (globalThis as any).password = undefined;
       if (process.env.ADMIN_INITIAL_PASSWORD) {
         delete process.env.ADMIN_INITIAL_PASSWORD;
       }
 
-      const updateData: any = {
-        role: 'superadmin',
-        active: true,
-        password: hashedPassword,
-        failedAttempts: 0,
-        lockedUntil: null,
-        passwordChangedAt: new Date(),
-        revokedSessions: [],
-        $inc: { sessionVersion: 1 },
-      };
-      // Only update name if explicitly provided
-      if (name && name.length >= 2) {
-        updateData.name = name;
-      }
-
-      // Clear old fields and increment sessionVersion
       await Admin.updateOne(
         { email },
         {
@@ -328,7 +320,6 @@ async function main() {
             failedAttempts: 0,
             lockedUntil: null,
             passwordChangedAt: new Date(),
-            revokedSessions: [],
           },
           $inc: { sessionVersion: 1 },
         },
@@ -340,7 +331,7 @@ async function main() {
       console.log(`║  Email: ${email.padEnd(30)}║`);
       console.log(`║  Role:  ${'superadmin'.padEnd(30)}║`);
       console.log('╠══════════════════════════════════════╣');
-      console.log('║  Password: RESET (all sessions cleared)  ║');
+      console.log('║  All previous sessions invalidated   ║');
       console.log('║  Login at: /admin/login             ║');
       console.log('╚══════════════════════════════════════╝\n');
 
@@ -356,13 +347,11 @@ async function main() {
 
   // ---- CREATE NEW ADMIN ----
 
-  // Hash password — NEVER log the plain password
   console.log('  Creating admin account...');
   const hashedPassword = await bcrypt.hash(password, 12);
 
   // Clear password from memory
   password = '';
-  (globalThis as any).password = undefined;
   if (process.env.ADMIN_INITIAL_PASSWORD) {
     delete process.env.ADMIN_INITIAL_PASSWORD;
   }
@@ -379,7 +368,6 @@ async function main() {
     sessionVersion: 0,
   });
 
-  // Log success (no password or sensitive data)
   console.log('\n╔══════════════════════════════════════╗');
   console.log('║     Admin Account Created           ║');
   console.log('╠══════════════════════════════════════╣');
