@@ -43,9 +43,21 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   // Fetch current session from server (cookie-based) — no localStorage
   const refreshSession = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/admin/session', {
-        credentials: 'include', // Send httpOnly cookie
-      });
+      // Try session endpoint first (access token in memory or refresh via cookie)
+      let res = await fetch('/api/admin/session', { credentials: 'include' });
+      
+      // If 401, try refreshing via refresh-token cookie
+      if (res.status === 401) {
+        const refreshRes = await fetch('/api/admin/refresh-token', {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (refreshRes.ok) {
+          // Refresh succeeded, retry session
+          res = await fetch('/api/admin/session', { credentials: 'include' });
+        }
+      }
+
       if (res.ok) {
         const data = await res.json();
         if (data.admin) {
@@ -75,7 +87,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshSession, router]);
 
-  // Logout: POST to server to revoke session + clear cookie
+  // Logout: POST to server to revoke session + clear cookie + prevent back nav
   const logout = useCallback(async () => {
     try {
       await fetch('/api/admin/logout', {
@@ -86,7 +98,12 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       // Continue with local cleanup even if request fails
     }
     setAdmin(null);
-    router.push('/admin/login');
+    // Use replace to prevent browser back button from restoring admin pages
+    router.replace('/admin/login');
+    // Clear any stale data from browser history
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', '/admin/login');
+    }
   }, [router]);
 
   // Redirect to login if not authenticated on admin pages

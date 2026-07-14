@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "seed": "npx tsx scripts/seed.ts",
     "admin:create": "npx tsx scripts/create-admin.ts",
+    "admin:reset-password": "npx tsx scripts/create-admin.ts -- --reset-password",
     "migrate": "npx tsx scripts/migrate-db.ts"
   },
   "dependencies": {

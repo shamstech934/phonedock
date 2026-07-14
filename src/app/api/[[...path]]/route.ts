@@ -105,6 +105,32 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
+    // ---- /api/health (public, no auth) ----
+    if (segments.length === 1 && segments[0] === 'health') {
+      const checks: Record<string, string> = {};
+      checks.mongodb_uri = process.env.MONGODB_URI ? 'set' : 'MISSING';
+      checks.jwt_secret = process.env.JWT_SECRET ? 'set' : 'MISSING';
+      checks.collector_secret = process.env.COLLECTOR_SECRET ? 'set' : 'MISSING';
+      // Test DB connection
+      if (process.env.MONGODB_URI) {
+        try {
+          const conn = await connectDBSafe();
+          checks.mongodb_connection = conn ? 'connected' : 'FAILED';
+        } catch { checks.mongodb_connection = 'FAILED'; }
+      } else {
+        checks.mongodb_connection = 'skipped (no URI)';
+      }
+      // Check admin count
+      if (checks.mongodb_connection === 'connected') {
+        try {
+          const count = await Admin.countDocuments();
+          checks.admin_count = String(count);
+        } catch { checks.admin_count = 'error'; }
+      }
+      const hasIssue = Object.values(checks).some(v => v.includes('MISSING') || v.includes('FAILED'));
+      return NextResponse.json({ status: hasIssue ? 'unhealthy' : 'ok', checks }, { status: hasIssue ? 503 : 200 });
+    }
+
     // ---- /api/home ----
     if (segments.length === 1 && segments[0] === 'home') {
       await connectDB();
@@ -607,7 +633,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     }
 
     // ---- /api/admin/refresh-token ----
-    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'refresh-token') {
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'refresh-token') {
       const refreshToken = req.cookies.get('pd_refresh')?.value;
       if (!refreshToken) return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
       const payload = await verifyToken(refreshToken);
