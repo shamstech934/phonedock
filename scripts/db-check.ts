@@ -4,14 +4,11 @@
  * Usage: npm run db:check
  */
 
-import * as path from 'path';
-
-async function main() {
-const { loadScriptEnv, validateMongoUri, classifyMongoError, checkDns, testConnection } = await import(
-  path.resolve(process.cwd(), 'src/lib/mongodb-env.ts')
-);
+import { loadScriptEnv, validateMongoUri, classifyMongoError, checkDns, testConnection } from '../src/lib/mongodb-env';
 
 loadScriptEnv();
+
+async function main() {
 
 const uri = process.env.MONGODB_URI;
 

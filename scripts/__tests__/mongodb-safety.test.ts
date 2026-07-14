@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateMongoUri, classifyMongoError, testConnection } from '../../src/lib/mongodb-env';
 
 let passed = 0;
 let failed = 0;
@@ -24,10 +25,8 @@ function assert(condition: boolean, name: string, detail?: string) {
 }
 
 const runTests = async () => {
-const { validateMongoUri, classifyMongoError, testConnection } = await import(
-  path.resolve(process.cwd(), 'src/lib/mongodb-env.ts')
-);
 
+// validateMongoUri, classifyMongoError, testConnection already imported at top
 console.log('\n=======================================================');
 console.log('  PHONEDOCK MongoDB Connection & Safety Test Suite');
 console.log('=======================================================\n');
