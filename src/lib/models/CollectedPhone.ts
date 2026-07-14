@@ -98,6 +98,10 @@ const CollectedPhoneSchema = new Schema({
   images: [{ type: String }],
   thumbnail: { type: String, default: '' },
 
+  // Approval link
+  approvedPhoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  description: { type: String, default: '' },
+
   // Pakistan-specific
   pakistanPrice: { type: Number, default: null },
   pakistanMarketPrice: { type: Number, default: null },

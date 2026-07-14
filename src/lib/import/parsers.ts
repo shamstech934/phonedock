@@ -28,33 +28,29 @@ export function parseJSON(content: string): RawPhoneRecord[] {
 }
 
 // ============ CSV PARSER ============
-export function parseCSV(content: string): RawPhoneRecord[] {
-  return new Promise((resolve, reject) => {
+export async function parseCSV(content: string): Promise<RawPhoneRecord[]> {
+  const results = await new Promise<Papa.ParseResult<any>>((resolve, reject) => {
     Papa.parse(content, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header: string) => header.trim(),
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          const criticalErrors = results.errors.filter(
-            (e: any) => e.type === 'FieldMismatch' && e.code !== 'TooManyFields'
-          );
-          if (criticalErrors.length > results.data.length * 0.5) {
-            reject(new Error(`CSV parsing errors: ${criticalErrors.map((e: any) => e.message).join(', ')}`));
-            return;
-          }
-        }
-        if (!results.data || results.data.length === 0) {
-          reject(new Error('CSV file is empty or has no valid rows'));
-          return;
-        }
-        resolve(results.data as RawPhoneRecord[]);
-      },
-      error: (error: Error) => {
-        reject(new Error(`CSV parsing error: ${error.message}`));
-      },
+      complete: (results) => resolve(results),
+      error: (error: Error) => reject(new Error(`CSV parsing error: ${error.message}`)),
     });
-  }) as any;
+  });
+
+  if (results.errors.length > 0) {
+    const criticalErrors = results.errors.filter(
+      (e: any) => e.type === 'FieldMismatch' && e.code !== 'TooManyFields'
+    );
+    if (criticalErrors.length > results.data.length * 0.5) {
+      throw new Error(`CSV parsing errors: ${criticalErrors.map((e: any) => e.message).join(', ')}`);
+    }
+  }
+  if (!results.data || results.data.length === 0) {
+    throw new Error('CSV file is empty or has no valid rows');
+  }
+  return results.data as RawPhoneRecord[];
 }
 
 // ============ XLSX PARSER ============

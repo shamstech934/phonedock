@@ -185,15 +185,21 @@ export interface RateLimitCheck {
 }
 
 /** Check login rate limit from DB-stored admin record */
-export function checkLoginRateLimitFromDB(admin: { failedAttempts: number; lockedUntil?: Date | null }): RateLimitCheck {
+export function checkLoginRateLimitFromDB(admin: any): RateLimitCheck {
   const MAX_ATTEMPTS = 5;
   const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+  // If lockout has expired, reset the counter so the user can try again
+  if (admin.lockedUntil && new Date(admin.lockedUntil) <= new Date()) {
+    admin.failedAttempts = 0;
+    admin.lockedUntil = null;
+  }
 
   if (admin.lockedUntil && new Date(admin.lockedUntil) > new Date()) {
     return { allowed: false, lockedUntil: new Date(admin.lockedUntil), attemptsRemaining: 0 };
   }
 
-  const remaining = MAX_ATTEMPTS - admin.failedAttempts;
+  const remaining = MAX_ATTEMPTS - (admin.failedAttempts || 0);
   return { allowed: remaining > 0, attemptsRemaining: Math.max(0, remaining) };
 }
 

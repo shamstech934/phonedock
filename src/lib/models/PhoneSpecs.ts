@@ -64,7 +64,7 @@ const specNames = [
   'mainCamera','mainCameraSensor','aperture','ois','eis','ultrawide','telephoto','zoom','cameraFeatures','videoRecording',
   'selfieCamera','selfieSensor','selfieVideo',
   'battery','charging','chargingSpeed','wirelessCharge','wirelessSpeed','reverseCharge',
-  'weight','dimensions','build','sim','ipRating','network','fiveG','wifi','bluetooth','nfc','usb',
+  'weight','dimensions','build','sim','ipRating','network','fiveG','wifi','bluetooth','nfc','usb','infrared',
   'fingerprint','faceUnlock','sensors','colors',
   'os','osVersion','osUI','updatePolicy','specialFeatures',
 ];

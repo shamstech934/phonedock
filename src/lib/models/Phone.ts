@@ -124,7 +124,7 @@ PhoneSchema.index({ status: 1 });
 PhoneSchema.index({ active: 1, status: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
-PhoneSchema.index({ modelName: 'text', slug: 'text' });
+PhoneSchema.index({ modelName: 'text', description: 'text' });
 
 // Static method to find only non-soft-deleted documents
 PhoneSchema.statics.findActive = function() {

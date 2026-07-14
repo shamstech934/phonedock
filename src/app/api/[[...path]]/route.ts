@@ -244,6 +244,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // ---- /api/admin/stats ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'stats') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'dashboard:read'); if (permCheck) return permCheck;
       await connectDB();
       const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity] = await Promise.all([
         Phone.countDocuments({ active: true }),
@@ -332,6 +333,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // ---- /api/admin/activity ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'activity') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
       await connectDB();
       const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(100).populate('adminId', 'name email').lean();
       return NextResponse.json(logs);
@@ -398,6 +400,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   }
 
   try {
+    // ---- /api/bootstrap-admin (one-time cloud admin creation) ----
+    // SECURITY: Only works if ADMIN_BOOTSTRAP_SECRET env var is set AND matches
+    // the x-bootstrap-secret header. Only works when ZERO admins exist.
+    // After creating the first admin, delete ADMIN_BOOTSTRAP_SECRET from Vercel env.
+    if (segments.length === 1 && segments[0] === 'bootstrap-admin' && req.method === 'POST') {
+      const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
+      const requestSecret = req.headers.get('x-bootstrap-secret');
+      if (!bootstrapSecret || requestSecret !== bootstrapSecret) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      await connectDB();
+      const adminCount = await Admin.countDocuments();
+      if (adminCount > 0) {
+        return NextResponse.json({ error: 'Admin already exists. This endpoint is disabled.' }, { status: 409 });
+      }
+      const body = await req.json();
+      const { name, email, password } = body;
+      if (!name || !email || !password) {
+        return NextResponse.json({ error: 'name, email, and password are required' }, { status: 400 });
+      }
+      const pwCheck = isStrongPassword(password);
+      if (!pwCheck.valid) {
+        return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
+      }
+      const hashed = await hashPassword(password);
+      const created = await Admin.create({
+        email: email.toLowerCase().trim(),
+        name: name.trim(),
+        password: hashed,
+        role: 'superadmin',
+        active: true,
+        failedAttempts: 0,
+        sessionVersion: 0,
+        passwordChangedAt: new Date(),
+      });
+      return NextResponse.json({ success: true, id: created._id.toString(), email: created.email, role: created.role });
+    }
+
     // ---- /api/admin/session (cookie-based session check) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
       const session = await getSessionFromRequest(req);
@@ -445,7 +485,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       }
 
       if (!admin.active) {
-        return NextResponse.json({ error: 'Account is disabled' }, { status: 403 });
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
 
       const valid = await verifyPassword(password, admin.password);
@@ -848,7 +888,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
         pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
         specs, benchmarks, images, prices } = body;
       if (modelName) phone.modelName = modelName;
-      if (inputSlug !== undefined) phone.slug = inputSlug;
+      if (inputSlug !== undefined && inputSlug !== phone.slug) {
+        const existing = await Phone.findOne({ slug: inputSlug, _id: { $ne: phone._id } });
+        if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
+        phone.slug = inputSlug;
+      }
       if (brandId) { const b = await Brand.findById(brandId); if (b) phone.brandId = brandId; }
       if (pricePKR !== undefined) phone.pricePKR = pricePKR;
       if (ptaStatus !== undefined) phone.ptaStatus = ptaStatus;
@@ -859,8 +903,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
       if (featured !== undefined) phone.featured = featured;
       if (trending !== undefined) phone.trending = trending;
       if (upcoming !== undefined) phone.upcoming = upcoming;
-      if (phoneStatus !== undefined) phone.status = phoneStatus;
-      if (active !== undefined) phone.active = active;
+      if (phoneStatus !== undefined) {
+        const pubCheck = requirePermission(admin, 'phones:publish'); if (pubCheck) return pubCheck;
+        phone.status = phoneStatus;
+      }
+      if (active !== undefined && active === false) {
+        const delCheck = requirePermission(admin, 'phones:delete'); if (delCheck) return delCheck;
+        phone.active = active;
+      } else if (active !== undefined) {
+        phone.active = active;
+      }
       if (cameraScore !== undefined) phone.cameraScore = cameraScore;
       if (performanceScore !== undefined) phone.performanceScore = performanceScore;
       if (batteryScore !== undefined) phone.batteryScore = batteryScore;
@@ -915,13 +967,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
       if (!news) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const body = await req.json();
       if (body.title) news.title = body.title;
-      if (body.slug !== undefined) news.slug = body.slug;
+      if (body.slug !== undefined && body.slug !== news.slug) {
+        const existing = await News.findOne({ slug: body.slug, _id: { $ne: news._id } });
+        if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
+        news.slug = body.slug;
+      }
       if (body.content !== undefined) news.content = body.content;
       if (body.excerpt !== undefined) news.excerpt = body.excerpt;
       if (body.category) news.category = body.category;
       if (body.image !== undefined) news.image = body.image;
       if (body.author !== undefined) news.author = body.author;
-      if (body.published !== undefined) news.published = body.published;
+      if (body.published !== undefined) {
+        const pubCheck = requirePermission(admin, 'news:publish'); if (pubCheck) return pubCheck;
+        news.published = body.published;
+      }
       if (body.featured !== undefined) news.featured = body.featured;
       if (body.status !== undefined) news.status = body.status;
       await news.save();
@@ -1167,7 +1226,13 @@ async function handleCollectorFileUpload(req: NextRequest) {
       if (!/^[a-z0-9-]+$/.test(slug)) { issues.push(`Row ${i + 1}: invalid slug "${slug}"`); continue; }
       const phone: any = { brandName: brand, model, slug, ...r };
       const vIssues = validateCollectedPhone(phone);
-      for (const iss of vIssues) issues.push(`Row ${i + 1}: ${iss.severity}: ${iss.field} - ${iss.message}`);
+      const recordIssues: string[] = [];
+      for (const iss of vIssues) {
+        const msg = `Row ${i + 1}: ${iss.severity}: ${iss.field} - ${iss.message}`;
+        issues.push(msg);
+        recordIssues.push(msg);
+      }
+      phone._recordIssues = recordIssues;
       validRecords.push(phone);
     }
 
@@ -1229,8 +1294,8 @@ async function handleCollectorFileUpload(req: NextRequest) {
         hasExactDuplicate: hasExact,
         duplicatePhoneId: dupResult.matches[0]?.phoneId || '',
         conflicts, conflictCount: conflicts.length,
-        validationIssues: issues.filter(i => i.includes(String(i + 1))).length > 0 ? issues.filter(i => i.includes(String(i + 1))) : [],
-        isValid: issues.filter(i => i.includes('error')).length === 0,
+        validationIssues: (phoneNorm._recordIssues || []),
+        isValid: !(phoneNorm._recordIssues || []).some((ri: string) => ri.includes('error')),
         sourceReliability: 1.0,
       });
     }

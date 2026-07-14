@@ -29,6 +29,13 @@ export async function startJob(jobId: string): Promise<void> {
       let hasNext = true;
       let totalFetched = 0;
 
+      const existingPhones = await Phone.find({ active: true }, { modelName: 1, slug: 1, brandId: 1 }).populate({ path: 'brand', select: 'name' }).lean();
+      const existingWithBrand = existingPhones.map((p: any) => ({
+        _id: p._id, modelName: p.modelName, slug: p.slug,
+        brand: p.brand ? { name: p.brand.name } : undefined,
+        weight: '', battery: '', display: '', chipset: '', os: '', pricePKR: 0,
+      }));
+
       while (hasNext && totalFetched < MAX_COLLECT_PER_JOB) {
         // Check if job was paused
         const currentJob = await CollectorJob.findById(jobId);
@@ -39,25 +46,23 @@ export async function startJob(jobId: string): Promise<void> {
 
         const result: ProviderFetchResult = await provider.fetch(page);
 
-        const existingPhones = await Phone.find({ active: true }, { modelName: 1, slug: 1, brandId: 1 }).populate({ path: 'brand', select: 'name' }).lean();
-        const existingWithBrand = existingPhones.map((p: any) => ({
-          _id: p._id, modelName: p.modelName, slug: p.slug,
-          brand: p.brand ? { name: p.brand.name } : undefined,
-          weight: '', battery: '', display: '', chipset: '', os: '', pricePKR: 0,
-        }));
-
         for (const phone of result.phones) {
           await processCollectedPhone(phone, config, (source._id as any).toString(), source.name, source.endpoint || '', existingWithBrand, (job._id as any).toString(), source.reliabilityScore);
         }
 
         totalFetched += result.phones.length;
-        const newCount = result.phones.length;
+        const fetchedCount = result.phones.length;
+        let actualNewCount = 0;
+        for (const phone of result.phones) {
+          const isDuplicate = existingWithBrand.some((ep: any) => ep.slug === phone.slug);
+          if (!isDuplicate) actualNewCount++;
+        }
 
         await CollectorJob.updateOne({ _id: jobId }, {
           $inc: {
-            fetched: newCount,
-            normalized: newCount,
-            newPhones: newCount,
+            fetched: fetchedCount,
+            normalized: fetchedCount,
+            newPhones: actualNewCount,
             failureCount: result.providerErrors.length,
           },
           $set: {
@@ -69,7 +74,7 @@ export async function startJob(jobId: string): Promise<void> {
 
         // Update source stats
         await CollectorSource.updateOne({ _id: source._id }, {
-          $inc: { totalCollected: newCount, totalFailed: result.providerErrors.length },
+          $inc: { totalCollected: fetchedCount, totalFailed: result.providerErrors.length },
           $set: { lastSyncAt: new Date(), lastSyncStatus: result.providerErrors.length > 0 ? 'partial' : 'success' },
         });
 
@@ -349,11 +354,11 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
 function buildProviderConfig(source: any): any {
   const headers: Record<string, string> = {};
   if (source.headers) {
-    for (const [k, v] of source.headers) headers[k] = v as string;
+    for (const [k, v] of Object.entries(source.headers)) headers[k] = v as string;
   }
   const mappingRules: Record<string, string> = {};
   if (source.mappingRules) {
-    for (const [k, v] of source.mappingRules) mappingRules[k] = v as string;
+    for (const [k, v] of Object.entries(source.mappingRules)) mappingRules[k] = v as string;
   }
   return {
     type: source.type,

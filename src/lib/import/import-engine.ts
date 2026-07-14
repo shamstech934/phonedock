@@ -48,7 +48,10 @@ export async function importPhones(
     skipExisting?: boolean;
   }
 ): Promise<ImportResult & { historyId?: string }> {
+  await connectDB();
+
   const startTime = Date.now();
+  const createdPhoneIds: Types.ObjectId[] = [];
   const result: ImportResult = {
     total: records.length,
     inserted: 0,
@@ -170,6 +173,7 @@ export async function importPhones(
           // Insert new phone
           const newPhone = await Phone.create(phoneData);
           const phoneId = newPhone._id;
+          createdPhoneIds.push(phoneId);
 
           // Insert specs
           if (Object.keys(specsData).length > 0) {
@@ -227,6 +231,7 @@ export async function importPhones(
       status: result.failed === result.total ? 'failed' : result.failed > 0 ? 'partial' : 'completed',
       duration: result.duration,
       batchSize: BATCH_SIZE,
+      createdPhoneIds,
     });
     (result as any).historyId = (historyEntry as any)._id?.toString();
   } catch {
@@ -245,17 +250,10 @@ export async function rollbackImport(historyId: string): Promise<{ success: bool
     return { success: false, message: 'Import history not found' };
   }
 
-  // Find phones created during the import window
-  const importTime = new Date((history as any).createdAt);
-  const fiveMinAfter = new Date(importTime.getTime() + 5 * 60 * 1000);
-
-  const deleted = await Phone.deleteMany({
-    createdAt: { $gte: importTime, $lte: fiveMinAfter },
-  });
-
-  // Also clean up related specs, benchmarks, images
-  const phoneIds = (deleted as unknown as any[]).map((d: any) => d._id);
+  // Delete phones by tracked IDs instead of time window
+  const phoneIds = (history as any).createdPhoneIds || [];
   if (phoneIds.length > 0) {
+    await Phone.deleteMany({ _id: { $in: phoneIds } });
     await Promise.all([
       PhoneSpecs.deleteMany({ phoneId: { $in: phoneIds } }),
       PhoneBenchmark.deleteMany({ phoneId: { $in: phoneIds } }),
@@ -271,7 +269,7 @@ export async function rollbackImport(historyId: string): Promise<{ success: bool
 
   return {
     success: true,
-    message: `Rolled back ${deleted.deletedCount} phones created during import`,
+    message: `Rolled back ${phoneIds.length} phones created during import`,
   };
 }
 

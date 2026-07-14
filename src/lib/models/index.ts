@@ -7,3 +7,4 @@ export { ImportHistory } from './ImportHistory';
 export { CollectorSource } from './CollectorSource';
 export { CollectedPhone } from './CollectedPhone';
 export { CollectorJob } from './CollectorJob';
+export { SyncJob } from './SyncJob';

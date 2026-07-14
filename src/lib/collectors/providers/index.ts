@@ -4,6 +4,7 @@ import { CsvUrlProvider } from './csv-provider';
 import { ApiProvider } from './api-provider';
 import { ManualUrlProvider } from './manual-url-provider';
 import { ManufacturerProvider } from './manufacturer-provider';
+import { FileUploadProvider } from './file-upload-provider';
 import { ProviderConfig } from '../types';
 
 export function createProvider(config: ProviderConfig, sourceId: string, sourceName: string): BaseProvider {
@@ -13,7 +14,7 @@ export function createProvider(config: ProviderConfig, sourceId: string, sourceN
     case 'api': return new ApiProvider(config, sourceId, sourceName);
     case 'manual_url': return new ManualUrlProvider(config, sourceId, sourceName);
     case 'manufacturer': return new ManufacturerProvider(config, sourceId, sourceName);
-    case 'file_upload': return new JsonUrlProvider({ ...config, type: 'json_url' }, sourceId, sourceName);
+    case 'file_upload': return new FileUploadProvider(config, sourceId, sourceName);
     default: throw new Error(`Unknown provider type: ${config.type}`);
   }
 }

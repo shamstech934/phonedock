@@ -108,10 +108,12 @@ function levenshtein(a: string, b: string): number {
   const aLen = a.length;
   const bLen = b.length;
   const matrix: number[][] = Array.from({ length: aLen + 1 }, () => new Array(bLen + 1).fill(0));
+  for (let i = 0; i <= aLen; i++) matrix[i][0] = i;
+  for (let j = 0; j <= bLen; j++) matrix[0][j] = j;
   for (let i = 1; i <= aLen; i++) {
     for (let j = 1; j <= bLen; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(matrix[j - 1][i] + 1, matrix[j][i - 1] + 1, matrix[j - 1][i - 1] + cost);
+      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
     }
   }
   return matrix[aLen][bLen];

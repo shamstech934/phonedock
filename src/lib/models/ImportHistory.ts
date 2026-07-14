@@ -20,6 +20,7 @@ const ImportHistorySchema = new Schema({
   },
   duration: { type: Number, default: 0 },
   batchSize: { type: Number, default: 100 },
+  createdPhoneIds: [{ type: Schema.Types.ObjectId }],
 }, { timestamps: true });
 
 ImportHistorySchema.index({ createdAt: -1 });
