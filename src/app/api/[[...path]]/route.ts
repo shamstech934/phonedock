@@ -9,6 +9,34 @@ import { verifyPassword, hashPassword, createSignedSession, getAuthSessionAsync,
 import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
+// ============ IN-MEMORY IP RATE LIMITER ============
+// (replaces deprecated middleware.ts rate limiting — serverless-safe, no setInterval)
+
+const ipRateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+function ipRateLimit(ip: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [key, entry] of ipRateLimitMap) {
+    if (now > entry.resetTime) {
+      ipRateLimitMap.delete(key);
+      if (++cleaned >= 5) break;
+    }
+  }
+  const entry = ipRateLimitMap.get(ip);
+  if (!entry || now > entry.resetTime) {
+    ipRateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  if (entry.count >= limit) return false;
+  entry.count++;
+  return true;
+}
+
+function getClientIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+}
+
 // ============ AUTH HELPERS ============
 
 async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: any; error?: NextResponse }> {
@@ -434,6 +462,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const { path } = await params;
   const segments = path || [];
 
+  // IP rate limiting (replaces deprecated middleware.ts)
+  const ip = getClientIp(req);
+  const isLogin = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login';
+  if (isLogin) {
+    if (!ipRateLimit(ip, 10, 60_000)) {
+      return NextResponse.json({ error: 'Too many login attempts. Try again later.' }, { status: 429 });
+    }
+  } else {
+    if (!ipRateLimit(ip, 100, 60_000)) {
+      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+    }
+  }
+
   try {
     // ---- /api/admin/session (cookie-based session check) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
@@ -831,6 +872,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
   const { path } = await params;
   const segments = path || [];
 
+  // IP rate limiting (non-GET: 100/min)
+  if (!ipRateLimit(getClientIp(req), 100, 60_000)) {
+    return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+  }
+
   try {
     // ---- /api/admin/phones/:id (UPDATE) ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
@@ -974,6 +1020,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
   const { path } = await params;
   const segments = path || [];
+
+  // IP rate limiting (non-GET: 100/min)
+  if (!ipRateLimit(getClientIp(req), 100, 60_000)) {
+    return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+  }
 
   try {
     // ---- /api/admin/phones/:id ----
