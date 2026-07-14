@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
+import Link from 'next/link';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
@@ -90,7 +91,15 @@ export default function AdminLoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <p className="text-[10px] text-center text-muted-foreground/70 mt-4">
+        <div className="text-center mt-4">
+          <Link
+            href="/admin/forgot-password"
+            className="text-[11px] text-blue-500 hover:text-blue-600 transition-colors font-medium"
+          >
+            Forgot password?
+          </Link>
+        </div>
+        <p className="text-[10px] text-center text-muted-foreground/70 mt-2">
           Contact superadmin for access
         </p>
       </div>

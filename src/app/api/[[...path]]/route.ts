@@ -750,17 +750,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors });
     }
 
-    // ---- /api/admin/seed (DISABLED IN PRODUCTION) ----
+    // ---- /api/admin/seed (REMOVED — use `npm run seed` CLI script instead) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seed') {
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json({ error: 'Seed endpoint is disabled in production' }, { status: 403 });
-      }
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'phones:seed'); if (permCheck) return permCheck;
-      const { seedPhones } = await import('@/lib/seed-data');
-      const result = await seedPhones();
-      try { await ActivityLog.create({ action: 'seed', details: `Seeded: ${result.phones} phones`, entityType: 'phone' }); } catch {}
-      return NextResponse.json({ success: true, ...result });
+      return NextResponse.json({ error: 'Seed endpoint removed. Use `npm run seed` from the CLI.' }, { status: 410 });
     }
 
     // ---- /api/collector/sources ----
