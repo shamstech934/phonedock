@@ -1,7 +1,31 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Check, Globe, Share2, Search, Shield, Wrench } from 'lucide-react';
+import { Settings, Check, Globe, Share2, Search, Shield, Wrench, LucideIcon } from 'lucide-react';
+
+function SectionCard({ icon: Icon, title, children, color }: { icon: LucideIcon; title: string; children: React.ReactNode; color: string }) {
+  return (
+    <div className="card-premium p-5 animate-fade-in">
+      <div className="flex items-center gap-3 mb-4">
+        <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center`}>
+          <Icon className="w-4.5 h-4.5" />
+        </div>
+        <h2 className="font-bold text-sm text-gray-900">{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function InputField({ label, value, onChange, type = 'text', placeholder = '' }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-gray-700 mb-1 block">{label}</label>
+      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
+    </div>
+  );
+}
 
 export default function AdminSettingsPage() {
   const [site, setSite] = useState({
@@ -30,26 +54,6 @@ export default function AdminSettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
-
-  const SectionCard = ({ icon: Icon, title, children, color }: { icon: any; title: string; children: React.ReactNode; color: string }) => (
-    <div className="card-premium p-5 animate-fade-in">
-      <div className="flex items-center gap-3 mb-4">
-        <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center`}>
-          <Icon className="w-4.5 h-4.5" />
-        </div>
-        <h2 className="font-bold text-sm text-gray-900">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-
-  const InputField = ({ label, value, onChange, type = 'text', placeholder = '' }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) => (
-    <div>
-      <label className="text-xs font-medium text-gray-700 mb-1 block">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
-    </div>
-  );
 
   return (
     <div className="space-y-5 animate-fade-in">

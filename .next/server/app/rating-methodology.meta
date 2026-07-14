@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/rating-methodology/layout,_N_T_/rating-methodology/page,_N_T_/rating-methodology"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/rating-methodology/__PAGE__",
+    "/rating-methodology",
+    "/_index",
+    "/_head"
+  ]
+}

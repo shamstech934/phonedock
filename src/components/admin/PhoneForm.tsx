@@ -471,7 +471,6 @@ export default function PhoneForm({
       }));
     }
     // Only react to brand & modelName changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.brand, form.modelName, brands, isEditMode]);
 
   // ── Fetch phone data in edit mode ──
