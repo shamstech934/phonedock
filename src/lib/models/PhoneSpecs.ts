@@ -50,6 +50,7 @@ export interface IPhoneSpecs extends Document {
   faceUnlock: string;
   sensors: string;
   colors: string;
+  infrared: string;
   os: string;
   osVersion: string;
   osUI: string;

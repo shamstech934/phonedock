@@ -37,5 +37,6 @@ const BrandSchema = new Schema<IBrand>({
 
 BrandSchema.index({ slug: 1 }, { unique: true });
 BrandSchema.index({ active: 1 });
+BrandSchema.index({ sortOrder: 1 });
 
 export const Brand = mongoose.models.Brand || mongoose.model<IBrand>('Brand', BrandSchema);

@@ -129,7 +129,7 @@ export function generateReviewTemplate(phone: RawPhoneRecord): { pros: string; c
   if (price > 200000) consArr.push('Premium pricing may not suit all budgets');
   if (!phone.nfc || phone.nfc === 'No') consArr.push('No NFC support');
   if (!phone.wirelessCharge || phone.wirelessCharge === 'No') consArr.push('No wireless charging');
-  if (phone.cardSlot === 'No' || phone.cardSlot === 'No') consArr.push('No expandable storage via microSD');
+  if (!phone.cardSlot || phone.cardSlot === 'No') consArr.push('No expandable storage via microSD');
   if (battery && parseInt(battery) < 4000) consArr.push('Battery capacity could be larger');
 
   // Default fallbacks

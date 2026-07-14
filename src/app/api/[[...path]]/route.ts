@@ -5,6 +5,7 @@ import { createProvider } from '@/lib/collectors';
 import { Phone, Brand, News, Sponsor, Admin, ActivityLog, RateLimit, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
 import { connectDB, connectDBSafe } from '@/lib/mongodb';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import { verifyPassword, hashPassword, verifyToken, createSignedSession, getSessionFromRequest, validateSessionVersion, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isStrongPassword, sanitizeInput, checkIpRateLimit, hashResetToken, verifyResetToken, sanitizeCsvValue, getCookieOptions } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
@@ -20,6 +21,12 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ]);
+
+// ============ HELPERS ============
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // ============ IP HELPER ============
 
@@ -120,12 +127,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // ---- /api/home ----
     if (segments.length === 1 && segments[0] === 'home') {
       await connectDB();
-      const [featured, trending, brands] = await Promise.all([
+      const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news, brands] = await Promise.all([
         Phone.find({ active: true, status: 'published', featured: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
         Phone.find({ active: true, status: 'published', trending: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published' }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published', cameraScore: { $gt: 0 } }).sort({ cameraScore: -1 }).limit(4).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published', performanceScore: { $gt: 0 } }).sort({ performanceScore: -1 }).limit(4).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published', upcoming: true }).sort({ createdAt: -1 }).limit(4).populate('brand').lean(),
+        News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
         Brand.find({ active: true }).sort({ sortOrder: 1 }).lean(),
       ]);
-      return NextResponse.json({ featured, trending, brands });
+      const priceCategories = {
+        under20k: await Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: 20000 } }),
+        twentyTo40k: await Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 20000, $lte: 40000 } }),
+        fortyTo60k: await Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 40000, $lte: 60000 } }),
+        sixtyTo100k: await Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 60000, $lte: 100000 } }),
+        above100k: await Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 100000 } }),
+      };
+      const sponsors = await (await import('@/lib/models/Other')).Sponsor.find({ active: true }).lean().catch(() => []);
+      return NextResponse.json({ featured: featured.map((p: any) => phoneToJSON(p)), trending: trending.map((p: any) => phoneToJSON(p)), latest: latest.map((p: any) => phoneToJSON(p)), bestCamera: bestCamera.map((p: any) => phoneToJSON(p)), bestGaming: bestGaming.map((p: any) => phoneToJSON(p)), bestBattery: bestBattery.map((p: any) => phoneToJSON(p)), upcoming: upcoming.map((p: any) => phoneToJSON(p)), news, priceCategories, brands, sponsors });
     }
 
     // ---- /api/phones ----
@@ -136,14 +157,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
       const search = url.searchParams.get('search') || '';
       const brand = url.searchParams.get('brand') || '';
-      const sort = url.searchParams.get('sort') || 'createdAt';
+      const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views']);
+      const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'createdAt';
       const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
 
       const filter: any = { active: true, status: 'published' };
-      if (search) filter.$or = [
-        { modelName: { $regex: search, $options: 'i' } },
-        { slug: { $regex: search, $options: 'i' } },
-      ];
+      if (search) {
+        const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        filter.$or = [
+          { modelName: { $regex: safe, $options: 'i' } },
+          { slug: { $regex: safe, $options: 'i' } },
+        ];
+      }
       if (brand) { const b = await Brand.findOne({ slug: brand }); if (b) filter.brandId = b._id; }
 
       const [phones, total] = await Promise.all([
@@ -158,20 +183,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       await connectDB();
       const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).populate('brand');
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      const [specs, benchmarks, images, prices] = await Promise.all([
+      const [specs, benchmarks, images, prices, related] = await Promise.all([
         PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
         PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
         PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
         PhonePrice.find({ phoneId: phone._id }).lean(),
+        Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
       ]);
       await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
-      return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
+      return NextResponse.json({ phone: phoneToJSON(phone, specs, benchmarks, images, prices), related: related.map((p: any) => phoneToJSON(p)) });
     }
 
     // ---- /api/brands ----
     if (segments.length === 1 && segments[0] === 'brands') {
       await connectDB();
-      const brands = await Brand.find({ active: true }).sort({ sortOrder: 1 }).lean();
+      const brands = await Brand.aggregate([
+        { $match: { active: true } },
+        { $sort: { sortOrder: 1 } },
+        { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
+        { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
+      ]);
       return NextResponse.json(brands);
     }
 
@@ -187,8 +218,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // ---- /api/news ----
     if (segments.length === 1 && segments[0] === 'news') {
       await connectDB();
-      const news = await News.find({ published: true }).sort({ createdAt: -1 }).lean();
-      return NextResponse.json(news);
+      const news = await News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).lean();
+      return NextResponse.json({ news });
     }
 
     // ---- /api/news/:slug ----
@@ -349,6 +380,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return NextResponse.json(history);
     }
 
+    // ---- /api/search ----
+    if (segments.length === 1 && segments[0] === 'search') {
+      await connectDB();
+      const url = new URL(req.url);
+      const q = (url.searchParams.get('q') || '').trim();
+      if (!q) return NextResponse.json({ phones: [], brands: [], query: q });
+      const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const [phones, brands] = await Promise.all([
+        Phone.find({ active: true, status: 'published', $or: [
+          { modelName: { $regex: safe, $options: 'i' } },
+          { slug: { $regex: safe, $options: 'i' } },
+          { description: { $regex: safe, $options: 'i' } },
+        ] }).sort({ createdAt: -1 }).limit(20).populate('brand').lean(),
+        Brand.find({ active: true, name: { $regex: safe, $options: 'i' } }).sort({ sortOrder: 1 }).lean(),
+      ]);
+      return NextResponse.json({ phones: phones.map((p: any) => phoneToJSON(p)), brands, query: q });
+    }
+
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API GET error:', e.message);
@@ -407,7 +456,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 1 && segments[0] === 'bootstrap-admin' && req.method === 'POST') {
       const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
       const requestSecret = req.headers.get('x-bootstrap-secret');
-      if (!bootstrapSecret || requestSecret !== bootstrapSecret) {
+      if (!bootstrapSecret || !requestSecret || requestSecret.length !== bootstrapSecret.length ||
+        !crypto.timingSafeEqual(Buffer.from(requestSecret, 'utf-8'), Buffer.from(bootstrapSecret, 'utf-8'))) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
       await connectDB();
@@ -643,7 +693,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const existing = await Admin.findOne({ email: email.toLowerCase() });
       if (existing) return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
       const newAdmin = await Admin.create({
-        email: email.toLowerCase(), name,
+        email: email.toLowerCase(), name: (name as string).trim(),
         password: await hashPassword(password),
         role: assignedRole, active: true, sessionVersion: 0,
       });
@@ -718,7 +768,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
       if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
       if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
-      try { await ActivityLog.create({ action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: phone._id?.toString(), slug });
     }
 
@@ -732,7 +782,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const slug = inputSlug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
       if (await Brand.findOne({ slug })) return NextResponse.json({ error: 'Brand slug exists' }, { status: 409 });
       const brand = await Brand.create({ name, slug, logo: logo || '', country: country || '', description: description || '', sortOrder: sortOrder || 0, active: true });
-      try { await ActivityLog.create({ action: 'create_brand', details: `Created: ${name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_brand', details: `Created: ${name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: brand._id?.toString() });
     }
 
@@ -746,7 +796,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const slug = (inputSlug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')).slice(0, 80);
       if (await News.findOne({ slug })) return NextResponse.json({ error: 'News slug exists' }, { status: 409 });
       const news = await News.create({ title, slug, content: content || '', excerpt: excerpt || '', category: category || 'General', image: image || '', author: author || '', published: published !== false, featured: featured || false, status: 'published' });
-      try { await ActivityLog.create({ action: 'create_news', details: `Created: ${title}`, entityType: 'news', entityId: news._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_news', details: `Created: ${title}`, entityType: 'news', entityId: news._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: news._id?.toString() });
     }
 
@@ -772,10 +822,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
           const mName = String(r.model || r.modelName || '').trim();
           if (!bName || !mName) { skipped++; errors.push(`Row ${i+1}: Missing brand/model`); continue; }
           let bId = brandMap.get(bName.toLowerCase());
-          if (!bId) { const nb = await Brand.create({ name: bName, active: true }); brandMap.set(bName.toLowerCase(), nb._id); bId = nb._id; }
+          if (!bId) { const bslug = bName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); const nb = await Brand.create({ name: bName, slug: bslug, active: true, description: '', sortOrder: 0, logo: '', country: '' }); brandMap.set(bName.toLowerCase(), nb._id); bId = nb._id; }
           const slug = String(r.slug || '').trim() || `${bName} ${mName}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
           const isDup = existingSlugs.has(slug) || existingBM.has(`${bName}|${mName}`.toLowerCase());
           if (isDup && mode === 'skip_duplicates') { skipped++; continue; }
+          if (isDup && mode === 'new_only') { skipped++; continue; }
           const pd: any = { brandId: bId, modelName: mName, slug, pricePKR: parseInt(r.pricePKR) || parseInt(r.price) || 0, ptaStatus: r.ptaStatus || 'Unknown', ptaApproved: r.ptaApproved === true, releaseDate: r.releaseDate || '', thumbnail: r.thumbnail || '', description: r.description || '', featured: r.featured === true, trending: r.trending === true, upcoming: r.upcoming === true, status: 'published', active: true, cameraScore: parseInt(r.cameraScore) || 0, performanceScore: parseInt(r.performanceScore) || 0, batteryScore: parseInt(r.batteryScore) || 0, displayScore: parseInt(r.displayScore) || 0, valueScore: parseInt(r.valueScore) || 0, overallRating: parseInt(r.overallRating) || 0, pros: r.pros || '', cons: r.cons || '', reviewSummary: r.reviewSummary || '', reviewVerdict: r.reviewVerdict || '' };
           if (isDup && mode === 'update_existing') { const ex = await Phone.findOne({ slug }); if (ex) { await Phone.updateOne({ _id: ex._id }, { $set: pd }); if (r.specs) await PhoneSpecs.findOneAndUpdate({ phoneId: ex._id }, { $set: r.specs }, { upsert: true }); if (r.benchmarks) await PhoneBenchmark.findOneAndUpdate({ phoneId: ex._id }, { $set: r.benchmarks }, { upsert: true }); updated++; continue; } }
           const phone = await Phone.create(pd); existingSlugs.add(slug); existingBM.add(`${bName}|${mName}`.toLowerCase());
@@ -786,7 +837,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
           imported++;
         } catch (err: any) { failed++; errors.push(`Row ${i+1}: ${err.message}`); }
       }
-      try { await ActivityLog.create({ action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' }); } catch {}
       return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors });
     }
 
@@ -800,7 +851,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       const body = await req.json();
-      const source = await CollectorSource.create(body);
+      const { name: srcName, type: srcType, endpoint: srcEndpoint, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, paginationConfig, brandFilter: srcBrandFilter } = body;
+      if (!srcName || !srcType) return NextResponse.json({ error: 'name and type required' }, { status: 400 });
+      const source = await CollectorSource.create({ name: srcName, type: srcType, endpoint: srcEndpoint || '', enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers, paginationConfig, brandFilter: srcBrandFilter });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch {}
       return NextResponse.json({ success: true, id: source._id });
     }
 
@@ -809,7 +863,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
       const body = await req.json();
-      const job = await CollectorJob.create({ ...body, status: 'pending', startedAt: new Date() });
+      const { sourceId: jobSourceId, provider: jobProvider, maxItems, mode: jobMode, brandFilter: jobBrandFilter } = body;
+      if (!jobSourceId) return NextResponse.json({ error: 'sourceId required' }, { status: 400 });
+      const job = await CollectorJob.create({ sourceId: jobSourceId, provider: jobProvider || '', maxItems: maxItems || 100, mode: jobMode || 'full', brandFilter: jobBrandFilter, status: 'pending', startedAt: new Date() });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_job', details: `Created job for source ${jobSourceId}`, entityType: 'collector' }); } catch {}
       return NextResponse.json({ success: true, id: job._id });
     }
 
@@ -823,7 +880,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
       if (action === 'approve') {
-        const brand = await Brand.findOne({ name: new RegExp(`^${item.brandName}$`, 'i') });
+        const brand = await Brand.findOne({ name: new RegExp(`^${escapeRegex(item.brandName)}$`, 'i') });
         if (!brand) return NextResponse.json({ error: `Brand "${item.brandName}" not found` }, { status: 400 });
         const phone = await Phone.create({
           brandId: brand._id, modelName: item.model, slug: item.slug,
@@ -834,7 +891,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         item.status = 'approved';
         item.approvedPhoneId = phone._id;
         await item.save();
-        await ActivityLog.create({ action: 'collector_approve', details: `Approved: ${item.brandName} ${item.model}`, entityType: 'collector' });
+        try { await ActivityLog.create({ adminId: admin._id, action: 'collector_approve', details: `Approved: ${item.brandName} ${item.model}`, entityType: 'collector' }); } catch {}
         return NextResponse.json({ success: true, phoneId: phone._id });
       } else if (action === 'reject') {
         item.status = 'rejected';
@@ -937,7 +994,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
         await PhonePrice.deleteMany({ phoneId: phone._id });
         if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
       }
-      try { await ActivityLog.create({ action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: phone._id?.toString() });
     }
 
@@ -953,9 +1010,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
       if (body.country !== undefined) brand.country = body.country;
       if (body.description !== undefined) brand.description = body.description;
       if (body.sortOrder !== undefined) brand.sortOrder = body.sortOrder;
-      if (body.active !== undefined) brand.active = body.active;
+      if (body.active === false) {
+        const delCheck = requirePermission(admin, 'brands:delete'); if (delCheck) return delCheck;
+        brand.active = false;
+      } else if (body.active !== undefined) {
+        brand.active = body.active;
+      }
       await brand.save();
-      try { await ActivityLog.create({ action: 'update_brand', details: `Updated: ${brand.name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'update_brand', details: `Updated: ${brand.name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: brand._id?.toString() });
     }
 
@@ -984,7 +1046,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
       if (body.featured !== undefined) news.featured = body.featured;
       if (body.status !== undefined) news.status = body.status;
       await news.save();
-      try { await ActivityLog.create({ action: 'update_news', details: `Updated: ${news.title}`, entityType: 'news', entityId: news._id?.toString() }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'update_news', details: `Updated: ${news.title}`, entityType: 'news', entityId: news._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: news._id?.toString() });
     }
 
@@ -1058,7 +1120,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
         PhoneImage.deleteMany({ phoneId: id }),
         PhonePrice.deleteMany({ phoneId: id }),
       ]);
-      try { await ActivityLog.create({ action: 'delete_phone', details: `Deleted: ${name}`, entityType: 'phone', entityId: id }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'delete_phone', details: `Deleted: ${name}`, entityType: 'phone', entityId: id }); } catch {}
       return NextResponse.json({ success: true });
     }
 
@@ -1073,7 +1135,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
       if (phoneCount > 0) return NextResponse.json({ error: `Cannot delete: ${phoneCount} phones use this brand` }, { status: 400 });
       const name = brand.name;
       await Brand.deleteOne({ _id: id });
-      try { await ActivityLog.create({ action: 'delete_brand', details: `Deleted: ${name}`, entityType: 'brand', entityId: id }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'delete_brand', details: `Deleted: ${name}`, entityType: 'brand', entityId: id }); } catch {}
       return NextResponse.json({ success: true });
     }
 
@@ -1086,7 +1148,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
       if (!news) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const title = news.title;
       await News.deleteOne({ _id: id });
-      try { await ActivityLog.create({ action: 'delete_news', details: `Deleted: ${title}`, entityType: 'news', entityId: id }); } catch {}
+      try { await ActivityLog.create({ adminId: admin._id, action: 'delete_news', details: `Deleted: ${title}`, entityType: 'news', entityId: id }); } catch {}
       return NextResponse.json({ success: true });
     }
 
@@ -1145,9 +1207,10 @@ async function handleCollectorFileUpload(req: NextRequest) {
         const text = buffer.toString('utf-8');
         const parsed = JSON.parse(text);
         records = Array.isArray(parsed) ? parsed : [parsed];
-        if (!Array.isArray(records[0])) {
+        // Check wrapper keys on the original parsed object, not the wrapped array
+        if (!Array.isArray(parsed)) {
           for (const wrapper of ['phones', 'data', 'records', 'results', 'items'] as const) {
-            const candidate = (records as unknown as Record<string, unknown>)[wrapper];
+            const candidate = (parsed as Record<string, unknown>)[wrapper];
             if (Array.isArray(candidate)) { records = candidate as any[]; break; }
           }
         }
@@ -1310,6 +1373,7 @@ async function handleCollectorFileUpload(req: NextRequest) {
     });
 
     await ActivityLog.create({
+      adminId: admin._id,
       action: 'collector_upload',
       details: `Uploaded ${file.name}: ${inserted} new, ${updated} existing, ${skipped} duplicates, ${issues.length} issues`,
       entityType: 'collector',

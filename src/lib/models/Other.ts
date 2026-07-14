@@ -70,7 +70,7 @@ const RateLimitSchema = new Schema({
 }, { timestamps: false });
 
 // TTL index: auto-delete expired entries after 5 minutes
-RateLimitSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 300, background: true });
+RateLimitSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
 RateLimitSchema.index({ key: 1 }, { unique: true, background: true });
 
 export const RateLimit = mongoose.models.RateLimit || mongoose.model('RateLimit', RateLimitSchema);

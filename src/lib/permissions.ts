@@ -3,6 +3,8 @@
 export type AdminRole = 'superadmin' | 'admin' | 'editor' | 'reviewer';
 
 export type Permission =
+  // Dashboard
+  | 'dashboard:read'
   // Phones
   | 'phones:read' | 'phones:create' | 'phones:edit' | 'phones:delete' | 'phones:publish' | 'phones:seed'
   // Brands
@@ -29,6 +31,7 @@ export type Permission =
 // ============ PERMISSION MAPS ============
 
 const ALL_PERMISSIONS: Permission[] = [
+  'dashboard:read',
   'phones:read', 'phones:create', 'phones:edit', 'phones:delete', 'phones:publish', 'phones:seed',
   'brands:read', 'brands:create', 'brands:edit', 'brands:delete',
   'news:read', 'news:create', 'news:edit', 'news:delete', 'news:publish',
@@ -45,6 +48,7 @@ const ALL_PERMISSIONS: Permission[] = [
 const rolePermissions: Record<AdminRole, Set<Permission>> = {
   superadmin: new Set(ALL_PERMISSIONS),
   admin: new Set<Permission>([
+    'dashboard:read',
     'phones:read', 'phones:create', 'phones:edit', 'phones:delete', 'phones:publish', 'phones:seed',
     'brands:read', 'brands:create', 'brands:edit', 'brands:delete',
     'news:read', 'news:create', 'news:edit', 'news:delete', 'news:publish',
@@ -58,6 +62,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'trash:read', 'trash:restore', 'trash:delete',
   ]),
   editor: new Set<Permission>([
+    'dashboard:read',
     'phones:read', 'phones:create', 'phones:edit',
     'brands:read',
     'news:read', 'news:create', 'news:edit',
