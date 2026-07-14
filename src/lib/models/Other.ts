@@ -37,7 +37,7 @@ const SponsorSchema = new Schema({
 export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', SponsorSchema);
 
 const AdminSchema = new Schema({
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
   password: { type: String, required: true, select: false }, // select:false means password not included by default
   name: { type: String, default: '', trim: true },
   role: { type: String, enum: ['superadmin', 'admin', 'editor', 'reviewer'], default: 'admin' },
@@ -63,7 +63,6 @@ const ActivityLogSchema = new Schema({
   entityId: { type: String, default: '' },
 }, { timestamps: true });
 
-ActivityLogSchema.index({ createdAt: -1 });
 ActivityLogSchema.index({ createdAt: -1 }, { expireAfterSeconds: 7776000 });
 
 export const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
