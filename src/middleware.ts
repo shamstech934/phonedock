@@ -12,11 +12,22 @@ const securityHeaders: Record<string, string> = {
 };
 
 // ============ RATE LIMITER (in-memory, per IP) ============
+// Note: No setInterval — compatible with Vercel Edge Runtime
 
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
 function rateLimit(ip: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
+
+  // Lazy cleanup: remove a few expired entries on each call (no setInterval needed)
+  let cleaned = 0;
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetTime) {
+      rateLimitMap.delete(key);
+      if (++cleaned >= 5) break; // max 5 cleanups per call
+    }
+  }
+
   const entry = rateLimitMap.get(ip);
   if (!entry || now > entry.resetTime) {
     rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
@@ -26,16 +37,6 @@ function rateLimit(ip: string, limit: number, windowMs: number): boolean {
   entry.count++;
   return true;
 }
-
-// Periodically clean up expired rate limit entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of rateLimitMap) {
-    if (now > entry.resetTime) {
-      rateLimitMap.delete(ip);
-    }
-  }
-}, 60_000).unref();
 
 // ============ MIDDLEWARE ============
 
