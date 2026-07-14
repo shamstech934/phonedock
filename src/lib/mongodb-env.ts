@@ -38,9 +38,9 @@ export interface UriValidationResult {
 }
 
 const PLACEHOLDER_PATTERNS = [
-  /xxxxx/i, /username/, /password/i, /cluster0\.example/,
-  /<username>/, /<password>/, /your-/, /example\.com/,
-  /test.*secret/i, /changeme/i, /placeholder/i,
+  /xxxxx/i, /<username>/, /<password>/, /<db_password>/,
+  /cluster0\.example/, /your-/, /example\.com/,
+  /changeme/i, /placeholder/i,
 ];
 
 export function validateMongoUri(uri?: string): UriValidationResult {

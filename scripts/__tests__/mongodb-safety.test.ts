@@ -53,9 +53,12 @@ assert(postgres.valid === false, 'Test 2c: postgres:// URI is rejected');
 
 // ---- Test 3: Placeholder URI ----
 console.log('\n-- URI Validation: Placeholders --');
-const placeholder1 = validateMongoUri('mongodb+srv://username:password@cluster0.example.mongodb.net/phonedock');
-assert(placeholder1.valid === false, 'Test 3a: cluster0.example is rejected as placeholder');
+const placeholder1 = validateMongoUri('mongodb+srv://<username>:<password>@cluster0.example.mongodb.net/phonedock');
+assert(placeholder1.valid === false, 'Test 3a: <password> placeholder is rejected');
 assert(placeholder1.error !== undefined && placeholder1.error.includes('placeholder'), 'Test 3a: Error mentions placeholder');
+
+const placeholder1b = validateMongoUri('mongodb+srv://user:MySecurePassword123!@cluster0.abc.mongodb.net/phonedock');
+assert(placeholder1b.valid === true, 'Test 3a-b: Real password containing "Password" is NOT rejected as placeholder');
 
 const placeholder2 = validateMongoUri('mongodb+srv://user:changeme@host.mongodb.net/db');
 assert(placeholder2.valid === false, 'Test 3b: changeme password is rejected as placeholder');
