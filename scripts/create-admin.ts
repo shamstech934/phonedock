@@ -3,14 +3,20 @@
  *
  * SECURITY:
  *  - Password is NEVER logged, stored in plain text, or committed to git
- *  - Interactive terminal prompts only — no browser/URL access
+ *  - Interactive terminal prompts OR secure env var (ADMIN_INITIAL_PASSWORD)
  *  - bcrypt hashing with cost factor 12
  *  - Email validation + duplicate detection
  *  - Strong password validation (12+ chars, mixed case, number, special)
- *  - Refuses to run if ANY admin already exists (unless --force flag)
+ *  - If admin exists with same email → safely updates to superadmin + resets password
  *
- * Usage: npm run admin:create
- *        npm run admin:create -- --force
+ * Usage:
+ *   Interactive:  npm run admin:create
+ *   Non-interactive (CI/sandbox):
+ *     ADMIN_INITIAL_PASSWORD='YourSecureP@ssw0rd!' npm run admin:create -- --name "Shams" --email "user@example.com" --role superadmin
+ *   Force additional admin:
+ *     npm run admin:create -- --force
+ *   Reset password for existing email:
+ *     ADMIN_INITIAL_PASSWORD='NewP@ssw0rd!' npm run admin:create -- --name "Shams" --email "user@example.com" --reset-password
  */
 
 import * as readline from 'readline';
@@ -43,6 +49,9 @@ const AdminSchema = new mongoose.Schema({
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date },
   passwordChangedAt: { type: Date, default: Date.now },
+  revokedSessions: [{ jti: String, revokedAt: Date }],
+  resetToken: { type: String, select: false },
+  resetTokenExpires: { type: Date, select: false },
 }, { timestamps: true });
 
 AdminSchema.index({ email: 1 }, { unique: true });
@@ -71,6 +80,18 @@ function validatePassword(password: string): PasswordValidation {
   return { valid: errors.length === 0, errors };
 }
 
+// ============ CLI ARG PARSER ============
+
+function getArg(flag: string): string | undefined {
+  const idx = process.argv.indexOf('--' + flag);
+  if (idx === -1 || idx + 1 >= process.argv.length) return undefined;
+  return process.argv[idx + 1];
+}
+
+function hasFlag(flag: string): boolean {
+  return process.argv.includes('--' + flag);
+}
+
 // ============ INTERACTIVE PROMPTS ============
 
 const rl = readline.createInterface({
@@ -81,7 +102,6 @@ const rl = readline.createInterface({
 function question(prompt: string, hidden = false): Promise<string> {
   return new Promise((resolve) => {
     if (hidden) {
-      // Mask password input with asterisks
       const stdin = process.stdin;
       const stdout = process.stdout;
       let buf = '';
@@ -97,10 +117,10 @@ function question(prompt: string, hidden = false): Promise<string> {
             stdout.write('\n');
             resolve(buf);
             break;
-          case '\u0003': // Ctrl+C
+          case '\u0003':
             process.exit(1);
             break;
-          case '\u007F': // Backspace
+          case '\u007F':
             buf = buf.slice(0, -1);
             stdout.clearLine(0);
             stdout.cursorTo(0);
@@ -121,7 +141,6 @@ function question(prompt: string, hidden = false): Promise<string> {
         stdin.setEncoding('utf8');
         stdin.on('data', onChar);
       } else {
-        // Non-TTY fallback (CI/CD) — just ask normally
         stdin.removeListener('data', onChar);
         rl.question(prompt, (answer) => resolve(answer));
       }
@@ -134,7 +153,9 @@ function question(prompt: string, hidden = false): Promise<string> {
 // ============ MAIN ============
 
 async function main() {
-  const forceMode = process.argv.includes('--force');
+  const forceMode = hasFlag('force');
+  const resetPasswordMode = hasFlag('reset-password');
+  const nonInteractive = hasFlag('name') || hasFlag('email') || !!process.env.ADMIN_INITIAL_PASSWORD;
 
   console.log('\n╔══════════════════════════════════════╗');
   console.log('║   PhoneDock — Admin Account Setup   ║');
@@ -154,74 +175,169 @@ async function main() {
   }
   console.log('Connected.\n');
 
-  // Check if any admin already exists
+  // Check existing admins
   const existingCount = await Admin.countDocuments();
-  if (existingCount > 0 && !forceMode) {
-    const existing = await Admin.find().select('-password').lean();
-    console.error('✗ Admin account(s) already exist:');
-    existing.forEach((a: any) => {
-      console.error(`  • ${a.email} (${a.role})`);
-    });
-    console.error('\n  Use --force to create an additional admin.');
-    console.error('  Otherwise, use the admin panel to manage users.\n');
-    await mongoose.disconnect();
-    process.exit(1);
-  }
 
-  // Collect inputs
-  const name = await question('Full Name: ');
-  if (!name || name.length < 2) {
-    console.error('\n✗ Name must be at least 2 characters.\n');
-    await mongoose.disconnect();
-    process.exit(1);
-  }
+  // ---- COLLECT INPUTS ----
 
-  const email = await question('Email Address: ');
-  if (!email || !isValidEmail(email)) {
-    console.error('\n✗ Invalid email address.\n');
-    await mongoose.disconnect();
-    process.exit(1);
-  }
-  const emailLower = email.toLowerCase();
-
-  // Check duplicate
-  const duplicate = await Admin.findOne({ email: emailLower });
-  if (duplicate) {
-    console.error(`\n✗ An admin with "${emailLower}" already exists.\n`);
-    await mongoose.disconnect();
-    process.exit(1);
-  }
-
-  // Password with validation
+  let name: string;
+  let email: string;
+  let role: string;
   let password: string;
-  while (true) {
-    password = await question('Password (min 12 chars, mixed case + number + special): ', true);
+
+  if (nonInteractive) {
+    // ---- NON-INTERACTIVE MODE (env vars + CLI flags) ----
+    name = getArg('name') || '';
+    email = (getArg('email') || '').toLowerCase();
+    password = process.env.ADMIN_INITIAL_PASSWORD || '';
+
+    if (!name || name.length < 2) {
+      console.error('\n✗ Non-interactive mode requires: --name "Full Name"\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    if (!email || !isValidEmail(email)) {
+      console.error('\n✗ Non-interactive mode requires: --email "valid@email.com"\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    if (!password) {
+      console.error('\n✗ Non-interactive mode requires: ADMIN_INITIAL_PASSWORD env var\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+
+    // Validate password strength
     const validation = validatePassword(password);
     if (!validation.valid) {
-      console.error(`  ✗ Password must have: ${validation.errors.join(', ')}\n`);
-      continue;
+      console.error(`\n✗ Password must have: ${validation.errors.join(', ')}\n`);
+      await mongoose.disconnect();
+      process.exit(1);
     }
-    break;
-  }
 
-  const confirm = await question('Confirm Password: ', true);
-  if (password !== confirm) {
-    console.error('\n✗ Passwords do not match.\n');
-    await mongoose.disconnect();
-    process.exit(1);
-  }
-
-  // Determine role
-  let role = existingCount === 0 ? 'superadmin' : 'admin';
-  if (existingCount === 0) {
-    console.log(`\n  First admin — assigning role: superadmin\n`);
-  } else {
-    const roleInput = await question(`Role [admin/editor/reviewer] (default: admin): `);
+    role = getArg('role') || (existingCount === 0 ? 'superadmin' : 'admin');
     const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
-    if (roleInput && validRoles.includes(roleInput.toLowerCase())) {
-      role = roleInput.toLowerCase();
+    if (!validRoles.includes(role)) {
+      console.error(`\n✗ Invalid role "${role}". Use: superadmin, admin, editor, reviewer\n`);
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+
+  } else {
+    // ---- INTERACTIVE MODE ----
+    if (existingCount > 0 && !forceMode) {
+      const existing = await Admin.find().select('-password').lean();
+      console.error('✗ Admin account(s) already exist:');
+      (existing as any[]).forEach((a) => {
+        console.error(`  • ${a.email} (${a.role})`);
+      });
+      console.error('\n  Use --force to create an additional admin.');
+      console.error('  Or use --reset-password --email "user@example.com" to reset password.');
+      console.error('  Otherwise, use the admin panel to manage users.\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+
+    name = await question('Full Name: ');
+    if (!name || name.length < 2) {
+      console.error('\n✗ Name must be at least 2 characters.\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+
+    email = await question('Email Address: ');
+    if (!email || !isValidEmail(email)) {
+      console.error('\n✗ Invalid email address.\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    email = email.toLowerCase();
+
+    // Password with validation
+    while (true) {
+      password = await question('Password (min 12 chars, mixed case + number + special): ', true);
+      const validation = validatePassword(password);
+      if (!validation.valid) {
+        console.error(`  ✗ Password must have: ${validation.errors.join(', ')}\n`);
+        continue;
+      }
+      break;
+    }
+
+    const confirm = await question('Confirm Password: ', true);
+    if (password !== confirm) {
+      console.error('\n✗ Passwords do not match.\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+
+    // Determine role
+    role = existingCount === 0 ? 'superadmin' : 'admin';
+    if (existingCount === 0) {
+      console.log(`\n  First admin — assigning role: superadmin\n`);
+    } else {
+      const roleInput = await question(`Role [admin/editor/reviewer] (default: admin): `);
+      const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
+      if (roleInput && validRoles.includes(roleInput.toLowerCase())) {
+        role = roleInput.toLowerCase();
+      }
     }
   }
+
+  // ---- CHECK DUPLICATE / EXISTING ----
+
+  const existing = await Admin.findOne({ email });
+  if (existing) {
+    if (resetPasswordMode || nonInteractive) {
+      // Safely UPDATE existing account to superadmin + reset password
+      console.log(`\n  Admin "${email}" already exists. Updating...`);
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Clear password from memory immediately
+      password = '';
+      (globalThis as any).password = undefined;
+      if (process.env.ADMIN_INITIAL_PASSWORD) {
+        delete process.env.ADMIN_INITIAL_PASSWORD;
+      }
+
+      await Admin.updateOne(
+        { email },
+        {
+          $set: {
+            name,
+            role: 'superadmin',
+            active: true,
+            password: hashedPassword,
+            failedAttempts: 0,
+            lockedUntil: null,
+            passwordChangedAt: new Date(),
+            revokedSessions: [],
+          }
+        }
+      );
+
+      console.log('\n╔══════════════════════════════════════╗');
+      console.log('║     Admin Account Updated           ║');
+      console.log('╠══════════════════════════════════════╣');
+      console.log(`║  Name:  ${name.padEnd(30)}║`);
+      console.log(`║  Email: ${email.padEnd(30)}║`);
+      console.log(`║  Role:  ${'superadmin'.padEnd(30)}║`);
+      console.log('╠══════════════════════════════════════╣');
+      console.log('║  Password: RESET (all sessions cleared)  ║');
+      console.log('║  Login at: /admin/login             ║');
+      console.log('╚══════════════════════════════════════╝\n');
+
+      await mongoose.disconnect();
+      process.exit(0);
+    } else {
+      console.error(`\n✗ An admin with "${email}" already exists.`);
+      console.error('  Use --reset-password --email "..." to update password & role.\n');
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+  }
+
+  // ---- CREATE NEW ADMIN ----
 
   // Hash password — NEVER log the plain password
   console.log('  Creating admin account...');
@@ -230,10 +346,12 @@ async function main() {
   // Clear password from memory
   password = '';
   (globalThis as any).password = undefined;
+  if (process.env.ADMIN_INITIAL_PASSWORD) {
+    delete process.env.ADMIN_INITIAL_PASSWORD;
+  }
 
-  // Create admin
   const admin = await Admin.create({
-    email: emailLower,
+    email,
     name,
     password: hashedPassword,
     role,
