@@ -8,16 +8,15 @@ import { useAdmin } from '@/lib/useAdmin';
 import type { Brand } from '@/components/shared/types';
 
 export default function AdminBrandsPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/brands', { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch('/api/admin/brands', { credentials: 'include' })
       .then(r => r.json()).then(d => { setBrands(d.brands || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-36 rounded-2xl" />)}</div>;
 

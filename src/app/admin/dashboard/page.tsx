@@ -10,16 +10,15 @@ import { useAdmin } from '@/lib/useAdmin';
 import { formatPrice } from '@/components/shared/formatPrice';
 
 export default function AdminDashboardPage() {
-  const { admin, token } = useAdmin();
+  const { admin } = useAdmin();
   const [stats, setStats] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/stats', { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch('/api/admin/stats', { credentials: 'include' })
       .then(r => r.json()).then(d => { setStats(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const statCards = [
     { label: 'Total Phones', value: stats.totalPhones ?? 0, icon: Smartphone, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
@@ -78,9 +77,8 @@ export default function AdminDashboardPage() {
               <p className="text-sm text-muted-foreground mt-0.5">Click below to seed 35+ verified real phones with specs, benchmarks & Pakistani prices</p>
             </div>
             <button onClick={async () => {
-              if (!token) return;
               try {
-                const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+                const r = await fetch('/api/admin/seed', { method: 'POST', credentials: 'include' });
                 const d = await r.json();
                 if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); window.location.reload(); }
                 else { alert('Seed failed: ' + (d.error || 'Unknown error')); }

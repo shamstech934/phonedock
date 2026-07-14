@@ -5,23 +5,17 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useAdmin } from '@/lib/useAdmin';
 
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const [admin, setAdmin] = useState<{ id: string; email: string; name: string; role: string } | null>(null);
+  const { admin } = useAdmin();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('pd_admin');
-      if (stored) setAdmin(JSON.parse(stored));
-    } catch {}
-  }, []);
 
   useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
   useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [pathname]);

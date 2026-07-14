@@ -20,21 +20,20 @@ interface CollectorJob {
 }
 
 export default function AdminCollectorJobsPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [jobs, setJobs] = useState<CollectorJob[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/collector/jobs', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/collector/jobs', { credentials: 'include' })
       .then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const deleteJob = async (id: string) => {
-    if (!token || !confirm('Delete this job record?')) return;
+    if (!confirm('Delete this job record?')) return;
     await fetch('/api/collector/jobs', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ jobId: id }),
     });
     setJobs(prev => prev.filter(j => j.id !== id));

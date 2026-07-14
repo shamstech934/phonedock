@@ -32,17 +32,17 @@ function SpecRow({ label, value }: { label: string; value?: string }) {
 }
 
 export default function AdminPhoneViewPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const { id } = useParams();
   const [phone, setPhone] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token || !id) return;
-    fetch(`/api/admin/phones/${id}`, { headers: { 'Authorization': `Bearer ${token}` } })
+    if (!id) return;
+    fetch(`/api/admin/phones/${id}`, { credentials: 'include' })
       .then(r => r.json()).then(d => { setPhone(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token, id]);
+  }, [id]);
 
   if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
   if (!phone) return <div className="text-center py-12 text-muted-foreground">Phone not found</div>;

@@ -16,7 +16,7 @@ interface CollectorSource {
 }
 
 export default function AdminCollectorSourcesPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [sources, setSources] = useState<CollectorSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -24,20 +24,19 @@ export default function AdminCollectorSourcesPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchSources = useCallback(() => {
-    if (!token) return;
-    fetch('/api/collector/sources', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/collector/sources', { credentials: 'include' })
       .then(r => r.json()).then(d => { setSources(d.sources || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchSources(); }, [fetchSources]);
 
   const handleAdd = async () => {
-    if (!form.name.trim() || !token) return;
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
       await fetch('/api/collector/sources', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(form),
       });
       setForm({ name: '', type: 'api', url: '' });
@@ -48,17 +47,16 @@ export default function AdminCollectorSourcesPage() {
   };
 
   const toggleSource = async (source: CollectorSource) => {
-    if (!token) return;
     await fetch(`/api/collector/sources/${source.id}`, {
-      method: 'PUT', headers: { Authorization: `Bearer ${token}` } ,
+      method: 'PUT', credentials: 'include',
     });
     fetchSources();
   };
 
   const deleteSource = async (id: string) => {
-    if (!token || !confirm('Delete this source?')) return;
+    if (!confirm('Delete this source?')) return;
     await fetch('/api/collector/jobs', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ sourceId: id }),
     }).catch(() => {});
     setSources(prev => prev.filter(s => s.id !== id));

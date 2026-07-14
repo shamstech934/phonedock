@@ -23,7 +23,6 @@ interface PhonePrice {
 }
 
 interface PhoneFormProps {
-  token: string;
   phoneId?: string | null;
   brands: Array<{ id: string; name: string; slug: string }>;
   onSave: () => void;
@@ -436,7 +435,6 @@ function CheckboxInput({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PhoneForm({
-  token,
   phoneId,
   brands,
   onSave,
@@ -485,7 +483,7 @@ export default function PhoneForm({
         setError(null);
 
         const res = await fetch(`/api/admin/phones/${phoneId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
 
         if (!res.ok) {
@@ -640,7 +638,7 @@ export default function PhoneForm({
     return () => {
       cancelled = true;
     };
-  }, [isEditMode, phoneId, token]);
+  }, [isEditMode, phoneId]);
 
   // ── Submit handler ──
   const handleSubmit = async () => {
@@ -670,8 +668,8 @@ export default function PhoneForm({
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify(form),
       });
 

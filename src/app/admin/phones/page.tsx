@@ -11,7 +11,7 @@ import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone, Brand } from '@/components/shared/types';
 
 export default function AdminPhonesPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const router = useRouter();
   const [phones, setPhones] = useState<Phone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,19 +20,18 @@ export default function AdminPhonesPage() {
   const [deleting, setDeleting] = useState(false);
 
   const fetchPhones = useCallback(() => {
-    if (!token) return;
     Promise.all([
-      fetch('/api/admin/phones', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+      fetch('/api/admin/phones', { credentials: 'include' }).then(r => r.json()),
     ]).then(([pd]) => { setPhones(pd.phones || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchPhones(); }, [fetchPhones]);
 
   const handleDelete = async () => {
-    if (!deleteId || !token) return;
+    if (!deleteId) return;
     setDeleting(true);
     try {
-      const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
       if (r.ok) { setPhones(prev => prev.filter(p => p.id !== deleteId)); setDeleteId(null); }
     } catch {}
     setDeleting(false);
@@ -62,9 +61,8 @@ export default function AdminPhonesPage() {
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add Phone</span><span className="sm:hidden">Add</span>
           </Link>
           <button onClick={async () => {
-            if (!token) return;
             try {
-              const r = await fetch('/api/admin/seed', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+              const r = await fetch('/api/admin/seed', { method: 'POST', credentials: 'include' });
               const d = await r.json();
               if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); fetchPhones(); }
               else { alert('Seed failed: ' + (d.error || 'Unknown error')); }

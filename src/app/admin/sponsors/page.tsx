@@ -21,7 +21,7 @@ interface Sponsor {
 const emptyForm = { name: '', image: '', url: '', position: 'sidebar', startDate: '', endDate: '' };
 
 export default function AdminSponsorsPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -31,11 +31,10 @@ export default function AdminSponsorsPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const fetchSponsors = useCallback(() => {
-    if (!token) return;
-    fetch('/api/admin/sponsors', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/admin/sponsors', { credentials: 'include' })
       .then(r => r.json()).then(d => { setSponsors(d.sponsors || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   useEffect(() => { fetchSponsors(); }, [fetchSponsors]);
 
@@ -47,17 +46,17 @@ export default function AdminSponsorsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !token) return;
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
       if (editing) {
         await fetch(`/api/admin/sponsors/${editing.id}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify(form),
         });
       } else {
         await fetch('/api/admin/sponsors', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify(form),
         });
       }
@@ -68,20 +67,19 @@ export default function AdminSponsorsPage() {
   };
 
   const toggleActive = async (s: Sponsor) => {
-    if (!token) return;
     await fetch(`/api/admin/sponsors/${s.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ active: !s.active }),
     });
     fetchSponsors();
   };
 
   const handleDelete = async (id: string) => {
-    if (!token || !confirm('Delete this sponsor?')) return;
+    if (!confirm('Delete this sponsor?')) return;
     setDeleting(id);
     try {
       await fetch(`/api/admin/sponsors/${id}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+        method: 'DELETE', credentials: 'include',
       });
       fetchSponsors();
     } catch {}

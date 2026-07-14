@@ -7,25 +7,24 @@ import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
 export default function AdminSyncPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string>('');
   const [stats, setStats] = useState({ totalSources: 0, activeSources: 0, totalJobs: 0, pendingReview: 0, completedJobs: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/collector/dashboard', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/collector/dashboard', { credentials: 'include' })
       .then(r => r.json()).then(d => { setStats(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const handleSync = async () => {
-    if (!token || syncing) return;
+    if (syncing) return;
     setSyncing(true);
     try {
       await fetch('/api/collector/jobs', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ sourceId: 'all', action: 'sync' }),
       });
       setLastSync(new Date().toLocaleString('en-PK'));

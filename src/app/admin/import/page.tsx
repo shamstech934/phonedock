@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
 export default function AdminImportPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -53,13 +53,13 @@ export default function AdminImportPage() {
   };
 
   const handleImport = async () => {
-    if (!file || !token || previewRecords.length === 0) return;
+    if (!file || previewRecords.length === 0) return;
     setUploading(true); setActiveTab('results');
     const startTime = Date.now();
     try {
       const res = await fetch('/api/admin/phones/bulk-import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ records: previewRecords, mode: importMode }),
       });
       const data = await res.json();

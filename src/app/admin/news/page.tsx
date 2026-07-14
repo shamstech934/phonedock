@@ -7,16 +7,15 @@ import { useAdmin } from '@/lib/useAdmin';
 import type { NewsItem } from '@/components/shared/types';
 
 export default function AdminNewsPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/news', { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch('/api/admin/news', { credentials: 'include' })
       .then(r => r.json()).then(d => { setNews(d.news || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <div className="space-y-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-20 rounded-xl" />)}</div>;
 

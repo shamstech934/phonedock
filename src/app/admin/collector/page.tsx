@@ -7,16 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
 export default function AdminCollectorPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [stats, setStats] = useState({ totalSources: 0, activeSources: 0, totalJobs: 0, pendingReview: 0, completedJobs: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/collector/dashboard', { headers: { Authorization: `Bearer ${token}` } })
+    fetch('/api/collector/dashboard', { credentials: 'include' })
       .then(r => r.json()).then(d => { setStats(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-28 rounded-2xl" />)}</div>;
 

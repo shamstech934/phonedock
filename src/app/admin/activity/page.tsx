@@ -7,16 +7,15 @@ import { useAdmin } from '@/lib/useAdmin';
 import type { ActivityLog } from '@/components/shared/types';
 
 export default function AdminActivityPage() {
-  const { token } = useAdmin();
+  useAdmin();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-    fetch('/api/admin/activity', { headers: { 'Authorization': `Bearer ${token}` } })
+    fetch('/api/admin/activity', { credentials: 'include' })
       .then(r => r.json()).then(d => { setLogs(d.logs || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
 
