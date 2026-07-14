@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Star, Smartphone, Plus, Trash2, Edit, Eye, Database } from 'lucide-react';
+import { Search, Star, Smartphone, Plus, Trash2, Edit, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 import { formatPrice } from '@/components/shared/formatPrice';
@@ -60,16 +60,6 @@ export default function AdminPhonesPage() {
           <Link href="/admin/phones/new" className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add Phone</span><span className="sm:hidden">Add</span>
           </Link>
-          <button onClick={async () => {
-            try {
-              const r = await fetch('/api/admin/seed', { method: 'POST', credentials: 'include' });
-              const d = await r.json();
-              if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); fetchPhones(); }
-              else { alert('Seed failed: ' + (d.error || 'Unknown error')); }
-            } catch (e: any) { alert('Seed failed: ' + e.message); }
-          }} className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-500/25">
-            <Database className="w-4 h-4" /> <span className="hidden sm:inline">Seed Data</span><span className="sm:hidden">Seed</span>
-          </button>
         </div>
       </div>
 

@@ -1,37 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, writeFile } from 'fs/promises';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { createProvider } from '@/lib/collectors';
-import { Phone, Brand, News, Sponsor, Admin, ActivityLog, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
+import { Phone, Brand, News, Sponsor, Admin, ActivityLog, RateLimit, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
 import { connectDB, connectDBSafe } from '@/lib/mongodb';
 import mongoose from 'mongoose';
-import { verifyPassword, hashPassword, verifyToken, createSignedSession, getAuthSessionAsync, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isSessionRevoked, revokeSession, isStrongPassword, sanitizeInput } from '@/lib/auth';
+import { verifyPassword, hashPassword, verifyToken, createSignedSession, getSessionFromRequest, validateSessionVersion, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isStrongPassword, sanitizeInput, checkIpRateLimit, hashResetToken, verifyResetToken, sanitizeCsvValue, getCookieOptions } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
-// ============ IN-MEMORY IP RATE LIMITER ============
-// (replaces deprecated middleware.ts rate limiting — serverless-safe, no setInterval)
+// ============ CONSTANTS ============
 
-const ipRateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_UPLOAD_RECORDS = 5000;
+const ALLOWED_EXTENSIONS = ['json', 'csv', 'xlsx', 'xls'];
+const ALLOWED_MIME_TYPES = new Set([
+  'application/json',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+]);
 
-function ipRateLimit(ip: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
-  let cleaned = 0;
-  for (const [key, entry] of ipRateLimitMap) {
-    if (now > entry.resetTime) {
-      ipRateLimitMap.delete(key);
-      if (++cleaned >= 5) break;
-    }
-  }
-  const entry = ipRateLimitMap.get(ip);
-  if (!entry || now > entry.resetTime) {
-    ipRateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
-    return true;
-  }
-  if (entry.count >= limit) return false;
-  entry.count++;
-  return true;
-}
+// ============ IP HELPER ============
 
 function getClientIp(req: NextRequest): string {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
@@ -40,21 +30,28 @@ function getClientIp(req: NextRequest): string {
 // ============ AUTH HELPERS ============
 
 async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: any; error?: NextResponse }> {
-  const session = await getAuthSessionAsync(req);
+  const session = await getSessionFromRequest(req);
   if (!session) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
   await connectDB();
-  // DB-backed session revocation check (serverless-safe)
-  const revoked = await isSessionRevoked(session.jti, session.sub, Admin);
-  if (revoked) {
-    return { error: NextResponse.json({ error: 'Session revoked' }, { status: 401 }) };
+  // Fail-closed session version check
+  const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
+  if (!versionCheck.valid) {
+    const response = NextResponse.json({ error: 'Session invalid' }, { status: 401 });
+    response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+    return { error: response };
   }
-  const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
+  const admin = await Admin.findById(session.sub).select('-password -resetTokenHash -resetTokenExpires');
   if (!admin || !admin.active) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
   return { admin };
+}
+
+/** Check if email is configured — used to gate forgot-password */
+function isEmailConfigured(): boolean {
+  return !!(process.env.EMAIL_HOST && process.env.EMAIL_PORT && process.env.EMAIL_USER && process.env.EMAIL_PASS);
 }
 
 function requirePermission(admin: any, permission: string): NextResponse | null {
@@ -105,233 +102,179 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
-    // ---- /api/health (public, no auth) ----
+    // ---- /api/health (public, no auth) — no env var status disclosure ----
     if (segments.length === 1 && segments[0] === 'health') {
-      const checks: Record<string, string> = {};
-      checks.mongodb_uri = process.env.MONGODB_URI ? 'set' : 'MISSING';
-      checks.jwt_secret = process.env.JWT_SECRET ? 'set' : 'MISSING';
-      checks.collector_secret = process.env.COLLECTOR_SECRET ? 'set' : 'MISSING';
-      // Test DB connection
-      if (process.env.MONGODB_URI) {
-        try {
-          const conn = await connectDBSafe();
-          checks.mongodb_connection = conn ? 'connected' : 'FAILED';
-        } catch { checks.mongodb_connection = 'FAILED'; }
-      } else {
-        checks.mongodb_connection = 'skipped (no URI)';
+      try {
+        const conn = await connectDBSafe();
+        const dbOk = !!conn;
+        let adminCount = 'error';
+        if (dbOk) {
+          try { adminCount = String(await Admin.countDocuments()); } catch { /* */ }
+        }
+        return NextResponse.json({ status: dbOk ? 'ok' : 'unhealthy', db: dbOk ? 'connected' : 'disconnected' });
+      } catch {
+        return NextResponse.json({ status: 'unhealthy', db: 'disconnected' }, { status: 503 });
       }
-      // Check admin count
-      if (checks.mongodb_connection === 'connected') {
-        try {
-          const count = await Admin.countDocuments();
-          checks.admin_count = String(count);
-        } catch { checks.admin_count = 'error'; }
-      }
-      const hasIssue = Object.values(checks).some(v => v.includes('MISSING') || v.includes('FAILED'));
-      return NextResponse.json({ status: hasIssue ? 'unhealthy' : 'ok', checks }, { status: hasIssue ? 503 : 200 });
     }
 
     // ---- /api/home ----
     if (segments.length === 1 && segments[0] === 'home') {
       await connectDB();
-      const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news, brands, sponsors] = await Promise.all([
-        Phone.find({ active: true, status: 'published', featured: true }).populate('brand').sort({ sortOrder: 1 }).limit(8).lean(),
-        Phone.find({ active: true, status: 'published', trending: true }).populate('brand').sort({ views: -1 }).limit(8).lean(),
-        Phone.find({ active: true, status: 'published' }).populate('brand').sort({ createdAt: -1 }).limit(8).lean(),
-        Phone.find({ active: true, status: 'published', cameraScore: { $gt: 0 } }).populate('brand').sort({ cameraScore: -1 }).limit(4).lean(),
-        Phone.find({ active: true, status: 'published', performanceScore: { $gt: 0 } }).populate('brand').sort({ performanceScore: -1 }).limit(4).lean(),
-        Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).populate('brand').sort({ batteryScore: -1 }).limit(4).lean(),
-        Phone.find({ active: true, status: 'published', upcoming: true }).populate('brand').sort({ createdAt: -1 }).limit(4).lean(),
-        News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
-        Brand.find({ active: true }).sort({ sortOrder: 1, name: 1 }).lean(),
-        Sponsor.find({ active: true }).lean(),
+      const [featured, trending, brands] = await Promise.all([
+        Phone.find({ active: true, status: 'published', featured: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
+        Phone.find({ active: true, status: 'published', trending: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
+        Brand.find({ active: true }).sort({ sortOrder: 1 }).lean(),
       ]);
-
-      const allPhones = await Phone.find({ active: true, status: 'published' }).lean();
-      const above100k = allPhones.filter(p => p.pricePKR > 100000).slice(0, 4);
-      const price60to100 = allPhones.filter(p => p.pricePKR >= 60000 && p.pricePKR <= 100000).slice(0, 4);
-      const price40to60 = allPhones.filter(p => p.pricePKR >= 40000 && p.pricePKR < 60000).slice(0, 4);
-      const price20to40 = allPhones.filter(p => p.pricePKR >= 20000 && p.pricePKR < 40000).slice(0, 4);
-      const under20k = allPhones.filter(p => p.pricePKR > 0 && p.pricePKR < 20000).slice(0, 4);
-
-      // Populate brands for price categories
-      const brandIds = [...new Set(allPhones.map(p => p.brandId?.toString()))];
-      const brandsMap = new Map(brands.map((b: any) => [b._id?.toString(), { id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '' }]));
-
-      const mapPhones = (phones: any[]) => phones.map(p => ({
-        id: p._id?.toString(), modelName: p.modelName, slug: p.slug,
-        brandId: p.brandId?.toString(), brand: brandsMap.get(p.brandId?.toString()),
-        thumbnail: p.thumbnail || '', pricePKR: p.pricePKR || 0,
-        overallRating: p.overallRating || 0, ptaStatus: p.ptaStatus || 'Unknown',
-        ptaApproved: p.ptaApproved || false, trending: p.trending || false,
-        upcoming: p.upcoming || false, featured: p.featured || false,
-      }));
-
-      const mapDetailed = (phones: any[]) => phones.map(p => phoneToJSON(p));
-
-      return NextResponse.json({
-        featured: mapDetailed(featured),
-        trending: mapDetailed(trending),
-        latest: mapDetailed(latest),
-        bestCamera: mapDetailed(bestCamera),
-        bestGaming: mapDetailed(bestGaming),
-        bestBattery: mapDetailed(bestBattery),
-        upcoming: mapDetailed(upcoming),
-        news: news.map((n: any) => ({ id: n._id?.toString(), title: n.title, slug: n.slug, excerpt: n.excerpt || '', content: n.content || '', category: n.category || 'General', author: n.author || '', imageUrl: n.image || '', published: n.published, createdAt: n.createdAt })),
-        priceCategories: {
-          above100k: mapPhones(above100k),
-          price60to100: mapPhones(price60to100),
-          price40to60: mapPhones(price40to60),
-          price20to40: mapPhones(price20to40),
-          under20k: mapPhones(under20k),
-        },
-        brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '' })),
-        sponsors: sponsors.map((s: any) => ({ id: s._id?.toString(), name: s.name, image: s.image || '', url: s.url || '', position: s.position || '', active: s.active })),
-      });
+      return NextResponse.json({ featured, trending, brands });
     }
 
     // ---- /api/phones ----
     if (segments.length === 1 && segments[0] === 'phones') {
       await connectDB();
-      const { searchParams } = new URL(req.url);
-      const page = parseInt(searchParams.get('page') || '1');
-      const limit = parseInt(searchParams.get('limit') || '20');
-      const brand = searchParams.get('brand') || '';
-      const sort = searchParams.get('sort') || 'latest';
-      const minPrice = parseInt(searchParams.get('minPrice') || '0');
-      const maxPrice = parseInt(searchParams.get('maxPrice') || '0');
+      const url = new URL(req.url);
+      const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+      const search = url.searchParams.get('search') || '';
+      const brand = url.searchParams.get('brand') || '';
+      const sort = url.searchParams.get('sort') || 'createdAt';
+      const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
 
-      let query: any = { active: true, status: 'published' };
-      if (brand) {
-        const brandDoc = await Brand.findOne({ slug: brand }).lean();
-        if (brandDoc) query.brandId = brandDoc._id;
-      }
-      if (minPrice > 0) query.pricePKR = { ...query.pricePKR, $gte: minPrice };
-      if (maxPrice > 0) query.pricePKR = { ...query.pricePKR, $lte: maxPrice };
-      if (minPrice > 0 && maxPrice > 0) query.pricePKR = { $gte: minPrice, $lte: maxPrice };
+      const filter: any = { active: true, status: 'published' };
+      if (search) filter.$or = [
+        { modelName: { $regex: search, $options: 'i' } },
+        { slug: { $regex: search, $options: 'i' } },
+      ];
+      if (brand) { const b = await Brand.findOne({ slug: brand }); if (b) filter.brandId = b._id; }
 
-      const sortObj: any = {};
-      if (sort === 'price-low') sortObj.pricePKR = 1;
-      else if (sort === 'price-high') sortObj.pricePKR = -1;
-      else if (sort === 'rating') sortObj.overallRating = -1;
-      else if (sort === 'trending') sortObj.views = -1;
-      else sortObj.createdAt = -1;
-
-      const total = await Phone.countDocuments(query);
-      const phones = await Phone.find(query).populate('brand').sort(sortObj).skip((page - 1) * limit).limit(limit).lean();
-
-      return NextResponse.json({
-        phones: phones.map(p => phoneToJSON(p)),
-        total, page, limit,
-        totalPages: Math.ceil(total / limit),
-      });
+      const [phones, total] = await Promise.all([
+        Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
+        Phone.countDocuments(filter),
+      ]);
+      return NextResponse.json({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit });
     }
 
     // ---- /api/phones/:slug ----
     if (segments.length === 2 && segments[0] === 'phones') {
       await connectDB();
-      const slug = segments[1];
-      const phone = await Phone.findOne({ slug, active: true, status: 'published' }).populate('brand').lean();
-      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
-
+      const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).populate('brand');
+      if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const [specs, benchmarks, images, prices] = await Promise.all([
         PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
         PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
         PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
         PhonePrice.find({ phoneId: phone._id }).lean(),
       ]);
-
-      // Increment views
       await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
-
       return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
     }
 
     // ---- /api/brands ----
     if (segments.length === 1 && segments[0] === 'brands') {
       await connectDB();
-      const brands = await Brand.find({ active: true }).sort({ sortOrder: 1, name: 1 }).lean();
-      const brandIds = brands.map((b: any) => b._id);
-      const counts = await Phone.aggregate([
-        { $match: { active: true, status: 'published', brandId: { $in: brandIds } } },
-        { $group: { _id: '$brandId', count: { $sum: 1 } } },
-      ]);
-      const countMap = new Map(counts.map((c: any) => [c._id?.toString(), c.count]));
-
-      return NextResponse.json({
-        brands: brands.map((b: any) => ({
-          id: b._id?.toString(), name: b.name, slug: b.slug,
-          logo: b.logo || '', country: b.country || '',
-          description: b.description || '',
-          _count: { phones: countMap.get(b._id?.toString()) || 0 },
-        })),
-      });
+      const brands = await Brand.find({ active: true }).sort({ sortOrder: 1 }).lean();
+      return NextResponse.json(brands);
     }
 
     // ---- /api/brands/:slug ----
     if (segments.length === 2 && segments[0] === 'brands') {
       await connectDB();
-      const slug = segments[1];
-      const brand = await Brand.findOne({ slug, active: true }).lean();
-      if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
-
-      const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
-        .populate('brand').sort({ createdAt: -1 }).lean();
-
-      return NextResponse.json({
-        brand: { id: brand._id?.toString(), name: brand.name, slug: brand.slug, logo: brand.logo || '', country: brand.country || '', description: brand.description || '' },
-        phones: phones.map(p => phoneToJSON(p)),
-      });
-    }
-
-    // ---- /api/search ----
-    if (segments.length === 1 && segments[0] === 'search') {
-      await connectDB();
-      const { searchParams } = new URL(req.url);
-      const q = (searchParams.get('q') || '').trim();
-      if (!q) return NextResponse.json({ brands: [], phones: [] });
-
-      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      const [brands, phones] = await Promise.all([
-        Brand.find({ active: true, $or: [{ name: regex }, { slug: regex }] }).limit(10).lean(),
-        Phone.find({ active: true, status: 'published', $or: [{ modelName: regex }, { slug: regex }, { description: regex }] })
-          .populate('brand').sort({ views: -1 }).limit(20).lean(),
-      ]);
-
-      return NextResponse.json({
-        brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '' })),
-        phones: phones.map(p => phoneToJSON(p)),
-      });
+      const brand = await Brand.findOne({ slug: segments[1], active: true }).lean();
+      if (!brand) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' }).populate('brand').lean();
+      return NextResponse.json({ brand, phones: phones.map((p: any) => phoneToJSON(p)) });
     }
 
     // ---- /api/news ----
     if (segments.length === 1 && segments[0] === 'news') {
       await connectDB();
-      const news = await News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).lean();
-      return NextResponse.json({
-        news: news.map((n: any) => ({
-          id: n._id?.toString(), title: n.title, slug: n.slug,
-          excerpt: n.excerpt || '', content: n.content || '',
-          category: n.category || 'General', author: n.author || '',
-          imageUrl: n.image || '', published: n.published,
-          createdAt: n.createdAt,
-        })),
+      const news = await News.find({ published: true }).sort({ createdAt: -1 }).lean();
+      return NextResponse.json(news);
+    }
+
+    // ---- /api/news/:slug ----
+    if (segments.length === 2 && segments[0] === 'news') {
+      await connectDB();
+      const article = await News.findOne({ slug: segments[1], published: true }).lean();
+      if (!article) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      await News.updateOne({ _id: article._id }, { $inc: { views: 1 } });
+      return NextResponse.json(article);
+    }
+
+    // ---- /api/admin/session ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
+      await connectDB();
+      const session = await getSessionFromRequest(req);
+      if (!session) {
+        return NextResponse.json({ authenticated: false }, { status: 401 });
+      }
+      const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
+      if (!versionCheck.valid) {
+        const response = NextResponse.json({ authenticated: false }, { status: 401 });
+        response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+        return response;
+      }
+      const admin = await Admin.findById(session.sub).select('-password -resetTokenHash -resetTokenExpires');
+      if (!admin || !admin.active) {
+        return NextResponse.json({ authenticated: false }, { status: 401 });
+      }
+
+      // Session rotation: if less than 50% TTL remains, issue new token
+      const response = NextResponse.json({
+        authenticated: true,
+        admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
       });
+
+      if (session.exp) {
+        const remaining = session.exp - Math.floor(Date.now() / 1000);
+        const halfTtl = 12 * 3600; // 12 hours (50% of 24h)
+        if (remaining < halfTtl && remaining > 0) {
+          const newSession = await createSignedSession({
+            sub: admin._id.toString(),
+            email: admin.email,
+            role: admin.role,
+            sessionVersion: (admin as any).sessionVersion ?? 0,
+          });
+          response.cookies.set('pd_session', newSession.token, newSession.cookieOptions);
+        }
+      }
+
+      return response;
     }
 
     // ---- /api/admin/stats ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'stats') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
-      const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount] = await Promise.all([
-        Phone.countDocuments({ active: true, status: 'published' }),
+      const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity] = await Promise.all([
+        Phone.countDocuments({ active: true }),
         Brand.countDocuments({ active: true }),
-        Phone.countDocuments({ active: true, status: 'published', trending: true }),
-        Phone.countDocuments({ active: true, status: 'published', featured: true }),
+        Phone.countDocuments({ active: true, trending: true }),
+        Phone.countDocuments({ active: true, featured: true }),
         News.countDocuments({ published: true }),
+        ActivityLog.find().sort({ createdAt: -1 }).limit(20).populate('adminId', 'name email').lean(),
       ]);
-      return NextResponse.json({ totalPhones, totalBrands, trendingCount, featuredCount, newsCount });
+      const priceResult = await Phone.aggregate([
+        { $match: { active: true, pricePKR: { $gt: 0 } } },
+        { $group: { _id: null, avg: { $avg: '$pricePKR' } } },
+      ]);
+      const priceDistribution = await Phone.aggregate([
+        { $match: { active: true, pricePKR: { $gt: 0 } } },
+        {
+          $bucket: {
+            groupBy: '$pricePKR',
+            boundaries: [0, 20000, 40000, 60000, 100000, Infinity],
+            default: 'Above 100K',
+            output: { count: { $sum: 1 } },
+          },
+        },
+      ]);
+      const distLabels = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
+      return NextResponse.json({
+        totalPhones, totalBrands, trendingCount, featuredCount, newsCount,
+        avgPrice: priceResult[0]?.avg || 0,
+        priceDistribution: priceDistribution.map((d: any, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
+        recentActivity,
+      });
     }
 
     // ---- /api/admin/phones ----
@@ -339,16 +282,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
-      const phones = await Phone.find().populate('brand').sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ phones: phones.map(p => phoneToJSON(p)) });
+      const phones = await Phone.find({ active: true }).sort({ createdAt: -1 }).populate('brand').lean();
+      return NextResponse.json({ phones: phones.map((p: any) => phoneToJSON(p)) });
     }
 
-    // ---- /api/admin/phones/:id (GET single phone with full data) ----
+    // ---- /api/admin/phones/:id ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
       await connectDB();
-      const phone = await Phone.findById(segments[2]).populate('brand').lean();
+      const phone = await Phone.findById(segments[2]).populate('brand');
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const [specs, benchmarks, images, prices] = await Promise.all([
         PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
@@ -364,8 +307,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'brands:read'); if (permCheck) return permCheck;
       await connectDB();
-      const brands = await Brand.find().sort({ name: 1 }).lean();
-      return NextResponse.json({ brands: brands.map((b: any) => ({ id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '', country: b.country || '', description: b.description || '', active: b.active })) });
+      const brands = await Brand.find().sort({ sortOrder: 1 }).lean();
+      return NextResponse.json(brands);
     }
 
     // ---- /api/admin/news ----
@@ -374,106 +317,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
       await connectDB();
       const news = await News.find().sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ news: news.map((n: any) => ({ id: n._id?.toString(), title: n.title, slug: n.slug, excerpt: n.excerpt || '', content: n.content || '', category: n.category || 'General', author: n.author || '', imageUrl: n.image || '', published: n.published, status: n.status, createdAt: n.createdAt })) });
+      return NextResponse.json(news);
     }
 
-    // ---- /api/admin/sponsors ----
-    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+    // ---- /api/admin/users ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'sponsors:read'); if (permCheck) return permCheck;
+      const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
       await connectDB();
-      const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ sponsors: sponsors.map((s: any) => ({ id: s._id?.toString(), name: s.name, image: s.image || '', url: s.url || '', position: s.position || '', active: s.active })) });
+      const users = await Admin.find().select('-password -resetTokenHash -resetTokenExpires').sort({ createdAt: -1 }).lean();
+      return NextResponse.json(users);
     }
 
     // ---- /api/admin/activity ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'activity') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
       await connectDB();
-      const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(50).populate('adminId', 'name email').lean();
-      return NextResponse.json({ logs: logs.map((l: any) => ({ id: l._id?.toString(), action: l.action, details: l.details, entityType: l.entityType, createdAt: l.createdAt, admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined })) });
+      const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(100).populate('adminId', 'name email').lean();
+      return NextResponse.json(logs);
     }
 
-    // ---- /api/admin/login ---- (GET returns current session info)
-    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
-      const session = await getAuthSessionAsync(req);
-      if (session) {
-        await connectDB();
-        const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
-        if (admin && admin.active) {
-          return NextResponse.json({ authenticated: true, user: { id: admin._id?.toString(), email: admin.email, name: admin.name, role: admin.role } });
-        }
-      }
-      return NextResponse.json({ ok: true, authenticated: false });
-    }
-
-    // ---- /api/admin/users (LIST — superadmin only) ----
-    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
+    // ---- /api/import/history ----
+    if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'history') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
+      const permCheck = requirePermission(admin, 'imports:read'); if (permCheck) return permCheck;
       await connectDB();
-      const users = await Admin.find().select('-password -resetToken -resetTokenExpires -revokedSessions').sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ users: users.map((u: any) => ({ id: u._id?.toString(), email: u.email, name: u.name, role: u.role, active: u.active, lastLogin: u.lastLogin, createdAt: u.createdAt })) });
-    }
-
-    // ---- /api/collector/dashboard ----
-    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'dashboard') {
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
-      await connectDB();
-      const [totalSources, activeSources, totalJobs, pendingReview, completedJobs] = await Promise.all([
-        CollectorSource.countDocuments(),
-        CollectorSource.countDocuments({ enabled: true }),
-        CollectorJob.countDocuments(),
-        CollectedPhone.countDocuments({ status: { $in: ['pending', 'needs_review'] } }),
-        CollectorJob.countDocuments({ status: 'completed' }),
-      ]);
-      return NextResponse.json({ totalSources, activeSources, totalJobs, pendingReview, completedJobs });
-    }
-
-    // ---- /api/collector/sources ----
-    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
-      await connectDB();
-      const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ sources: sources.map((s: any) => ({ id: s._id?.toString(), ...s })) });
-    }
-
-    // ---- /api/collector/jobs ----
-    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
-      await connectDB();
-      const jobs = await CollectorJob.find().sort({ createdAt: -1 }).lean();
-      return NextResponse.json({ jobs: jobs.map((j: any) => ({ id: j._id?.toString(), ...j })) });
-    }
-
-    // ---- /api/collector/review ----
-    if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'review') {
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
-      await connectDB();
-      const { searchParams } = new URL(req.url);
-      const status = searchParams.get('status') || 'pending';
-      const page = parseInt(searchParams.get('page') || '1');
-      const limit = 20;
-      const query: any = {};
-      if (status !== 'all') query.status = status;
-      const total = await CollectedPhone.countDocuments(query);
-      const phones = await CollectedPhone.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean();
-      return NextResponse.json({ phones: phones.map((p: any) => ({ id: p._id?.toString(), ...p })), total, page });
-    }
-
-    // ---- /api/collector/review/:id ----
-    if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
-      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-      const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
-      await connectDB();
-      const phone = await CollectedPhone.findById(segments[2]).lean();
-      if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      return NextResponse.json({ id: phone._id?.toString(), ...phone });
+      const { ImportHistory } = await import('@/lib/models/ImportHistory');
+      const history = await ImportHistory.find().sort({ createdAt: -1 }).limit(50).lean();
+      return NextResponse.json(history);
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -488,32 +359,58 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const { path } = await params;
   const segments = path || [];
 
-  // IP rate limiting (replaces deprecated middleware.ts)
+  // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
   const isLogin = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login';
-  if (isLogin) {
-    if (!ipRateLimit(ip, 10, 60_000)) {
-      return NextResponse.json({ error: 'Too many login attempts. Try again later.' }, { status: 429 });
+  const isForgotPassword = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'forgot-password';
+  const isResetPassword = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reset-password';
+  const isContact = segments.length === 1 && segments[0] === 'contact';
+  const isCollector = segments.length >= 2 && segments[0] === 'collector';
+  const isImport = segments.length >= 1 && segments[0] === 'import';
+
+  try {
+    await connectDB();
+
+    if (isLogin) {
+      if (!await checkIpRateLimit(`login:${ip}`, 10, 60_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many login attempts. Try again later.' }, { status: 429 });
+      }
+    } else if (isForgotPassword || isResetPassword) {
+      if (!await checkIpRateLimit(`pwreset:${ip}`, 5, 60_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many password reset attempts.' }, { status: 429 });
+      }
+    } else if (isContact) {
+      if (!await checkIpRateLimit(`contact:${ip}`, 3, 60_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many contact submissions.' }, { status: 429 });
+      }
+    } else if (isCollector || isImport) {
+      if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+        return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+      }
+    } else {
+      if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+        return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+      }
     }
-  } else {
-    if (!ipRateLimit(ip, 100, 60_000)) {
-      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
-    }
+  } catch {
+    // If rate limit DB check fails, fail closed
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 });
   }
 
   try {
     // ---- /api/admin/session (cookie-based session check) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
-      await connectDB();
-      const session = await getAuthSessionAsync(req);
+      const session = await getSessionFromRequest(req);
       if (!session) {
         return NextResponse.json({ authenticated: false }, { status: 401 });
       }
-      const revoked = await isSessionRevoked(session.jti, session.sub, Admin);
-      if (revoked) {
-        return NextResponse.json({ authenticated: false }, { status: 401 });
+      const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
+      if (!versionCheck.valid) {
+        const response = NextResponse.json({ authenticated: false }, { status: 401 });
+        response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+        return response;
       }
-      const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
+      const admin = await Admin.findById(session.sub).select('-password -resetTokenHash -resetTokenExpires');
       if (!admin || !admin.active) {
         return NextResponse.json({ authenticated: false }, { status: 401 });
       }
@@ -525,7 +422,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/login ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
-      await connectDB();
       const body = await req.json();
       const email = sanitizeInput(String(body.email || '')).toLowerCase();
       const password = String(body.password || '');
@@ -534,9 +430,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
       }
 
-      const admin = await Admin.findOne({ email }).select('+password +failedAttempts +lockedUntil');
+      const admin = await Admin.findOne({ email }).select('+password +failedAttempts +lockedUntil +sessionVersion');
       if (!admin) {
-        // Don't reveal whether email exists
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
 
@@ -567,11 +462,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       admin.lastLoginUA = req.headers.get('user-agent')?.slice(0, 200) || '';
       await admin.save();
 
-      const session = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
+      const session = await createSignedSession({
+        sub: admin._id.toString(),
+        email: admin.email,
+        role: admin.role,
+        sessionVersion: (admin as any).sessionVersion ?? 0,
+      });
 
-      // NO token in response body — only httpOnly cookie
-      const response = NextResponse.json({ success: true, admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role } });
-      response.cookies.set('pd_refresh', session.refreshToken, session.cookieOptions);
+      // Single cookie — no token in response body
+      const response = NextResponse.json({
+        success: true,
+        admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
+      });
+      response.cookies.set('pd_session', session.token, session.cookieOptions);
 
       try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch {}
       return response;
@@ -579,30 +482,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // ---- /api/admin/logout ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'logout') {
-      const session = await getAuthSessionAsync(req);
-      if (session?.jti && session?.sub) {
-        await connectDB();
-        await revokeSession(session.jti, session.sub, Admin);
+      const session = await getSessionFromRequest(req);
+      if (session?.sub) {
+        // Increment sessionVersion to invalidate this and all other sessions
+        await Admin.findByIdAndUpdate(session.sub, { $inc: { sessionVersion: 1 } }).catch(() => {});
       }
       const response = NextResponse.json({ success: true });
-      response.cookies.set('pd_refresh', '', { maxAge: 0, path: '/' });
-      return response;
-    }
-
-    // ---- /api/admin/refresh-token ----
-    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'refresh-token') {
-      const refreshToken = req.cookies.get('pd_refresh')?.value;
-      if (!refreshToken) return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
-      const payload = await verifyToken(refreshToken);
-      if (!payload || payload.type !== 'refresh') return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
-      await connectDB();
-      const revoked = await isSessionRevoked(payload.jti, payload.sub, Admin);
-      if (revoked) return NextResponse.json({ error: 'Session revoked' }, { status: 401 });
-      const admin = await Admin.findById(payload.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
-      if (!admin || !admin.active) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      const newSession = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
-      const response = NextResponse.json({ success: true });
-      response.cookies.set('pd_refresh', newSession.refreshToken, newSession.cookieOptions);
+      response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
       return response;
     }
 
@@ -618,42 +504,81 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (!pwCheck.valid) {
         return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
       }
-      await connectDB();
       const adminFull = await Admin.findById(admin._id).select('+password');
       if (!adminFull) return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
       const valid = await verifyPassword(currentPassword, adminFull.password);
       if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 });
       adminFull.password = await hashPassword(newPassword);
       adminFull.passwordChangedAt = new Date();
-      // Revoke ALL sessions on password change
-      adminFull.revokedSessions = adminFull.revokedSessions || [];
-      adminFull.revokedSessions.push({ jti: '__all__', revokedAt: new Date() });
-      await adminFull.save();
+      // Increment sessionVersion to invalidate ALL existing sessions
+      await Admin.findByIdAndUpdate(admin._id, {
+        $set: { password: adminFull.password, passwordChangedAt: new Date() },
+        $inc: { sessionVersion: 1 },
+      });
       // Clear the cookie so user must re-login
       const response = NextResponse.json({ success: true, message: 'Password changed. Please log in again.' });
-      response.cookies.set('pd_refresh', '', { maxAge: 0, path: '/' });
+      response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
       try { await ActivityLog.create({ adminId: admin._id, action: 'change_password', details: 'Password changed', entityType: 'admin' }); } catch {}
       return response;
     }
 
     // ---- /api/admin/forgot-password ----
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'forgot-password') {
-      await connectDB();
+      // If email is not configured, return a generic message
+      if (!isEmailConfigured()) {
+        return NextResponse.json({ success: true, message: 'If an account exists, a reset link will be sent.' });
+      }
+
       const body = await req.json();
       const email = sanitizeInput(String(body.email || '')).toLowerCase();
       if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 });
+
       // Always return success to prevent email enumeration
-      const admin = await Admin.findOne({ email }).select('+resetToken +resetTokenExpires');
+      const admin = await Admin.findOne({ email }).select('+resetTokenHash +resetTokenExpires');
       if (admin) {
-        const token = crypto.randomUUID();
-        admin.resetToken = token;
+        const rawToken = crypto.randomUUID();
+        const tokenHash = hashResetToken(rawToken);
+        admin.resetTokenHash = tokenHash;
         admin.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
         await admin.save();
-        // In production, send email with reset link containing token
-        // For now, log that a reset was requested (token never exposed to client)
-        console.log(`Password reset requested for ${email}. Token: ${token} (send via email in production)`);
+        // TODO: Send email with reset link containing raw token
+        // For now, forgot-password is effectively disabled because no email is sent
+        // and the raw token is NEVER logged or returned
       }
       return NextResponse.json({ success: true, message: 'If an account exists, a reset link will be sent.' });
+    }
+
+    // ---- /api/admin/reset-password (token-based) ----
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reset-password') {
+      const body = await req.json();
+      const { token, newPassword } = body;
+      if (!token || !newPassword) {
+        return NextResponse.json({ error: 'Token and new password required' }, { status: 400 });
+      }
+      const pwCheck = isStrongPassword(newPassword);
+      if (!pwCheck.valid) {
+        return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
+      }
+
+      const tokenHash = hashResetToken(token);
+      const admin = await Admin.findOne({
+        resetTokenHash: tokenHash,
+        resetTokenExpires: { $gt: new Date() },
+      }).select('+password +resetTokenHash +resetTokenExpires +sessionVersion');
+
+      if (!admin) {
+        return NextResponse.json({ error: 'Invalid or expired reset token' }, { status: 400 });
+      }
+
+      // One-time usage: clear token, hash new password, increment sessionVersion
+      const hashedPassword = await hashPassword(newPassword);
+      await Admin.findByIdAndUpdate(admin._id, {
+        $set: { password: hashedPassword, passwordChangedAt: new Date(), resetTokenHash: undefined, resetTokenExpires: undefined },
+        $inc: { sessionVersion: 1 },
+      });
+
+      try { await ActivityLog.create({ adminId: admin._id, action: 'reset_password', details: 'Password reset via token', entityType: 'admin' }); } catch {}
+      return NextResponse.json({ success: true, message: 'Password reset. Please log in.' });
     }
 
     // ---- /api/import (file upload) ----
@@ -665,7 +590,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { email, name, role, password } = body;
       if (!email || !name || !password) return NextResponse.json({ error: 'Email, name, and password required' }, { status: 400 });
@@ -673,7 +597,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (!pwCheck.valid) return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
       const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
       const assignedRole = validRoles.includes(role) ? role : 'admin';
-      // Only superadmin can create superadmin
       if (assignedRole === 'superadmin' && admin.role !== 'superadmin') {
         return NextResponse.json({ error: 'Only superadmins can create superadmin accounts' }, { status: 403 });
       }
@@ -682,7 +605,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const newAdmin = await Admin.create({
         email: email.toLowerCase(), name,
         password: await hashPassword(password),
-        role: assignedRole, active: true,
+        role: assignedRole, active: true, sessionVersion: 0,
       });
       try { await ActivityLog.create({ adminId: admin._id, action: 'create_user', details: `Created admin: ${email}`, entityType: 'admin', entityId: newAdmin._id?.toString() }); } catch {}
       return NextResponse.json({ success: true, id: newAdmin._id?.toString() });
@@ -695,17 +618,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const formData = await req.formData();
       const file = formData.get('file') as File | null;
       if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 });
-      const text = Buffer.from(await file.arrayBuffer()).toString('utf-8');
       const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext || '')) {
+        return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
+      }
+      if (file.size > MAX_UPLOAD_SIZE) {
+        return NextResponse.json({ error: 'File too large (max 10MB)' }, { status: 400 });
+      }
+      const buffer = Buffer.from(await file.arrayBuffer());
       let records: any[] = [];
-      if (ext === 'json') {
-        const parsed = JSON.parse(text);
-        records = Array.isArray(parsed) ? parsed : [parsed];
-      } else if (ext === 'csv') {
-        const result = await new Promise<{ data: any[] }>((resolve) => {
-          Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve });
-        });
-        records = result.data;
+      try {
+        if (ext === 'json') {
+          records = JSON.parse(buffer.toString('utf-8'));
+          if (!Array.isArray(records)) records = [records];
+        } else if (ext === 'csv') {
+          const result = await new Promise<{ data: any[] }>((resolve) => {
+            Papa.parse(buffer.toString('utf-8'), { header: true, skipEmptyLines: true, complete: resolve });
+          });
+          records = result.data;
+        } else if (ext === 'xlsx' || ext === 'xls') {
+          const workbook = XLSX.read(buffer, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          if (sheetName) {
+            records = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
+          }
+        }
+      } catch (e: any) {
+        return NextResponse.json({ error: `Parse error: ${e.message}` }, { status: 400 });
       }
       return NextResponse.json({ valid: true, totalRecords: records.length, sample: records.slice(0, 3) });
     }
@@ -722,7 +661,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'phones') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:create'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { brandId, modelName, slug: inputSlug, pricePKR, ptaStatus, ptaApproved, releaseDate,
         thumbnail, description, featured, trending, upcoming, status: phoneStatus,
@@ -748,7 +686,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'brands') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'brands:create'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { name, slug: inputSlug, logo, country, description, sortOrder } = body;
       if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
@@ -763,7 +700,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'news') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'news:create'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { title, slug: inputSlug, content, excerpt, category, image, author, published, featured } = body;
       if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 });
@@ -778,10 +714,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'bulk-import') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { records, mode = 'skip_duplicates' } = body;
       if (!Array.isArray(records) || records.length === 0) return NextResponse.json({ error: 'No records' }, { status: 400 });
+      if (records.length > MAX_UPLOAD_RECORDS) return NextResponse.json({ error: `Too many records (max ${MAX_UPLOAD_RECORDS})` }, { status: 400 });
       const brands = await Brand.find().lean();
       const brandMap = new Map(brands.map((b: any) => [b.name.toLowerCase(), b._id]));
       const allPhones = await Phone.find().populate('brand').lean();
@@ -814,11 +750,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors });
     }
 
-    // ---- /api/admin/seed ----
+    // ---- /api/admin/seed (DISABLED IN PRODUCTION) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seed') {
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json({ error: 'Seed endpoint is disabled in production' }, { status: 403 });
+      }
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:seed'); if (permCheck) return permCheck;
-      await connectDB();
       const { seedPhones } = await import('@/lib/seed-data');
       const result = await seedPhones();
       try { await ActivityLog.create({ action: 'seed', details: `Seeded: ${result.phones} phones`, entityType: 'phone' }); } catch {}
@@ -829,7 +767,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const source = await CollectorSource.create(body);
       return NextResponse.json({ success: true, id: source._id });
@@ -839,7 +776,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const job = await CollectorJob.create({ ...body, status: 'pending', startedAt: new Date() });
       return NextResponse.json({ success: true, id: job._id });
@@ -849,17 +785,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'review') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       const { action } = body;
       const item = await CollectedPhone.findById(segments[2]);
       if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
       if (action === 'approve') {
-        // Create a real Phone from collected data
         const brand = await Brand.findOne({ name: new RegExp(`^${item.brandName}$`, 'i') });
         if (!brand) return NextResponse.json({ error: `Brand "${item.brandName}" not found` }, { status: 400 });
-
         const phone = await Phone.create({
           brandId: brand._id, modelName: item.model, slug: item.slug,
           pricePKR: 0, thumbnail: item.thumbnail || '',
@@ -898,9 +831,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
   const { path } = await params;
   const segments = path || [];
 
-  // IP rate limiting (non-GET: 100/min)
-  if (!ipRateLimit(getClientIp(req), 100, 60_000)) {
-    return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+  // MongoDB-backed IP rate limiting
+  const ip = getClientIp(req);
+  try {
+    await connectDB();
+    if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 });
   }
 
   try {
@@ -908,7 +847,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
-      await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const body = await req.json();
@@ -963,7 +901,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'brands:edit'); if (permCheck) return permCheck;
-      await connectDB();
       const brand = await Brand.findById(segments[2]);
       if (!brand) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const body = await req.json();
@@ -982,7 +919,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'news:edit'); if (permCheck) return permCheck;
-      await connectDB();
       const news = await News.findById(segments[2]);
       if (!news) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const body = await req.json();
@@ -1005,7 +941,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'phones' && segments[3] === 'toggle-featured') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
-      await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       phone.featured = !phone.featured; await phone.save();
@@ -1016,7 +951,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'phones' && segments[3] === 'toggle-trending') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
-      await connectDB();
       const phone = await Phone.findById(segments[2]);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       phone.trending = !phone.trending; await phone.save();
@@ -1027,7 +961,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const source = await CollectorSource.findById(segments[2]);
       if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       source.enabled = !source.enabled;
@@ -1047,9 +980,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   const { path } = await params;
   const segments = path || [];
 
-  // IP rate limiting (non-GET: 100/min)
-  if (!ipRateLimit(getClientIp(req), 100, 60_000)) {
-    return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+  // MongoDB-backed IP rate limiting
+  const ip = getClientIp(req);
+  try {
+    await connectDB();
+    if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+      return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 });
   }
 
   try {
@@ -1057,7 +996,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
-      await connectDB();
       const id = segments[2];
       const phone = await Phone.findById(id);
       if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -1077,7 +1015,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'brands:delete'); if (permCheck) return permCheck;
-      await connectDB();
       const id = segments[2];
       const brand = await Brand.findById(id);
       if (!brand) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -1093,7 +1030,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'news:delete'); if (permCheck) return permCheck;
-      await connectDB();
       const id = segments[2];
       const news = await News.findById(id);
       if (!news) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -1107,7 +1043,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      await connectDB();
       const body = await req.json();
       await CollectorJob.findByIdAndDelete(body.jobId);
       return NextResponse.json({ success: true });
@@ -1120,7 +1055,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   }
 }
 
-// ============ FILE UPLOAD HANDLER ============
+// ============ FILE UPLOAD HANDLER (SECURED) ============
 async function handleCollectorFileUpload(req: NextRequest) {
   const authResult = await getAdminFromRequest(req);
   if (authResult.error) return authResult.error;
@@ -1128,41 +1063,86 @@ async function handleCollectorFileUpload(req: NextRequest) {
   const permCheck = requirePermission(admin, 'imports:execute');
   if (permCheck) return permCheck;
   try {
-    await connectDB();
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const sourceId = formData.get('sourceId') as string;
 
     if (!file) return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
 
+    // File size check
+    if (file.size > MAX_UPLOAD_SIZE) {
+      return NextResponse.json({ error: `File too large (max ${MAX_UPLOAD_SIZE / 1024 / 1024}MB)` }, { status: 400 });
+    }
+
+    // Extension check
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    if (!['json', 'csv', 'xlsx', 'xls'].includes(ext)) {
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
       return NextResponse.json({ error: 'Unsupported file type. Use .json, .csv, or .xlsx' }, { status: 400 });
+    }
+
+    // MIME type check
+    if (!ALLOWED_MIME_TYPES.has(file.type) && ext !== 'xls') {
+      return NextResponse.json({ error: 'Invalid file MIME type' }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     let records: any[] = [];
 
-    if (ext === 'json' || ext === 'xlsx' || ext === 'xls') {
-      const text = buffer.toString('utf-8');
-      const parsed = JSON.parse(text);
-      records = Array.isArray(parsed) ? parsed : [parsed];
-      if (!Array.isArray(records[0])) {
-        for (const wrapper of ['phones', 'data', 'records', 'results', 'items'] as const) {
-          const candidate = (records as unknown as Record<string, unknown>)[wrapper];
-          if (Array.isArray(candidate)) { records = candidate as any[]; break; }
+    // Parse based on file type
+    if (ext === 'json') {
+      try {
+        const text = buffer.toString('utf-8');
+        const parsed = JSON.parse(text);
+        records = Array.isArray(parsed) ? parsed : [parsed];
+        if (!Array.isArray(records[0])) {
+          for (const wrapper of ['phones', 'data', 'records', 'results', 'items'] as const) {
+            const candidate = (records as unknown as Record<string, unknown>)[wrapper];
+            if (Array.isArray(candidate)) { records = candidate as any[]; break; }
+          }
         }
+      } catch (e: any) {
+        return NextResponse.json({ error: `Invalid JSON: ${e.message}` }, { status: 400 });
+      }
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      // Use xlsx package correctly — NOT JSON.parse
+      try {
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+          return NextResponse.json({ error: 'Excel file has no sheets' }, { status: 400 });
+        }
+        const sheet = workbook.Sheets[sheetName];
+        records = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      } catch (e: any) {
+        return NextResponse.json({ error: `Excel parsing error: ${e.message}` }, { status: 400 });
       }
     } else if (ext === 'csv') {
-      const text = buffer.toString('utf-8');
-      const result = await new Promise<{ data: any[] }>((resolve, reject) => {
-        Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve });
-      });
-      records = result.data;
+      try {
+        const text = buffer.toString('utf-8');
+        const result = await new Promise<{ data: any[] }>((resolve, reject) => {
+          Papa.parse(text, { header: true, skipEmptyLines: true, complete: resolve, error: (err: Error) => reject(err) });
+        });
+        records = result.data;
+        // CSV formula injection protection
+        records = records.map((row: any) => {
+          const sanitized: any = {};
+          for (const [key, value] of Object.entries(row)) {
+            sanitized[key] = typeof value === 'string' ? sanitizeCsvValue(value) : value;
+          }
+          return sanitized;
+        });
+      } catch (e: any) {
+        return NextResponse.json({ error: `CSV parsing error: ${e.message}` }, { status: 400 });
+      }
     }
 
     if (!Array.isArray(records) || records.length === 0) {
       return NextResponse.json({ error: 'No phone records found in file' }, { status: 400 });
+    }
+
+    // Record count check
+    if (records.length > MAX_UPLOAD_RECORDS) {
+      return NextResponse.json({ error: `Too many records (max ${MAX_UPLOAD_RECORDS})` }, { status: 400 });
     }
 
     let sourceName = `Upload: ${file.name}`;

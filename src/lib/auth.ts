@@ -1,18 +1,21 @@
 /**
  * Production Authentication System — PhoneDock
  *
- * SECURITY DESIGN:
- *  - Access token: short-lived (15min), kept in memory only on client
- *  - Refresh token: long-lived (7d), stored in HttpOnly + Secure + SameSite=Strict cookie
- *  - Session revocation: DB-backed (RevokedSession model) — works on serverless
- *  - Login rate limiting: DB-backed (Admin.failedAttempts + lockedUntil)
- *  - No localStorage tokens, no client-side token storage
+ * SECURITY DESIGN (simplified single-cookie architecture):
+ *  - Single signed HttpOnly session cookie (pd_session)
+ *  - JWT contains: sub, email, role, jti, sessionVersion
+ *  - Session revocation via sessionVersion on Admin model (serverless-safe)
+ *  - Login rate limiting: DB-backed (Admin.failedAttempts + Admin.lockedUntil)
+ *  - IP rate limiting: MongoDB-backed (RateLimit collection with TTL)
+ *  - No localStorage tokens, no access/refresh token split
  *  - No in-memory Maps for serverless compatibility
+ *  - Session rotation: silent re-issue when < 50% TTL remains
  */
 
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // ============ CONFIGURATION ============
 
@@ -24,14 +27,16 @@ function getSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
+
 // ============ TOKEN TYPES ============
 
 export interface TokenPayload {
-  sub: string;       // admin id
+  sub: string;         // admin id
   email: string;
   role: string;
-  jti: string;       // unique session id
-  type: 'access' | 'refresh';
+  jti: string;         // unique session id
+  sessionVersion: number;
   iat?: number;
   exp?: number;
 }
@@ -46,7 +51,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-/** Strong password validation — same rules as create-admin script */
+/** Strong password validation */
 export function isStrongPassword(password: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   if (password.length < 12) errors.push('at least 12 characters');
@@ -59,22 +64,22 @@ export function isStrongPassword(password: string): { valid: boolean; errors: st
 
 // ============ JWT SIGNING & VERIFICATION ============
 
-export async function signAccessToken(payload: Omit<TokenPayload, 'type' | 'iat' | 'exp'>): Promise<string> {
-  return new SignJWT({ ...payload, type: 'access' })
+export async function signSessionToken(payload: { sub: string; email: string; role: string; sessionVersion: number }): Promise<{ token: string; jti: string }> {
+  const jti = crypto.randomUUID();
+  const token = await new SignJWT({
+    sub: payload.sub,
+    email: payload.email,
+    role: payload.role,
+    jti,
+    sessionVersion: payload.sessionVersion,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('15m')
-    .setJti(payload.jti)
+    .setExpirationTime('24h')
+    .setJti(jti)
     .sign(getSecretKey());
-}
 
-export async function signRefreshToken(payload: Omit<TokenPayload, 'type' | 'iat' | 'exp'>): Promise<string> {
-  return new SignJWT({ ...payload, type: 'refresh' })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .setJti(payload.jti)
-    .sign(getSecretKey());
+  return { token, jti };
 }
 
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
@@ -96,116 +101,82 @@ export interface CookieOptions {
   maxAge: number;
 }
 
-function getCookieOptions(): CookieOptions {
+export function getCookieOptions(): CookieOptions {
   const isProduction = process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict', // Strict — no cross-site cookie sending
+    sameSite: 'strict',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: SESSION_MAX_AGE,
   };
 }
 
-/** Create a fully signed session pair */
-export async function createSignedSession(admin: { sub: string; email: string; role: string }): Promise<{
-  accessToken: string;
-  refreshToken: string;
-  cookieOptions: CookieOptions;
-}> {
-  const jti = crypto.randomUUID();
-  const payload = { sub: admin.sub, email: admin.email, role: admin.role, jti };
+/** Create a signed session for an admin — returns token + cookie options */
+export async function createSignedSession(admin: {
+  sub: string;
+  email: string;
+  role: string;
+  sessionVersion?: number;
+}): Promise<{ token: string; cookieOptions: CookieOptions }> {
+  const { token } = await signSessionToken({
+    sub: admin.sub,
+    email: admin.email,
+    role: admin.role,
+    sessionVersion: admin.sessionVersion ?? 0,
+  });
 
-  const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(payload),
-    signRefreshToken(payload),
-  ]);
-
-  return { accessToken, refreshToken, cookieOptions: getCookieOptions() };
+  return { token, cookieOptions: getCookieOptions() };
 }
 
 // ============ SESSION EXTRACTION FROM REQUEST ============
 
-/** Extract and verify session from request (async — for API routes) */
-export async function getAuthSessionAsync(req: NextRequest): Promise<TokenPayload | null> {
-  // 1. Check Authorization header for access token
-  const authHeader = req.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
-    const payload = await verifyToken(token);
-    if (payload && payload.type === 'access') {
-      return payload;
-    }
-  }
+/** Extract and verify session from pd_session cookie */
+export async function getSessionFromRequest(req: NextRequest): Promise<TokenPayload | null> {
+  const sessionToken = req.cookies.get('pd_session')?.value;
+  if (!sessionToken) return null;
 
-  // 2. Check refresh token cookie (fallback for silent refresh)
-  const refreshToken = req.cookies.get('pd_refresh')?.value;
-  if (refreshToken) {
-    const payload = await verifyToken(refreshToken);
-    if (payload && payload.type === 'refresh') {
-      return payload;
-    }
-  }
+  const payload = await verifyToken(sessionToken);
+  if (!payload) return null;
 
-  return null;
+  return payload;
 }
 
-// ============ SESSION REVOCATION (DB-BACKED) ============
-// Uses Admin model's revokedSessions array — no in-memory Map, works on serverless
+// ============ SESSION VERSION CHECK (FAIL-CLOSED) ============
+// Compares token's sessionVersion with the admin's current sessionVersion in DB.
+// If DB check fails → REJECTS the session (fail-closed, never allows on error).
 
-/** Revoke all sessions for an admin (e.g., on password change) — call after connectDB() */
-export async function revokeAllSessions(adminId: string, AdminModel: any): Promise<void> {
-  // We store revoked session JTIs in the admin document itself
-  // The admin document has a `revokedSessions` array of { jti, revokedAt }
-  // This approach avoids needing a separate collection and leverages existing connection
+export async function validateSessionVersion(
+  adminId: string,
+  tokenSessionVersion: number,
+  AdminModel: any,
+): Promise<{ valid: boolean; currentVersion?: number; error?: string }> {
   try {
-    await AdminModel.findByIdAndUpdate(adminId, {
-      $push: { revokedSessions: { jti: '__all__', revokedAt: new Date() } }
-    });
-  } catch {
-    // Non-critical — log but don't throw
-  }
-}
+    const admin = await AdminModel.findById(adminId)
+      .select('sessionVersion active')
+      .lean();
 
-/** Revoke a specific session by jti — call after connectDB() */
-export async function revokeSession(jti: string, adminId: string, AdminModel: any): Promise<void> {
-  try {
-    await AdminModel.findByIdAndUpdate(adminId, {
-      $push: { revokedSessions: { jti, revokedAt: new Date() } }
-    });
-  } catch {
-    // Non-critical
-  }
-}
-
-/** Check if a session is revoked — call after connectDB() */
-export async function isSessionRevoked(jti: string, adminId: string, AdminModel: any): Promise<boolean> {
-  try {
-    const admin = await AdminModel.findById(adminId).select('revokedSessions sessionRevokedAt').lean();
-    if (!admin) return true; // Admin not found = treat as revoked
-
-    // Check if a "revoke all" was issued after the token was likely issued
-    if ((admin as any).sessionRevokedAt) {
-      // If sessionRevokedAt exists, all sessions before that time are invalid
-      // This is a fallback mechanism
+    if (!admin) {
+      return { valid: false, error: 'Admin not found' };
     }
 
-    // Check specific jti revocation
-    const revoked = (admin as any).revokedSessions || [];
-    // Check for __all__ flag (revoke all sessions)
-    const hasRevokeAll = revoked.some((r: any) => r.jti === '__all__');
-    if (hasRevokeAll) return true;
+    if (!admin.active) {
+      return { valid: false, error: 'Account disabled' };
+    }
 
-    // Check specific jti
-    const found = revoked.some((r: any) => r.jti === jti);
-    return found;
-  } catch {
-    return false; // On error, allow the session (fail open for availability)
+    const currentVersion = (admin as any).sessionVersion ?? 0;
+    if (tokenSessionVersion < currentVersion) {
+      return { valid: false, currentVersion, error: 'Session version mismatch (password changed or sessions revoked)' };
+    }
+
+    return { valid: true, currentVersion };
+  } catch (err: any) {
+    // FAIL CLOSED: on any DB error, reject the session
+    return { valid: false, error: 'Session validation failed' };
   }
 }
 
 // ============ LOGIN RATE LIMITING (DB-BACKED) ============
-// Uses Admin.failedAttempts + Admin.lockedUntil — no in-memory Map
 
 export interface RateLimitCheck {
   allowed: boolean;
@@ -222,7 +193,6 @@ export function checkLoginRateLimitFromDB(admin: { failedAttempts: number; locke
     return { allowed: false, lockedUntil: new Date(admin.lockedUntil), attemptsRemaining: 0 };
   }
 
-  // If lockout expired, it will be reset on next failed attempt
   const remaining = MAX_ATTEMPTS - admin.failedAttempts;
   return { allowed: remaining > 0, attemptsRemaining: Math.max(0, remaining) };
 }
@@ -234,7 +204,6 @@ export function recordFailedLoginDB(admin: any): boolean {
 
   admin.failedAttempts = (admin.failedAttempts || 0) + 1;
 
-  // Reset window if lockout had expired
   if (admin.lockedUntil && new Date(admin.lockedUntil) <= new Date()) {
     admin.failedAttempts = 1;
     admin.lockedUntil = null;
@@ -254,6 +223,53 @@ export function resetFailedAttempts(admin: any): void {
   admin.lockedUntil = null;
 }
 
+// ============ IP RATE LIMITING (MONGODB-BACKED) ============
+// Uses RateLimit collection with TTL — works on serverless, no in-memory Map
+
+export async function checkIpRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+  RateLimitModel: any,
+): Promise<boolean> {
+  try {
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - windowMs);
+
+    // Upsert: increment count or create new entry
+    const result = await RateLimitModel.findOneAndUpdate(
+      { key, expiresAt: { $gt: windowStart } },
+      { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + windowMs) } },
+      { upsert: true, new: true, lean: true },
+    );
+
+    // If the document was just created (count should be 1), or count <= limit, allow
+    if ((result as any).count <= limit) {
+      return true;
+    }
+    return false;
+  } catch {
+    // FAIL CLOSED: on DB error, reject the request
+    return false;
+  }
+}
+
+// ============ RESET TOKEN UTILITIES ============
+
+/** Hash a reset token for storage — never store raw token */
+export function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** Verify a reset token against its stored hash */
+export function verifyResetToken(rawToken: string, storedHash: string): boolean {
+  const computedHash = hashResetToken(rawToken);
+  return crypto.timingSafeEqual(
+    Buffer.from(computedHash, 'hex'),
+    Buffer.from(storedHash, 'hex'),
+  );
+}
+
 // ============ INPUT SANITIZATION ============
 
 export function sanitizeInput(str: string): string {
@@ -264,4 +280,17 @@ export function sanitizeInput(str: string): string {
   // Strip HTML tags
   sanitized = sanitized.replace(/<[^>]*>/g, '');
   return sanitized;
+}
+
+// ============ CSV FORMULA INJECTION PROTECTION ============
+
+/** Sanitize CSV cell values to prevent formula injection */
+export function sanitizeCsvValue(value: string): string {
+  if (!value) return value;
+  const trimmed = value.trim();
+  const dangerous = ['=', '+', '-', '@', "\t", "\r"];
+  if (dangerous.includes(trimmed[0])) {
+    return "'" + trimmed; // Prefix with single quote to neutralize formula
+  }
+  return value;
 }

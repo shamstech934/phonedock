@@ -40,31 +40,20 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Fetch current session from server (cookie-based) — no localStorage
+  // Fetch current session from server (single pd_session cookie)
   const refreshSession = useCallback(async (): Promise<boolean> => {
     try {
-      // Try session endpoint first (access token in memory or refresh via cookie)
-      let res = await fetch('/api/admin/session', { credentials: 'include' });
-      
-      // If 401, try refreshing via refresh-token cookie
-      if (res.status === 401) {
-        const refreshRes = await fetch('/api/admin/refresh-token', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (refreshRes.ok) {
-          // Refresh succeeded, retry session
-          res = await fetch('/api/admin/session', { credentials: 'include' });
-        }
-      }
+      const res = await fetch('/api/admin/session', { credentials: 'include' });
 
       if (res.ok) {
         const data = await res.json();
-        if (data.admin) {
+        if (data.authenticated && data.admin) {
           setAdmin(data.admin);
           return true;
         }
       }
+
+      // Clear state on any non-ok response
       setAdmin(null);
       return false;
     } catch {
@@ -78,16 +67,15 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     refreshSession().finally(() => setLoading(false));
   }, [refreshSession]);
 
-  // Login: POST credentials, server sets httpOnly cookie, we get admin info
+  // Login: after successful login POST, server sets httpOnly cookie, we refresh session
   const login = useCallback(async () => {
-    // After successful login POST, refresh session to get admin data
     const success = await refreshSession();
     if (success) {
       router.push('/admin/dashboard');
     }
   }, [refreshSession, router]);
 
-  // Logout: POST to server to revoke session + clear cookie + prevent back nav
+  // Logout: POST to server to invalidate session + clear cookie
   const logout = useCallback(async () => {
     try {
       await fetch('/api/admin/logout', {
@@ -98,9 +86,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       // Continue with local cleanup even if request fails
     }
     setAdmin(null);
-    // Use replace to prevent browser back button from restoring admin pages
     router.replace('/admin/login');
-    // Clear any stale data from browser history
     if (typeof window !== 'undefined') {
       window.history.pushState(null, '', '/admin/login');
     }

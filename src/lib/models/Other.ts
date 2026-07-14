@@ -48,10 +48,12 @@ const AdminSchema = new Schema({
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date },
   passwordChangedAt: { type: Date, default: Date.now },
-  // DB-backed session revocation (serverless-safe)
-  revokedSessions: [{ jti: { type: String, required: true }, revokedAt: { type: Date, default: Date.now } }],
-  // Password reset token (for forgot-password flow)
-  resetToken: { type: String, select: false },
+  // Session version revocation (serverless-safe) — replaces revokedSessions array
+  // Every token includes sessionVersion at signing time. On password change,
+  // disable, or revoke-all, this is incremented. Old tokens fail the version check.
+  sessionVersion: { type: Number, default: 0 },
+  // Password reset token (for forgot-password flow) — stored as hash
+  resetTokenHash: { type: String, select: false },
   resetTokenExpires: { type: Date, select: false },
 }, { timestamps: true });
 
@@ -59,6 +61,19 @@ AdminSchema.index({ email: 1 }, { unique: true });
 AdminSchema.index({ role: 1 });
 
 export const Admin = mongoose.models.Admin || mongoose.model('Admin', AdminSchema);
+
+// Rate limit collection for persistent IP rate limiting (serverless-safe)
+const RateLimitSchema = new Schema({
+  key: { type: String, required: true },
+  count: { type: Number, default: 1 },
+  expiresAt: { type: Date, required: true },
+}, { timestamps: false });
+
+// TTL index: auto-delete expired entries after 5 minutes
+RateLimitSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 300, background: true });
+RateLimitSchema.index({ key: 1 }, { unique: true, background: true });
+
+export const RateLimit = mongoose.models.RateLimit || mongoose.model('RateLimit', RateLimitSchema);
 
 const ActivityLogSchema = new Schema({
   adminId: { type: Schema.Types.ObjectId, ref: 'Admin' },

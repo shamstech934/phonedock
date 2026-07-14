@@ -67,25 +67,15 @@ export default function AdminDashboardPage() {
       </div>
 
       {(stats.totalPhones === 0 || stats.totalPhones === undefined) && (
-        <div className="card-premium p-6 border-2 border-dashed border-emerald-300 bg-emerald-50/50">
+        <div className="card-premium p-6 border-2 border-dashed border-gray-200 bg-gray-50/50">
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center shrink-0">
-              <Database className="w-7 h-7 text-emerald-600" />
+            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center shrink-0">
+              <Database className="w-7 h-7 text-gray-400" />
             </div>
             <div className="flex-1 text-center sm:text-left">
-              <h3 className="font-bold text-gray-900 text-base">Database is Empty</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">Click below to seed 35+ verified real phones with specs, benchmarks & Pakistani prices</p>
+              <h3 className="font-bold text-gray-900 text-base">No Phones Yet</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Use the Import feature or add phones manually to get started.</p>
             </div>
-            <button onClick={async () => {
-              try {
-                const r = await fetch('/api/admin/seed', { method: 'POST', credentials: 'include' });
-                const d = await r.json();
-                if (d.success) { alert(`Seed complete!\n${d.phones} phones, ${d.brands} brands added.`); window.location.reload(); }
-                else { alert('Seed failed: ' + (d.error || 'Unknown error')); }
-              } catch (e: any) { alert('Seed failed: ' + e.message); }
-            }} className="shrink-0 flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/25">
-              <Database className="w-5 h-5" /> Seed Database Now
-            </button>
           </div>
         </div>
       )}
@@ -120,7 +110,7 @@ export default function AdminDashboardPage() {
             {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
-                  {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
+                {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>

@@ -52,6 +52,7 @@ const AdminSchema = new mongoose.Schema({
   revokedSessions: [{ jti: String, revokedAt: Date }],
   resetToken: { type: String, select: false },
   resetTokenExpires: { type: Date, select: false },
+  sessionVersion: { type: Number, default: 0 },
 }, { timestamps: true });
 
 AdminSchema.index({ email: 1 }, { unique: true });
@@ -309,13 +310,29 @@ async function main() {
         lockedUntil: null,
         passwordChangedAt: new Date(),
         revokedSessions: [],
+        $inc: { sessionVersion: 1 },
       };
       // Only update name if explicitly provided
       if (name && name.length >= 2) {
         updateData.name = name;
       }
 
-      await Admin.updateOne({ email }, { $set: updateData });
+      // Clear old fields and increment sessionVersion
+      await Admin.updateOne(
+        { email },
+        {
+          $set: {
+            role: 'superadmin',
+            active: true,
+            password: hashedPassword,
+            failedAttempts: 0,
+            lockedUntil: null,
+            passwordChangedAt: new Date(),
+            revokedSessions: [],
+          },
+          $inc: { sessionVersion: 1 },
+        },
+      );
 
       console.log('\n╔══════════════════════════════════════╗');
       console.log('║     Password Reset Successfully      ║');
@@ -359,6 +376,7 @@ async function main() {
     failedAttempts: 0,
     lockedUntil: null,
     passwordChangedAt: new Date(),
+    sessionVersion: 0,
   });
 
   // Log success (no password or sensitive data)

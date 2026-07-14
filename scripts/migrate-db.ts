@@ -213,7 +213,67 @@ async function main() {
   console.log(`  dataConfidence: ${confidenceResult.modifiedCount} documents set to 'verified'`);
 
   /* ================================================================== */
-  /*  8. Add missing fields to Brand documents                          */
+  /*  8. Add sessionVersion to Admin documents (replaces revokedSessions) */
+  /* ================================================================== */
+  console.log('\n── Admin: add sessionVersion ──');
+
+  const adminCol = db.collection('admins');
+  const adminVersionResult = await adminCol.updateMany(
+    { sessionVersion: { $exists: false } },
+    { $set: { sessionVersion: 0 } },
+  );
+  console.log(`  sessionVersion: ${adminVersionResult.modifiedCount} documents set to 0`);
+
+  // Clear old revokedSessions array (no longer used)
+  const clearRevokedResult = await adminCol.updateMany(
+    { revokedSessions: { $exists: true, $ne: [] } },
+    { $set: { revokedSessions: [] } },
+  );
+  if (clearRevokedResult.modifiedCount > 0) {
+    console.log(`  Cleared revokedSessions from ${clearRevokedResult.modifiedCount} admin documents`);
+  }
+
+  // Ensure RateLimit collection exists (for MongoDB-backed IP rate limiting)
+  try {
+    await db.createCollection('ratelimits', {
+      expires: { afterSeconds: 300 },
+    });
+    console.log('  + Created ratelimits collection with TTL');
+  } catch (e: any) {
+    if (e.code === 48) {
+      console.log('  ✓ ratelimits collection already exists');
+    } else {
+      console.log(`  ! ratelimits collection: ${e.message}`);
+    }
+  }
+
+  // Create RateLimit indexes
+  const rlCol = db.collection('ratelimits');
+  try {
+    await rlCol.createIndex(
+      { expiresAt: 1 },
+      { name: 'ratelimit_ttl', expireAfterSeconds: 300, background: true },
+    );
+    console.log('  + Created ratelimit TTL index');
+  } catch (e: any) {
+    if (e.message.includes('already exists')) {
+      console.log('  ✓ ratelimit TTL index already exists');
+    }
+  }
+  try {
+    await rlCol.createIndex(
+      { key: 1 },
+      { name: 'ratelimit_key_unique', unique: true, background: true },
+    );
+    console.log('  + Created ratelimit key unique index');
+  } catch (e: any) {
+    if (e.message.includes('already exists')) {
+      console.log('  ✓ ratelimit key unique index already exists');
+    }
+  }
+
+  /* ================================================================== */
+  /*  9. Add missing fields to Brand documents                          */
   /* ================================================================== */
   console.log('\n── Brand: add missing fields ──');
 

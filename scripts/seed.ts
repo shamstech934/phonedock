@@ -1,12 +1,11 @@
 import mongoose from 'mongoose';
-import { hash } from 'bcryptjs';
 import * as dotenv from 'dotenv';
 dotenv.config();
 import { Brand } from '../src/lib/models/Brand';
 import { Phone } from '../src/lib/models/Phone';
 import { PhoneSpecs } from '../src/lib/models/PhoneSpecs';
 import { PhoneImage, PhoneBenchmark, PhonePrice } from '../src/lib/models/PhoneSub';
-import { News, Admin, ActivityLog } from '../src/lib/models/Other';
+import { News, ActivityLog } from '../src/lib/models/Other';
 
 const BRANDS = [
   { name: 'Samsung', slug: 'samsung', country: 'South Korea', description: 'World\'s largest smartphone manufacturer known for Galaxy series', logo: '', sortOrder: 1 },
@@ -373,13 +372,13 @@ async function main() {
       sortOrder: 0,
     });
 
-    // Seed prices (delete + insertMany)
+    // Seed prices (delete + insertMany) — only real verified prices, no fake retailer multipliers
     await PhonePrice.deleteMany({ phoneId: phone._id });
-    await PhonePrice.insertMany([
-      { phoneId: phone._id, storeName: 'Daraz', price: Math.round(p.pricePKR * 0.98), url: '#', inStock: true },
-      { phoneId: phone._id, storeName: 'Whatmobile', price: p.pricePKR, url: '#', inStock: true },
-      { phoneId: phone._id, storeName: 'PriceOye', price: Math.round(p.pricePKR * 1.02), url: '#', inStock: true },
-    ]);
+    if (p.pricePKR > 0) {
+      await PhonePrice.insertMany([
+        { phoneId: phone._id, storeName: 'Estimated MSRP', price: p.pricePKR, url: '', inStock: true },
+      ]);
+    }
 
     console.log(`  Seeded: ${p.model}`);
   }
@@ -392,16 +391,8 @@ async function main() {
   }
   console.log(`Created ${NEWS_DATA.length} news articles`);
 
-  // Seed admin user
-  console.log('Seeding admin user...');
-  const hashedPassword = await hash('admin123', 12);
-  const adminData = { email: 'admin@phonedock.pk', password: hashedPassword, name: 'Admin', role: 'superadmin' };
-  await Admin.findOneAndUpdate(
-    { email: adminData.email },
-    { $set: adminData },
-    { upsert: true, returnDocument: 'after' }
-  );
-  console.log('Created admin user (admin@phonedock.pk / admin123)');
+  // NOTE: Admin accounts are NEVER created by seed.
+  // Use: npm run admin:create
 
   console.log('Database seeded successfully!');
 }
