@@ -502,49 +502,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   }
 
   try {
-    // ---- /api/admin/setup (ONE-TIME, COLLECTOR_SECRET protected) ----
-    // NOT a public endpoint. Requires COLLECTOR_SECRET header. Auto-deletes after first superadmin exists.
-    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'setup') {
-      const secret = req.headers.get('x-setup-secret');
-      if (secret !== process.env.COLLECTOR_SECRET) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-      await connectDB();
-      const existingSuper = await Admin.findOne({ role: 'superadmin' });
-      if (existingSuper) {
-        // If superadmin exists, allow password/name update only
-        const body = await req.json();
-        const name = sanitizeInput(String(body.name || existingSuper.name)).slice(0, 100);
-        const password = String(body.password || '');
-        if (password) {
-          const validation = isStrongPassword(password);
-          if (!validation.valid) {
-            return NextResponse.json({ error: 'Weak password: ' + validation.errors.join(', ') }, { status: 400 });
-          }
-          const hashed = await hashPassword(password);
-          await Admin.updateOne({ role: 'superadmin' }, {
-            $set: { name, password: hashed, active: true, failedAttempts: 0, lockedUntil: null, passwordChangedAt: new Date(), revokedSessions: [] }
-          });
-          return NextResponse.json({ success: true, message: 'Superadmin updated', email: existingSuper.email });
-        }
-        return NextResponse.json({ success: false, message: 'Superadmin already exists. Provide password to update.' }, { status: 409 });
-      }
-      // Create first superadmin
-      const body = await req.json();
-      const name = sanitizeInput(String(body.name || '')).slice(0, 100);
-      const email = sanitizeInput(String(body.email || '')).toLowerCase();
-      const password = String(body.password || '');
-      if (!name || name.length < 2) return NextResponse.json({ error: 'Name required (min 2 chars)' }, { status: 400 });
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
-      const validation = isStrongPassword(password);
-      if (!validation.valid) return NextResponse.json({ error: 'Weak password: ' + validation.errors.join(', ') }, { status: 400 });
-      const duplicate = await Admin.findOne({ email });
-      if (duplicate) return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
-      const hashed = await hashPassword(password);
-      await Admin.create({ email, name, password: hashed, role: 'superadmin', active: true, failedAttempts: 0, lockedUntil: null, passwordChangedAt: new Date() });
-      return NextResponse.json({ success: true, message: 'Superadmin created', email });
-    }
-
     // ---- /api/admin/session (cookie-based session check) ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
       await connectDB();

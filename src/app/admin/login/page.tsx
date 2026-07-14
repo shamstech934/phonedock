@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
@@ -10,8 +10,15 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAdmin();
+  const { admin, loading: authLoading, login } = useAdmin();
   const router = useRouter();
+
+  // Redirect authenticated users away from login page
+  useEffect(() => {
+    if (!authLoading && admin) {
+      router.replace('/admin/dashboard');
+    }
+  }, [admin, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

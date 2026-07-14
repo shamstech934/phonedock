@@ -191,18 +191,19 @@ async function main() {
     email = (getArg('email') || '').toLowerCase();
     password = process.env.ADMIN_INITIAL_PASSWORD || '';
 
-    if (!name || name.length < 2) {
-      console.error('\n✗ Non-interactive mode requires: --name "Full Name"\n');
+    // --name is only required for creation, not for --reset-password
+    if (!resetPasswordMode && (!name || name.length < 2)) {
+      console.error('\n✗ Non-interactive mode requires: --name "Full Name" (or use --reset-password to skip)\n');
       await mongoose.disconnect();
       process.exit(1);
     }
     if (!email || !isValidEmail(email)) {
-      console.error('\n✗ Non-interactive mode requires: --email "valid@email.com"\n');
+      console.error('\n✗ --email "valid@email.com" is required\n');
       await mongoose.disconnect();
       process.exit(1);
     }
     if (!password) {
-      console.error('\n✗ Non-interactive mode requires: ADMIN_INITIAL_PASSWORD env var\n');
+      console.error('\n✗ ADMIN_INITIAL_PASSWORD env var is required\n');
       await mongoose.disconnect();
       process.exit(1);
     }
@@ -217,7 +218,7 @@ async function main() {
 
     role = getArg('role') || (existingCount === 0 ? 'superadmin' : 'admin');
     const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
-    if (!validRoles.includes(role)) {
+    if (!resetPasswordMode && !validRoles.includes(role)) {
       console.error(`\n✗ Invalid role "${role}". Use: superadmin, admin, editor, reviewer\n`);
       await mongoose.disconnect();
       process.exit(1);
@@ -288,9 +289,9 @@ async function main() {
 
   const existing = await Admin.findOne({ email });
   if (existing) {
-    if (resetPasswordMode || nonInteractive) {
-      // Safely UPDATE existing account to superadmin + reset password
-      console.log(`\n  Admin "${email}" already exists. Updating...`);
+    if (resetPasswordMode) {
+      // Reset password only — keep existing name, promote to superadmin
+      console.log(`\n  Admin "${email}" found. Resetting password...`);
       const hashedPassword = await bcrypt.hash(password, 12);
 
       // Clear password from memory immediately
@@ -300,26 +301,25 @@ async function main() {
         delete process.env.ADMIN_INITIAL_PASSWORD;
       }
 
-      await Admin.updateOne(
-        { email },
-        {
-          $set: {
-            name,
-            role: 'superadmin',
-            active: true,
-            password: hashedPassword,
-            failedAttempts: 0,
-            lockedUntil: null,
-            passwordChangedAt: new Date(),
-            revokedSessions: [],
-          }
-        }
-      );
+      const updateData: any = {
+        role: 'superadmin',
+        active: true,
+        password: hashedPassword,
+        failedAttempts: 0,
+        lockedUntil: null,
+        passwordChangedAt: new Date(),
+        revokedSessions: [],
+      };
+      // Only update name if explicitly provided
+      if (name && name.length >= 2) {
+        updateData.name = name;
+      }
+
+      await Admin.updateOne({ email }, { $set: updateData });
 
       console.log('\n╔══════════════════════════════════════╗');
-      console.log('║     Admin Account Updated           ║');
+      console.log('║     Password Reset Successfully      ║');
       console.log('╠══════════════════════════════════════╣');
-      console.log(`║  Name:  ${name.padEnd(30)}║`);
       console.log(`║  Email: ${email.padEnd(30)}║`);
       console.log(`║  Role:  ${'superadmin'.padEnd(30)}║`);
       console.log('╠══════════════════════════════════════╣');
@@ -329,7 +329,7 @@ async function main() {
 
       await mongoose.disconnect();
       process.exit(0);
-    } else {
+    } else if (nonInteractive) {
       console.error(`\n✗ An admin with "${email}" already exists.`);
       console.error('  Use --reset-password --email "..." to update password & role.\n');
       await mongoose.disconnect();
