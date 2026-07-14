@@ -16,12 +16,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // ============ CONFIGURATION ============
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required but not set.');
+function getSecretKey(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required but not set.');
+  }
+  return new TextEncoder().encode(secret);
 }
-
-const secretKey = new TextEncoder().encode(JWT_SECRET);
 
 // ============ TOKEN TYPES ============
 
@@ -64,7 +65,7 @@ export async function signAccessToken(payload: Omit<TokenPayload, 'type' | 'iat'
     .setIssuedAt()
     .setExpirationTime('15m')
     .setJti(payload.jti)
-    .sign(secretKey);
+    .sign(getSecretKey());
 }
 
 export async function signRefreshToken(payload: Omit<TokenPayload, 'type' | 'iat' | 'exp'>): Promise<string> {
@@ -73,12 +74,12 @@ export async function signRefreshToken(payload: Omit<TokenPayload, 'type' | 'iat
     .setIssuedAt()
     .setExpirationTime('7d')
     .setJti(payload.jti)
-    .sign(secretKey);
+    .sign(getSecretKey());
 }
 
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secretKey);
+    const { payload } = await jwtVerify(token, getSecretKey());
     return payload as unknown as TokenPayload;
   } catch {
     return null;
