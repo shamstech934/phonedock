@@ -5,7 +5,7 @@ import { createProvider } from '@/lib/collectors';
 import { Phone, Brand, News, Sponsor, Admin, ActivityLog, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
 import { connectDB, connectDBSafe } from '@/lib/mongodb';
 import mongoose from 'mongoose';
-import { verifyPassword, hashPassword, createSignedSession, getAuthSessionAsync, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isSessionRevoked, revokeSession, isStrongPassword, sanitizeInput } from '@/lib/auth';
+import { verifyPassword, hashPassword, verifyToken, createSignedSession, getAuthSessionAsync, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isSessionRevoked, revokeSession, isStrongPassword, sanitizeInput } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
