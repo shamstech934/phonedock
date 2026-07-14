@@ -43,6 +43,27 @@ const PLACEHOLDER_PATTERNS = [
   /changeme/i, /placeholder/i,
 ];
 
+function maskUriForDisplay(uri: string, isSrv: boolean): string {
+  try {
+    let host = uri;
+    // Strip protocol
+    const proto = isSrv ? 'mongodb+srv://' : 'mongodb://';
+    host = host.slice(proto.length);
+    // Strip auth (everything before @)
+    const atIdx = host.lastIndexOf('@');
+    if (atIdx !== -1) host = host.slice(atIdx + 1);
+    // Strip query params
+    const qIdx = host.indexOf('?');
+    if (qIdx !== -1) host = host.slice(0, qIdx);
+    // Get last two parts for domain
+    const parts = host.split(',')[0].split('.');
+    const domain = parts.length >= 2 ? '.' + parts.slice(-2).join('.') : '';
+    return `${proto}***${domain}`;
+  } catch {
+    return 'mongodb+srv://***.mongodb.net';
+  }
+}
+
 export function validateMongoUri(uri?: string): UriValidationResult {
   const empty: UriValidationResult = {
     valid: false,
@@ -68,9 +89,16 @@ export function validateMongoUri(uri?: string): UriValidationResult {
   // Reject placeholders
   for (const pattern of PLACEHOLDER_PATTERNS) {
     if (pattern.test(uri)) {
+      // Show which placeholder was detected (without revealing full URI)
+      const match = uri.match(new RegExp(pattern.source, 'i'));
+      const detected = match ? match[0] : 'unknown';
       return {
-        ...empty,
-        error: 'MONGODB_URI appears to contain a placeholder value. Copy the full connection string from MongoDB Atlas > Connect > Drivers.',
+        valid: false,
+        error: `MONGODB_URI contains placeholder "${detected}". Replace it with the actual value from MongoDB Atlas.`,
+        masked: maskUriForDisplay(uri, isSrv),
+        protocol: isSrv ? 'mongodb+srv://' : 'mongodb://',
+        hostname: '',
+        database: '',
       };
     }
   }
@@ -122,8 +150,7 @@ export function validateMongoUri(uri?: string): UriValidationResult {
 
   // Mask the URI for display
   // Format: mongodb+srv://***.mongodb.net/phonedock
-  const hostForMask = hostname.split(',')[0]; // first host only
-  const masked = `${protocol}***${hostForMask.includes('.') ? '.' + hostForMask.split('.').slice(-2).join('.') : ''}/${database}`;
+  const masked = maskUriForDisplay(uri, isSrv);
 
   if (!hostname) {
     return {
