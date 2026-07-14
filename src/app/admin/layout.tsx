@@ -6,34 +6,35 @@ import Link from 'next/link';
 import {
   BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
-  ChevronDown, DollarSign, Database, Zap,
+  ChevronDown, DollarSign, Database, Zap, Key,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAdmin } from '@/lib/useAdmin';
+import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
 
 interface NavLink {
   label: string;
   href: string;
   icon: any;
+  permission?: string;
   children?: { label: string; href: string }[];
 }
 
 const adminLinks: NavLink[] = [
-  { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3 },
-  { label: 'Phones', href: '/admin/phones', icon: Smartphone },
-  { label: 'Brands', href: '/admin/brands', icon: Layers },
-  { label: 'News', href: '/admin/news', icon: Newspaper },
-  { label: 'Sponsors', href: '/admin/sponsors', icon: DollarSign },
-  { label: 'Activity', href: '/admin/activity', icon: Clock },
-  { label: 'Import', href: '/admin/import', icon: Upload },
-  { label: 'Collector', href: '/admin/collector', icon: Radio, children: [
+  { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
+  { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
+  { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },
+  { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },
+  { label: 'Sponsors', href: '/admin/sponsors', icon: DollarSign, permission: 'sponsors:read' },
+  { label: 'Activity', href: '/admin/activity', icon: Clock, permission: 'activity:read' },
+  { label: 'Import', href: '/admin/import', icon: Upload, permission: 'imports:read' },
+  { label: 'Collector', href: '/admin/collector', icon: Radio, permission: 'collectors:read', children: [
     { label: 'Overview', href: '/admin/collector' },
     { label: 'Sources', href: '/admin/collector/sources' },
     { label: 'Jobs', href: '/admin/collector/jobs' },
   ]},
-  { label: 'Sync', href: '/admin/sync', icon: RefreshCw },
-  { label: 'Settings', href: '/admin/settings', icon: Settings },
-  { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Sync', href: '/admin/sync', icon: RefreshCw, permission: 'phones:edit' },
+  { label: 'Users', href: '/admin/users', icon: Users, permission: 'users:read' },
+  { label: 'Settings', href: '/admin/settings', icon: Settings, permission: 'settings:read' },
 ];
 
 function isActive(pathname: string, link: NavLink): boolean {
@@ -44,17 +45,15 @@ function isActive(pathname: string, link: NavLink): boolean {
   return pathname === link.href || pathname.startsWith(link.href + '/');
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { admin, token, loading, logout } = useAdmin();
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
+  const { admin, loading, logout } = useAdmin();
   const router = useRouter();
   const pathname = usePathname();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!loading && !admin && pathname !== '/admin/login') {
-      router.push('/admin/login');
-    }
-  }, [admin, loading, pathname, router]);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pwData, setPwData] = useState({ current: '', newPw: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState('');
 
   // Auto-open collector group if on a collector sub-page
   useEffect(() => {
@@ -72,6 +71,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     });
   };
 
+  const handleChangePassword = async () => {
+    setPwError('');
+    setPwSuccess('');
+    if (!pwData.current || !pwData.newPw || !pwData.confirm) {
+      setPwError('All fields are required');
+      return;
+    }
+    if (pwData.newPw !== pwData.confirm) {
+      setPwError('New passwords do not match');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ currentPassword: pwData.current, newPassword: pwData.newPw }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPwSuccess('Password changed successfully');
+        setPwData({ current: '', newPw: '', confirm: '' });
+        setTimeout(() => setShowPasswordModal(false), 1500);
+      } else {
+        setPwError(data.error || 'Failed to change password');
+      }
+    } catch {
+      setPwError('Connection error');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -84,6 +114,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return <>{children}</>;
   }
 
+  // Filter links based on permissions
+  const filteredLinks = adminLinks.filter(link => {
+    if (!link.permission) return true;
+    const rolePerms: Record<string, string[]> = {
+      superadmin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','users:manage','settings:read','settings:manage','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete'],
+      admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete'],
+      editor: ['phones:read','phones:create','phones:edit','brands:read','news:read','news:create','news:edit','activity:read','media:upload'],
+      reviewer: ['phones:read','brands:read','news:read','activity:read','collectors:read'],
+    };
+    return (rolePerms[admin.role] || []).includes(link.permission);
+  });
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
       {/* Admin top bar */}
@@ -95,11 +137,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="font-bold text-sm text-gray-900 hidden sm:block">PhoneDock Admin</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Change Password"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Password</span>
+          </button>
           <Link href="/" className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors">
-            <Eye className="w-3.5 h-3.5" /> View Site
+            <Eye className="w-3.5 h-3.5" /> <span className="hidden sm:inline">View Site</span>
           </Link>
           <button onClick={logout} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-            <LogOut className="w-3.5 h-3.5" /> Logout
+            <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </div>
@@ -119,7 +169,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto max-h-[calc(100vh-8rem)]">
-            {adminLinks.map(link => {
+            {filteredLinks.map(link => {
               const active = isActive(pathname, link);
               const hasChildren = link.children && link.children.length > 0;
               const isOpen = openGroups.has(link.href);
@@ -171,7 +221,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
           <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
-            {adminLinks.filter(l => !l.children).map(link => {
+            {filteredLinks.filter(l => !l.children).map(link => {
               const active = isActive(pathname, link);
               return (
                 <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${active ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
@@ -179,25 +229,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </Link>
               );
             })}
-            {adminLinks.filter(l => l.children).map(link => (
-              <div key={link.href} className="relative">
-                <button
-                  onClick={() => toggleGroup(link.href)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${isActive(pathname, link) ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <link.icon className="w-3 h-3" />{link.label}
-                </button>
-                {openGroups.has(link.href) && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-lg p-1 z-50 min-w-[140px]">
-                    {link.children!.map(child => (
-                      <Link key={child.href} href={child.href} className={`block px-3 py-2 rounded-lg text-xs font-medium transition-colors ${pathname === child.href ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
           </div>
         </div>
 
@@ -205,6 +236,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Change Password</h2>
+            {pwError && <div className="bg-red-50 text-red-600 text-xs rounded-xl px-4 py-2.5 mb-3">{pwError}</div>}
+            {pwSuccess && <div className="bg-green-50 text-green-600 text-xs rounded-xl px-4 py-2.5 mb-3">{pwSuccess}</div>}
+            <div className="space-y-3">
+              <input type="password" placeholder="Current password" value={pwData.current} onChange={e => setPwData(p => ({ ...p, current: e.target.value }))} className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white" />
+              <input type="password" placeholder="New password (12+ chars)" value={pwData.newPw} onChange={e => setPwData(p => ({ ...p, newPw: e.target.value }))} className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white" />
+              <input type="password" placeholder="Confirm new password" value={pwData.confirm} onChange={e => setPwData(p => ({ ...p, confirm: e.target.value }))} className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white" />
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { setShowPasswordModal(false); setPwData({ current: '', newPw: '', confirm: '' }); setPwError(''); setPwSuccess(''); }} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={handleChangePassword} className="flex-1 h-10 rounded-xl bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 transition-colors">Update</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Wrap with AdminAuthProvider at the layout level
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AdminAuthProvider>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </AdminAuthProvider>
   );
 }

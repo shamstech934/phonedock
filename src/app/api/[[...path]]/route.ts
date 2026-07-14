@@ -5,7 +5,7 @@ import { createProvider } from '@/lib/collectors';
 import { Phone, Brand, News, Sponsor, Admin, ActivityLog, CollectorSource, CollectedPhone, CollectorJob, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
 import { connectDB, connectDBSafe } from '@/lib/mongodb';
 import mongoose from 'mongoose';
-import { verifyPassword, createSignedSession, getAuthSessionAsync, checkLoginRateLimit, recordFailedLogin, resetLoginRateLimit, isRevoked, sanitizeInput } from '@/lib/auth';
+import { verifyPassword, hashPassword, createSignedSession, getAuthSessionAsync, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isSessionRevoked, revokeSession, isStrongPassword, sanitizeInput } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from '@/lib/collectors/services';
 
@@ -16,11 +16,13 @@ async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: any; err
   if (!session) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
-  if (session.jti && isRevoked(session.jti)) {
+  await connectDB();
+  // DB-backed session revocation check (serverless-safe)
+  const revoked = await isSessionRevoked(session.jti, session.sub, Admin);
+  if (revoked) {
     return { error: NextResponse.json({ error: 'Session revoked' }, { status: 401 }) };
   }
-  await connectDB();
-  const admin = await Admin.findById(session.sub).select('-password');
+  const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
   if (!admin || !admin.active) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
@@ -344,12 +346,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const session = await getAuthSessionAsync(req);
       if (session) {
         await connectDB();
-        const admin = await Admin.findById(session.sub).select('-password');
+        const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
         if (admin && admin.active) {
           return NextResponse.json({ authenticated: true, user: { id: admin._id?.toString(), email: admin.email, name: admin.name, role: admin.role } });
         }
       }
       return NextResponse.json({ ok: true, authenticated: false });
+    }
+
+    // ---- /api/admin/users (LIST — superadmin only) ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
+      await connectDB();
+      const users = await Admin.find().select('-password -resetToken -resetTokenExpires -revokedSessions').sort({ createdAt: -1 }).lean();
+      return NextResponse.json({ users: users.map((u: any) => ({ id: u._id?.toString(), email: u.email, name: u.name, role: u.role, active: u.active, lastLogin: u.lastLogin, createdAt: u.createdAt })) });
     }
 
     // ---- /api/collector/dashboard ----
@@ -414,7 +425,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API GET error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -424,6 +435,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const segments = path || [];
 
   try {
+    // ---- /api/admin/session (cookie-based session check) ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
+      await connectDB();
+      const session = await getAuthSessionAsync(req);
+      if (!session) {
+        return NextResponse.json({ authenticated: false }, { status: 401 });
+      }
+      const revoked = await isSessionRevoked(session.jti, session.sub, Admin);
+      if (revoked) {
+        return NextResponse.json({ authenticated: false }, { status: 401 });
+      }
+      const admin = await Admin.findById(session.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
+      if (!admin || !admin.active) {
+        return NextResponse.json({ authenticated: false }, { status: 401 });
+      }
+      return NextResponse.json({
+        authenticated: true,
+        admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
+      });
+    }
+
     // ---- /api/admin/login ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login') {
       await connectDB();
@@ -435,25 +467,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
       }
 
-      // Check rate limit for this email
-      const rateCheck = checkLoginRateLimit(email);
-      if (!rateCheck.allowed) {
-        const minsLeft = rateCheck.lockedUntil
-          ? Math.ceil((rateCheck.lockedUntil.getTime() - Date.now()) / 60000)
-          : 15;
-        return NextResponse.json({ error: `Too many login attempts. Try again in ${minsLeft} minutes.` }, { status: 429 });
-      }
-
-      const admin = await Admin.findOne({ email }).select('+password');
+      const admin = await Admin.findOne({ email }).select('+password +failedAttempts +lockedUntil');
       if (!admin) {
         // Don't reveal whether email exists
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
 
-      // Check if account is locked at DB level
-      if (admin.lockedUntil && new Date(admin.lockedUntil) > new Date()) {
-        const minsLeft = Math.ceil((new Date(admin.lockedUntil).getTime() - Date.now()) / 60000);
-        return NextResponse.json({ error: `Account locked. Try again in ${minsLeft} minutes.` }, { status: 423 });
+      // DB-backed rate limiting
+      const rateCheck = checkLoginRateLimitFromDB(admin);
+      if (!rateCheck.allowed) {
+        const minsLeft = rateCheck.lockedUntil
+          ? Math.ceil((rateCheck.lockedUntil.getTime() - Date.now()) / 60000)
+          : 15;
+        return NextResponse.json({ error: `Too many login attempts. Try again in ${minsLeft} minutes.` }, { status: 429 });
       }
 
       if (!admin.active) {
@@ -462,32 +488,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
       const valid = await verifyPassword(password, admin.password);
       if (!valid) {
-        recordFailedLogin(email);
-        admin.failedAttempts = (admin.failedAttempts || 0) + 1;
-        if (admin.failedAttempts >= 5) {
-          admin.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
-        }
+        recordFailedLoginDB(admin);
         await admin.save();
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
       }
 
-      // Successful login — reset failed attempts
-      admin.failedAttempts = 0;
-      admin.lockedUntil = null;
+      // Successful login
+      resetFailedAttempts(admin);
       admin.lastLogin = new Date();
-      admin.lastLoginIp = req.headers.get('x-forwarded-for')?.split(',')[0] || '';
-      admin.lastLoginUA = req.headers.get('user-agent') || '';
+      admin.lastLoginIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+      admin.lastLoginUA = req.headers.get('user-agent')?.slice(0, 200) || '';
       await admin.save();
-      resetLoginRateLimit(email);
 
       const session = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
 
-      const response = NextResponse.json({
-        token: session.accessToken,
-        admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
-      });
-
-      // Set refresh token as HTTP-only cookie
+      // NO token in response body — only httpOnly cookie
+      const response = NextResponse.json({ success: true, admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role } });
       response.cookies.set('pd_refresh', session.refreshToken, session.cookieOptions);
 
       try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch {}
@@ -497,9 +513,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     // ---- /api/admin/logout ----
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'logout') {
       const session = await getAuthSessionAsync(req);
-      if (session?.jti) {
-        const { revokeSession } = await import('@/lib/auth');
-        revokeSession(session.jti);
+      if (session?.jti && session?.sub) {
+        await connectDB();
+        await revokeSession(session.jti, session.sub, Admin);
       }
       const response = NextResponse.json({ success: true });
       response.cookies.set('pd_refresh', '', { maxAge: 0, path: '/' });
@@ -510,22 +526,99 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'refresh-token') {
       const refreshToken = req.cookies.get('pd_refresh')?.value;
       if (!refreshToken) return NextResponse.json({ error: 'No refresh token' }, { status: 401 });
-      const { verifyToken } = await import('@/lib/auth');
       const payload = await verifyToken(refreshToken);
       if (!payload || payload.type !== 'refresh') return NextResponse.json({ error: 'Invalid refresh token' }, { status: 401 });
-      if (payload.jti && isRevoked(payload.jti)) return NextResponse.json({ error: 'Session revoked' }, { status: 401 });
       await connectDB();
-      const admin = await Admin.findById(payload.sub).select('-password');
+      const revoked = await isSessionRevoked(payload.jti, payload.sub, Admin);
+      if (revoked) return NextResponse.json({ error: 'Session revoked' }, { status: 401 });
+      const admin = await Admin.findById(payload.sub).select('-password -resetToken -resetTokenExpires -revokedSessions');
       if (!admin || !admin.active) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       const newSession = await createSignedSession({ sub: admin._id.toString(), email: admin.email, role: admin.role });
-      const response = NextResponse.json({ success: true, token: newSession.accessToken });
+      const response = NextResponse.json({ success: true });
       response.cookies.set('pd_refresh', newSession.refreshToken, newSession.cookieOptions);
       return response;
+    }
+
+    // ---- /api/admin/change-password ----
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'change-password') {
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const body = await req.json();
+      const { currentPassword, newPassword } = body;
+      if (!currentPassword || !newPassword) {
+        return NextResponse.json({ error: 'Current and new password required' }, { status: 400 });
+      }
+      const pwCheck = isStrongPassword(newPassword);
+      if (!pwCheck.valid) {
+        return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
+      }
+      await connectDB();
+      const adminFull = await Admin.findById(admin._id).select('+password');
+      if (!adminFull) return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
+      const valid = await verifyPassword(currentPassword, adminFull.password);
+      if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 });
+      adminFull.password = await hashPassword(newPassword);
+      adminFull.passwordChangedAt = new Date();
+      // Revoke ALL sessions on password change
+      adminFull.revokedSessions = adminFull.revokedSessions || [];
+      adminFull.revokedSessions.push({ jti: '__all__', revokedAt: new Date() });
+      await adminFull.save();
+      // Clear the cookie so user must re-login
+      const response = NextResponse.json({ success: true, message: 'Password changed. Please log in again.' });
+      response.cookies.set('pd_refresh', '', { maxAge: 0, path: '/' });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'change_password', details: 'Password changed', entityType: 'admin' }); } catch {}
+      return response;
+    }
+
+    // ---- /api/admin/forgot-password ----
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'forgot-password') {
+      await connectDB();
+      const body = await req.json();
+      const email = sanitizeInput(String(body.email || '')).toLowerCase();
+      if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 });
+      // Always return success to prevent email enumeration
+      const admin = await Admin.findOne({ email }).select('+resetToken +resetTokenExpires');
+      if (admin) {
+        const token = crypto.randomUUID();
+        admin.resetToken = token;
+        admin.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
+        await admin.save();
+        // In production, send email with reset link containing token
+        // For now, log that a reset was requested (token never exposed to client)
+        console.log(`Password reset requested for ${email}. Token: ${token} (send via email in production)`);
+      }
+      return NextResponse.json({ success: true, message: 'If an account exists, a reset link will be sent.' });
     }
 
     // ---- /api/import (file upload) ----
     if (segments.length === 1 && segments[0] === 'import') {
       return handleCollectorFileUpload(req);
+    }
+
+    // ---- /api/admin/users (CREATE — superadmin only) ----
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
+      const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+      const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
+      await connectDB();
+      const body = await req.json();
+      const { email, name, role, password } = body;
+      if (!email || !name || !password) return NextResponse.json({ error: 'Email, name, and password required' }, { status: 400 });
+      const pwCheck = isStrongPassword(password);
+      if (!pwCheck.valid) return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
+      const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
+      const assignedRole = validRoles.includes(role) ? role : 'admin';
+      // Only superadmin can create superadmin
+      if (assignedRole === 'superadmin' && admin.role !== 'superadmin') {
+        return NextResponse.json({ error: 'Only superadmins can create superadmin accounts' }, { status: 403 });
+      }
+      const existing = await Admin.findOne({ email: email.toLowerCase() });
+      if (existing) return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
+      const newAdmin = await Admin.create({
+        email: email.toLowerCase(), name,
+        password: await hashPassword(password),
+        role: assignedRole, active: true,
+      });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'create_user', details: `Created admin: ${email}`, entityType: 'admin', entityId: newAdmin._id?.toString() }); } catch {}
+      return NextResponse.json({ success: true, id: newAdmin._id?.toString() });
     }
 
     // ---- /api/import/validate ----
@@ -729,7 +822,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API POST error:', e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -872,7 +965,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('API PUT error:', e.message);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -944,7 +1038,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('API DELETE error:', e.message);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -1111,6 +1206,6 @@ async function handleCollectorFileUpload(req: NextRequest) {
       validRecords: validRecords.length, inserted, updated, skipped, issues,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

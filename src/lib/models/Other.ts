@@ -38,7 +38,7 @@ export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', Spon
 
 const AdminSchema = new Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
-  password: { type: String, required: true, select: false }, // select:false means password not included by default
+  password: { type: String, required: true, select: false },
   name: { type: String, default: '', trim: true },
   role: { type: String, enum: ['superadmin', 'admin', 'editor', 'reviewer'], default: 'admin' },
   active: { type: Boolean, default: true },
@@ -48,6 +48,11 @@ const AdminSchema = new Schema({
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date },
   passwordChangedAt: { type: Date, default: Date.now },
+  // DB-backed session revocation (serverless-safe)
+  revokedSessions: [{ jti: { type: String, required: true }, revokedAt: { type: Date, default: Date.now } }],
+  // Password reset token (for forgot-password flow)
+  resetToken: { type: String, select: false },
+  resetTokenExpires: { type: Date, select: false },
 }, { timestamps: true });
 
 AdminSchema.index({ email: 1 }, { unique: true });

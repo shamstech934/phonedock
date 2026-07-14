@@ -15,22 +15,30 @@ export default function AdminLoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
+
     try {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Essential: send/receive httpOnly cookies
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (data.token) {
-        login(data.admin, data.token);
-        router.push('/admin/dashboard');
+
+      if (res.ok) {
+        // Server sets httpOnly cookie — no token stored client-side
+        // login() will verify session via cookie and redirect
+        await login();
       } else {
         setError(data.error || 'Invalid credentials');
       }
-    } catch { setError('Connection failed. Try again.'); }
-    setLoading(false);
+    } catch {
+      setError('Connection failed. Try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -43,15 +51,41 @@ export default function AdminLoginPage() {
           <h1 className="text-xl font-extrabold text-gray-900">Admin Panel</h1>
           <p className="text-sm text-muted-foreground mt-1">Sign in to manage your phone database</p>
         </div>
-        {error && <div className="bg-red-50 border border-red-100 text-red-600 text-xs font-medium rounded-xl px-4 py-2.5 mb-4">{error}</div>}
+        {error && (
+          <div className="bg-red-50 border border-red-100 text-red-600 text-xs font-medium rounded-xl px-4 py-2.5 mb-4">
+            {error}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-3">
-          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white" />
-          <button type="submit" disabled={loading} className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white h-11 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25">
+          <input
+            type="email"
+            placeholder="Email address"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            className="w-full h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 transition-all bg-white"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white h-11 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25"
+          >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <p className="text-[10px] text-center text-muted-foreground/70 mt-4">Contact superadmin for credentials</p>
+        <p className="text-[10px] text-center text-muted-foreground/70 mt-4">
+          Contact superadmin for access
+        </p>
       </div>
     </div>
   );

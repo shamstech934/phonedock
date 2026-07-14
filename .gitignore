@@ -1,3 +1,11 @@
 skills/
 node_modules/
 .next/
+.env.local
+.env
+.env.production
+.env.production.local
+*.log
+upload/
+tool-results/
+FINAL_IMPLEMENTATION_REPORT.md
