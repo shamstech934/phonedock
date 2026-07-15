@@ -67,7 +67,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
   const handleShare = async () => {
     const url = window.location.href;
     if (navigator.share) {
-      try { await navigator.share({ title: data?.phone?.modelName || '', url }); } catch {}
+      try { await navigator.share({ title: data?.phone?.modelName || '', url }); } catch (e) { /* share dismissed or unsupported — non-critical */ console.error('[share]', e); }
     } else {
       await navigator.clipboard.writeText(url);
       setShareOpen(true);

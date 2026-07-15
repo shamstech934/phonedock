@@ -42,7 +42,7 @@ export default function AdminCollectorSourcesPage() {
       setForm({ name: '', type: 'api', url: '' });
       setShowForm(false);
       fetchSources();
-    } catch {}
+    } catch (e) { console.error('[addCollectorSource]', e); }
     setSaving(false);
   };
 

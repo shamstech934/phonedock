@@ -41,7 +41,7 @@ export default function AdminUsersPage() {
         const data = await res.json();
         setUsers(data.users || []);
       }
-    } catch {}
+    } catch (e) { console.error('[fetchUsers]', e); }
     setLoading(false);
   }, []);
 

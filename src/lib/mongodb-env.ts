@@ -363,7 +363,7 @@ export async function testConnection(uri: string): Promise<{ success: boolean; m
     await mongoose.disconnect();
     return { success: false, message: 'Ping returned unexpected result.', database: dbName };
   } catch (e: any) {
-    try { await mongoose.disconnect(); } catch {}
+    try { await mongoose.disconnect(); } catch (disconnectErr) { /* cleanup failure — non-critical during error path */ console.error('[mongoose.disconnect]', disconnectErr); }
     return { success: false, message: e.message || String(e), database: '' };
   }
 }

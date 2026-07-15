@@ -62,7 +62,7 @@ export default function AdminSponsorsPage() {
       }
       setShowForm(false);
       fetchSponsors();
-    } catch {}
+    } catch (e) { console.error('[saveSponsor]', e); }
     setSaving(false);
   };
 
@@ -82,7 +82,7 @@ export default function AdminSponsorsPage() {
         method: 'DELETE', credentials: 'include',
       });
       fetchSponsors();
-    } catch {}
+    } catch (e) { console.error('[deleteSponsor]', e); }
     setDeleting(null);
   };
 

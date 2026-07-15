@@ -28,7 +28,7 @@ export default function AdminSyncPage() {
         body: JSON.stringify({ sourceId: 'all', action: 'sync' }),
       });
       setLastSync(new Date().toLocaleString('en-PK'));
-    } catch {}
+    } catch (e) { console.error('[triggerSync]', e); }
     setSyncing(false);
   };
 

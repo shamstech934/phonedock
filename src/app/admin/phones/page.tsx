@@ -33,7 +33,7 @@ export default function AdminPhonesPage() {
     try {
       const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
       if (r.ok) { setPhones(prev => prev.filter(p => p.id !== deleteId)); setDeleteId(null); }
-    } catch {}
+    } catch (e) { console.error('[deletePhone]', e); }
     setDeleting(false);
   };
 
