@@ -36,6 +36,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API GET error:', e.message);
+    const msg = e?.message || '';
+    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
+      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -116,6 +120,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API POST error:', e.message);
+    const msg = e?.message || '';
+    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
+      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -148,6 +156,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API PUT error:', e.message);
+    const msg = e?.message || '';
+    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
+      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -180,6 +192,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API DELETE error:', e.message);
+    const msg = e?.message || '';
+    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
+      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
