@@ -13,7 +13,11 @@ export class ManualUrlProvider extends BaseProvider {
     let data: any;
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('json')) {
-      data = await response.json();
+      try {
+        data = await response.json();
+      } catch {
+        return { phones: [], hasNextPage: false, providerErrors: ['Invalid JSON response from source'] };
+      }
     } else {
       return { phones: [], hasNextPage: false, providerErrors: ['Only JSON responses supported for manual URLs'] };
     }

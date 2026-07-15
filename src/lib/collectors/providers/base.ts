@@ -85,9 +85,12 @@ export abstract class BaseProvider {
       // Inject API key from env if configured
       if (this.config.apiKeyEnvVar && process.env[this.config.apiKeyEnvVar]) {
         const key = process.env[this.config.apiKeyEnvVar]!;
-        // Common patterns
-        if (!headers['Authorization']) headers['Authorization'] = `Bearer ${key}`;
-        if (!headers['x-api-key']) headers['x-api-key'] = key;
+        const headerStyle = this.config.apiKeyHeader || 'Authorization';
+        if (headerStyle === 'x-api-key') {
+          headers['x-api-key'] = key;
+        } else {
+          headers['Authorization'] = `Bearer ${key}`;
+        }
       }
       const response = await fetch(url, { ...options, headers, signal: controller.signal });
       return response;

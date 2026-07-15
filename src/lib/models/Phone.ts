@@ -86,7 +86,7 @@ const PhoneSchema = new Schema<IPhone>({
   seoDescription: { type: String, default: '' },
   keywords: { type: String, default: '' },
   views: { type: Number, default: 0 },
-  status: { type: String, default: 'published' },
+  status: { type: String, enum: ['published', 'draft', 'pending', 'archived'], default: 'published' },
   sourceName: { type: String, default: '' },
   sourceUrl: { type: String, default: '' },
   lastVerifiedAt: { type: Date, default: null },
@@ -122,7 +122,6 @@ PhoneSchema.index({ createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, createdAt: -1 });
 PhoneSchema.index({ brandId: 1, status: 1 });
 PhoneSchema.index({ pricePKR: 1 });
-PhoneSchema.index({ active: 1, status: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
 PhoneSchema.index({ modelName: 'text', description: 'text' });

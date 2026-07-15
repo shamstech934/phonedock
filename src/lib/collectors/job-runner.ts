@@ -8,6 +8,10 @@ import { generateSlug } from '@/lib/import/validators';
 
 const BATCH_SIZE = 25;
 const MAX_COLLECT_PER_JOB = 2000;
+// Vercel serverless: limit pages per invocation to stay within timeout.
+// Set via env var (default 3 pages ~ safe for 60s Pro tier).
+// For self-hosted or long-running functions, set to 0 for unlimited.
+const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '3') || 0;
 
 // ============ JOB RUNNER ============
 export async function startJob(jobId: string): Promise<void> {
@@ -37,6 +41,21 @@ export async function startJob(jobId: string): Promise<void> {
       }));
 
       while (hasNext && totalFetched < MAX_COLLECT_PER_JOB) {
+        // Serverless page-limit: stop early if configured
+        if (PAGES_PER_INVOCATION > 0 && page > PAGES_PER_INVOCATION) {
+          // Save progress for next invocation
+          await CollectorJob.updateOne({ _id: jobId }, {
+            $set: { status: 'paused', lastProcessedAt: new Date() },
+          });
+          await ActivityLog.create({
+            action: 'collector_sync_paused',
+            details: `Job ${jobId} paused at page ${page} (serverless page limit). Re-trigger to continue.`,
+            entityType: 'collector',
+            entityId: jobId,
+          });
+          return;
+        }
+
         // Check if job was paused
         const currentJob = await CollectorJob.findById(jobId);
         if (!currentJob || currentJob.status === 'paused') {
@@ -364,6 +383,7 @@ function buildProviderConfig(source: any): any {
     type: source.type,
     endpoint: source.endpoint || '',
     apiKeyEnvVar: source.apiKeyEnvVar || '',
+    apiKeyHeader: (source as any).apiKeyHeader || '',
     headers,
     brandFilter: source.brandFilter || [],
     countryFilter: source.countryFilter || '',

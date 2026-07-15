@@ -11,7 +11,12 @@ export class JsonUrlProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}: ${response.statusText}`] };
     }
 
-    let data = await response.json();
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      return { phones: [], hasNextPage: false, providerErrors: ['Invalid JSON response from source'] };
+    }
     // Navigate data path if configured (e.g. "data.phones")
     if (this.config.dataPath) {
       for (const key of this.config.dataPath.split('.')) {

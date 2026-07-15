@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { RawPhoneRecord } from './types';
+import { sanitizeCsvValue } from '@/lib/auth';
 
 // ============ JSON PARSER ============
 export function parseJSON(content: string): RawPhoneRecord[] {
@@ -50,7 +51,15 @@ export async function parseCSV(content: string): Promise<RawPhoneRecord[]> {
   if (!results.data || results.data.length === 0) {
     throw new Error('CSV file is empty or has no valid rows');
   }
-  return results.data as RawPhoneRecord[];
+  // Apply CSV formula injection protection to all string values
+  const sanitized = results.data.map((row: any) => {
+    const clean: any = {};
+    for (const [key, value] of Object.entries(row)) {
+      clean[key] = typeof value === 'string' ? sanitizeCsvValue(value) : value;
+    }
+    return clean;
+  });
+  return sanitized as RawPhoneRecord[];
 }
 
 // ============ XLSX PARSER ============

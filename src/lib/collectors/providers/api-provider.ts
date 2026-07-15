@@ -16,7 +16,12 @@ export class ApiProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
     }
 
-    const root = await response.json();
+    let root: any;
+    try {
+      root = await response.json();
+    } catch {
+      return { phones: [], hasNextPage: false, providerErrors: ['Invalid JSON response from source'] };
+    }
 
     // Extract total from root BEFORE data-path extraction
     let totalAvailable = 0;

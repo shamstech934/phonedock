@@ -130,20 +130,22 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     }
 
     const admin = await Admin.findOne({ email }).select('+password +failedAttempts +lockedUntil +sessionVersion');
+
+    // Check rate limit for existing accounts; always return 401 for non-existent
+    // to prevent account enumeration (same response regardless of email existence)
     if (!admin) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    // DB-backed rate limiting
+    // DB-backed rate limiting (only reached when admin exists — no info leak)
     const rateCheck = checkLoginRateLimitFromDB(admin);
     if (!rateCheck.allowed) {
-      const minsLeft = rateCheck.lockedUntil
-        ? Math.ceil((rateCheck.lockedUntil.getTime() - Date.now()) / 60000)
-        : 15;
-      return NextResponse.json({ error: `Too many login attempts. Try again in ${minsLeft} minutes.` }, { status: 429 });
+      // Return 401 (not 429) to avoid revealing account existence via status code
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     if (!admin.active) {
+      // Return same 401 message to avoid revealing account exists but is disabled
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
@@ -184,7 +186,9 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     const session = await getSessionFromRequest(req);
     if (session?.sub) {
       // Increment sessionVersion to invalidate this and all other sessions
-      await Admin.findByIdAndUpdate(session.sub, { $inc: { sessionVersion: 1 } }).catch(() => {});
+      await Admin.findByIdAndUpdate(session.sub, { $inc: { sessionVersion: 1 } }).catch((e) => {
+        console.error('[Logout] sessionVersion increment failed:', e);
+      });
     }
     const response = NextResponse.json({ success: true });
     response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
@@ -240,9 +244,27 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       admin.resetTokenHash = tokenHash;
       admin.resetTokenExpires = new Date(Date.now() + 30 * 60 * 1000); // 30 min
       await admin.save();
-      // TODO: Send email with reset link containing raw token
-      // For now, forgot-password is effectively disabled because no email is sent
-      // and the raw token is NEVER logged or returned
+      // Send reset email with the raw token
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || '';
+      const resetLink = `${baseUrl}/admin/reset-password?token=${rawToken}`;
+      try {
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT || '587'),
+          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: admin.email,
+          subject: 'PhoneDock — Password Reset',
+          html: `<p>You requested a password reset.</p><p>Click <a href="${resetLink}">here</a> to reset your password. This link expires in 30 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
+        });
+      } catch (emailErr: any) {
+        console.error('[ForgotPassword] Email send failed:', emailErr?.message);
+        // Don't expose email failure to user — prevents revealing which emails exist
+      }
     }
     return NextResponse.json({ success: true, message: 'If an account exists, a reset link will be sent.' });
   }

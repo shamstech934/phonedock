@@ -7,6 +7,7 @@ export interface ProviderConfig {
   type: ProviderType;
   endpoint?: string;
   apiKeyEnvVar?: string;        // e.g. 'PHONE_DATA_API_KEY'
+  apiKeyHeader?: string;        // 'Authorization' (default) or 'x-api-key'
   headers?: Record<string, string>;
   brandFilter?: string[];       // e.g. ['Samsung', 'Apple']
   countryFilter?: string;       // e.g. 'Pakistan'

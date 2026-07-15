@@ -233,10 +233,10 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
         if (isDup && mode === 'skip_duplicates') { skipped++; continue; }
         if (isDup && mode === 'new_only') { skipped++; continue; }
         const pd: any = { brandId: bId, modelName: mName, slug, pricePKR: parseInt(r.pricePKR) || parseInt(r.price) || 0, ptaStatus: r.ptaStatus || 'Unknown', ptaApproved: r.ptaApproved === true, releaseDate: r.releaseDate || '', thumbnail: r.thumbnail || '', description: r.description || '', featured: r.featured === true, trending: r.trending === true, upcoming: r.upcoming === true, status: 'published', active: true, cameraScore: parseInt(r.cameraScore) || 0, performanceScore: parseInt(r.performanceScore) || 0, batteryScore: parseInt(r.batteryScore) || 0, displayScore: parseInt(r.displayScore) || 0, valueScore: parseInt(r.valueScore) || 0, overallRating: parseInt(r.overallRating) || 0, pros: r.pros || '', cons: r.cons || '', reviewSummary: r.reviewSummary || '', reviewVerdict: r.reviewVerdict || '' };
-        if (isDup && mode === 'update_existing') { const ex = await Phone.findOne({ slug }); if (ex) { await Phone.updateOne({ _id: ex._id }, { $set: pd }); if (r.specs) await PhoneSpecs.findOneAndUpdate({ phoneId: ex._id }, { $set: r.specs }, { upsert: true }); if (r.benchmarks) await PhoneBenchmark.findOneAndUpdate({ phoneId: ex._id }, { $set: r.benchmarks }, { upsert: true }); updated++; continue; } }
+        if (isDup && mode === 'update_existing') { const ex = await Phone.findOne({ slug }); if (ex) { await Phone.updateOne({ _id: ex._id }, { $set: pd }); if (r.specs) { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = r.specs as any; await PhoneSpecs.findOneAndUpdate({ phoneId: ex._id }, { $set: safeSpecs }, { upsert: true }); } if (r.benchmarks) { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = r.benchmarks as any; await PhoneBenchmark.findOneAndUpdate({ phoneId: ex._id }, { $set: safeBench }, { upsert: true }); } updated++; continue; } }
         const phone = await Phone.create(pd); existingSlugs.add(slug); existingBM.add(`${bName}|${mName}`.toLowerCase());
-        if (r.specs) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...r.specs, phoneId: phone._id }, { upsert: true });
-        if (r.benchmarks) await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...r.benchmarks, phoneId: phone._id }, { upsert: true });
+        if (r.specs) { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = r.specs as any; await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true }); }
+        if (r.benchmarks) { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = r.benchmarks as any; await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true }); }
         if (Array.isArray(r.images)) await PhoneImage.insertMany(r.images.map((img: any, j: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? j })));
         if (Array.isArray(r.prices)) await PhonePrice.insertMany(r.prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
         imported++;
@@ -321,8 +321,8 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (seoDescription !== undefined) phone.seoDescription = seoDescription;
     if (keywords !== undefined) phone.keywords = keywords;
     await phone.save();
-    if (specs && typeof specs === 'object') await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
-    if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
+    if (specs && typeof specs === 'object') { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = specs as any; await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true }); }
+    if (benchmarks && typeof benchmarks === 'object') { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = benchmarks as any; await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true }); }
     if (images !== undefined) {
       await PhoneImage.deleteMany({ phoneId: phone._id });
       if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
@@ -412,8 +412,17 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
+    const { name, image, url, position, active, startDate, endDate } = body;
     const { Sponsor } = await import('@/lib/models/Other');
-    const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: body }, { new: true }).lean();
+    const updateData: Record<string, any> = {};
+    if (name !== undefined) updateData.name = name;
+    if (image !== undefined) updateData.image = image;
+    if (url !== undefined) updateData.url = url;
+    if (position !== undefined) updateData.position = position;
+    if (active !== undefined) updateData.active = active;
+    if (startDate !== undefined) updateData.startDate = startDate;
+    if (endDate !== undefined) updateData.endDate = endDate;
+    const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: updateData }, { new: true }).lean();
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ success: true, sponsor: { ...updated, id: updated._id?.toString() } });
   }
