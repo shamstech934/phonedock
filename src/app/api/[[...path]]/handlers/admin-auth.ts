@@ -62,7 +62,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
   // SECURITY: Only works if ADMIN_BOOTSTRAP_SECRET env var is set AND matches
   // the x-bootstrap-secret header. Only works when ZERO admins exist.
   // After creating the first admin, delete ADMIN_BOOTSTRAP_SECRET from Vercel env.
-  if (segments.length === 1 && segments[0] === 'bootstrap-admin' && req.method === 'POST') {
+  if (segments.length === 1 && segments[0] === 'bootstrap-admin') {
     const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
     const requestSecret = req.headers.get('x-bootstrap-secret');
     if (!bootstrapSecret || !requestSecret || requestSecret.length !== bootstrapSecret.length ||

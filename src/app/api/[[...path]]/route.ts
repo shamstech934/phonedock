@@ -45,6 +45,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const { path } = await params;
   const segments = path || [];
 
+  // ---- Bootstrap-admin: handle BEFORE rate limiting ----
+  // This endpoint has its own security (ADMIN_BOOTSTRAP_SECRET header + one-time check).
+  // Rate limiting is unnecessary and could block the very first request on a fresh deployment.
+  if (segments.length === 1 && segments[0] === 'bootstrap-admin') {
+    try {
+      const bootstrapResult = await handleAdminAuthPost(req, segments);
+      if (bootstrapResult) return bootstrapResult;
+    } catch (e: any) {
+      console.error('Bootstrap-admin error:', e.message);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+  }
+
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
   const isLogin = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login';
