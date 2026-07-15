@@ -16,6 +16,8 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
+import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
+import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
@@ -141,6 +143,7 @@ function TrustSection() {
 // ============ MAIN HOME PAGE ============
 export default function HomePage() {
   const [homeData, setHomeData] = useState<HomeData | null>(null);
+  const [heroPhones, setHeroPhones] = useState<HeroPhone[]>([]);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [homeSearchQ, setHomeSearchQ] = useState('');
@@ -164,6 +167,17 @@ export default function HomePage() {
         }
       })
       .catch((e) => { if (!cancelled) { setLoadError('Network error \u2014 check your connection'); setHomeData(null); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [mounted]);
+
+  // Fetch hero phones separately (includes specs for showcase)
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    fetch('/api/hero-phones')
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.phones) setHeroPhones(d.phones); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [mounted]);
 
@@ -241,7 +255,7 @@ export default function HomePage() {
           <div className="glass-orb glass-orb-yellow" />
           <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
             {/* Hero */}
-            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-8 sm:p-12 lg:p-16 text-white relative overflow-hidden sky-glow">
+            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-8 sm:p-10 lg:p-14 text-white relative overflow-hidden sky-glow">
               <div className="hero-particles">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="hero-particle" style={{ left: `${8 + (i * 7.5) % 85}%`, '--delay': `${i * 0.5}s`, '--duration': `${5 + (i % 4) * 1.5}s`, '--drift': `${(i % 2 === 0 ? 1 : -1) * (15 + i * 5)}px`, width: `${3 + (i % 3)}px`, height: `${3 + (i % 3)}px` } as React.CSSProperties} />
@@ -250,41 +264,55 @@ export default function HomePage() {
               <div className="absolute -top-20 -right-20 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl hero-glow-anim" />
               <div className="absolute -bottom-16 -left-16 w-60 h-60 bg-cyan-400/15 rounded-full blur-3xl hero-glow-anim" style={{ animationDelay: '2s' }} />
 
-              <div className="relative z-10 max-w-2xl">
-                <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
-                  <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
-                    <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
-                  </Badge>
-                </div>
-                <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
-                  Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block' }}>Smartphone</span>
-                </h1>
-                <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
-                  Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.
-                </p>
-
-                <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
-                  <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input placeholder="Phone name, brand or chipset..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
+              <div className="relative z-10 flex flex-col lg:flex-row items-center gap-8 lg:gap-6">
+                {/* Left side — 45% */}
+                <div className="w-full lg:w-[45%]">
+                  <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
+                    <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+                      <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
+                    </Badge>
                   </div>
-                  <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
-                    <Search className="w-4 h-4" /> Search
-                  </button>
+                  <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
+                    Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.82em' }}>Smartphone</span>
+                  </h1>
+                  <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
+                    Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.
+                  </p>
+
+                  <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
+                    <div className="relative flex-1">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input placeholder="Phone name, brand or chipset..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
+                    </div>
+                    <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
+                      <Search className="w-4 h-4" /> Search
+                    </button>
+                  </div>
+
+                  <div className="hero-animate flex flex-wrap gap-3 mt-6" style={{ animationDelay: '0.9s' }}>
+                    <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/brands')}>
+                      <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+                    </Button>
+                    <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/compare')}>
+                      <TrendingUp className="w-4 h-4 mr-2" /> Compare
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
+                    <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
+                    <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
+                    <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+                  </div>
                 </div>
 
-                <div className="hero-animate flex flex-wrap gap-3 mt-6" style={{ animationDelay: '0.9s' }}>
-                  <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/brands')}>
-                    <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
-                  </Button>
-                  <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/compare')}>
-                    <TrendingUp className="w-4 h-4 mr-2" /> Compare
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
-                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
-                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
-                  <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+                {/* Right side — 55% Featured Phone Showcase */}
+                <div className="w-full lg:w-[55%] h-[320px] sm:h-[370px] lg:h-[420px] flex-shrink-0">
+                  {heroPhones.length > 0 ? (
+                    <HeroPhoneShowcase phones={heroPhones} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <div className="w-7 h-7 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

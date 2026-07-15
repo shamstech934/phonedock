@@ -758,3 +758,8 @@ body {
 .hero-glow-anim {
   animation: heroGlowPulse 4s ease-in-out infinite;
 }
+
+/* Hero phone showcase — soft glow ring behind the card */
+.hero-card-glow {
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.08), 0 8px 32px rgba(0, 0, 0, 0.2);
+}

@@ -96,6 +96,37 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     });
   }
 
+  // ---- /api/hero-phones (featured phones with specs for hero slider) ----
+  if (segments.length === 1 && segments[0] === 'hero-phones') {
+    await connectDB();
+    let phones = await Phone.find({ active: true, status: 'published', featured: true })
+      .sort({ createdAt: -1 }).limit(6).populate('brand').lean();
+    if (phones.length === 0) {
+      phones = await Phone.find({ active: true, status: 'published', pricePKR: { $gt: 150000 } })
+        .sort({ createdAt: -1 }).limit(6).populate('brand').lean();
+    }
+    const ids = phones.map((p: any) => p._id);
+    const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
+    const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
+    return NextResponse.json({
+      phones: phones.map((p: any) => {
+        const json = phoneToJSON(p);
+        const specs = specsMap.get(p._id?.toString());
+        return {
+          ...json,
+          specs: specs ? {
+            ram: specs.ram || '',
+            mainCamera: specs.mainCamera || '',
+            battery: specs.battery || '',
+            chipset: specs.chipset || '',
+            display: specs.display || '',
+            storage: specs.storage || '',
+          } : null,
+        };
+      }),
+    });
+  }
+
   // ---- /api/phones ----
   if (segments.length === 1 && segments[0] === 'phones') {
     await connectDB();
