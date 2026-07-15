@@ -6,6 +6,7 @@ import { handleAdminAuthGet, handleAdminAuthPost } from './handlers/admin-auth';
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
+import { handleDownloadSample } from './handlers/download';
 
 // ============ GET HANDLER ============
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
@@ -13,6 +14,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
+    // Download sample data (no auth needed)
+    const downloadResult = await handleDownloadSample(req, segments);
+    if (downloadResult) return downloadResult;
+
     // Public routes
     const publicResult = await handlePublicGet(req, segments);
     if (publicResult) return publicResult;
