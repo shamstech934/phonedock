@@ -1,3 +1,5 @@
+import Image from 'next/image';
+import { Smartphone } from 'lucide-react';
 import type { PhoneFormData } from './types';
 import { TextInput, NumberInput, SelectInput, TextArea, CheckboxInput } from './FormFields';
 
@@ -59,12 +61,28 @@ export default function BasicInfoSection({ form, set, brandOptions }: SectionPro
         onChange={(v) => set('releaseDate', v)}
         type="date"
       />
-      <TextInput
-        label="Thumbnail URL"
-        value={form.thumbnailUrl}
-        onChange={(v) => set('thumbnailUrl', v)}
-        placeholder="https://..."
-      />
+      <div className="md:col-span-2">
+        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Thumbnail</label>
+        <div className="flex items-center gap-3">
+          <div className="w-20 h-20 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
+            {form.thumbnailUrl ? (
+              <Image src={form.thumbnailUrl} alt="Thumbnail preview" width={72} height={72} className="object-contain p-1" unoptimized />
+            ) : (
+              <Smartphone className="w-6 h-6 text-gray-300" />
+            )}
+          </div>
+          <div className="flex-1">
+            <input
+              type="text"
+              value={form.thumbnailUrl}
+              onChange={e => set('thumbnailUrl', e.target.value)}
+              placeholder="Paste image URL (e.g. https://fdn2.gsmarena.com/vv/bigpic/...)"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Paste a direct image URL. Preview updates automatically.</p>
+          </div>
+        </div>
+      </div>
       <TextArea
         label="Description"
         value={form.description}
