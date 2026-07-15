@@ -28,11 +28,10 @@ const BrandSchema = new Schema<IBrand>({
   seoDescription: { type: String, default: '' },
 }, { timestamps: true });
 
-(BrandSchema as any).pre('save', function(this: any, next: (err?: any) => void) {
+BrandSchema.pre('save', async function(this: any) {
   if (!this.slug) {
     this.slug = this.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
-  next();
 });
 
 BrandSchema.index({ slug: 1 }, { unique: true });

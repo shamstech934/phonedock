@@ -110,11 +110,10 @@ PhoneSchema.virtual('brand', {
   justOne: true,
 });
 
-(PhoneSchema as any).pre('save', function(this: any, next: (err?: any) => void) {
+PhoneSchema.pre('save', async function(this: any) {
   if (!this.slug && this.modelName) {
     this.slug = this.modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
-  next();
 });
 
 PhoneSchema.index({ slug: 1 }, { unique: true });
