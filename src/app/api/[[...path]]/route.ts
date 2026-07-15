@@ -92,11 +92,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         return NextResponse.json({ error: 'Too many contact submissions.' }, { status: 429 });
       }
     } else if (isCollector || isImport) {
-      if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+      if (!await checkIpRateLimit(`api:${ip}`, 400, 60_000, RateLimit)) {
         return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
       }
     } else {
-      if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+      if (!await checkIpRateLimit(`api:${ip}`, 400, 60_000, RateLimit)) {
         return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
       }
     }
@@ -142,7 +142,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
   const ip = getClientIp(req);
   try {
     await connectDB();
-    if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+    if (!await checkIpRateLimit(`api:${ip}`, 400, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
     }
   } catch {
@@ -178,7 +178,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   const ip = getClientIp(req);
   try {
     await connectDB();
-    if (!await checkIpRateLimit(`api:${ip}`, 100, 60_000, RateLimit)) {
+    if (!await checkIpRateLimit(`api:${ip}`, 400, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 });
     }
   } catch {
