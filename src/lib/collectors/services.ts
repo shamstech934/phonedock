@@ -51,7 +51,8 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
 
   // Validate battery capacity is numeric
   if (phone.battery?.capacity) {
-    const cap = parseInt(phone.battery.capacity.replace(/[^0-9]/g, ''));
+    const capStr = typeof phone.battery.capacity === 'string' ? phone.battery.capacity : String(phone.battery.capacity);
+    const cap = parseInt(capStr.replace(/[^0-9]/g, ''));
     if (isNaN(cap) || cap < 500 || cap > 25000) {
       issues.push({ field: 'battery.capacity', severity: 'warning', message: `Unusual battery capacity: ${phone.battery.capacity}` });
     }
@@ -59,7 +60,8 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
 
   // Validate display size
   if (phone.display?.size) {
-    const size = parseFloat(phone.display.size.replace(/[^0-9.]/g, ''));
+    const sizeStr = typeof phone.display.size === 'string' ? phone.display.size : String(phone.display.size);
+    const size = parseFloat(sizeStr.replace(/[^0-9.]/g, ''));
     if (isNaN(size) || size < 1 || size > 15) {
       issues.push({ field: 'display.size', severity: 'warning', message: `Unusual display size: ${phone.display.size}` });
     }
@@ -67,7 +69,8 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
 
   // Validate weight
   if (phone.body?.weight) {
-    const w = parseFloat(phone.body.weight.replace(/[^0-9.]/g, ''));
+    const wStr = typeof phone.body.weight === 'string' ? phone.body.weight : String(phone.body.weight);
+    const w = parseFloat(wStr.replace(/[^0-9.]/g, ''));
     if (isNaN(w) || w < 50 || w > 500) {
       issues.push({ field: 'body.weight', severity: 'warning', message: `Unusual weight: ${phone.body.weight}` });
     }
@@ -75,7 +78,8 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
 
   // Validate RAM
   if (phone.memory?.ram) {
-    const ram = parseInt(phone.memory.ram.replace(/[^0-9]/g, ''));
+    const ramStr = typeof phone.memory.ram === 'string' ? phone.memory.ram : String(phone.memory.ram);
+    const ram = parseInt(ramStr.replace(/[^0-9]/g, ''));
     if (isNaN(ram) || ram < 1 || ram > 64) {
       issues.push({ field: 'memory.ram', severity: 'warning', message: `Unusual RAM: ${phone.memory.ram}` });
     }
