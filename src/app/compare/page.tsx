@@ -25,6 +25,8 @@ function CompareContent() {
   const [loading, setLoading] = useState(true);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
   const [showPicker, setShowPicker] = useState(true);
+  const [detailedSelected, setDetailedSelected] = useState<Phone[]>([]);
+  const [fetchingDetails, setFetchingDetails] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +44,29 @@ function CompareContent() {
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!compared || selected.length < 2) {
+      setDetailedSelected([]);
+      return;
+    }
+    let cancelled = false;
+    setFetchingDetails(true);
+    Promise.all(
+      selected.map(p => fetch(`/api/phones/${p.slug}`).then(r => r.json()))
+    ).then(results => {
+      if (cancelled) return;
+      const detailed: Phone[] = results.map((d, i) => {
+        if (d.phone) return { ...selected[i], ...d.phone };
+        return selected[i];
+      });
+      setDetailedSelected(detailed);
+      setFetchingDetails(false);
+    }).catch(() => {
+      if (!cancelled) setFetchingDetails(false);
+    });
+    return () => { cancelled = true; };
+  }, [compared, selected]);
 
   const updateURL = (phones: Phone[]) => {
     const slugs = phones.map(p => p.slug).join(',');
@@ -80,9 +105,11 @@ function CompareContent() {
     updateURL(next);
   };
 
+  const comparePhones = detailedSelected.length === selected.length ? detailedSelected : selected;
+
   const getWinner = (key: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore') => {
-    let best = selected[0]; let max = 0;
-    selected.forEach(p => { if (p[key] > max) { max = p[key]; best = p; } });
+    let best = comparePhones[0]; let max = 0;
+    comparePhones.forEach(p => { if ((p as any)[key] > max) { max = (p as any)[key]; best = p; } });
     return best;
   };
 
@@ -131,7 +158,7 @@ function CompareContent() {
   const getFilteredSpecRows = (rows: typeof specRows) => {
     if (!onlyDifferences) return rows;
     return rows.filter(row => {
-      const values = selected.map(p => row.get(p) || '—');
+      const values = comparePhones.map(p => row.get(p) || '—');
       return new Set(values).size > 1;
     });
   };
@@ -139,7 +166,7 @@ function CompareContent() {
   const getFilteredMetrics = (m: typeof metrics) => {
     if (!onlyDifferences) return m;
     return m.filter(metric => {
-      const values = selected.map(p => metric.get(p));
+      const values = comparePhones.map(p => metric.get(p));
       return new Set(values).size > 1;
     });
   };
@@ -225,6 +252,12 @@ function CompareContent() {
       )}
 
       {compared && selected.length >= 2 && (
+        fetchingDetails ? (
+          <div className="card-premium p-8 text-center">
+            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Loading full specifications...</p>
+          </div>
+        ) : (
         <>
           {/* Category Winners */}
           <section className="space-y-4">
@@ -257,7 +290,7 @@ function CompareContent() {
               </label>
             </div>
             {filteredMetrics.map(metric => {
-              const scores = selected.map(p => ({ phone: p, score: metric.get(p) }));
+              const scores = comparePhones.map(p => ({ phone: p, score: metric.get(p) }));
               const maxScore = Math.max(...scores.map(s => s.score));
               const winnerId = scores.find(s => s.score === maxScore)?.phone.id;
               return (
@@ -297,7 +330,7 @@ function CompareContent() {
                 <thead>
                   <tr className="bg-[#F8FAFC]">
                     <th className="sticky left-0 bg-[#F8FAFC] z-10 text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-36">Spec</th>
-                    {selected.map(p => (
+                    {comparePhones.map(p => (
                       <th key={p.id} className="text-left px-4 py-3 text-xs font-semibold text-gray-900">
                         <Link href={`/phones/${p.slug}`} className="hover:text-blue-500 transition-colors">{p.modelName}</Link>
                       </th>
@@ -306,12 +339,12 @@ function CompareContent() {
                 </thead>
                 <tbody>
                   {filteredSpecRows.map((row, i) => {
-                    const values = selected.map(p => row.get(p) || '—');
+                    const values = comparePhones.map(p => row.get(p) || '—');
                     const allSame = new Set(values).size <= 1;
                     return (
                       <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'}>
                         <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-inherit">{row.label}</td>
-                        {selected.map(p => {
+                        {comparePhones.map(p => {
                           const val = row.get(p) || '—';
                           const isBest = !allSame && val !== '—' && val === values.find(v => v !== '—');
                           return (
@@ -326,19 +359,19 @@ function CompareContent() {
                   <tr className="bg-white border-t border-gray-100">
                     <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-white">Price</td>
                     {(() => {
-                      const prices = selected.map(p => p.pricePKR);
+                      const prices = comparePhones.map(p => p.pricePKR);
                       const minPrice = Math.min(...prices);
-                      return selected.map(p => (
+                      return comparePhones.map(p => (
                         <td key={p.id} className={`px-4 py-3 font-bold text-blue-600 ${p.pricePKR === minPrice ? 'bg-emerald-50' : ''}`}>
                           {formatPrice(p.pricePKR)}
-                          {p.pricePKR === minPrice && selected.length > 1 && <span className="ml-1 text-[10px] font-medium text-emerald-600">Best</span>}
+                          {p.pricePKR === minPrice && comparePhones.length > 1 && <span className="ml-1 text-[10px] font-medium text-emerald-600">Best</span>}
                         </td>
                       ));
                     })()}
                   </tr>
                   <tr className="bg-[#F8FAFC]">
                     <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-[#F8FAFC]">PTA</td>
-                    {selected.map(p => (
+                    {comparePhones.map(p => (
                       <td key={p.id} className="px-4 py-3">
                         {p.ptaApproved ? <span className="text-emerald-600 font-medium flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Approved</span> : <span className="text-muted-foreground">{p.ptaStatus}</span>}
                       </td>
@@ -350,6 +383,7 @@ function CompareContent() {
             {filteredSpecRows.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">All specifications are identical</p>}
           </section>
         </>
+        )
       )}
 
       {selected.length === 0 && !loading && (

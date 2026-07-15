@@ -4,7 +4,7 @@ import { connectDB, checkIpRateLimit, getClientIp } from './handlers/helpers';
 import { handlePublicGet } from './handlers/public';
 import { handleAdminAuthGet, handleAdminAuthPost } from './handlers/admin-auth';
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
-import { handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
+import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 
 // ============ GET HANDLER ============
@@ -24,6 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
     const crudResult = await handleAdminCrudGet(req, segments);
     if (crudResult) return crudResult;
+
+    // Collector routes (dashboard, sources, jobs)
+    const collectorResult = await handleCollectorGet(req, segments);
+    if (collectorResult) return collectorResult;
 
     // Import routes (history)
     const importResult = await handleImportGet(req, segments);

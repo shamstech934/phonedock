@@ -2,6 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CollectorSource, CollectorJob, CollectedPhone, Brand, Phone, ActivityLog } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, escapeRegex } from './helpers';
 
+// ============ COLLECTOR GET ============
+
+export async function handleCollectorGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/collector/dashboard ----
+  if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'dashboard') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const [totalSources, activeSources, totalJobs, pendingReview, completedJobs] = await Promise.all([
+      CollectorSource.countDocuments(),
+      CollectorSource.countDocuments({ enabled: true }),
+      CollectorJob.countDocuments(),
+      CollectedPhone.countDocuments({ status: 'pending_review' }),
+      CollectorJob.countDocuments({ status: { $in: ['completed', 'failed'] } }),
+    ]);
+    return NextResponse.json({ totalSources, activeSources, totalJobs, pendingReview, completedJobs });
+  }
+
+  // ---- /api/collector/sources ----
+  if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
+    return NextResponse.json({ sources: sources.map((s: any) => ({ ...s, id: s._id?.toString() })) });
+  }
+
+  // ---- /api/collector/jobs ----
+  if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
+    return NextResponse.json({ jobs: jobs.map((j: any) => ({ ...j, id: j._id?.toString(), sourceId: j.sourceId?.toString() })) });
+  }
+
+  return undefined;
+}
+
 // ============ COLLECTOR POST ============
 
 export async function handleCollectorPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {

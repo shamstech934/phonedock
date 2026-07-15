@@ -38,7 +38,11 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount,
       avgPrice: priceResult[0]?.avg || 0,
       priceDistribution: priceDistribution.map((d: any, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
-      recentActivity,
+      recentActivity: recentActivity.map((l: any) => ({
+        ...l,
+        id: l._id?.toString(),
+        admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined,
+      })),
     });
   }
 
@@ -73,7 +77,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'brands:read'); if (permCheck) return permCheck;
     await connectDB();
     const brands = await Brand.find().sort({ sortOrder: 1 }).lean();
-    return NextResponse.json(brands);
+    return NextResponse.json({ brands: brands.map((b: any) => ({ ...b, id: b._id?.toString() })) });
   }
 
   // ---- /api/admin/news ----
@@ -82,7 +86,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
     await connectDB();
     const news = await News.find().sort({ createdAt: -1 }).lean();
-    return NextResponse.json(news);
+    return NextResponse.json({ news: news.map((n: any) => ({ ...n, id: n._id?.toString() })) });
   }
 
   // ---- /api/admin/users ----
@@ -91,7 +95,17 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
     await connectDB();
     const users = await Admin.find().select('-password -resetTokenHash -resetTokenExpires').sort({ createdAt: -1 }).lean();
-    return NextResponse.json(users);
+    return NextResponse.json({ users: users.map((u: any) => ({ ...u, id: u._id?.toString() })) });
+  }
+
+  // ---- /api/admin/sponsors ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'sponsors:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const { Sponsor } = await import('@/lib/models/Other');
+    const sponsors = await Sponsor.find().sort({ createdAt: -1 }).lean();
+    return NextResponse.json({ sponsors: sponsors.map((s: any) => ({ ...s, id: s._id?.toString() })) });
   }
 
   // ---- /api/admin/activity ----
@@ -100,7 +114,11 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
     await connectDB();
     const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(100).populate('adminId', 'name email').lean();
-    return NextResponse.json(logs);
+    return NextResponse.json({ logs: logs.map((l: any) => ({
+      ...l,
+      id: l._id?.toString(),
+      admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined,
+    })) });
   }
 
   return undefined;
@@ -226,6 +244,18 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors });
+  }
+
+  // ---- /api/admin/sponsors (CREATE) ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
+    const body = await req.json();
+    const { name, image, url, position, active, startDate, endDate } = body;
+    if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
+    const { Sponsor } = await import('@/lib/models/Other');
+    const sponsor = await Sponsor.create({ name, image: image || '', url: url || '', position: position || 'sidebar', active: active !== false, startDate: startDate || '', endDate: endDate || '' });
+    return NextResponse.json({ success: true, id: sponsor._id?.toString() });
   }
 
   // ---- /api/admin/seed (REMOVED — use `npm run seed` CLI script instead) ----
@@ -377,6 +407,17 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     return NextResponse.json({ success: true, trending: phone.trending });
   }
 
+  // ---- /api/admin/sponsors/:id ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
+    const body = await req.json();
+    const { Sponsor } = await import('@/lib/models/Other');
+    const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: body }, { new: true }).lean();
+    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ success: true, sponsor: { ...updated, id: updated._id?.toString() } });
+  }
+
   return undefined;
 }
 
@@ -427,6 +468,15 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const title = news.title;
     await News.deleteOne({ _id: id });
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_news', details: `Deleted: ${title}`, entityType: 'news', entityId: id }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true });
+  }
+
+  // ---- /api/admin/sponsors/:id ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'sponsors') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
+    const { Sponsor } = await import('@/lib/models/Other');
+    await Sponsor.findByIdAndDelete(segments[2]);
     return NextResponse.json({ success: true });
   }
 

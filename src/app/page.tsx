@@ -7,7 +7,7 @@ import Link from 'next/link';
 import {
   Search, Star, Shield, Zap, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, ChevronRight, Users, BarChart3, Target, Newspaper,
+  Check, ChevronRight, Users, BarChart3, Target, Newspaper, AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -144,6 +144,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [homeSearchQ, setHomeSearchQ] = useState('');
+  const [loadError, setLoadError] = useState('');
   const router = useRouter();
 
   useEffect(() => { setMounted(true); }, []);
@@ -151,15 +152,18 @@ export default function HomePage() {
   useEffect(() => {
     if (!mounted) return;
     let cancelled = false;
+    setLoading(true);
+    setLoadError('');
     fetch('/api/home')
       .then(r => r.json())
       .then(d => {
         if (!cancelled) {
-          if (d.error) { setHomeData(null); } else { setHomeData(d); }
+          if (d.error) { setLoadError(d.error || 'Failed to load homepage data'); setHomeData(null); }
+          else { setHomeData(d); }
           setLoading(false);
         }
       })
-      .catch(() => { if (!cancelled) { setHomeData(null); setLoading(false); } });
+      .catch((e) => { if (!cancelled) { setLoadError('Network error \u2014 check your connection'); setHomeData(null); setLoading(false); } });
     return () => { cancelled = true; };
   }, [mounted]);
 
@@ -177,7 +181,7 @@ export default function HomePage() {
     );
   }
 
-  if (loading || !homeData) {
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
@@ -191,6 +195,31 @@ export default function HomePage() {
         <Footer />
       </div>
     );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4 max-w-md mx-auto px-4">
+            <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertCircle className="w-8 h-8 text-red-400" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-900">Couldn&apos;t load the homepage</h2>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button onClick={() => { setLoadError(''); setLoading(true); }} variant="outline" className="mt-2">
+              Try again
+            </Button>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!homeData) {
+    return null;
   }
 
   const data = homeData;
