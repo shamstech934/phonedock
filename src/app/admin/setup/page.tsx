@@ -26,16 +26,16 @@ export default function AdminSetupPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch('/api/bootstrap-admin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-setup-secret': secret,
+          'x-bootstrap-secret': secret,
         },
         body: JSON.stringify({ name, email: email.toLowerCase(), password }),
       });
       const data = await res.json();
-      setResult({ success: data.success || false, message: data.message || data.error || 'Unknown error' });
+      setResult({ success: data.success || false, message: data.message || data.error || (data.success ? 'Admin account created successfully' : 'Unknown error') });
     } catch {
       setResult({ success: false, message: 'Network error' });
     }
