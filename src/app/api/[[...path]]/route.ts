@@ -744,7 +744,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
       const body = await req.json();
-      return NextResponse.json({ success: true, message: 'Rollback not implemented yet' });
+      return NextResponse.json({ success: false, error: 'Rollback not yet implemented. Use /api/import/history to track imports.' }, { status: 501 });
     }
 
     // ---- /api/admin/phones (CREATE) ----
@@ -905,7 +905,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (segments.length === 4 && segments[0] === 'collector' && segments[1] === 'sources' && segments[3] === 'test') {
       const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
       const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-      return NextResponse.json({ success: true, message: 'Test not implemented' });
+      return NextResponse.json({ success: false, error: 'Collector source testing not yet implemented.' }, { status: 501 });
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

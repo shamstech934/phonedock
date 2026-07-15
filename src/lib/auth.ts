@@ -240,20 +240,28 @@ export async function checkIpRateLimit(
 ): Promise<boolean> {
   try {
     const now = new Date();
-    const windowStart = new Date(now.getTime() - windowMs);
 
-    // Upsert: increment count or create new entry
+    // Step 1: Try to increment an existing non-expired doc
+    const existing = await RateLimitModel.findOneAndUpdate(
+      { key, expiresAt: { $gt: now } },
+      { $inc: { count: 1 } },
+      { new: true, lean: true },
+    );
+
+    if (existing) {
+      // Found a valid window entry — check count
+      return (existing as any).count <= limit;
+    }
+
+    // Step 2: No valid window doc. Upsert by KEY ALONE so the unique index
+    // always matches (never a duplicate insert). Reset count to 1.
     const result = await RateLimitModel.findOneAndUpdate(
-      { key, expiresAt: { $gt: windowStart } },
-      { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + windowMs) } },
+      { key },
+      { $set: { count: 1, expiresAt: new Date(now.getTime() + windowMs) } },
       { upsert: true, new: true, lean: true },
     );
 
-    // If the document was just created (count should be 1), or count <= limit, allow
-    if ((result as any).count <= limit) {
-      return true;
-    }
-    return false;
+    return (result as any).count <= limit;
   } catch {
     // FAIL CLOSED: on DB error, reject the request
     return false;
