@@ -9,3 +9,5 @@ node_modules/
 upload/
 tool-results/
 FINAL_IMPLEMENTATION_REPORT.md
+.vercel
+.env*
