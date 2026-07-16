@@ -157,7 +157,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
           <div className="glass-orb glass-orb-yellow" />
           <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
             {/* Hero */}
-            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-8 sm:p-10 lg:p-14 text-white relative overflow-hidden sky-glow">
+            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-6 sm:p-8 lg:p-10 text-white relative overflow-hidden sky-glow">
               <div className="hero-particles">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="hero-particle" style={{ left: `${8 + (i * 7.5) % 85}%`, '--delay': `${i * 0.5}s`, '--duration': `${5 + (i % 4) * 1.5}s`, '--drift': `${(i % 2 === 0 ? 1 : -1) * (15 + i * 5)}px`, width: `${3 + (i % 3)}px`, height: `${3 + (i % 3)}px` } as React.CSSProperties} />
@@ -207,7 +207,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                 </div>
 
                 {/* Right side — 55% Featured Phone Showcase */}
-                <div className="w-full lg:w-[55%] h-[320px] sm:h-[370px] lg:h-[420px] flex-shrink-0">
+                <div className="w-full lg:w-[55%] h-[240px] sm:h-[280px] lg:h-[315px] flex-shrink-0">
                   {heroPhones.length > 0 ? (
                     <HeroPhoneShowcase phones={heroPhones} />
                   ) : (
