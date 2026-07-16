@@ -1,13 +1,38 @@
-skills/
+# Dependencies
 node_modules/
+skills/
+
+# Build
 .next/
-.env.local
+out/
+
+# Environment
 .env
-.env.production
-.env.production.local
-*.log
-upload/
+.env.local
+.env*.local
+
+# Tool results
 tool-results/
-FINAL_IMPLEMENTATION_REPORT.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Debug
+npm-debug.log*
+*.log
+
+# Misc
+*.tsbuildinfo
+
+# Vercel
 .vercel
-.env*
+
+# Uploads
+upload/

@@ -1,5 +1,4 @@
 import { db } from '../src/lib/db';
-import { hash } from 'bcryptjs';
 
 async function seed() {
   console.log('🌱 Seeding PhoneDock database...');
@@ -179,15 +178,6 @@ async function seed() {
     await db.sponsor.upsert({ where: { id: s.name.replace(/\s/g, '-').toLowerCase() }, update: s, create: { ...s, id: s.name.replace(/\s/g, '-').toLowerCase() } });
   }
   console.log(`✅ ${sponsorData.length} sponsors created`);
-
-  // Admin user
-  const adminPassword = await hash('admin123', 12);
-  await db.admin.upsert({
-    where: { email: 'admin@phonedock.pk' },
-    update: {},
-    create: { email: 'admin@phonedock.pk', password: adminPassword, name: 'PhoneDock Admin', role: 'super_admin' },
-  });
-  console.log('✅ Admin user created (admin@phonedock.pk / admin123)');
 
   // Reviews
   const reviews = [

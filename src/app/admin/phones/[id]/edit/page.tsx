@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/lib/useAdmin';
 
-const PhoneForm = dynamic(() => import('@/components/admin/PhoneForm'), { ssr: false });
+const PhoneForm = dynamic(() => import('@/components/admin/phone-form'), { ssr: false });
 
 export default function AdminPhoneEditPage() {
   useAdmin();

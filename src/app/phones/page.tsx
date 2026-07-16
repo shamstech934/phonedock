@@ -37,16 +37,18 @@ const PRICE_RANGES: { label: string; min: number; max: number }[] = [
   { label: 'Above 100K', min: 100000, max: 0 },
 ];
 
-const RAM_OPTIONS = ['All', '2GB', '3GB', '4GB', '6GB', '8GB', '12GB', '16GB'];
-const STORAGE_OPTIONS = ['All', '32GB', '64GB', '128GB', '256GB', '512GB', '1TB'];
+const RAM_OPTIONS = ['All', '2', '3', '4', '6', '8', '12', '16'];
+const STORAGE_OPTIONS = ['All', '32', '64', '128', '256', '512', '1024'];
 
 function PhonesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  // ── All hooks BEFORE any early return ──
+  const [phones, setPhones] = useState<Phone[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
 
   const q = searchParams.get('q') || '';
   const brandParam = searchParams.get('brand') || 'all';
@@ -63,20 +65,55 @@ function PhonesContent() {
 
   useEffect(() => { setSearch(q); }, [q]);
 
+  // Build API query from all filter params
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+
+    const params = new URLSearchParams();
+    params.set('page', String(pageParam));
+    params.set('limit', String(PER_PAGE));
+
+    if (search) params.set('search', search);
+    if (brandParam !== 'all') params.set('brand', brandParam);
+
+    // Price range
+    const pr = PRICE_RANGES.find(r => r.label.toLowerCase().replace(/\s+/g, '') === priceParam.replace(/\s+/g, ''));
+    if (pr && pr.min > 0) params.set('priceMin', String(pr.min));
+    if (pr && pr.max > 0) params.set('priceMax', String(pr.max));
+
+    // RAM
+    if (ramParam !== 'All') params.set('ramMin', ramParam);
+
+    // Storage
+    if (storageParam !== 'All') params.set('storageMin', storageParam);
+
+    // Sort
+    const sortMap: Record<string, string> = {
+      'newest': 'createdAt',
+      'price-low': 'pricePKR',
+      'price-high': 'pricePKR',
+      'rating': 'overallRating',
+      'name': 'modelName',
+    };
+    if (sortMap[sortParam]) {
+      params.set('sort', sortMap[sortParam]);
+      params.set('order', sortParam === 'price-low' || sortParam === 'name' ? 'asc' : 'desc');
+    }
+
     Promise.all([
-      fetch('/api/phones?limit=500').then(r => r.json()),
+      fetch(`/api/phones?${params.toString()}`).then(r => r.json()),
       fetch('/api/brands').then(r => r.json()),
     ]).then(([pd, bd]) => {
       if (!cancelled) {
-        setAllPhones(pd.phones || []);
+        setPhones(pd.phones || []);
+        setTotal(pd.total || 0);
         setBrands(bd.brands || []);
         setLoading(false);
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [pageParam, search, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -98,51 +135,7 @@ function PhonesContent() {
     setSearch('');
   };
 
-  const filtered = allPhones
-    .filter(p => {
-      if (search) {
-        const q2 = search.toLowerCase();
-        if (!p.modelName.toLowerCase().includes(q2) && !p.brand?.name?.toLowerCase().includes(q2) && !p.specs?.chipset?.toLowerCase().includes(q2)) return false;
-      }
-      if (brandParam !== 'all' && p.brand?.slug !== brandParam) return false;
-      const pr = PRICE_RANGES.find(r => r.label === priceParam || r.label.toLowerCase().replace(/\s+/g, '') === priceParam.replace(/\s+/g, ''));
-      if (pr && (pr.min > 0 || pr.max > 0)) {
-        if (pr.max > 0) {
-          if (p.pricePKR < pr.min || p.pricePKR > pr.max) return false;
-        } else {
-          if (p.pricePKR < pr.min) return false;
-        }
-      }
-      if (ramParam !== 'all') {
-        const ramGB = parseInt(ramParam);
-        // Try numeric field first, fall back to text match
-        if (p.specs?.ramGB) { if (p.specs.ramGB !== ramGB) return false; }
-        else if (p.specs?.ram !== ramParam) return false;
-      }
-      if (storageParam !== 'all') {
-        const storageGB = parseInt(storageParam);
-        if (p.specs?.storageGB) { if (p.specs.storageGB !== storageGB) return false; }
-        else if (p.specs?.storage !== storageParam) return false;
-      }
-      if (fiveGParam === 'yes' && (!p.specs?.fiveG || p.specs.fiveG === 'No')) return false;
-      if (fiveGParam === 'no' && p.specs?.fiveG && p.specs.fiveG !== 'No') return false;
-      if (nfcParam === 'yes' && (!p.specs?.nfc || p.specs.nfc === 'No')) return false;
-      if (nfcParam === 'no' && p.specs?.nfc && p.specs.nfc !== 'No') return false;
-      if (ptaParam === 'approved' && !p.ptaApproved) return false;
-      if (ptaParam === 'pending' && p.ptaApproved) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortParam === 'price-low') return a.pricePKR - b.pricePKR;
-      if (sortParam === 'price-high') return b.pricePKR - a.pricePKR;
-      if (sortParam === 'rating') return b.overallRating - a.overallRating;
-      if (sortParam === 'name') return a.modelName.localeCompare(b.modelName);
-      return 0;
-    });
-
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const paginated = filtered.slice((pageParam - 1) * PER_PAGE, pageParam * PER_PAGE);
-
+  const totalPages = Math.ceil(total / PER_PAGE);
   const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, search ? 'search' : ''].filter(f => f && f !== 'all').length;
 
   return (
@@ -152,7 +145,7 @@ function PhonesContent() {
         <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">All Phones</h1>
-            <p className="text-sm text-muted-foreground mt-1">{filtered.length} phone{filtered.length !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
+            <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
           </div>
 
           {/* Search & Sort Bar */}
@@ -183,10 +176,10 @@ function PhonesContent() {
                 {PRICE_RANGES.map(r => <option key={r.label} value={r.label.toLowerCase().replace(/\s+/g, '')}>{r.label}</option>)}
               </select>
               <select value={ramParam} onChange={e => updateParam('ram', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                {RAM_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All RAM' : r}</option>)}
+                {RAM_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All RAM' : `${r}GB`}</option>)}
               </select>
               <select value={storageParam} onChange={e => updateParam('storage', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                {STORAGE_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All Storage' : r}</option>)}
+                {STORAGE_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All Storage' : r === '1024' ? '1TB' : `${r}GB`}</option>)}
               </select>
               <select value={fiveGParam} onChange={e => updateParam('5g', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="all">5G: All</option>
@@ -212,8 +205,8 @@ function PhonesContent() {
                 {search && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => { setSearch(''); updateParam('q', ''); }}><Search className="w-3 h-3" />{search}<span className="ml-1">&times;</span></Badge>}
                 {brandParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('brand', 'all')}>Brand: {brands.find(b => b.slug === brandParam)?.name || brandParam}<span className="ml-1">&times;</span></Badge>}
                 {priceParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('price', 'all')}>Price: {PRICE_RANGES.find(r => r.label.toLowerCase().replace(/\s+/g, '') === priceParam)?.label || priceParam}<span className="ml-1">&times;</span></Badge>}
-                {ramParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('ram', 'all')}>RAM: {ramParam}<span className="ml-1">&times;</span></Badge>}
-                {storageParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('storage', 'all')}>Storage: {storageParam}<span className="ml-1">&times;</span></Badge>}
+                {ramParam !== 'All' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('ram', 'All')}>RAM: {ramParam}GB<span className="ml-1">&times;</span></Badge>}
+                {storageParam !== 'All' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('storage', 'All')}>Storage: {storageParam === '1024' ? '1TB' : `${storageParam}GB`}<span className="ml-1">&times;</span></Badge>}
                 {fiveGParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('5g', 'all')}>5G: {fiveGParam}<span className="ml-1">&times;</span></Badge>}
                 {nfcParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('nfc', 'all')}>NFC: {nfcParam}<span className="ml-1">&times;</span></Badge>}
                 {ptaParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('pta', 'all')}>PTA: {ptaParam}<span className="ml-1">&times;</span></Badge>}
@@ -224,10 +217,10 @@ function PhonesContent() {
 
           {loading ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
-          ) : paginated.length > 0 ? (
+          ) : phones.length > 0 ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {paginated.map(p => <PhoneCard key={p.id} phone={p} />)}
+                {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
               </div>
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-4">

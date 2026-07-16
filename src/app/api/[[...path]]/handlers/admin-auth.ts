@@ -58,45 +58,6 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
 // ============ ADMIN AUTH POST ============
 
 export async function handleAdminAuthPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  // ---- /api/bootstrap-admin (one-time cloud admin creation) ----
-  // SECURITY: Only works if ADMIN_BOOTSTRAP_SECRET env var is set AND matches
-  // the x-bootstrap-secret header. Only works when ZERO admins exist.
-  // After creating the first admin, delete ADMIN_BOOTSTRAP_SECRET from Vercel env.
-  if (segments.length === 1 && segments[0] === 'bootstrap-admin') {
-    const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
-    const requestSecret = req.headers.get('x-bootstrap-secret');
-    if (!bootstrapSecret || !requestSecret || requestSecret.length !== bootstrapSecret.length ||
-      !crypto.timingSafeEqual(Buffer.from(requestSecret, 'utf-8'), Buffer.from(bootstrapSecret, 'utf-8'))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    await connectDB();
-    const adminCount = await Admin.countDocuments();
-    if (adminCount > 0) {
-      return NextResponse.json({ error: 'Admin already exists. This endpoint is disabled.' }, { status: 409 });
-    }
-    const body = await req.json();
-    const { name, email, password } = body;
-    if (!name || !email || !password) {
-      return NextResponse.json({ error: 'name, email, and password are required' }, { status: 400 });
-    }
-    const pwCheck = isStrongPassword(password);
-    if (!pwCheck.valid) {
-      return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
-    }
-    const hashed = await hashPassword(password);
-    const created = await Admin.create({
-      email: email.toLowerCase().trim(),
-      name: name.trim(),
-      password: hashed,
-      role: 'superadmin',
-      active: true,
-      failedAttempts: 0,
-      sessionVersion: 0,
-      passwordChangedAt: new Date(),
-    });
-    return NextResponse.json({ success: true, id: created._id.toString(), email: created.email, role: created.role });
-  }
-
   // ---- /api/admin/session (cookie-based session check) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'session') {
     const session = await getSessionFromRequest(req);

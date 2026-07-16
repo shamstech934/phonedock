@@ -1,11 +1,11 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  Search, Star, ChevronLeft, ChevronRight, X, Check, Trophy, Camera, Cpu, Battery, Tag, Smartphone, GitCompare, Minus, Wifi, Monitor, Shield,
+  Search, Star, ChevronLeft, ChevronRight, X, Check, Trophy, Camera, Cpu, Battery, Tag, Smartphone, GitCompare, Wifi, Monitor, Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
@@ -13,12 +13,16 @@ import { Footer } from '@/components/shared/Footer';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
 
+function Plus(props: React.SVGProps<SVGSVGElement>) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M5 12h14" /><path d="M12 5v14" /></svg>;
+}
+
 function CompareContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const slugsParam = searchParams.get('p') || searchParams.get('ids') || '';
 
-  const [allPhones, setAllPhones] = useState<Phone[]>([]);
+  // ── All hooks BEFORE any early return ──
   const [selected, setSelected] = useState<Phone[]>([]);
   const [search, setSearch] = useState('');
   const [compared, setCompared] = useState(false);
@@ -27,24 +31,45 @@ function CompareContent() {
   const [showPicker, setShowPicker] = useState(true);
   const [detailedSelected, setDetailedSelected] = useState<Phone[]>([]);
   const [fetchingDetails, setFetchingDetails] = useState(false);
+  const [autocompleteResults, setAutocompleteResults] = useState<Phone[]>([]);
 
+  // Load pre-selected phones from URL on mount
   useEffect(() => {
+    if (!slugsParam) { setLoading(false); return; }
     let cancelled = false;
-    fetch('/api/phones?limit=500').then(r => r.json()).then(data => {
+    const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+    Promise.all(
+      slugs.map(slug => fetch(`/api/phones/${encodeURIComponent(slug)}`).then(r => r.json()).catch(() => null))
+    ).then(results => {
       if (cancelled) return;
-      const phones: Phone[] = data.phones || [];
-      setAllPhones(phones);
-      if (slugsParam) {
-        const slugs = slugsParam.split(',').map(s => s.trim());
-        const pre = phones.filter(p => slugs.includes(p.slug) || slugs.includes(p.id));
-        setSelected(pre.slice(0, 4));
-        if (pre.length >= 2) { setCompared(true); setShowPicker(false); }
-      }
+      const phones: Phone[] = results
+        .filter(d => d?.phone)
+        .map(d => ({ id: d.phone._id || d.phone.id, ...d.phone }));
+      setSelected(phones);
+      if (phones.length >= 2) { setCompared(true); setShowPicker(false); }
       setLoading(false);
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Debounced autocomplete search
+  useEffect(() => {
+    if (!search || search.length < 2) { setAutocompleteResults([]); return; }
+    const timer = setTimeout(() => {
+      fetch(`/api/phones/autocomplete?q=${encodeURIComponent(search)}`)
+        .then(r => r.json())
+        .then(data => {
+          const results: Phone[] = (data.phones || []).filter(
+            (p: Phone) => !selected.some(s => s.id === p.id)
+          );
+          setAutocompleteResults(results);
+        })
+        .catch(() => setAutocompleteResults([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, selected]);
+
+  // Fetch full details for comparison
   useEffect(() => {
     if (!compared || selected.length < 2) {
       setDetailedSelected([]);
@@ -77,12 +102,9 @@ function CompareContent() {
     }
   };
 
-  const filtered = allPhones.filter(p => p.modelName.toLowerCase().includes(search.toLowerCase()));
-  const isSelected = (id: string) => selected.some(p => p.id === id);
-
   const togglePhone = (phone: Phone) => {
     let next: Phone[];
-    if (isSelected(phone.id)) {
+    if (selected.some(p => p.id === phone.id)) {
       next = selected.filter(p => p.id !== phone.id);
     } else if (selected.length < 4) {
       next = [...selected, phone];
@@ -221,13 +243,18 @@ function CompareContent() {
             <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
           </div>
           <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50 max-h-96">
-            {filtered.length === 0 && <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>}
-            {filtered.slice(0, 30).map(p => (
+            {search.length >= 2 && autocompleteResults.length === 0 && (
+              <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>
+            )}
+            {search.length < 2 && (
+              <div className="text-center py-10 text-sm text-muted-foreground">Type at least 2 characters to search</div>
+            )}
+            {autocompleteResults.slice(0, 20).map(p => (
               <label key={p.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
-                <input type="checkbox" checked={isSelected(p.id)} onChange={() => togglePhone(p)} disabled={!isSelected(p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
+                <input type="checkbox" checked={selected.some(s => s.id === p.id)} onChange={() => togglePhone(p)} disabled={!selected.some(s => s.id === p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
                 {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 object-contain rounded-lg bg-[#F8FAFC] p-0.5" unoptimized /> : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
                 <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p><p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p></div>
-                {isSelected(p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
+                {selected.some(s => s.id === p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
               </label>
             ))}
           </div>
@@ -390,7 +417,7 @@ function CompareContent() {
         <div className="text-center py-16">
           <GitCompare className="w-14 h-14 mx-auto mb-4 text-gray-300" />
           <h3 className="text-lg font-bold text-gray-900 mb-2">Select phones to compare</h3>
-          <p className="text-sm text-muted-foreground mb-4">Choose 2 to 4 phones from the list above, or search for specific models</p>
+          <p className="text-sm text-muted-foreground mb-4">Choose 2 to 4 phones by searching above, or use URL params like ?p=iphone-15,samsung-s24</p>
           <div className="flex gap-3 justify-center">
             <Button className="rounded-xl" asChild><Link href="/phones">Browse Phones</Link></Button>
           </div>
@@ -398,10 +425,6 @@ function CompareContent() {
       )}
     </div>
   );
-}
-
-function Plus(props: React.SVGProps<SVGSVGElement>) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M5 12h14" /><path d="M12 5v14" /></svg>;
 }
 
 export default function ComparePage() {

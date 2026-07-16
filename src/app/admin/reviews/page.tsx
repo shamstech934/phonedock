@@ -21,9 +21,6 @@ interface ReviewItem {
 export default function AdminReviewsPage() {
   const { admin, loading: authLoading } = useAdmin();
 
-  if (authLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
-  if (!admin) return null;
-
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -63,6 +60,9 @@ export default function AdminReviewsPage() {
 
   const statusCounts: Record<string, number> = {};
   reviews.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+
+  if (authLoading) return <div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (!admin) return null;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

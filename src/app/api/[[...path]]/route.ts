@@ -115,19 +115,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const { path } = await params;
   const segments = path || [];
 
-  // ---- Bootstrap-admin: handle BEFORE rate limiting ----
-  // This endpoint has its own security (ADMIN_BOOTSTRAP_SECRET header + one-time check).
-  // Rate limiting is unnecessary and could block the very first request on a fresh deployment.
-  if (segments.length === 1 && segments[0] === 'bootstrap-admin') {
-    try {
-      const bootstrapResult = await handleAdminAuthPost(req, segments);
-      if (bootstrapResult) return bootstrapResult;
-    } catch (e: any) {
-      console.error('Bootstrap-admin error:', e.message);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-    }
-  }
-
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
   const isLogin = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login';
@@ -167,7 +154,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   }
 
   try {
-    // Public review submission: /api/phones/:slug/reviews (before admin auth)
+    // Public review submission: /api/phones/:slug/reviews
+    // NOTE: To enable Cloudflare Turnstile, add turnstileToken to the body and validate:
+    //   const tsValid = await verifyTurnstile(body.turnstileToken, ip);
+    //   if (!tsValid) return NextResponse.json({ error: 'Bot verification failed' }, { status: 403 });
     if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'reviews') {
       if (!await checkIpRateLimit(`review:${ip}`, 3, 3600_000, RateLimit)) {
         return NextResponse.json({ error: 'Too many reviews. Try again later.' }, { status: 429 });
@@ -179,17 +169,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       const { name, email, rating, comment } = body;
       if (!name || !email || !rating || !comment) return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
       if (rating < 1 || rating > 5) return NextResponse.json({ error: 'Rating must be 1-5' }, { status: 400 });
-      if (comment.length < 10) return NextResponse.json({ error: 'Comment must be at least 10 characters' }, { status: 400 });
-      // Spam detection: flag URLs
+      if (comment.length < 10 || comment.length > 1000) return NextResponse.json({ error: 'Comment must be 10-1000 characters' }, { status: 400 });
+      if (name.length > 100) return NextResponse.json({ error: 'Name too long' }, { status: 400 });
+      // Spam detection
       const spamFlags: string[] = [];
       if (/https?:\/\//i.test(comment)) spamFlags.push('contains_url');
-      if (/(buy now|click here|free money|lottery|winner)/i.test(comment)) spamFlags.push('suspected_spam');
-      const status = spamFlags.length > 0 ? 'flagged' : 'pending';
-      await UserReview.create({ phoneId: phone._id, name: name.trim(), email: email.trim().toLowerCase(), rating, comment: comment.trim(), status, spamFlags });
+      if (/(buy now|click here|free money|lottery|winner|crypto|investment)/i.test(comment)) spamFlags.push('suspected_spam');
+      if (/^[A-Z\s.!?]+$/.test(comment)) spamFlags.push('all_caps');
+      if (spamFlags.length > 0) {
+        await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: email.trim().toLowerCase().slice(0, 200), rating, comment: comment.trim().slice(0, 1000), status: 'flagged', spamFlags });
+        return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
+      }
+      await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: email.trim().toLowerCase().slice(0, 200), rating, comment: comment.trim().slice(0, 1000), status: 'pending', spamFlags: [] });
       return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
     }
 
     // Public price alert subscription: /api/phones/:slug/price-alerts
+    // NOTE: Price alerts require double opt-in — see email confirmation flow in cron job.
     if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-alerts') {
       if (!await checkIpRateLimit(`alert:${ip}`, 5, 3600_000, RateLimit)) {
         return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });

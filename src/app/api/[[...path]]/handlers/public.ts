@@ -75,6 +75,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     // Numeric spec range filters (Phase 3)
     const ramMin = parseFloat(url.searchParams.get('ramMin') || '');
     const ramMax = parseFloat(url.searchParams.get('ramMax') || '');
+    const storageMin = parseFloat(url.searchParams.get('storageMin') || '');
+    const storageMax = parseFloat(url.searchParams.get('storageMax') || '');
     const screenMin = parseFloat(url.searchParams.get('screenMin') || '');
     const screenMax = parseFloat(url.searchParams.get('screenMax') || '');
     const priceMin = parseFloat(url.searchParams.get('priceMin') || '');
@@ -87,12 +89,14 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (priceMax > 0) filter.pricePKR = { ...(filter.pricePKR || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin);
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin);
 
     if (hasSpecFilters) {
       const specFilter: any = {};
       if (!isNaN(ramMin)) specFilter.ramGB = { ...specFilter.ramGB, $gte: ramMin };
       if (!isNaN(ramMax)) specFilter.ramGB = { ...(specFilter.ramGB || {}), $lte: ramMax };
+      if (!isNaN(storageMin)) specFilter.storageGB = { ...specFilter.storageGB, $gte: storageMin };
+      if (!isNaN(storageMax)) specFilter.storageGB = { ...(specFilter.storageGB || {}), $lte: storageMax };
       if (!isNaN(screenMin)) specFilter.screenSizeInch = { ...specFilter.screenSizeInch, $gte: screenMin };
       if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...(specFilter.screenSizeInch || {}), $lte: screenMax };
       if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
@@ -107,6 +111,44 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       Phone.countDocuments(filter),
     ]);
     return cached({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit }, 120, 300);
+  }
+
+  // ---- /api/phones/lookup (compare phone lookup by slugs/IDs) ----
+  if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'lookup') {
+    await connectDB();
+    const url = new URL(req.url);
+    const slugs = (url.searchParams.get('slugs') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+    const ids = (url.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+    if (slugs.length === 0 && ids.length === 0) return NextResponse.json({ phones: [] });
+    const filter: any = { active: true, status: 'published' };
+    if (slugs.length > 0) filter.slug = { $in: slugs };
+    if (ids.length > 0) filter._id = { $in: ids };
+    const phones = await Phone.find(filter).populate('brand').lean();
+    return cached({ phones: phones.map((p: any) => phoneToJSON(p)) }, 60, 300);
+  }
+
+  // ---- /api/phones/autocomplete?q=... ----
+  if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'autocomplete') {
+    await connectDB();
+    const url = new URL(req.url);
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q.length < 2) return cached({ phones: [] }, 60, 180);
+    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const phones = await Phone.find({
+      active: true, status: 'published',
+      $or: [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+      ]
+    }).select('slug modelName thumbnail pricePKR brandId').populate('brand', 'name slug').sort({ modelName: 1 }).limit(20).lean();
+    return cached({ phones: phones.map((p: any) => ({
+      id: p._id?.toString(),
+      slug: p.slug,
+      modelName: p.modelName,
+      thumbnail: p.thumbnail || '',
+      pricePKR: p.pricePKR,
+      brand: p.brandId ? { id: p.brandId._id?.toString(), name: p.brandId.name, slug: p.brandId.slug } : null,
+    })) }, 60, 180);
   }
 
   // ---- /api/phones/:slug ----
@@ -258,6 +300,84 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       } : null,
     }));
     return cached({ videos: mapped, total, page, limit, totalPages: Math.ceil(total / limit) }, 120, 300);
+  }
+
+  // ---- /api/settings (public, read-only) ----
+  if (segments.length === 1 && segments[0] === 'settings') {
+    const { getSettings } = await import('@/lib/models');
+    const settings = await getSettings();
+    const { maintenanceMode, ...publicSettings } = settings;
+    return cached({ settings: { id: publicSettings._id?.toString(), ...publicSettings, _id: undefined } }, 300, 600);
+  }
+
+  // ---- /api/top-phones?sort=cameraScore|batteryScore|performanceScore|valueScore|overallRating&limit=10 ----
+  if (segments.length === 1 && segments[0] === 'top-phones') {
+    await connectDB();
+    const url = new URL(req.url);
+    const ALLOWED = new Set(['cameraScore', 'batteryScore', 'performanceScore', 'valueScore', 'displayScore', 'overallRating', 'pricePKR']);
+    const sort = ALLOWED.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'overallRating';
+    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+    const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
+    const phones = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
+      .sort({ [sort]: order }).limit(limit).populate('brand').lean();
+    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), sortBy: sort }, 300, 600);
+  }
+
+  // ---- /api/upcoming-phones ----
+  if (segments.length === 1 && segments[0] === 'upcoming-phones') {
+    await connectDB();
+    const phones = await Phone.find({ active: true, upcoming: true })
+      .sort({ createdAt: -1 }).populate('brand').lean();
+    return cached({ phones: phones.map((p: any) => phoneToJSON(p)) }, 300, 600);
+  }
+
+  // ---- /api/phones-under/:price (e.g. /api/phones-under/50000) ----
+  if (segments.length === 2 && segments[0] === 'phones-under') {
+    await connectDB();
+    const maxPrice = parseFloat(segments[1]);
+    if (isNaN(maxPrice) || maxPrice <= 0) return cachedError('Invalid price', 400, 60, 300);
+    const page = Math.max(1, parseInt(new URL(req.url).searchParams.get('page') || '1'));
+    const limit = 20;
+    const [phones, total] = await Promise.all([
+      Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } })
+        .sort({ pricePKR: 1 }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
+      Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } }),
+    ]);
+    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit, maxPrice, totalPages: Math.ceil(total / limit) }, 120, 300);
+  }
+
+  // ---- /api/price-ranges ----
+  if (segments.length === 1 && segments[0] === 'price-ranges') {
+    await connectDB();
+    const ranges = [
+      { label: 'Under 20,000 PKR', slug: 'under-20000', min: 0, max: 20000 },
+      { label: '20K - 40K PKR', slug: '20000-40000', min: 20000, max: 40000 },
+      { label: '40K - 60K PKR', slug: '40000-60000', min: 40000, max: 60000 },
+      { label: '60K - 100K PKR', slug: '60000-100000', min: 60000, max: 100000 },
+      { label: 'Above 100K PKR', slug: 'above-100000', min: 100000, max: Infinity },
+    ];
+    const counts = await Promise.all(
+      ranges.map(r => Phone.countDocuments({
+        active: true, status: 'published',
+        pricePKR: r.max === Infinity ? { $gte: r.min, $gt: 0 } : { $gte: r.min, $lte: r.max, $gt: 0 },
+      }))
+    );
+    return cached({ ranges: ranges.map((r, i) => ({ ...r, count: counts[i] })) }, 300, 600);
+  }
+
+  // ---- /api/reviews (public user reviews) ----
+  if (segments.length === 1 && segments[0] === 'reviews') {
+    await connectDB();
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+    const skip = (page - 1) * limit;
+    const [reviews, total] = await Promise.all([
+      UserReview.find({ status: 'approved' }).sort({ createdAt: -1 }).skip(skip).limit(limit)
+        .populate({ path: 'phoneId', select: 'modelName slug thumbnail brandId', populate: { path: 'brand', select: 'name slug' } }).lean(),
+      UserReview.countDocuments({ status: 'approved' }),
+    ]);
+    return cached({ reviews, total, page, limit }, 120, 300);
   }
 
   return undefined;

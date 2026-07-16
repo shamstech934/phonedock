@@ -179,6 +179,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     });
   }
 
+  // ---- /api/admin/settings ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'settings') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'settings:read'); if (permCheck) return permCheck;
+    const settings = await (await import('@/lib/models')).getSettings();
+    return NextResponse.json({ settings: { id: settings._id?.toString(), ...settings, _id: undefined } });
+  }
+
   return undefined;
 }
 
@@ -588,6 +596,23 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     await video.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_video', details: `Updated: ${video.title}`, entityType: 'video', entityId: video._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: video._id?.toString() });
+  }
+
+  // ---- /api/admin/settings ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'settings') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'settings:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const { Settings } = await import('@/lib/models');
+    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText'];
+    const update: Record<string, any> = { updatedAt: new Date() };
+    for (const key of allowed) {
+      if (body[key] !== undefined) update[key] = body[key];
+    }
+    const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true }).lean();
+    try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
   }
 
   return undefined;
