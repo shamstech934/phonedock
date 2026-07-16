@@ -1,10 +1,11 @@
+export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import { Tag, ChevronRight } from 'lucide-react';
 import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
   title: 'Phones by Price Range in Pakistan | PhoneDock',

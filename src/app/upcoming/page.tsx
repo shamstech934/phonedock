@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { Clock } from 'lucide-react';
 import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
@@ -5,7 +6,7 @@ import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import type { Phone } from '@/components/shared/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
   title: 'Upcoming Phones in Pakistan 2025 | PhoneDock',

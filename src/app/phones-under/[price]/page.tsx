@@ -9,6 +9,8 @@ import type { Phone } from '@/components/shared/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
+export const dynamic = 'force-dynamic';
+
 export async function generateMetadata({ params }: { params: Promise<{ price: string }> }): Promise<Metadata> {
   const { price } = await params;
   const numericPrice = parseInt(price, 10);
@@ -29,7 +31,7 @@ export async function generateMetadata({ params }: { params: Promise<{ price: st
 
 async function getPhonesUnderPrice(price: string): Promise<{ phones: Phone[]; total: number }> {
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/phones-under/${price}`, {
+    const res = await fetch(`/api/phones-under/${price}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return { phones: [], total: 0 };

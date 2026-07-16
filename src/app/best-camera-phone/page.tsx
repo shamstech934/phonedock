@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { Camera } from 'lucide-react';
 import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
@@ -6,7 +7,7 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { Badge } from '@/components/ui/badge';
 import type { Phone } from '@/components/shared/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
   title: 'Best Camera Phones in Pakistan 2025 | PhoneDock',
