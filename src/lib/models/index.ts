@@ -10,3 +10,4 @@ export { CollectorJob } from './CollectorJob';
 export { SyncJob } from './SyncJob';
 export { Video } from './Video';
 export { Settings, getSettings } from './Settings';
+export { SystemState } from './SystemState';
