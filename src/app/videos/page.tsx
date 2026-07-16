@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
@@ -22,6 +22,9 @@ export default function VideosPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+
+  const closeModal = useCallback(() => setActiveVideo(null), []);
 
   useEffect(() => {
     setLoading(true);
@@ -35,6 +38,21 @@ export default function VideosPage() {
       })
       .catch(() => setLoading(false));
   }, [page]);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal();
+    };
+    if (activeVideo) {
+      document.addEventListener('keydown', handleKey);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = '';
+    };
+  }, [activeVideo, closeModal]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -54,7 +72,7 @@ export default function VideosPage() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {videos.map(v => (
-                  <a key={v.id} href={`https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer" className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
+                  <div key={v.id} onClick={() => setActiveVideo(v)} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
                     <div className="relative aspect-video bg-gray-100">
                       {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -66,14 +84,14 @@ export default function VideosPage() {
                     <div className="p-3.5">
                       <h3 className="font-semibold text-sm line-clamp-2 text-gray-900 leading-snug mb-1.5">{v.title}</h3>
                       {v.phone && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                           {v.phone.thumbnail && <Image src={v.phone.thumbnail} alt={v.phone.modelName} width={20} height={20} className="rounded object-contain" unoptimized />}
                           <Link href={`/phones/${v.phone.slug}`} className="text-xs text-blue-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{v.phone.brand} {v.phone.modelName}</Link>
                         </div>
                       )}
                       <p className="text-[10px] text-muted-foreground mt-1.5">{new Date(v.publishedAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
                     </div>
-                  </a>
+                  </div>
                 ))}
               </div>
 
@@ -99,6 +117,39 @@ export default function VideosPage() {
         </div>
       </main>
       <Footer />
+
+      {/* Video Player Modal */}
+      {activeVideo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={closeModal}>
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          {/* Modal Content */}
+          <div className="relative z-10 w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+            {/* Close button */}
+            <button onClick={closeModal} className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors p-2">
+              <X className="w-6 h-6" />
+            </button>
+            {/* Video iframe */}
+            <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl">
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${activeVideo.youtubeId}?autoplay=1&rel=0`}
+                title={activeVideo.title}
+                className="absolute inset-0 w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+            {/* Video title */}
+            <h2 className="text-white font-semibold text-sm sm:text-base mt-3 px-1 line-clamp-2">{activeVideo.title}</h2>
+            {activeVideo.phone && (
+              <Link href={`/phones/${activeVideo.phone.slug}`} onClick={closeModal} className="inline-flex items-center gap-2 mt-2 px-1 text-blue-400 hover:text-blue-300 text-xs font-medium transition-colors">
+                {activeVideo.phone.thumbnail && <Image src={activeVideo.phone.thumbnail} alt={activeVideo.phone.modelName} width={16} height={16} className="rounded object-contain" unoptimized />}
+                {activeVideo.phone.brand} {activeVideo.phone.modelName}
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
