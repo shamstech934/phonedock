@@ -8,6 +8,25 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import type { Brand } from '@/components/shared/types';
 
+const OFFICIAL_LOGOS: Record<string, string> = {
+  samsung: 'https://upload.wikimedia.org/wikipedia/commons/9/9c/Samsung_logo_wordmark.svg',
+  apple: 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
+  xiaomi: 'https://upload.wikimedia.org/wikipedia/commons/a/ae/Xiaomi_logo_%282021-%29.svg',
+  realme: 'https://upload.wikimedia.org/wikipedia/commons/a/a2/Realme_logo.svg',
+  tecno: 'https://upload.wikimedia.org/wikipedia/commons/5/5e/Tecno_Mobile_logo.svg',
+  infinix: 'https://upload.wikimedia.org/wikipedia/commons/e/e0/Infinix_logo.svg',
+  oneplus: 'https://upload.wikimedia.org/wikipedia/commons/a/a0/OnePlus_logo.svg',
+  oppo: 'https://upload.wikimedia.org/wikipedia/commons/0/0a/OPPO_LOGO_2019.svg',
+  vivo: 'https://upload.wikimedia.org/wikipedia/commons/1/13/Vivo_logo_2019.svg',
+  huawei: 'https://upload.wikimedia.org/wikipedia/commons/d/db/Huawei_wordmark_2019.svg',
+  motorola: 'https://upload.wikimedia.org/wikipedia/commons/f/f9/Motorola_new_logo.svg',
+  honor: 'https://upload.wikimedia.org/wikipedia/commons/2/20/Honor_Logo_%282020%29.svg',
+  nokia: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Nokia_2023.svg',
+  google: 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg',
+  nothing: 'https://upload.wikimedia.org/wikipedia/commons/3/30/Nothing.svg',
+  'google pixel': 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg',
+};
+
 export default function BrandsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +107,7 @@ export default function BrandsPage() {
                 {filtered.map(brand => (
                   <Link key={brand.id} href={`/brands/${brand.slug}`} className="phone-card glass-shine p-5 cursor-pointer group block">
                     <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
-                      {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />}
+                      {(() => { const src = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug?.toLowerCase()] || brand.logo; return src ? <Image src={src} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />; })()}
                     </div>
                     <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
                     <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
@@ -111,7 +130,7 @@ export default function BrandsPage() {
                       {items.map(brand => (
                         <Link key={brand.id} href={`/brands/${brand.slug}`} className="phone-card glass-shine p-5 cursor-pointer group block">
                           <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
-                            {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />}
+                            {(() => { const src = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug?.toLowerCase()] || brand.logo; return src ? <Image src={src} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />; })()}
                           </div>
                           <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
                           <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
