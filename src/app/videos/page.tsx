@@ -54,7 +54,7 @@ export default function VideosPage() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {videos.map(v => (
-                  <Link key={v.id} href={v.phone ? `/phones/${v.phone.slug}` : `https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target={v.phone ? undefined : '_blank'} rel={v.phone ? undefined : 'noopener noreferrer'} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+                  <a key={v.id} href={`https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer" className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
                     <div className="relative aspect-video bg-gray-100">
                       {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -68,12 +68,12 @@ export default function VideosPage() {
                       {v.phone && (
                         <div className="flex items-center gap-2">
                           {v.phone.thumbnail && <Image src={v.phone.thumbnail} alt={v.phone.modelName} width={20} height={20} className="rounded object-contain" unoptimized />}
-                          <p className="text-xs text-blue-500 font-medium">{v.phone.brand} {v.phone.modelName}</p>
+                          <Link href={`/phones/${v.phone.slug}`} className="text-xs text-blue-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{v.phone.brand} {v.phone.modelName}</Link>
                         </div>
                       )}
                       <p className="text-[10px] text-muted-foreground mt-1.5">{new Date(v.publishedAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
                     </div>
-                  </Link>
+                  </a>
                 ))}
               </div>
 

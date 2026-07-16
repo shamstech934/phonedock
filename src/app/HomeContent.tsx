@@ -167,7 +167,7 @@ function HomeVideoSection() {
       <SectionHeader title="Latest Video Reviews" icon={Play} link="/videos" linkText="All Videos" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {videos.map(v => (
-          <Link key={v.id} href={v.phone ? `/phones/${v.phone.slug}` : `https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target={v.phone ? undefined : '_blank'} rel={v.phone ? undefined : 'noopener noreferrer'} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+          <a key={v.id} href={`https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer" className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
             <div className="relative aspect-video bg-gray-100">
               {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -178,9 +178,9 @@ function HomeVideoSection() {
             </div>
             <div className="p-3">
               <h3 className="font-semibold text-sm line-clamp-2 text-gray-900 leading-snug mb-1">{v.title}</h3>
-              {v.phone && <p className="text-[11px] text-blue-500 font-medium">{v.phone.brand} {v.phone.modelName}</p>}
+              {v.phone && <Link href={`/phones/${v.phone.slug}`} className="text-[11px] text-blue-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{v.phone.brand} {v.phone.modelName}</Link>}
             </div>
-          </Link>
+          </a>
         ))}
       </div>
     </section>
