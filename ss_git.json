@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "The repo is \"phonedock\" and the branch is \"main\". Thus, the final result is repo: phonedock, branch: main.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1784213675,
+  "id": "2026071622543315a950b9f81f4e49",
+  "model": "glm-4.6v",
+  "object": "chat.completion",
+  "request_id": "2026071622543315a950b9f81f4e49",
+  "usage": {
+    "completion_tokens": 35,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 2066,
+    "prompt_tokens_details": {
+      "cached_tokens": 4
+    },
+    "total_tokens": 2101
+  }
+}
