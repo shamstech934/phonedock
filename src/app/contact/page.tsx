@@ -3,23 +3,44 @@
 import { useState } from 'react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
-import { Mail, Phone, MapPin, Send, CheckCircle } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function ContactPage() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     if (!form.name.trim() || !form.email.trim() || !form.message.trim()) return;
     setSending(true);
-    // Simulate submission
-    await new Promise(r => setTimeout(r, 800));
-    setSending(false);
-    setSent(true);
-    setForm({ name: '', email: '', subject: '', message: '' });
-    setTimeout(() => setSent(false), 3000);
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          subject: form.subject,
+          message: form.message,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Something went wrong. Please try again.');
+      } else {
+        setSent(true);
+        setForm({ name: '', email: '', subject: '', message: '' });
+        setTimeout(() => setSent(false), 5000);
+      }
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -58,6 +79,13 @@ export default function ContactPage() {
                 <p className="text-sm font-semibold text-emerald-800">Message sent successfully!</p>
                 <p className="text-xs text-emerald-700">We&apos;ll get back to you within 24-48 hours.</p>
               </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200/50 rounded-xl p-4 mb-6 flex items-center gap-3 animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+              <p className="text-sm font-medium text-red-800">{error}</p>
             </div>
           )}
 

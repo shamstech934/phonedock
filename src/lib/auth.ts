@@ -14,7 +14,7 @@
 
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 
 // ============ CONFIGURATION ============
@@ -112,21 +112,21 @@ export function getCookieOptions(): CookieOptions {
   };
 }
 
-/** Create a signed session for an admin — returns token + cookie options */
+/** Create a signed session for an admin — returns token + jti + cookie options */
 export async function createSignedSession(admin: {
   sub: string;
   email: string;
   role: string;
   sessionVersion?: number;
-}): Promise<{ token: string; cookieOptions: CookieOptions }> {
-  const { token } = await signSessionToken({
+}): Promise<{ token: string; jti: string; cookieOptions: CookieOptions }> {
+  const { token, jti } = await signSessionToken({
     sub: admin.sub,
     email: admin.email,
     role: admin.role,
     sessionVersion: admin.sessionVersion ?? 0,
   });
 
-  return { token, cookieOptions: getCookieOptions() };
+  return { token, jti, cookieOptions: getCookieOptions() };
 }
 
 // ============ SESSION EXTRACTION FROM REQUEST ============
@@ -141,6 +141,8 @@ export async function getSessionFromRequest(req: NextRequest): Promise<TokenPayl
 
   return payload;
 }
+
+
 
 // ============ SESSION VERSION CHECK (FAIL-CLOSED) ============
 // Compares token's sessionVersion with the admin's current sessionVersion in DB.

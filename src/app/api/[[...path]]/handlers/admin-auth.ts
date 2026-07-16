@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { Admin, ActivityLog } from '@/lib/models';
 import {
-  connectDB, getAdminFromRequest, isEmailConfigured,
+  connectDB, getAdminFromRequest, isEmailConfigured, getClientIp,
   verifyPassword, hashPassword, createSignedSession, getSessionFromRequest, validateSessionVersion,
+  validateSessionRecord, revokeSession, revokeAllSessions, revokeOtherSessions, getActiveSessions,
+  persistSessionRecord,
   checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isStrongPassword, sanitizeInput,
   hashResetToken, verifyResetToken,
 } from './helpers';
@@ -20,6 +22,13 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
     }
     const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
     if (!versionCheck.valid) {
+      const response = NextResponse.json({ authenticated: false }, { status: 401 });
+      response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+      return response;
+    }
+    // Fail-closed AdminSession record check
+    const recordCheck = await validateSessionRecord(session.jti);
+    if (!recordCheck.valid) {
       const response = NextResponse.json({ authenticated: false }, { status: 401 });
       response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
       return response;
@@ -44,12 +53,35 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
           email: admin.email,
           role: admin.role,
           sessionVersion: (admin as any).sessionVersion ?? 0,
-        });
+        }, req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '', req.headers.get('user-agent') || undefined);
         response.cookies.set('pd_session', newSession.token, newSession.cookieOptions);
       }
     }
 
     return response;
+  }
+
+  // ---- /api/admin/sessions (GET — list active sessions) ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sessions') {
+    await connectDB();
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const admin = authResult.admin!;
+
+    const currentJti = (await getSessionFromRequest(req))?.jti || '';
+    const sessions = await getActiveSessions(admin._id.toString());
+
+    return NextResponse.json({
+      sessions: sessions.map((s: any) => ({
+        id: s._id?.toString(),
+        jti: s.tokenJti,
+        ip: s.ip || '',
+        userAgent: (s.userAgent || '').slice(0, 120),
+        lastUsedAt: s.lastUsedAt,
+        createdAt: s.createdAt,
+        isCurrent: s.tokenJti === currentJti,
+      })),
+    });
   }
 
   return undefined;
@@ -66,6 +98,13 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     }
     const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
     if (!versionCheck.valid) {
+      const response = NextResponse.json({ authenticated: false }, { status: 401 });
+      response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+      return response;
+    }
+    // Fail-closed AdminSession record check
+    const recordCheck = await validateSessionRecord(session.jti);
+    if (!recordCheck.valid) {
       const response = NextResponse.json({ authenticated: false }, { status: 401 });
       response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
       return response;
@@ -129,7 +168,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       email: admin.email,
       role: admin.role,
       sessionVersion: (admin as any).sessionVersion ?? 0,
-    });
+    }, getClientIp(req), req.headers.get('user-agent') || undefined);
 
     // Single cookie — no token in response body
     const response = NextResponse.json({
@@ -145,11 +184,9 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
   // ---- /api/admin/logout ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'logout') {
     const session = await getSessionFromRequest(req);
-    if (session?.sub) {
-      // Increment sessionVersion to invalidate this and all other sessions
-      await Admin.findByIdAndUpdate(session.sub, { $inc: { sessionVersion: 1 } }).catch((e) => {
-        console.error('[Logout] sessionVersion increment failed:', e);
-      });
+    if (session?.jti) {
+      // Revoke the specific session record
+      await revokeSession(session.jti);
     }
     const response = NextResponse.json({ success: true });
     response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
@@ -174,11 +211,13 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     if (!valid) return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 });
     adminFull.password = await hashPassword(newPassword);
     adminFull.passwordChangedAt = new Date();
-    // Increment sessionVersion to invalidate ALL existing sessions
+    // Increment sessionVersion to invalidate ALL existing sessions (safety net)
     await Admin.findByIdAndUpdate(admin._id, {
       $set: { password: adminFull.password, passwordChangedAt: new Date() },
       $inc: { sessionVersion: 1 },
     });
+    // Also revoke all AdminSession records for this admin
+    await revokeAllSessions(admin._id.toString());
     // Clear the cookie so user must re-login
     const response = NextResponse.json({ success: true, message: 'Password changed. Please log in again.' });
     response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
@@ -258,9 +297,62 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       $set: { password: hashedPassword, passwordChangedAt: new Date(), resetTokenHash: undefined, resetTokenExpires: undefined },
       $inc: { sessionVersion: 1 },
     });
+    // Also revoke all AdminSession records for this admin
+    await revokeAllSessions(admin._id.toString());
 
     try { await ActivityLog.create({ adminId: admin._id, action: 'reset_password', details: 'Password reset via token', entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, message: 'Password reset. Please log in.' });
+  }
+
+  return undefined;
+}
+
+// ============ ADMIN AUTH DELETE ============
+
+export async function handleAdminAuthDelete(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- DELETE /api/admin/sessions/:jti — Revoke a specific other session ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'sessions') {
+    await connectDB();
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const admin = authResult.admin!;
+    const targetJti = segments[2];
+    const currentJti = (await getSessionFromRequest(req))?.jti;
+
+    if (!targetJti) {
+      return NextResponse.json({ error: 'Session ID required' }, { status: 400 });
+    }
+
+    // Cannot revoke own current session via this endpoint — use /api/admin/logout
+    if (targetJti === currentJti) {
+      return NextResponse.json({ error: 'Cannot revoke your current session. Use /api/admin/logout instead.' }, { status: 400 });
+    }
+
+    const revoked = await revokeSession(targetJti);
+    if (!revoked) {
+      return NextResponse.json({ error: 'Session not found or already revoked' }, { status: 404 });
+    }
+
+    try { await ActivityLog.create({ adminId: admin._id, action: 'revoke_session', details: `Revoked session ${targetJti.slice(0, 8)}`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, message: 'Session revoked' });
+  }
+
+  // ---- DELETE /api/admin/sessions — Revoke ALL other sessions ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'sessions') {
+    await connectDB();
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const admin = authResult.admin!;
+    const currentJti = (await getSessionFromRequest(req))?.jti;
+
+    if (!currentJti) {
+      return NextResponse.json({ error: 'No active session' }, { status: 401 });
+    }
+
+    const count = await revokeOtherSessions(admin._id.toString(), currentJti);
+
+    try { await ActivityLog.create({ adminId: admin._id, action: 'revoke_other_sessions', details: `Revoked ${count} other sessions`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, message: `Revoked ${count} other session(s)`, revokedCount: count });
   }
 
   return undefined;

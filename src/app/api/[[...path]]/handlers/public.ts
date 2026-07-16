@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video } from '@/lib/models';
-import { connectDB, connectDBSafe, phoneToJSON, Admin } from './helpers';
+import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured } from './helpers';
+import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 
 // ============ CACHE-CONTROL HELPERS ============
@@ -378,6 +379,81 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       UserReview.countDocuments({ status: 'approved' }),
     ]);
     return cached({ reviews, total, page, limit }, 120, 300);
+  }
+
+  return undefined;
+}
+
+// ============ PUBLIC POST HANDLERS ============
+
+export async function handlePublicPost(req: NextRequest, segments: string[], ip: string): Promise<NextResponse | undefined> {
+  // ---- /api/contact ----
+  if (segments.length === 1 && segments[0] === 'contact') {
+    const body = await req.json();
+    const { name, email, subject, message, turnstileToken } = body;
+
+    // Validate required fields
+    if (!name || typeof name !== 'string') return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    if (!email || typeof email !== 'string') return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    if (!subject || typeof subject !== 'string') return NextResponse.json({ error: 'Subject is required' }, { status: 400 });
+    if (!message || typeof message !== 'string') return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+
+    // Sanitize inputs
+    const cleanName = sanitizeInput(name.trim());
+    const cleanEmail = sanitizeInput(email.trim().toLowerCase());
+    const cleanSubject = sanitizeInput(subject.trim());
+    const cleanMessage = sanitizeInput(message.trim());
+
+    // Validate constraints
+    if (cleanName.length === 0 || cleanName.length > 200) return NextResponse.json({ error: 'Name must be 1-200 characters' }, { status: 400 });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return NextResponse.json({ error: 'Invalid email address' }, { status: 400 });
+    if (cleanSubject.length === 0 || cleanSubject.length > 300) return NextResponse.json({ error: 'Subject must be 1-300 characters' }, { status: 400 });
+    if (cleanMessage.length < 10 || cleanMessage.length > 5000) return NextResponse.json({ error: 'Message must be 10-5000 characters' }, { status: 400 });
+
+    // Turnstile verification (skip if not configured — graceful degradation)
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      if (!turnstileToken) return NextResponse.json({ error: 'Bot verification required' }, { status: 403 });
+      const tsValid = await verifyTurnstile(turnstileToken, ip);
+      if (!tsValid) return NextResponse.json({ error: 'Bot verification failed' }, { status: 403 });
+    }
+
+    // Send email if configured, otherwise just log
+    if (isEmailConfigured()) {
+      try {
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT || '587'),
+          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: process.env.EMAIL_USER, // Send to site owner
+          replyTo: cleanEmail,
+          subject: `[PhoneDock Contact] ${cleanSubject}`,
+          html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:20px">
+            <h2 style="color:#1a1a1a;margin-bottom:16px">New Contact Message</h2>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+              <tr><td style="padding:8px 0;color:#666;font-size:14px;width:100px">Name</td><td style="padding:8px 0;font-size:14px;font-weight:500">${cleanName}</td></tr>
+              <tr><td style="padding:8px 0;color:#666;font-size:14px">Email</td><td style="padding:8px 0;font-size:14px"><a href="mailto:${cleanEmail}">${cleanEmail}</a></td></tr>
+              <tr><td style="padding:8px 0;color:#666;font-size:14px">Subject</td><td style="padding:8px 0;font-size:14px;font-weight:500">${cleanSubject}</td></tr>
+            </table>
+            <div style="background:#f9fafb;border-radius:8px;padding:16px;font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap">${cleanMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            <p style="color:#999;font-size:12px;margin-top:16px">Sent from PhoneDock contact form</p>
+          </div>`,
+        });
+        console.log('[Contact] Email sent successfully');
+      } catch (emailErr: any) {
+        console.error('[Contact] Email send failed:', emailErr?.message);
+        // Still return success — don't expose email failure
+      }
+    } else {
+      console.log('[Contact] Email not configured — logging contact form submission:', { name: cleanName, email: cleanEmail, subject: cleanSubject, message: cleanMessage.slice(0, 100) + '...' });
+    }
+
+    // Always return generic success (never reveal if email was actually sent)
+    return NextResponse.json({ success: true, message: 'Message sent successfully! We\'ll get back to you soon.' });
   }
 
   return undefined;

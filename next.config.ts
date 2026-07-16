@@ -39,16 +39,16 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             // Note: 'unsafe-inline' and 'unsafe-eval' are required by Next.js runtime.
             // Without them, Next.js hydration, hot-reload (dev), and client components break.
-            // For a future hardening pass, consider adopting Next.js nonce-based CSP
-            // via middleware once the framework supports it fully.
+            // TODO: Future hardening — adopt Next.js nonce-based CSP via middleware once
+            // the framework supports it fully, then remove 'unsafe-inline' and 'unsafe-eval'.
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
+              "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com",
-              "frame-src 'self' https://www.youtube-nocookie.com",
+              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com",
+              "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -64,12 +64,12 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
+              "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com",
-              "frame-src https://www.youtube-nocookie.com",
+              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com",
+              "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
               "frame-ancestors 'self'",
               "base-uri 'self'",
               "form-action 'self'",

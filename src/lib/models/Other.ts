@@ -108,6 +108,10 @@ export const UserReview = mongoose.models.UserReview || mongoose.model('UserRevi
 const PriceAlertSchema = new Schema({
   phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
   email: { type: String, required: true, lowercase: true, trim: true },
+  status: { type: String, enum: ['pending', 'confirmed', 'unsubscribed'], default: 'pending', index: true },
+  confirmationTokenHash: { type: String, default: '' },
+  confirmationTokenExpires: { type: Date, default: null },
+  confirmedAt: { type: Date, default: null },
   targetPrice: { type: Number, default: 0 },
   notified: { type: Boolean, default: false },
   unsubscribedAt: { type: Date, default: null },
@@ -115,5 +119,6 @@ const PriceAlertSchema = new Schema({
 
 PriceAlertSchema.index({ phoneId: 1, email: 1 });
 PriceAlertSchema.index({ notified: 1, createdAt: -1 });
+PriceAlertSchema.index({ confirmationTokenHash: 1 }, { sparse: true });
 
 export const PriceAlert = mongoose.models.PriceAlert || mongoose.model('PriceAlert', PriceAlertSchema);

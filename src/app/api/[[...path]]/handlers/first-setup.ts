@@ -190,7 +190,7 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
     const allowedOrigins = [
       process.env.NEXT_PUBLIC_BASE_URL,
       'https://phonedock.pk',
-      'https://phonedock-pi.vercel.app',
+      process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk',
     ].filter(Boolean) as string[];
 
     const originOk = allowedOrigins.some(o => origin === o);

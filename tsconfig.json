@@ -41,6 +41,7 @@
     "examples",
     "scripts",
     "skills",
-    "e2e"
+    "e2e",
+    "playwright.config.ts"
   ]
 }

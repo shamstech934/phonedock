@@ -4,20 +4,21 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "npx tsx scripts/__tests__/first-setup.test.ts",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "verify": "npm run lint && npm run typecheck && npm run build",
     "build": "next build",
     "build:prod": "next build 2>&1 | tee build-output.txt && echo 'BUILD PASSED'",
     "start": "next start",
-    "lint": "eslint .",
-    "lint:prod": "next lint && tsc --noEmit",
-    "production:audit": "npm run lint:prod && npm run build:prod",
     "seed": "npx tsx scripts/seed.ts",
     "admin:create": "npx tsx scripts/create-admin.ts",
     "admin:reset-password": "npx tsx scripts/create-admin.ts -- --reset-password",
-    "migrate": "npx tsx scripts/migrate-db.ts",
     "db:check": "npx tsx scripts/db-check.ts",
-    "test": "npx tsx scripts/__tests__/first-setup.test.ts",
-    "test:e2e": "npx playwright test",
-    "test:e2e:ui": "npx playwright test --ui"
+    "migrate": "npx tsx scripts/migrate-db.ts",
+    "production:audit": "npm run verify"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
@@ -83,6 +84,7 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.40.0",
     "@tailwindcss/postcss": "^4",
     "@types/nodemailer": "^8.0.1",
     "@types/papaparse": "^5.5.2",

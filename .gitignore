@@ -36,3 +36,7 @@ npm-debug.log*
 
 # Uploads
 upload/
+
+# Build artifacts
+build-output.txt
+*.txt.bak

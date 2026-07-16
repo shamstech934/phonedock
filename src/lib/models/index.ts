@@ -3,6 +3,7 @@ export { Phone } from './Phone';
 export { PhoneSpecs } from './PhoneSpecs';
 export { PhoneImage, PhoneBenchmark, Review, PhonePrice, PriceHistory } from './PhoneSub';
 export { News, Sponsor, Admin, ActivityLog, RateLimit, UserReview, PriceAlert } from './Other';
+export { AdminSession } from './AdminSession';
 export { ImportHistory } from './ImportHistory';
 export { CollectorSource } from './CollectorSource';
 export { CollectedPhone } from './CollectedPhone';

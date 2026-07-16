@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Admin } from '@/lib/models';
-import { getSessionFromRequest, validateSessionVersion } from '@/lib/auth';
+import { Admin, AdminSession } from '@/lib/models';
+import { getSessionFromRequest, validateSessionVersion, createSignedSession } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { connectDB } from '@/lib/mongodb';
 
@@ -21,6 +21,102 @@ export const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ]);
+
+// ============ ADMIN SESSION RECORD MANAGEMENT (server-only) ============
+
+const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
+
+/** Persist an AdminSession record — call after createSignedSession */
+export async function persistSessionRecord(adminId: string, jti: string, ip?: string, userAgent?: string): Promise<void> {
+  try {
+    await AdminSession.create({
+      adminId,
+      tokenJti: jti,
+      ip: ip || '',
+      userAgent: (userAgent || '').slice(0, 500),
+      expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000),
+    });
+  } catch (e) {
+    console.error('[AdminSession] Failed to create session record:', e);
+  }
+}
+
+/** Validate an AdminSession record by jti — FAIL CLOSED */
+export async function validateSessionRecord(jti: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const session = await AdminSession.findOne({ tokenJti: jti });
+    if (!session) {
+      return { valid: false, error: 'Session record not found' };
+    }
+    if (session.revokedAt) {
+      return { valid: false, error: 'Session revoked' };
+    }
+    if (new Date(session.expiresAt) <= new Date()) {
+      return { valid: false, error: 'Session expired' };
+    }
+    // Fire-and-forget: update lastUsedAt
+    AdminSession.updateOne({ tokenJti: jti }, { $set: { lastUsedAt: new Date() } }).catch(() => {});
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Session validation failed' };
+  }
+}
+
+/** Revoke a single session by its jti */
+export async function revokeSession(jti: string): Promise<boolean> {
+  try {
+    const result = await AdminSession.updateOne(
+      { tokenJti: jti, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    return result.modifiedCount > 0;
+  } catch (e) {
+    console.error('[AdminSession] revokeSession failed:', e);
+    return false;
+  }
+}
+
+/** Revoke ALL sessions for a given admin */
+export async function revokeAllSessions(adminId: string): Promise<number> {
+  try {
+    const result = await AdminSession.updateMany(
+      { adminId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    return result.modifiedCount;
+  } catch (e) {
+    console.error('[AdminSession] revokeAllSessions failed:', e);
+    return 0;
+  }
+}
+
+/** Revoke all sessions for an admin EXCEPT the one with the given jti */
+export async function revokeOtherSessions(adminId: string, keepJti: string): Promise<number> {
+  try {
+    const result = await AdminSession.updateMany(
+      { adminId, tokenJti: { $ne: keepJti }, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+    return result.modifiedCount;
+  } catch (e) {
+    console.error('[AdminSession] revokeOtherSessions failed:', e);
+    return 0;
+  }
+}
+
+/** Get all active (non-revoked, non-expired) sessions for an admin */
+export async function getActiveSessions(adminId: string): Promise<any[]> {
+  try {
+    return await AdminSession.find({
+      adminId,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 }).lean();
+  } catch (e) {
+    console.error('[AdminSession] getActiveSessions failed:', e);
+    return [];
+  }
+}
 
 // ============ HELPERS ============
 
@@ -45,6 +141,13 @@ export async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: a
   // Fail-closed session version check
   const versionCheck = await validateSessionVersion(session.sub, session.sessionVersion ?? 0, Admin);
   if (!versionCheck.valid) {
+    const response = NextResponse.json({ error: 'Session invalid' }, { status: 401 });
+    response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
+    return { error: response };
+  }
+  // Fail-closed AdminSession record check
+  const recordCheck = await validateSessionRecord(session.jti);
+  if (!recordCheck.valid) {
     const response = NextResponse.json({ error: 'Session invalid' }, { status: 401 });
     response.cookies.set('pd_session', '', { maxAge: 0, path: '/' });
     return { error: response };
