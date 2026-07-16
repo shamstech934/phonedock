@@ -94,9 +94,9 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      <div className="relative flex flex-col items-center w-full max-w-[280px] mx-auto">
-        {/* Phone Image — overlaps the card below */}
-        <div className="relative z-10" style={{ marginBottom: '-28px' }}>
+      <div className="relative flex flex-row-reverse items-center justify-center w-full max-w-[340px] mx-auto gap-3">
+        {/* Phone Image — RIGHT side */}
+        <div className="relative z-10 flex-shrink-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={`img-${phone.id}-${progressKey}`}
@@ -113,14 +113,14 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
                   <Image
                     src={phone.thumbnail}
                     alt={phone.modelName}
-                    width={220}
-                    height={260}
+                    width={180}
+                    height={220}
                     className="object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.35)]"
                     priority={current === 0}
                     unoptimized
                   />
                 ) : (
-                  <div className="w-52 h-60 bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
+                  <div className="w-40 h-48 bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
                     <span className="text-white/25 text-xs">No Image</span>
                   </div>
                 )}
@@ -129,14 +129,14 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
           </AnimatePresence>
         </div>
 
-        {/* Info Card — compact, less space than image */}
-        <div className="relative z-0 w-full">
+        {/* Info Card — LEFT side */}
+        <div className="relative z-0 flex-1 min-w-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={`card-${phone.id}-${progressKey}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
               className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-3.5 border border-white/[0.12] shadow-lg shadow-black/10"
             >
@@ -145,7 +145,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
                 {phone.brand?.name || ''}
               </p>
               {/* Phone model name */}
-              <h3 className="text-[13px] font-bold text-white leading-tight mb-1.5 line-clamp-1">
+              <h3 className="text-[13px] font-bold text-white leading-tight mb-1.5 line-clamp-2">
                 {phone.modelName}
               </h3>
               {/* Price + PTA badge */}
