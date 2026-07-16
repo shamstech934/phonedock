@@ -175,7 +175,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                     </Badge>
                   </div>
                   <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
-                    Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.82em' }}>Smartphone</span>
+                    Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.78em' }}>Smartphone</span>
                   </h1>
                   <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
                     Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.

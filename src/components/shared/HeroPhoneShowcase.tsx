@@ -113,14 +113,14 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
                   <Image
                     src={phone.thumbnail}
                     alt={phone.modelName}
-                    width={180}
-                    height={220}
+                    width={225}
+                    height={275}
                     className="object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.35)]"
                     priority={current === 0}
                     unoptimized
                   />
                 ) : (
-                  <div className="w-40 h-48 bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
+                  <div className="w-[180px] h-[220px] bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
                     <span className="text-white/25 text-xs">No Image</span>
                   </div>
                 )}
@@ -138,7 +138,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-3.5 border border-white/[0.12] shadow-lg shadow-black/10"
+              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-3 border border-white/[0.12] shadow-lg shadow-black/10"
             >
               {/* Brand name */}
               <p className="text-[10px] text-blue-300 font-semibold uppercase tracking-wider mb-0.5 leading-none">
