@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync-youtube",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/check-price-drops",
+      "schedule": "0 6 * * *"
     }
   ]
 }

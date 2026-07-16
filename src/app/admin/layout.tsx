@@ -26,6 +26,7 @@ const adminLinks: NavLink[] = [
   { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },
   { label: 'Sponsors', href: '/admin/sponsors', icon: DollarSign, permission: 'sponsors:read' },
   { label: 'Videos', href: '/admin/videos', icon: Play, permission: 'videos:read' },
+  { label: 'Reviews', href: '/admin/reviews', icon: Star, permission: 'phones:read' },
   { label: 'Activity', href: '/admin/activity', icon: Clock, permission: 'activity:read' },
   { label: 'Import', href: '/admin/import', icon: Upload, permission: 'imports:read' },
   { label: 'Collector', href: '/admin/collector', icon: Radio, permission: 'collectors:read', children: [

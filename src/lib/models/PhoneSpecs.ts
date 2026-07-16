@@ -56,6 +56,12 @@ export interface IPhoneSpecs extends Document {
   osUI: string;
   updatePolicy: string;
   specialFeatures: string;
+  // Numeric filter fields
+  ramGB: number | null;
+  storageGB: number | null;
+  screenSizeInch: number | null;
+  mainCameraMP: number | null;
+  batteryMAh: number | null;
 }
 
 const specFields: Record<string, { type: typeof String; default: string }> = {};
@@ -74,6 +80,12 @@ for (const f of specNames) specFields[f] = { type: String, default: '' };
 const PhoneSpecsSchema = new Schema<IPhoneSpecs>({
   phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true },
   ...specFields,
+  // Numeric fields for structured filtering (Phase 3)
+  ramGB: { type: Number, default: null },
+  storageGB: { type: Number, default: null },
+  screenSizeInch: { type: Number, default: null },
+  mainCameraMP: { type: Number, default: null },
+  batteryMAh: { type: Number, default: null },
 }, { timestamps: true });
 
 PhoneSpecsSchema.index({ phoneId: 1 }, { unique: true });

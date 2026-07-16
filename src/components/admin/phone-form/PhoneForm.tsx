@@ -83,6 +83,9 @@ export default function PhoneForm({
           pakistaniPricePKR: toNumberOrEmpty(
             data.pakistaniPricePKR ?? data.pakistani_price_pkr,
           ),
+          originalPricePKR: toNumberOrEmpty(
+            data.originalPricePKR ?? data.original_price_pkr,
+          ),
           ptaStatus: data.ptaStatus ?? data.pta_status ?? 'Unknown',
           ptaApproved: Boolean(data.ptaApproved ?? data.pta_approved),
           releaseDate: data.releaseDate ?? data.release_date ?? '',
@@ -187,6 +190,12 @@ export default function PhoneForm({
           seoTitle: data.seoTitle ?? data.seo_title ?? '',
           seoDescription: data.seoDescription ?? data.seo_description ?? '',
           keywords: data.keywords ?? '',
+          // Numeric filter fields
+          ramGB: toNumberOrEmpty(data.ramGB ?? data.ram_gb),
+          storageGB: toNumberOrEmpty(data.storageGB ?? data.storage_gb),
+          screenSizeInch: toNumberOrEmpty(data.screenSizeInch ?? data.screen_size_inch),
+          mainCameraMP: toNumberOrEmpty(data.mainCameraMP ?? data.main_camera_mp),
+          batteryMAh: toNumberOrEmpty(data.batteryMAh ?? data.battery_mah),
           // Images & Prices
           images: Array.isArray(data.images)
             ? data.images.map((img: Record<string, string>) => ({
@@ -245,13 +254,85 @@ export default function PhoneForm({
 
       const method = isEditMode ? 'PUT' : 'POST';
 
+      // Map form field names to API-expected field names
+      const payload: Record<string, unknown> = {
+        brandId: form.brand,
+        modelName: form.modelName,
+        slug: form.slug,
+        pricePKR: form.pakistaniPricePKR === '' ? 0 : Number(form.pakistaniPricePKR),
+        originalPricePKR: form.originalPricePKR === '' ? 0 : Number(form.originalPricePKR),
+        ptaStatus: form.ptaStatus,
+        ptaApproved: form.ptaApproved,
+        releaseDate: form.releaseDate,
+        thumbnail: form.thumbnailUrl,
+        description: form.description,
+        featured: form.featured,
+        trending: form.trending,
+        upcoming: form.upcoming,
+        status: form.status,
+        cameraScore: form.cameraScore === '' ? 0 : Number(form.cameraScore),
+        performanceScore: form.performanceScore === '' ? 0 : Number(form.performanceScore),
+        batteryScore: form.batteryScore === '' ? 0 : Number(form.batteryScore),
+        displayScore: form.displayScore === '' ? 0 : Number(form.displayScore),
+        valueScore: form.valueScore === '' ? 0 : Number(form.valueScore),
+        overallRating: form.overallRating === '' ? 0 : Number(form.overallRating),
+        pros: form.pros,
+        cons: form.cons,
+        reviewSummary: form.reviewSummary,
+        reviewVerdict: form.reviewVerdict,
+        seoTitle: form.seoTitle,
+        seoDescription: form.seoDescription,
+        keywords: form.keywords,
+        specs: {
+          display: form.display, displayType: form.displayType, resolution: form.resolution,
+          refreshRate: form.refreshRate, protection: form.protection, brightness: form.brightness,
+          chipset: form.chipset, cpu: form.cpu, gpu: form.gpu, process: form.process,
+          ram: form.ram, ramType: form.ramType, storage: form.storage, cardSlot: form.cardSlot,
+          mainCamera: form.mainCamera, mainCameraSensor: form.mainCameraSensor,
+          aperture: form.aperture, ois: form.ois, eis: form.eis,
+          ultrawide: form.ultrawide, telephoto: form.telephoto, zoom: form.zoom,
+          cameraFeatures: form.cameraFeatures, videoRecording: form.videoRecording,
+          selfieCamera: form.selfieCamera, selfieSensor: form.selfieSensor, selfieVideo: form.selfieVideo,
+          battery: form.battery, charging: form.charging, chargingSpeed: form.chargingSpeed,
+          wirelessCharge: form.wirelessCharge, wirelessSpeed: form.wirelessSpeed,
+          reverseCharge: form.reverseCharge, weight: form.weight, dimensions: form.dimensions,
+          build: form.build, sim: form.sim, ipRating: form.ipRating, colors: form.colors,
+          network: form.network, fiveG: form.fiveG, wifi: form.wifi, bluetooth: form.bluetooth,
+          nfc: form.nfc, usb: form.usb, fingerprint: form.fingerprint, faceUnlock: form.faceUnlock,
+          sensors: form.sensors, os: form.os, osVersion: form.osVersion, osUI: form.osUI,
+          updatePolicy: form.updatePolicy, specialFeatures: form.specialFeatures,
+          // Numeric filter fields
+          ramGB: form.ramGB === '' ? null : Number(form.ramGB),
+          storageGB: form.storageGB === '' ? null : Number(form.storageGB),
+          screenSizeInch: form.screenSizeInch === '' ? null : Number(form.screenSizeInch),
+          mainCameraMP: form.mainCameraMP === '' ? null : Number(form.mainCameraMP),
+          batteryMAh: form.batteryMAh === '' ? null : Number(form.batteryMAh),
+        },
+        benchmarks: {
+          antutu: form.antutuScore === '' ? 0 : Number(form.antutuScore),
+          geekbenchSingle: form.geekbenchSingle === '' ? 0 : Number(form.geekbenchSingle),
+          geekbenchMulti: form.geekbenchMulti === '' ? 0 : Number(form.geekbenchMulti),
+          gamingScore: form.gamingScore === '' ? 0 : Number(form.gamingScore),
+          pubgFps: form.pubgFPS, codMobileFps: form.codMobileFPS, genshinFps: form.genshinFPS,
+          videoPlayback: form.videoPlayback, gamingBattery: form.gamingBattery,
+          browsingBattery: form.browsingBattery,
+        },
+        images: form.images,
+        prices: form.prices.map(p => ({
+          storeName: p.storeName,
+          price: p.price === '' ? 0 : Number(p.price),
+          url: p.url,
+          inStock: p.inStock,
+        })),
+      };
+
       const res = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {

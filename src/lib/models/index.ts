@@ -1,8 +1,8 @@
 export { Brand } from './Brand';
 export { Phone } from './Phone';
 export { PhoneSpecs } from './PhoneSpecs';
-export { PhoneImage, PhoneBenchmark, Review, PhonePrice } from './PhoneSub';
-export { News, Sponsor, Admin, ActivityLog, RateLimit } from './Other';
+export { PhoneImage, PhoneBenchmark, Review, PhonePrice, PriceHistory } from './PhoneSub';
+export { News, Sponsor, Admin, ActivityLog, RateLimit, UserReview, PriceAlert } from './Other';
 export { ImportHistory } from './ImportHistory';
 export { CollectorSource } from './CollectorSource';
 export { CollectedPhone } from './CollectedPhone';

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { RateLimit } from '@/lib/models';
+import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp } from './handlers/helpers';
 import { handlePublicGet } from './handlers/public';
 import { handleAdminAuthGet, handleAdminAuthPost } from './handlers/admin-auth';
@@ -24,6 +24,55 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       }
       const result = await syncYouTubeVideos();
       return NextResponse.json(result);
+    }
+
+    // Cron: /api/cron/check-price-drops — protected by CRON_SECRET
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'check-price-drops') {
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+      if (secret !== process.env.CRON_SECRET) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      await connectDB();
+      const alerts = await PriceAlert.find({ notified: false, unsubscribedAt: null }).populate('phoneId').lean();
+      let sent = 0;
+      for (const alert of alerts) {
+        const phone = alert.phoneId as any;
+        if (!phone || !phone.pricePKR) continue;
+        const lastPrice = await PriceHistory.findOne({ phoneId: phone._id, storeName: null }).sort({ recordedAt: -1 }).lean();
+        if (lastPrice && lastPrice.price > phone.pricePKR) {
+          // Price has dropped! Send notification email (using nodemailer)
+          try {
+            const nodemailer = require('nodemailer');
+            const transporter = nodemailer.createTransport({
+              host: process.env.EMAIL_HOST,
+              port: parseInt(process.env.EMAIL_PORT || '587'),
+              secure: process.env.EMAIL_SECURE === 'true',
+              auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            });
+            const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://phonedock-pi.vercel.app';
+            const unsubscribeUrl = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(alert.email)}&phoneId=${phone._id}`;
+            await transporter.sendMail({
+              from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
+              to: alert.email,
+              subject: `Price Drop: ${phone.modelName} is now PKR ${phone.pricePKR.toLocaleString()}`,
+              html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:20px">
+                <h2 style="color:#1a1a1a">Price Drop Alert</h2>
+                <p style="color:#666">Great news! The price of <strong>${phone.modelName}</strong> has dropped.</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0"><tr>
+                  <td style="padding:12px;background:#fef2f2;text-decoration:line-through;color:#999;font-size:14px">PKR ${(lastPrice.price).toLocaleString()}</td>
+                  <td style="padding:0 8px;color:#ccc">→</td>
+                  <td style="padding:12px;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:bold">PKR ${phone.pricePKR.toLocaleString()}</td>
+                </tr></table>
+                <p style="color:#999;font-size:12px">You're receiving this because you subscribed to price drop alerts on PhoneDock.</p>
+                <p style="font-size:12px"><a href="${unsubscribeUrl}" style="color:#666">Unsubscribe</a></p>
+              </div>`,
+            });
+            await PriceAlert.findByIdAndUpdate(alert._id, { $set: { notified: true } });
+            sent++;
+          } catch (e) { console.error('[PriceAlert email]', e); }
+        }
+      }
+      return NextResponse.json({ checked: alerts.length, sent });
     }
 
     // Download sample data (no auth needed)
@@ -118,6 +167,48 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   }
 
   try {
+    // Public review submission: /api/phones/:slug/reviews (before admin auth)
+    if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'reviews') {
+      if (!await checkIpRateLimit(`review:${ip}`, 3, 3600_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many reviews. Try again later.' }, { status: 429 });
+      }
+      await connectDB();
+      const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
+      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+      const body = await req.json();
+      const { name, email, rating, comment } = body;
+      if (!name || !email || !rating || !comment) return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+      if (rating < 1 || rating > 5) return NextResponse.json({ error: 'Rating must be 1-5' }, { status: 400 });
+      if (comment.length < 10) return NextResponse.json({ error: 'Comment must be at least 10 characters' }, { status: 400 });
+      // Spam detection: flag URLs
+      const spamFlags: string[] = [];
+      if (/https?:\/\//i.test(comment)) spamFlags.push('contains_url');
+      if (/(buy now|click here|free money|lottery|winner)/i.test(comment)) spamFlags.push('suspected_spam');
+      const status = spamFlags.length > 0 ? 'flagged' : 'pending';
+      await UserReview.create({ phoneId: phone._id, name: name.trim(), email: email.trim().toLowerCase(), rating, comment: comment.trim(), status, spamFlags });
+      return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
+    }
+
+    // Public price alert subscription: /api/phones/:slug/price-alerts
+    if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-alerts') {
+      if (!await checkIpRateLimit(`alert:${ip}`, 5, 3600_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
+      }
+      await connectDB();
+      const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
+      if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+      const body = await req.json();
+      const { email } = body;
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
+      // Upsert: if exists and unsubscribed, re-activate
+      await PriceAlert.findOneAndUpdate(
+        { phoneId: phone._id, email: email.toLowerCase() },
+        { $set: { unsubscribedAt: null, notified: false }, $setOnInsert: { phoneId: phone._id, email: email.toLowerCase(), targetPrice: 0, notified: false } },
+        { upsert: true, new: true },
+      );
+      return NextResponse.json({ success: true, message: 'Price alert subscribed! You will be notified when the price drops.' });
+    }
+
     // Admin auth routes (bootstrap, session, login, logout, change-password, forgot-password, reset-password)
     const authResult = await handleAdminAuthPost(req, segments);
     if (authResult) return authResult;

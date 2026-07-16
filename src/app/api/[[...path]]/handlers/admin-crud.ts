@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, Admin, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, Video } from '@/lib/models';
+import { Phone, Brand, News, Admin, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 
@@ -193,7 +193,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:create'); if (permCheck) return permCheck;
     const body = await req.json();
-    const { brandId, modelName, slug: inputSlug, pricePKR, ptaStatus, ptaApproved, releaseDate,
+    const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
       thumbnail, description, featured, trending, upcoming, status: phoneStatus,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
@@ -204,11 +204,15 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const slug = inputSlug || modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const existing = await Phone.findOne({ slug });
     if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
-    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: upcoming || false, status: phoneStatus || 'published', active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
+    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: upcoming || false, status: phoneStatus || 'published', active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
     if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
+    // Record base price history
+    if (pricePKR && pricePKR > 0) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
+    // Record store price history
+    if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: phone._id?.toString(), slug });
   }
@@ -321,7 +325,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const phone = await Phone.findById(segments[2]);
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     const body = await req.json();
-    const { brandId, modelName, slug: inputSlug, pricePKR, ptaStatus, ptaApproved, releaseDate,
+    const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
       thumbnail, description, featured, trending, upcoming, status: phoneStatus, active,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
@@ -334,6 +338,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     if (brandId) { const b = await Brand.findById(brandId); if (b) phone.brandId = brandId; }
     if (pricePKR !== undefined) phone.pricePKR = pricePKR;
+    if (originalPricePKR !== undefined) phone.originalPricePKR = originalPricePKR;
     if (ptaStatus !== undefined) phone.ptaStatus = ptaStatus;
     if (ptaApproved !== undefined) phone.ptaApproved = ptaApproved;
     if (releaseDate !== undefined) phone.releaseDate = releaseDate;
@@ -375,7 +380,11 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (prices !== undefined) {
       await PhonePrice.deleteMany({ phoneId: phone._id });
       if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
+      // Record store price history for changed prices
+      if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     }
+    // Record base price history if changed
+    if (pricePKR !== undefined && pricePKR > 0 && pricePKR !== (phone as any)._previousPricePKR) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: phone._id?.toString() });
   }
@@ -494,6 +503,15 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
 // ============ ADMIN CRUD DELETE ============
 
 export async function handleAdminCrudDelete(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/reviews/:id ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
+    await connectDB();
+    await UserReview.findByIdAndDelete(segments[2]);
+    return NextResponse.json({ success: true });
+  }
+
   // ---- /api/admin/phones/:id ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
@@ -548,6 +566,45 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const { Sponsor } = await import('@/lib/models/Other');
     await Sponsor.findByIdAndDelete(segments[2]);
     return NextResponse.json({ success: true });
+  }
+
+  // ---- /api/admin/reviews ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const url = new URL(req.url);
+    const status = url.searchParams.get('status') || 'pending';
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+    const limit = 20;
+    const filter: any = {};
+    if (status !== 'all') filter.status = status;
+    const [reviews, total] = await Promise.all([
+      UserReview.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      UserReview.countDocuments(filter),
+    ]);
+    const phoneIds = [...new Set(reviews.map((r: any) => r.phoneId.toString()))];
+    const phones = await Phone.find({ _id: { $in: phoneIds } }).select('modelName slug thumbnail').lean();
+    const phoneMap = Object.fromEntries(phones.map((p: any) => [p._id.toString(), { modelName: p.modelName, slug: p.slug, thumbnail: p.thumbnail }]));
+    return NextResponse.json({ reviews: reviews.map((r: any) => ({ ...r, id: r._id?.toString(), phone: phoneMap[r.phoneId?.toString()], email: undefined })), total, page, limit });
+  }
+
+  // ---- /api/admin/reviews/:id (UPDATE status) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const review = await UserReview.findById(segments[2]);
+    if (!review) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (body.status && ['approved', 'rejected'].includes(body.status)) review.status = body.status;
+    await review.save();
+    return NextResponse.json({ success: true });
+  }
+
+  // ---- /api/admin/reviews/:id (DELETE) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    // handled by DELETE handler below
   }
 
   return undefined;

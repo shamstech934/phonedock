@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
   Star, ChevronRight, Smartphone, Camera, Battery, Cpu, Trophy,
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
-  Share2, ChevronLeft, ExternalLink, AlertTriangle, Play,
+  Share2, ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,57 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
+
+// ── Lightweight SVG Price History Chart (no SSR issues) ──
+function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; storeName: string | null; price: number }> }) {
+  // Only show base price (storeName === null) for the main line
+  const basePrices = history.filter(h => h.storeName === null);
+  if (basePrices.length < 2) return null;
+  const prices = basePrices.map(h => h.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+  const w = 280, h = 120, pad = { t: 10, r: 10, b: 20, l: 45 };
+  const plotW = w - pad.l - pad.r;
+  const plotH = h - pad.t - pad.b;
+  const points = basePrices.map((h, i) => ({
+    x: pad.l + (i / (basePrices.length - 1)) * plotW,
+    y: pad.t + plotH - ((h.price - minP) / range) * plotH,
+    price: h.price,
+    date: new Date(h.recordedAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric' }),
+  }));
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1].x},${pad.t + plotH} L${points[0].x},${pad.t + plotH} Z`;
+  const fmtShort = (n: number) => n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="phGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {/* Y axis labels */}
+      <text x={pad.l - 4} y={pad.t + 4} textAnchor="end" fontSize="8" fill="#9ca3af">{fmtShort(maxP)}</text>
+      <text x={pad.l - 4} y={pad.t + plotH + 3} textAnchor="end" fontSize="8" fill="#9ca3af">{fmtShort(minP)}</text>
+      {/* Grid lines */}
+      <line x1={pad.l} y1={pad.t} x2={w - pad.r} y2={pad.t} stroke="#f3f4f6" strokeWidth="0.5" />
+      <line x1={pad.l} y1={pad.t + plotH} x2={w - pad.r} y2={pad.t + plotH} stroke="#f3f4f6" strokeWidth="0.5" />
+      {/* Area fill */}
+      <path d={areaPath} fill="url(#phGrad)" />
+      {/* Line */}
+      <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Dots */}
+      {points.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={points.length <= 8 ? 3 : 1.5} fill="#3b82f6" stroke="white" strokeWidth="1.5" />
+      ))}
+      {/* X axis date labels (first, last) */}
+      <text x={points[0].x} y={h - 2} textAnchor="middle" fontSize="7" fill="#9ca3af">{points[0].date}</text>
+      <text x={points[points.length - 1].x} y={h - 2} textAnchor="middle" fontSize="7" fill="#9ca3af">{points[points.length - 1].date}</text>
+    </svg>
+  );
+}
 
 function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
   if (mini) {
@@ -44,6 +96,162 @@ function ScoreBar({ score, label, mini }: { score: number; label: string; mini?:
   );
 }
 
+// ── Price Drop Alert Button ──
+function PriceAlertButton({ phoneId, slug }: { phoneId: string; slug: string }) {
+  const [email, setEmail] = useState('');
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubscribe = async () => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/phones/${slug}/price-alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const d = await res.json();
+      if (res.ok) { setSubscribed(true); }
+    } catch {}
+    setLoading(false);
+  };
+
+  if (subscribed) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50/50 rounded-lg p-2.5">
+        <Bell className="w-3.5 h-3.5" /> You will be notified when the price drops
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email for price drop alert" className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400" />
+      <button onClick={handleSubscribe} disabled={loading || !email} className="shrink-0 rounded-lg bg-blue-50 text-blue-600 px-3 py-2 text-xs font-medium hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1">
+        <Bell className="w-3 h-3" /> {loading ? '...' : 'Notify'}
+      </button>
+    </div>
+  );
+}
+
+// ── User Reviews Section ──
+function UserReviewsSection({ slug }: { slug: string }) {
+  const [reviews, setReviews] = useState<Array<{ id: string; name: string; rating: number; comment: string; createdAt: string }>>([]);
+  const [average, setAverage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [formName, setFormName] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formRating, setFormRating] = useState(5);
+  const [formComment, setFormComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMsg, setSubmitMsg] = useState('');
+
+  useEffect(() => {
+    if (!slug) return;
+    fetch(`/api/phones/${slug}/reviews`).then(r => r.json()).then(d => {
+      setReviews(d.reviews || []);
+      setAverage(d.average || 0);
+      setTotal(d.total || 0);
+    }).catch(() => {});
+  }, [slug]);
+
+  const handleSubmit = async () => {
+    if (!formName || !formEmail || !formComment || formComment.length < 10) return;
+    setSubmitting(true);
+    setSubmitMsg('');
+    try {
+      const res = await fetch(`/api/phones/${slug}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: formName, email: formEmail, rating: formRating, comment: formComment }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSubmitMsg('Review submitted! It will appear after moderation.');
+        setFormName(''); setFormEmail(''); setFormRating(5); setFormComment(''); setShowForm(false);
+      } else {
+        setSubmitMsg(data.error || 'Failed to submit review');
+      }
+    } catch { setSubmitMsg('Network error'); }
+    setSubmitting(false);
+  };
+
+  return (
+    <section className="space-y-4 pt-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-xl font-bold text-gray-900 flex items-center gap-2">
+          <Star className="w-5 h-5 text-amber-400" fill="currentColor" /> User Reviews
+        </h2>
+        <button onClick={() => setShowForm(!showForm)} className="text-xs font-medium text-blue-500 hover:text-blue-600 transition-colors">
+          {showForm ? 'Cancel' : 'Write a Review'}
+        </button>
+      </div>
+
+      {/* Average Rating */}
+      {total > 0 && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/50 border border-amber-200/50">
+          <div className="text-3xl font-bold text-gray-900">{average}</div>
+          <div>
+            <div className="flex gap-0.5">{[1,2,3,4,5].map(i => <Star key={i} className={`w-4 h-4 ${i <= Math.round(average) ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= Math.round(average) ? 'currentColor' : 'none'} />)}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Based on {total} review{total !== 1 ? 's' : ''}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Review Form */}
+      {showForm && (
+        <div className="card-premium p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="Your name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={formEmail} onChange={e => setFormEmail(e.target.value)} type="email" placeholder="Your email (private)" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-sm text-muted-foreground mr-2">Rating:</span>
+            {[1,2,3,4,5].map(i => (
+              <button key={i} type="button" onClick={() => setFormRating(i)} className="p-0.5">
+                <Star className={`w-5 h-5 transition-colors ${i <= formRating ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= formRating ? 'currentColor' : 'none'} />
+              </button>
+            ))}
+          </div>
+          <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Your email is private and never shown.</p>
+            <button onClick={handleSubmit} disabled={submitting || !formName || !formEmail || formComment.length < 10} className="rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {submitting ? 'Submitting...' : 'Submit Review'}
+            </button>
+          </div>
+          {submitMsg && <p className={`text-xs ${submitMsg.includes('submitted') ? 'text-emerald-600' : 'text-red-500'}`}>{submitMsg}</p>}
+        </div>
+      )}
+
+      {/* Reviews List */}
+      {reviews.length > 0 ? (
+        <div className="space-y-3">
+          {reviews.map(r => (
+            <div key={r.id} className="card-premium p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-bold text-gray-500">{r.name.charAt(0).toUpperCase()}</div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{r.name}</p>
+                    <div className="flex gap-0.5">{[1,2,3,4,5].map(i => <Star key={i} className={`w-3 h-3 ${i <= r.rating ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= r.rating ? 'currentColor' : 'none'} />)}</div>
+                  </div>
+                </div>
+                <span className="text-[10px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed">{r.comment}</p>
+            </div>
+          ))}
+        </div>
+      ) : !showForm ? (
+        <p className="text-sm text-muted-foreground text-center py-6">No reviews yet. Be the first to share your experience!</p>
+      ) : null}
+    </section>
+  );
+}
+
 export default function PhoneDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const [slug, setSlug] = useState<string>('');
   const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
@@ -51,6 +259,8 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
   const [activeTab, setActiveTab] = useState('specs');
   const [activeImage, setActiveImage] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     params.then(p => setSlug(p.slug));
@@ -61,6 +271,9 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
     let cancelled = false;
     setLoading(true);
     fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+    // Fetch price history
+    setHistoryLoading(true);
+    fetch(`/api/phones/${slug}/price-history`).then(r => r.json()).then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } }).catch(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
   }, [slug]);
 
@@ -204,11 +417,19 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
 
               {/* Price & Quick Info */}
               <div className="card-premium p-4 space-y-3">
+                {p.originalPricePKR > p.pricePKR && p.originalPricePKR > 0 && (
+                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-2.5 text-center">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span>
+                    <p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((p.originalPricePKR - p.pricePKR) / p.originalPricePKR) * 100)}% — was {formatPrice(p.originalPricePKR)}</p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Price in Pakistan</span>
                   <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
                 </div>
                 <Separator className="bg-gray-100" />
+                {/* Price Drop Alert */}
+                <PriceAlertButton phoneId={p.id} slug={slug} />
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">PTA Status</span>
                   <Badge className={p.ptaApproved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/50 font-medium' : 'bg-gray-100 text-gray-600 font-medium'}>
@@ -243,29 +464,70 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                 </a>
               </div>
 
-              {/* Store Prices */}
-              {p.prices && p.prices.length > 0 && (
+              {/* Store Prices — Comparison Table */}
+              {p.prices && p.prices.length > 0 && (() => {
+                const sorted = [...p.prices].filter(pr => pr.price > 0).sort((a, b) => a.price - b.price);
+                const lowestPrice = sorted.length > 0 ? sorted[0].price : 0;
+                return (
+                  <div className="card-premium p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-900">Compare Prices</h3>
+                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                        {sorted.length} store{sorted.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {sorted.map((pr, idx) => {
+                        const isLowest = pr.price === lowestPrice && sorted.length > 1;
+                        const priceDiff = pr.price > lowestPrice ? pr.price - lowestPrice : 0;
+                        return (
+                          <div key={pr.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${isLowest ? 'bg-emerald-50/70 border-emerald-200/60' : 'bg-[#F8FAFC] border-transparent hover:border-gray-200'}`}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              {isLowest && (
+                                <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md">Best</span>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">{pr.storeName}</p>
+                                <p className="text-[10px] mt-0.5 flex items-center gap-1">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                                  <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
+                                  {!pr.inStock && <span className="text-red-400 ml-1">— unavailable</span>}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 ml-3">
+                              {pr.url ? (
+                                <a href={pr.url} target="_blank" rel="noopener noreferrer" className={`font-bold text-sm flex items-center gap-1 transition-colors ${isLowest ? 'text-emerald-700 hover:text-emerald-800' : 'text-blue-600 hover:text-blue-700'}`}>
+                                  {formatPrice(pr.price)} <ExternalLink className="w-3 h-3" />
+                                </a>
+                              ) : (
+                                <span className={`font-bold text-sm ${isLowest ? 'text-emerald-700' : 'text-blue-600'}`}>{formatPrice(pr.price)}</span>
+                              )}
+                              {priceDiff > 0 && (
+                                <p className="text-[10px] text-red-500 mt-0.5">+{formatPrice(priceDiff)} more</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {sorted.length > 1 && (
+                      <p className="text-[10px] text-muted-foreground mt-2.5 text-center">
+                        You save up to <span className="font-semibold text-emerald-600">{formatPrice(sorted[sorted.length - 1].price - lowestPrice)}</span> by choosing the best deal
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Price History Chart */}
+              {priceHistory.length >= 2 && (
                 <div className="card-premium p-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Best Prices</h3>
-                  <div className="space-y-2">
-                    {p.prices.map(pr => (
-                      <div key={pr.id} className="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC]">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{pr.storeName}</p>
-                          <p className="text-[10px] mt-0.5 flex items-center gap-1">
-                            <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                            <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
-                          </p>
-                        </div>
-                        {pr.url ? (
-                          <a href={pr.url} target="_blank" rel="noopener noreferrer" className="font-bold text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
-                            {formatPrice(pr.price)} <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : (
-                          <span className="font-bold text-sm text-blue-600">{formatPrice(pr.price)}</span>
-                        )}
-                      </div>
-                    ))}
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" /> Price History
+                  </h3>
+                  <div className="h-40">
+                    <PriceHistoryChart history={priceHistory} />
                   </div>
                 </div>
               )}
@@ -535,6 +797,9 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                   </div>
                 </TabsContent>
               </Tabs>
+
+              {/* User Reviews Section */}
+              <UserReviewsSection slug={slug} />
 
               {/* Related Phones */}
               {related.length > 0 && (

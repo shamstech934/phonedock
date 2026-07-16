@@ -48,6 +48,9 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
           <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
           <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
           <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
+          {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
+            <p className="text-[10px] text-emerald-600 font-medium line-through">{formatPrice(phone.originalPricePKR)} <span className="text-emerald-700 font-bold">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
+          )}
           <div className="flex items-center gap-1.5 pt-1 flex-wrap">
             {phone.specs?.ram && (
               <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">

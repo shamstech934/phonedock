@@ -16,6 +16,7 @@ export interface IPhone extends Document {
   slug: string;
   releaseDate: string;
   pricePKR: number;
+  originalPricePKR: number;
   ptaStatus: string;
   ptaApproved: boolean;
   featured: boolean;
@@ -63,6 +64,7 @@ const PhoneSchema = new Schema<IPhone>({
   slug: { type: String, required: true },
   releaseDate: { type: String, default: '' },
   pricePKR: { type: Number, default: 0 },
+  originalPricePKR: { type: Number, default: 0 },
   ptaStatus: { type: String, default: 'Unknown' },
   ptaApproved: { type: Boolean, default: false },
   featured: { type: Boolean, default: false },

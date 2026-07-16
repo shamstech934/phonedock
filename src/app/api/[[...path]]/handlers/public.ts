@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, Video } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin } from './helpers';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 
@@ -72,6 +72,36 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     }
     if (brand) { const b = await Brand.findOne({ slug: brand }); if (b) filter.brandId = b._id; }
 
+    // Numeric spec range filters (Phase 3)
+    const ramMin = parseFloat(url.searchParams.get('ramMin') || '');
+    const ramMax = parseFloat(url.searchParams.get('ramMax') || '');
+    const screenMin = parseFloat(url.searchParams.get('screenMin') || '');
+    const screenMax = parseFloat(url.searchParams.get('screenMax') || '');
+    const priceMin = parseFloat(url.searchParams.get('priceMin') || '');
+    const priceMax = parseFloat(url.searchParams.get('priceMax') || '');
+    const cameraMin = parseFloat(url.searchParams.get('cameraMin') || '');
+    const batteryMin = parseFloat(url.searchParams.get('batteryMin') || '');
+
+    // Price range filter on Phone model
+    if (priceMin > 0) filter.pricePKR = { ...filter.pricePKR, $gte: priceMin };
+    if (priceMax > 0) filter.pricePKR = { ...(filter.pricePKR || {}), $lte: priceMax };
+
+    // Numeric spec filters require joining with PhoneSpecs
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin);
+
+    if (hasSpecFilters) {
+      const specFilter: any = {};
+      if (!isNaN(ramMin)) specFilter.ramGB = { ...specFilter.ramGB, $gte: ramMin };
+      if (!isNaN(ramMax)) specFilter.ramGB = { ...(specFilter.ramGB || {}), $lte: ramMax };
+      if (!isNaN(screenMin)) specFilter.screenSizeInch = { ...specFilter.screenSizeInch, $gte: screenMin };
+      if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...(specFilter.screenSizeInch || {}), $lte: screenMax };
+      if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
+      if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+
+      const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
+      filter._id = { ...(filter._id || {}), $in: matchingSpecPhoneIds };
+    }
+
     const [phones, total] = await Promise.all([
       Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
       Phone.countDocuments(filter),
@@ -102,6 +132,42 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     }));
     await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
     return cached({ phone: phoneJSON, related: related.map((p: any) => phoneToJSON(p)) }, 300, 600);
+  }
+
+  // ---- /api/phones/:slug/price-history ----
+  if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-history') {
+    await connectDB();
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
+    if (!phone) return cachedError('Not found', 404, 60, 300);
+    const history = await PriceHistory.find({ phoneId: phone._id }).sort({ recordedAt: 1 }).lean();
+    // Group by storeName for chart data
+    const storeNames = [...new Set(history.map((h: any) => h.storeName ?? 'Base Price'))];
+    return cached({ history, storeNames }, 60, 300);
+  }
+
+  // ---- /api/phones/:slug/reviews ----
+  if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'reviews') {
+    await connectDB();
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
+    if (!phone) return cachedError('Not found', 404, 60, 300);
+    const reviews = await UserReview.find({ phoneId: phone._id, status: 'approved' }).sort({ createdAt: -1 }).lean();
+    const avg = reviews.length > 0 ? (reviews.reduce((s: number, r: any) => s + r.rating, 0) / reviews.length).toFixed(1) : '0';
+    return cached({ reviews, total: reviews.length, average: parseFloat(avg) }, 60, 300);
+  }
+
+  // ---- /api/phones/:slug/price-alerts (POST subscribe, GET check) ----
+  if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-alerts') {
+    return; // handled by POST in route.ts
+  }
+
+  // ---- /api/price-alerts/unsubscribe (GET) ----
+  if (segments.length === 2 && segments[0] === 'price-alerts' && segments[1] === 'unsubscribe') {
+    await connectDB();
+    const email = new URL(req.url).searchParams.get('email') || '';
+    const phoneId = new URL(req.url).searchParams.get('phoneId') || '';
+    if (!email || !phoneId) return NextResponse.json({ error: 'Missing params' }, { status: 400 });
+    await PriceAlert.updateOne({ phoneId, email }, { $set: { unsubscribedAt: new Date(), notified: true } });
+    return NextResponse.json({ success: true, message: 'Unsubscribed successfully' });
   }
 
   // ---- /api/brands ----

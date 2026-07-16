@@ -62,6 +62,12 @@ export interface PhoneSpecs {
   osUI?: string;
   updatePolicy?: string;
   specialFeatures?: string;
+  // Numeric filter fields
+  ramGB?: number;
+  storageGB?: number;
+  screenSizeInch?: number;
+  mainCameraMP?: number;
+  batteryMAh?: number;
 }
 
 export interface PhoneBenchmark {
@@ -100,6 +106,7 @@ export interface Phone {
   brand?: Brand;
   thumbnail: string;
   pricePKR: number;
+  originalPricePKR: number;
   description: string;
   overallRating: number;
   cameraScore: number;

@@ -1,5 +1,5 @@
 import type { PhoneFormData } from './types';
-import { TextInput } from './FormFields';
+import { TextInput, NumberInput } from './FormFields';
 
 interface SectionProps {
   form: PhoneFormData;
@@ -92,6 +92,33 @@ export default function DisplayProcessorSection({ form, set }: SectionProps) {
         value={form.cardSlot}
         onChange={(v) => set('cardSlot', v)}
         placeholder="e.g. microSDXC up to 1TB"
+      />
+      <div className="col-span-full border-t border-gray-200 pt-4 mt-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Numeric Filter Fields</p>
+      </div>
+      <NumberInput
+        label="Screen Size (inch)"
+        value={form.screenSizeInch}
+        onChange={(v) => set('screenSizeInch', v)}
+        placeholder="e.g. 6.7"
+        min={0}
+        max={10}
+      />
+      <NumberInput
+        label="RAM (GB)"
+        value={form.ramGB}
+        onChange={(v) => set('ramGB', v)}
+        placeholder="e.g. 8"
+        min={0}
+        max={32}
+      />
+      <NumberInput
+        label="Storage (GB)"
+        value={form.storageGB}
+        onChange={(v) => set('storageGB', v)}
+        placeholder="e.g. 256"
+        min={0}
+        max={2048}
       />
     </div>
   );

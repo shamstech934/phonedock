@@ -1,5 +1,5 @@
 import type { PhoneFormData } from './types';
-import { TextInput } from './FormFields';
+import { TextInput, NumberInput } from './FormFields';
 
 interface SectionProps {
   form: PhoneFormData;
@@ -86,6 +86,17 @@ export default function CameraSection({ form, set }: SectionProps) {
         value={form.selfieVideo}
         onChange={(v) => set('selfieVideo', v)}
         placeholder="e.g. 4K@60fps"
+      />
+      <div className="col-span-full border-t border-gray-200 pt-4 mt-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Numeric Filter Fields</p>
+      </div>
+      <NumberInput
+        label="Main Camera (MP)"
+        value={form.mainCameraMP}
+        onChange={(v) => set('mainCameraMP', v)}
+        placeholder="e.g. 200"
+        min={0}
+        max={500}
       />
     </div>
   );

@@ -113,8 +113,17 @@ function PhonesContent() {
           if (p.pricePKR < pr.min) return false;
         }
       }
-      if (ramParam !== 'all' && p.specs?.ram !== ramParam) return false;
-      if (storageParam !== 'all' && p.specs?.storage !== storageParam) return false;
+      if (ramParam !== 'all') {
+        const ramGB = parseInt(ramParam);
+        // Try numeric field first, fall back to text match
+        if (p.specs?.ramGB) { if (p.specs.ramGB !== ramGB) return false; }
+        else if (p.specs?.ram !== ramParam) return false;
+      }
+      if (storageParam !== 'all') {
+        const storageGB = parseInt(storageParam);
+        if (p.specs?.storageGB) { if (p.specs.storageGB !== storageGB) return false; }
+        else if (p.specs?.storage !== storageParam) return false;
+      }
       if (fiveGParam === 'yes' && (!p.specs?.fiveG || p.specs.fiveG === 'No')) return false;
       if (fiveGParam === 'no' && p.specs?.fiveG && p.specs.fiveG !== 'No') return false;
       if (nfcParam === 'yes' && (!p.specs?.nfc || p.specs.nfc === 'No')) return false;

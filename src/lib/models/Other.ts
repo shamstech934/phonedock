@@ -86,3 +86,33 @@ const ActivityLogSchema = new Schema({
 ActivityLogSchema.index({ createdAt: -1 }, { expireAfterSeconds: 7776000 });
 
 export const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
+
+// ─── UserReview (Phase 4) ──────────────────────────────────────────────────
+const UserReviewSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  comment: { type: String, required: true, trim: true, maxlength: 1000 },
+  status: { type: String, enum: ['pending', 'approved', 'rejected', 'flagged'], default: 'pending' },
+  spamFlags: { type: [String], default: [] },
+}, { timestamps: true });
+
+UserReviewSchema.index({ phoneId: 1, status: 1 });
+UserReviewSchema.index({ status: 1, createdAt: -1 });
+
+export const UserReview = mongoose.models.UserReview || mongoose.model('UserReview', UserReviewSchema);
+
+// ─── PriceAlert (Phase 6) ──────────────────────────────────────────────────
+const PriceAlertSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  targetPrice: { type: Number, default: 0 },
+  notified: { type: Boolean, default: false },
+  unsubscribedAt: { type: Date, default: null },
+}, { timestamps: true });
+
+PriceAlertSchema.index({ phoneId: 1, email: 1 });
+PriceAlertSchema.index({ notified: 1, createdAt: -1 });
+
+export const PriceAlert = mongoose.models.PriceAlert || mongoose.model('PriceAlert', PriceAlertSchema);

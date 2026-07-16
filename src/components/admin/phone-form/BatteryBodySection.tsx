@@ -1,5 +1,5 @@
 import type { PhoneFormData } from './types';
-import { TextInput } from './FormFields';
+import { TextInput, NumberInput } from './FormFields';
 
 interface SectionProps {
   form: PhoneFormData;
@@ -80,6 +80,17 @@ export default function BatteryBodySection({ form, set }: SectionProps) {
         value={form.colors}
         onChange={(v) => set('colors', v)}
         placeholder="e.g. Titanium Gray, Titanium Black"
+      />
+      <div className="col-span-full border-t border-gray-200 pt-4 mt-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Numeric Filter Fields</p>
+      </div>
+      <NumberInput
+        label="Battery (mAh)"
+        value={form.batteryMAh}
+        onChange={(v) => set('batteryMAh', v)}
+        placeholder="e.g. 5000"
+        min={0}
+        max={10000}
       />
     </div>
   );

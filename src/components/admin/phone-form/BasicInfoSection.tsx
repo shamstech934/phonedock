@@ -38,6 +38,12 @@ export default function BasicInfoSection({ form, set, brandOptions }: SectionPro
         onChange={(v) => set('pakistaniPricePKR', v)}
         placeholder="e.g. 350000"
       />
+      <NumberInput
+        label="Original Price PKR (for discount)"
+        value={form.originalPricePKR}
+        onChange={(v) => set('originalPricePKR', v)}
+        placeholder="Leave empty if no discount"
+      />
       <SelectInput
         label="PTA Status"
         value={form.ptaStatus}

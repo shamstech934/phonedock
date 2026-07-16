@@ -30,6 +30,7 @@ export interface PhoneFormData {
   modelName: string;
   slug: string;
   pakistaniPricePKR: number | '';
+  originalPricePKR: number | '';
   ptaStatus: string;
   ptaApproved: boolean;
   releaseDate: string;
@@ -121,6 +122,12 @@ export interface PhoneFormData {
   seoTitle: string;
   seoDescription: string;
   keywords: string;
+  // Numeric filter fields (Phase 3)
+  ramGB: number | '';
+  storageGB: number | '';
+  screenSizeInch: number | '';
+  mainCameraMP: number | '';
+  batteryMAh: number | '';
   // Images & Prices
   images: PhoneImage[];
   prices: PhonePrice[];
@@ -180,6 +187,7 @@ export const createEmptyFormData = (): PhoneFormData => ({
   modelName: '',
   slug: '',
   pakistaniPricePKR: '',
+  originalPricePKR: '',
   ptaStatus: 'Unknown',
   ptaApproved: false,
   releaseDate: '',
@@ -265,6 +273,11 @@ export const createEmptyFormData = (): PhoneFormData => ({
   seoTitle: '',
   seoDescription: '',
   keywords: '',
+  ramGB: '',
+  storageGB: '',
+  screenSizeInch: '',
+  mainCameraMP: '',
+  batteryMAh: '',
   images: [],
   prices: [],
 });

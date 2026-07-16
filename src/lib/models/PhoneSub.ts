@@ -56,3 +56,16 @@ const PhonePriceSchema = new Schema({
 PhonePriceSchema.index({ phoneId: 1, storeName: 1 }, { unique: true });
 
 export const PhonePrice = mongoose.models.PhonePrice || mongoose.model('PhonePrice', PhonePriceSchema);
+
+// ─── PriceHistory ──────────────────────────────────────────────────────────────
+const PriceHistorySchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
+  storeName: { type: String, default: null },
+  price: { type: Number, required: true },
+  recordedAt: { type: Date, default: () => new Date() },
+}, { timestamps: true });
+
+PriceHistorySchema.index({ phoneId: 1, storeName: 1 });
+PriceHistorySchema.index({ phoneId: 1, recordedAt: -1 });
+
+export const PriceHistory = mongoose.models.PriceHistory || mongoose.model('PriceHistory', PriceHistorySchema);
