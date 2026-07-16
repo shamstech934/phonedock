@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, Video } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin } from './helpers';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 
@@ -84,15 +84,24 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).populate('brand');
     if (!phone) return cachedError('Not found', 404, 60, 300);
-    const [specs, benchmarks, images, prices, related] = await Promise.all([
+    const [specs, benchmarks, images, prices, related, phoneVideos] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
       PhonePrice.find({ phoneId: phone._id }).lean(),
       Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
+      Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
     ]);
+    const phoneJSON: any = phoneToJSON(phone, specs, benchmarks, images, prices);
+    phoneJSON.videos = phoneVideos.map((v: any) => ({
+      id: v._id?.toString(),
+      youtubeId: v.youtubeId,
+      title: v.title,
+      thumbnailUrl: v.thumbnailUrl,
+      publishedAt: v.publishedAt,
+    }));
     await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
-    return cached({ phone: phoneToJSON(phone, specs, benchmarks, images, prices), related: related.map((p: any) => phoneToJSON(p)) }, 300, 600);
+    return cached({ phone: phoneJSON, related: related.map((p: any) => phoneToJSON(p)) }, 300, 600);
   }
 
   // ---- /api/brands ----
@@ -154,6 +163,35 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     ]);
     const brands = brandAgg.map((b: any) => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } }));
     return cached({ phones: phones.map((p: any) => phoneToJSON(p)), brands, query: q }, 60, 180);
+  }
+
+  // ---- /api/videos ----
+  if (segments.length === 1 && segments[0] === 'videos') {
+    await connectDB();
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '12', 10)));
+    const skip = (page - 1) * limit;
+    const [videos, total] = await Promise.all([
+      Video.find({ active: true }).sort({ publishedAt: -1 }).skip(skip).limit(limit).populate('phoneId', 'modelName slug thumbnail brand').lean(),
+      Video.countDocuments({ active: true }),
+    ]);
+    const mapped = videos.map((v: any) => ({
+      id: v._id?.toString(),
+      youtubeId: v.youtubeId,
+      title: v.title,
+      description: v.description,
+      thumbnailUrl: v.thumbnailUrl,
+      publishedAt: v.publishedAt,
+      phone: v.phoneId ? {
+        id: v.phoneId._id?.toString(),
+        modelName: v.phoneId.modelName,
+        slug: v.phoneId.slug,
+        thumbnail: v.phoneId.thumbnail || '',
+        brand: v.phoneId.brand?.name || '',
+      } : null,
+    }));
+    return cached({ videos: mapped, total, page, limit, totalPages: Math.ceil(total / limit) }, 120, 300);
   }
 
   return undefined;

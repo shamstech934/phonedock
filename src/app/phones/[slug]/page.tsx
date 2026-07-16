@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Star, ChevronRight, Smartphone, Camera, Battery, Cpu, Trophy,
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
-  Share2, ChevronLeft, ExternalLink, AlertTriangle,
+  Share2, ChevronLeft, ExternalLink, AlertTriangle, Play,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -308,6 +308,31 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                         <ScoreBar score={p.valueScore} label="Value" mini />
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Video Reviews */}
+              {p.videos && p.videos.length > 0 && (
+                <div className="card-premium p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center"><Play className="w-4 h-4 text-red-500" fill="currentColor" /></div>
+                    Video Review{p.videos.length > 1 ? 's' : ''}
+                  </h3>
+                  <div className="space-y-3">
+                    {p.videos.map((v: any) => (
+                      <div key={v.id || v.youtubeId} className="rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+                        <iframe
+                          src={`https://www.youtube-nocookie.com/embed/${v.youtubeId}`}
+                          className="w-full aspect-video"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          loading="lazy"
+                          title={v.title}
+                        />
+                        <p className="text-xs text-muted-foreground px-3 py-2 line-clamp-1">{v.title}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

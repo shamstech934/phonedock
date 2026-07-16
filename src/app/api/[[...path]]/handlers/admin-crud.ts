@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, Admin, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice } from '@/lib/models';
+import { Phone, Brand, News, Admin, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, Video } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS } from './helpers';
+import { syncYouTubeVideos } from '@/lib/video-sync';
 
 // ============ ADMIN CRUD GET ============
 
@@ -119,6 +120,41 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       id: l._id?.toString(),
       admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined,
     })) });
+  }
+
+  // ---- /api/admin/videos ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'videos') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const skip = (page - 1) * limit;
+    const filter: any = {};
+    const status = url.searchParams.get('status');
+    if (status === 'pending') filter.active = false;
+    else if (status === 'active') filter.active = true;
+    const [videos, total, pendingCount] = await Promise.all([
+      Video.find(filter).sort({ publishedAt: -1 }).skip(skip).limit(limit).populate('phoneId', 'modelName slug brand').lean(),
+      Video.countDocuments(filter),
+      Video.countDocuments({ active: false }),
+    ]);
+    return NextResponse.json({
+      videos: videos.map((v: any) => ({
+        id: v._id?.toString(),
+        youtubeId: v.youtubeId,
+        title: v.title,
+        thumbnailUrl: v.thumbnailUrl,
+        publishedAt: v.publishedAt,
+        phoneId: v.phoneId?._id?.toString() || null,
+        phone: v.phoneId ? { modelName: v.phoneId.modelName, slug: v.phoneId.slug, brand: v.phoneId.brand?.name || '' } : null,
+        active: v.active,
+        autoLinked: v.autoLinked,
+        createdAt: v.createdAt,
+      })),
+      total, page, limit, pendingCount,
+    });
   }
 
   return undefined;
@@ -261,6 +297,15 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
   // ---- /api/admin/seed (REMOVED — use `npm run seed` CLI script instead) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seed') {
     return NextResponse.json({ error: 'Seed endpoint removed. Use `npm run seed` from the CLI.' }, { status: 410 });
+  }
+
+  // ---- /api/admin/videos/sync (MANUAL SYNC) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'sync') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:manage'); if (permCheck) return permCheck;
+    const result = await syncYouTubeVideos();
+    try { await ActivityLog.create({ adminId: admin._id, action: 'sync_videos', details: `Sync: ${result.inserted} new, ${result.skipped} skipped, ${result.autoLinked} auto-linked`, entityType: 'video' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json(result);
   }
 
   return undefined;
@@ -425,6 +470,22 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: updateData }, { new: true }).lean();
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ success: true, sponsor: { ...updated, id: updated._id?.toString() } });
+  }
+
+  // ---- /api/admin/videos/:id (UPDATE) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:edit'); if (permCheck) return permCheck;
+    const video = await Video.findById(segments[2]);
+    if (!video) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const body = await req.json();
+    if (body.phoneId !== undefined) video.phoneId = body.phoneId || null;
+    if (body.active !== undefined) video.active = body.active;
+    if (body.autoLinked !== undefined) video.autoLinked = body.autoLinked;
+    if (body.title) video.title = body.title;
+    await video.save();
+    try { await ActivityLog.create({ adminId: admin._id, action: 'update_video', details: `Updated: ${video.title}`, entityType: 'video', entityId: video._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, id: video._id?.toString() });
   }
 
   return undefined;

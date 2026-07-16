@@ -8,3 +8,4 @@ export { CollectorSource } from './CollectorSource';
 export { CollectedPhone } from './CollectedPhone';
 export { CollectorJob } from './CollectorJob';
 export { SyncJob } from './SyncJob';
+export { Video } from './Video';

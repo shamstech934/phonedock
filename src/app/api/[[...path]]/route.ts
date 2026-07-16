@@ -7,6 +7,8 @@ import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdmi
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleDownloadSample } from './handlers/download';
+import { syncYouTubeVideos } from '@/lib/video-sync';
+import { Video } from '@/lib/models';
 
 // ============ GET HANDLER ============
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
@@ -14,6 +16,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
+    // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'sync-youtube') {
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+      if (secret !== process.env.CRON_SECRET) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const result = await syncYouTubeVideos();
+      return NextResponse.json(result);
+    }
+
     // Download sample data (no auth needed)
     const downloadResult = await handleDownloadSample(req, segments);
     if (downloadResult) return downloadResult;

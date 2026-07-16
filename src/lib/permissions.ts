@@ -26,7 +26,9 @@ export type Permission =
   // Media
   | 'media:upload' | 'media:delete'
   // Trash
-  | 'trash:read' | 'trash:restore' | 'trash:delete';
+  | 'trash:read' | 'trash:restore' | 'trash:delete'
+  // Videos
+  | 'videos:read' | 'videos:edit' | 'videos:manage';
 
 // ============ PERMISSION MAPS ============
 
@@ -43,6 +45,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'activity:read',
   'media:upload', 'media:delete',
   'trash:read', 'trash:restore', 'trash:delete',
+  'videos:read', 'videos:edit', 'videos:manage',
 ];
 
 const rolePermissions: Record<AdminRole, Set<Permission>> = {
@@ -60,6 +63,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'activity:read',
     'media:upload', 'media:delete',
     'trash:read', 'trash:restore', 'trash:delete',
+    'videos:read', 'videos:edit', 'videos:manage',
   ]),
   editor: new Set<Permission>([
     'dashboard:read',

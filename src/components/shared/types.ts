@@ -117,6 +117,7 @@ export interface Phone {
   benchmarks?: PhoneBenchmark;
   images?: PhoneImage[];
   prices?: PhonePrice[];
+  videos?: Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string; publishedAt: string }>;
   pros?: string;
   cons?: string;
   reviewSummary?: string;

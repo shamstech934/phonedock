@@ -7,7 +7,7 @@ import Link from 'next/link';
 import {
   Search, Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, ChevronRight, Newspaper, BarChart3, Target,
+  Check, ChevronRight, Newspaper, BarChart3, Target, Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -147,6 +147,45 @@ function TrustSection() {
 }
 
 
+
+// ============ VIDEO REVIEWS SECTION ============
+function HomeVideoSection() {
+  const [videos, setVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string; publishedAt: string; phone: { modelName: string; slug: string; brand: string } | null }>>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  React.useEffect(() => {
+    fetch('/api/videos?limit=4')
+      .then(r => r.json())
+      .then(d => { if (d.videos?.length) { setVideos(d.videos); setLoaded(true); } })
+      .catch(() => {});
+  }, []);
+
+  if (!loaded || !videos.length) return null;
+
+  return (
+    <section className="space-y-5">
+      <SectionHeader title="Latest Video Reviews" icon={Play} link="/videos" linkText="All Videos" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {videos.map(v => (
+          <Link key={v.id} href={v.phone ? `/phones/${v.phone.slug}` : `https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target={v.phone ? undefined : '_blank'} rel={v.phone ? undefined : 'noopener noreferrer'} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+            <div className="relative aspect-video bg-gray-100">
+              {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                  <Play className="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" />
+                </div>
+              </div>
+            </div>
+            <div className="p-3">
+              <h3 className="font-semibold text-sm line-clamp-2 text-gray-900 leading-snug mb-1">{v.title}</h3>
+              {v.phone && <p className="text-[11px] text-blue-500 font-medium">{v.phone.brand} {v.phone.modelName}</p>}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 // ============ MAIN CLIENT CONTENT ============
 // Receives pre-fetched data from the server component — no useEffect data fetching needed.
@@ -328,6 +367,9 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
 
             {/* Latest Additions */}
             <PhoneSection phones={data.latest} title="Latest Additions" icon={Clock} link="/phones" linkText="All Phones" showEmpty />
+
+            {/* Latest Video Reviews */}
+            <HomeVideoSection />
 
             {/* Latest News */}
             {data.news.length > 0 && (
