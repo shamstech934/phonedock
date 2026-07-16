@@ -56,6 +56,16 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const [pwData, setPwData] = useState({ current: '', newPw: '', confirm: '' });
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState('');
+  const [pendingVideoCount, setPendingVideoCount] = useState(0);
+
+  // Fetch pending video count
+  useEffect(() => {
+    if (!admin) return;
+    fetch('/api/admin/videos?limit=1&status=pending', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setPendingVideoCount(d.pendingCount || 0))
+      .catch(() => {});
+  }, [admin]);
 
   // Auto-open collector group if on a collector sub-page
   useEffect(() => {
@@ -186,6 +196,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                   >
                     <link.icon className="w-4 h-4" />
                     <span className="flex-1">{link.label}</span>
+                    {link.href === '/admin/videos' && pendingVideoCount > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">{pendingVideoCount}</span>
+                    )}
                     {hasChildren && (
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                     )}
@@ -228,6 +241,9 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
               return (
                 <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${active ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
                   <link.icon className="w-3 h-3" />{link.label}
+                  {link.href === '/admin/videos' && pendingVideoCount > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold">{pendingVideoCount}</span>
+                  )}
                 </Link>
               );
             })}

@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
   Search, Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, ChevronRight, Newspaper, BarChart3, Target, Play,
+  Check, ChevronRight, Newspaper, BarChart3, Target, Play, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -150,8 +150,11 @@ function TrustSection() {
 
 // ============ VIDEO REVIEWS SECTION ============
 function HomeVideoSection() {
-  const [videos, setVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string; publishedAt: string; phone: { modelName: string; slug: string; brand: string } | null }>>([]);
+  const [videos, setVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string; publishedAt: string; phone: { modelName: string; slug: string; brand: string; thumbnail: string } | null }>>([]);
   const [loaded, setLoaded] = useState(false);
+  const [activeVideo, setActiveVideo] = useState<typeof videos[0] | null>(null);
+
+  const closeModal = useCallback(() => setActiveVideo(null), []);
 
   React.useEffect(() => {
     fetch('/api/videos?limit=4')
@@ -160,6 +163,21 @@ function HomeVideoSection() {
       .catch(() => {});
   }, []);
 
+  // Close modal on Escape key
+  React.useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal();
+    };
+    if (activeVideo) {
+      document.addEventListener('keydown', handleKey);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = '';
+    };
+  }, [activeVideo, closeModal]);
+
   if (!loaded || !videos.length) return null;
 
   return (
@@ -167,7 +185,7 @@ function HomeVideoSection() {
       <SectionHeader title="Latest Video Reviews" icon={Play} link="/videos" linkText="All Videos" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {videos.map(v => (
-          <a key={v.id} href={`https://www.youtube-nocookie.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer" className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
+          <div key={v.id} onClick={() => setActiveVideo(v)} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
             <div className="relative aspect-video bg-gray-100">
               {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -180,9 +198,37 @@ function HomeVideoSection() {
               <h3 className="font-semibold text-sm line-clamp-2 text-gray-900 leading-snug mb-1">{v.title}</h3>
               {v.phone && <Link href={`/phones/${v.phone.slug}`} className="text-[11px] text-blue-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{v.phone.brand} {v.phone.modelName}</Link>}
             </div>
-          </a>
+          </div>
         ))}
       </div>
+
+      {/* Video Player Modal */}
+      {activeVideo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={closeModal}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="relative z-10 w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+            <button onClick={closeModal} className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors p-2">
+              <X className="w-6 h-6" />
+            </button>
+            <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl">
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${activeVideo.youtubeId}?autoplay=1&rel=0`}
+                title={activeVideo.title}
+                className="absolute inset-0 w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+            <h2 className="text-white font-semibold text-sm sm:text-base mt-3 px-1 line-clamp-2">{activeVideo.title}</h2>
+            {activeVideo.phone && (
+              <Link href={`/phones/${activeVideo.phone.slug}`} onClick={closeModal} className="inline-flex items-center gap-2 mt-2 px-1 text-blue-400 hover:text-blue-300 text-xs font-medium transition-colors">
+                {activeVideo.phone.thumbnail && <Image src={activeVideo.phone.thumbnail} alt={activeVideo.phone.modelName} width={16} height={16} className="rounded object-contain" unoptimized />}
+                {activeVideo.phone.brand} {activeVideo.phone.modelName}
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

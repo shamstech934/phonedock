@@ -153,6 +153,7 @@ export const TABS = [
   'Benchmarks & Ratings',
   'Review & SEO',
   'Images & Prices',
+  'Video Review',
 ] as const;
 
 export const EMPTY_IMAGE: PhoneImage = { url: '', altText: '' };

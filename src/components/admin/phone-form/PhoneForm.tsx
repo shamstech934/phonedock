@@ -12,6 +12,7 @@ import ConnectivitySection from './ConnectivitySection';
 import BenchmarkSection from './BenchmarkSection';
 import ReviewSEOSection from './ReviewSEOSection';
 import ImagesPricesSection from './ImagesPricesSection';
+import VideoSection from './VideoSection';
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ export default function PhoneForm({
   const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkedVideos, setLinkedVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string }>>([]);
 
   // ── Field updater helper ──
   const set = useCallback(
@@ -229,6 +231,63 @@ export default function PhoneForm({
       cancelled = true;
     };
   }, [isEditMode, phoneId]);
+
+  // ── Fetch linked videos in edit mode ──
+  useEffect(() => {
+    if (!isEditMode || !phoneId) return;
+    fetch(`/api/admin/videos?limit=50`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => {
+        const linked = (d.videos || []).filter((v: any) => v.phoneId === phoneId);
+        setLinkedVideos(linked.map((v: any) => ({
+          id: v.id,
+          youtubeId: v.youtubeId,
+          title: v.title,
+          thumbnailUrl: v.thumbnailUrl,
+        })));
+      })
+      .catch(() => {});
+  }, [isEditMode, phoneId]);
+
+  // ── Link/unlink video handlers ──
+  const handleLinkVideo = useCallback(async (videoId: string) => {
+    if (!phoneId) {
+      // New phone — store temporarily, will be linked after save
+      setLinkedVideos(prev => [...prev, { id: videoId, youtubeId: '', title: 'Video to be linked after save', thumbnailUrl: '' }]);
+      return;
+    }
+    try {
+      await fetch(`/api/admin/videos/${videoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ phoneId, active: true, autoLinked: false }),
+      });
+      // Refresh linked videos
+      const res = await fetch(`/api/admin/videos?limit=50`, { credentials: 'include' });
+      const d = await res.json();
+      const linked = (d.videos || []).filter((v: any) => v.phoneId === phoneId);
+      setLinkedVideos(linked.map((v: any) => ({
+        id: v.id, youtubeId: v.youtubeId, title: v.title, thumbnailUrl: v.thumbnailUrl,
+      })));
+    } catch {}
+  }, [phoneId]);
+
+  const handleUnlinkVideo = useCallback(async (videoId: string) => {
+    if (!phoneId) {
+      setLinkedVideos(prev => prev.filter(v => v.id !== videoId));
+      return;
+    }
+    try {
+      await fetch(`/api/admin/videos/${videoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ phoneId: null, active: false, autoLinked: false }),
+      });
+      setLinkedVideos(prev => prev.filter(v => v.id !== videoId));
+    } catch {}
+  }, [phoneId]);
 
   // ── Submit handler ──
   const handleSubmit = async () => {
@@ -487,6 +546,14 @@ export default function PhoneForm({
         )}
         {activeTab === 7 && (
           <ImagesPricesSection form={form} set={set} />
+        )}
+        {activeTab === 8 && (
+          <VideoSection
+            phoneId={phoneId || null}
+            linkedVideos={linkedVideos}
+            onLink={handleLinkVideo}
+            onUnlink={handleUnlinkVideo}
+          />
         )}
       </div>
 

@@ -122,7 +122,29 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     })) });
   }
 
-  // ---- /api/admin/videos ----
+  // ---- /api/admin/videos/search?q=... (autocomplete for PhoneForm) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'search') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const q = new URL(req.url).searchParams.get('q') || '';
+    if (q.length < 2) return NextResponse.json({ videos: [] });
+    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const videos = await Video.find({ title: { $regex: safe, $options: 'i' } }).sort({ publishedAt: -1 }).limit(10).populate('phoneId', 'modelName slug').lean();
+    return NextResponse.json({ videos: videos.map((v: any) => ({
+      id: v._id?.toString(),
+      youtubeId: v.youtubeId,
+      title: v.title,
+      thumbnailUrl: v.thumbnailUrl,
+      publishedAt: v.publishedAt,
+      active: v.active,
+      autoLinked: v.autoLinked,
+      phoneId: v.phoneId?._id?.toString() || null,
+      phoneName: v.phoneId?.modelName || null,
+    })) });
+  }
+
+  // ---- /api/admin/videos (LIST) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'videos') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
@@ -310,6 +332,77 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const result = await syncYouTubeVideos();
     try { await ActivityLog.create({ adminId: admin._id, action: 'sync_videos', details: `Sync: ${result.inserted} new, ${result.skipped} skipped, ${result.autoLinked} auto-linked`, entityType: 'video' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json(result);
+  }
+
+  // ---- /api/admin/videos/lookup (FETCH SINGLE VIDEO BY URL/ID, CREATE IF NEW) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'lookup') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const input = (body.youtubeUrl || body.youtubeId || '').trim();
+    // Extract video ID from URL or raw ID
+    let youtubeId = input;
+    const urlMatch = input.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&#?\s]{11})/);
+    if (urlMatch) youtubeId = urlMatch[1];
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(youtubeId)) {
+      return NextResponse.json({ error: 'Invalid YouTube URL or video ID' }, { status: 400 });
+    }
+    // Check if already in DB
+    const existing = await Video.findOne({ youtubeId }).lean();
+    if (existing) {
+      return NextResponse.json({
+        id: existing._id?.toString(),
+        youtubeId: existing.youtubeId,
+        title: existing.title,
+        thumbnailUrl: existing.thumbnailUrl,
+        publishedAt: existing.publishedAt,
+        active: existing.active,
+        autoLinked: existing.autoLinked,
+        phoneId: existing.phoneId?.toString() || null,
+        alreadyExisted: true,
+      });
+    }
+    // Fetch from YouTube API (single video lookup, cheap)
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (!apiKey) return NextResponse.json({ error: 'YOUTUBE_API_KEY not configured' }, { status: 500 });
+    try {
+      const ytRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${youtubeId}&key=${apiKey}`);
+      if (!ytRes.ok) {
+        if (ytRes.status === 403) return NextResponse.json({ error: 'YouTube API quota exceeded or key invalid' }, { status: 503 });
+        return NextResponse.json({ error: 'YouTube API error' }, { status: 502 });
+      }
+      const ytData = await ytRes.json();
+      const item = ytData.items?.[0];
+      if (!item?.snippet) return NextResponse.json({ error: 'Video not found on YouTube' }, { status: 404 });
+      const snippet = item.snippet;
+      const thumbs = snippet.thumbnails;
+      const thumbnailUrl = thumbs?.maxres?.url || thumbs?.high?.url || thumbs?.medium?.url || '';
+      const newVideo = await Video.create({
+        youtubeId,
+        title: snippet.title || '',
+        description: (snippet.description || '').slice(0, 2000),
+        thumbnailUrl,
+        publishedAt: new Date(snippet.publishedAt || Date.now()),
+        phoneId: null,
+        active: false,
+        autoLinked: false,
+      });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'lookup_video', details: `Looked up & created: ${newVideo.title}`, entityType: 'video', entityId: newVideo._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+      return NextResponse.json({
+        id: newVideo._id?.toString(),
+        youtubeId: newVideo.youtubeId,
+        title: newVideo.title,
+        thumbnailUrl: newVideo.thumbnailUrl,
+        publishedAt: newVideo.publishedAt,
+        active: newVideo.active,
+        autoLinked: false,
+        phoneId: null,
+        alreadyExisted: false,
+      });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message || 'Failed to fetch video from YouTube' }, { status: 502 });
+    }
   }
 
   return undefined;
