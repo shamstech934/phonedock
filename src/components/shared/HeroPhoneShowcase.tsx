@@ -94,7 +94,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      <div className="relative flex flex-row-reverse items-center justify-center w-full max-w-[340px] mx-auto gap-3">
+      <div className="relative flex flex-row-reverse items-center justify-center w-full max-w-[400px] mx-auto gap-3">
         {/* Phone Image — RIGHT side */}
         <div className="relative z-10 flex-shrink-0">
           <AnimatePresence mode="wait">
@@ -113,14 +113,14 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
                   <Image
                     src={phone.thumbnail}
                     alt={phone.modelName}
-                    width={225}
-                    height={275}
+                    width={281}
+                    height={344}
                     className="object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.35)]"
                     priority={current === 0}
                     unoptimized
                   />
                 ) : (
-                  <div className="w-[180px] h-[220px] bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
+                  <div className="w-[225px] h-[275px] bg-white/[0.07] rounded-3xl flex items-center justify-center border border-white/10">
                     <span className="text-white/25 text-xs">No Image</span>
                   </div>
                 )}
@@ -138,23 +138,23 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-3 border border-white/[0.12] shadow-lg shadow-black/10"
+              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-[13px] border border-white/[0.12] shadow-lg shadow-black/10"
             >
               {/* Brand name */}
-              <p className="text-[10px] text-blue-300 font-semibold uppercase tracking-wider mb-0.5 leading-none">
+              <p className="text-[9px] text-blue-300 font-semibold uppercase tracking-wider mb-0.5 leading-none">
                 {phone.brand?.name || ''}
               </p>
               {/* Phone model name */}
-              <h3 className="text-[13px] font-bold text-white leading-tight mb-1.5 line-clamp-2">
+              <h3 className="text-[12px] font-bold text-white leading-tight mb-1.5 line-clamp-2">
                 {phone.modelName}
               </h3>
               {/* Price + PTA badge */}
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-[15px] font-extrabold text-white tracking-tight leading-none">
+                <span className="text-[14px] font-extrabold text-white tracking-tight leading-none">
                   {formatPrice(phone.pricePKR)}
                 </span>
                 {phone.ptaApproved && (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 px-1.5 py-[2px] rounded-full border border-emerald-400/15 leading-none">
+                  <span className="inline-flex items-center gap-0.5 text-[8px] font-semibold bg-emerald-500/20 text-emerald-300 px-1.5 py-[2px] rounded-full border border-emerald-400/15 leading-none">
                     <Shield className="w-2.5 h-2.5" /> PTA
                   </span>
                 )}
@@ -165,7 +165,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
                   {specItems.slice(0, 3).map((spec, i) => (
                     <span
                       key={i}
-                      className="text-[10px] text-gray-300/80 bg-white/[0.06] px-1.5 py-[2px] rounded-md border border-white/[0.06] leading-tight"
+                      className="text-[9px] text-gray-300/80 bg-white/[0.06] px-1.5 py-[2px] rounded-md border border-white/[0.06] leading-tight"
                     >
                       {spec}
                     </span>
@@ -175,7 +175,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
               {/* View Details button */}
               <Link
                 href={`/phones/${phone.slug}`}
-                className="block text-center text-[11px] font-semibold text-white bg-white/[0.08] hover:bg-white/[0.15] rounded-xl py-[7px] transition-all duration-200 border border-white/[0.1] hover:border-white/[0.18]"
+                className="block text-center text-[10px] font-semibold text-white bg-white/[0.08] hover:bg-white/[0.15] rounded-xl py-[6px] transition-all duration-200 border border-white/[0.1] hover:border-white/[0.18]"
               >
                 View Details
               </Link>
