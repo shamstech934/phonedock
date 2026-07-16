@@ -143,7 +143,6 @@ export default function AdminVideosPage() {
           <p className="text-sm">No videos found. Click &quot;Sync Now&quot; to fetch from YouTube.</p>
         </div>
       ) : (
-        <>
         <div className="space-y-3">
           {videos.map(v => (
             <div key={v.id} className={`p-4 rounded-xl border ${!v.active ? 'border-amber-200 bg-amber-50/30' : 'border-gray-200 bg-white'} flex gap-4 items-start`}>
@@ -165,11 +164,11 @@ export default function AdminVideosPage() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {new Date(v.publishedAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}
-                  {v.phone && <>{' \u00B7 '}<span className="text-blue-600">{v.phone.brand} {v.phone.modelName}</span></>}
+                  {v.phone && <span> - <span className="text-blue-600">{v.phone.brand} {v.phone.modelName}</span></span>}
                 </p>
                 {v.autoLinked && (
                   <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-1">
-                    <AlertTriangle className="w-3 h-3" /> Auto-linked {'\u2014'} needs confirmation
+                    <AlertTriangle className="w-3 h-3" /> Auto-linked - needs confirmation
                   </p>
                 )}
               </div>
@@ -177,7 +176,7 @@ export default function AdminVideosPage() {
               {/* Actions */}
               <div className="flex items-center gap-2 flex-shrink-0">
                 {v.autoLinked && v.phone && (
-                  <button onClick={() => handleConfirmLink(v)} disabled={savingId === v.id} title="Confirm link &amp; activate"
+                  <button onClick={() => handleConfirmLink(v)} disabled={savingId === v.id} title="Confirm link and activate"
                     className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center hover:bg-emerald-200 disabled:opacity-50 transition-colors">
                     <Check className="w-4 h-4" />
                   </button>
@@ -196,25 +195,24 @@ export default function AdminVideosPage() {
               </div>
             </div>
           ))}
-        </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <p className="text-xs text-muted-foreground">Page {page} of {totalPages} {' \u00B7 '} {total} total</p>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <ChevronLeft className="w-3.5 h-3.5" /> Prev
-              </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                Next <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+              <p className="text-xs text-muted-foreground">Page {page} of {totalPages} - {total} total</p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                </button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  Next <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-        </>
+          )}
+        </div>
       )}
     </div>
   );
