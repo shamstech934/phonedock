@@ -93,8 +93,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   // Redirect to login if not authenticated on admin pages
+  // Exclude /admin/login and /admin/first-setup (setup wizard runs without auth)
   useEffect(() => {
-    if (!loading && !admin && pathname.startsWith('/admin') && pathname !== '/admin/login') {
+    if (!loading && !admin && pathname.startsWith('/admin') && pathname !== '/admin/login' && pathname !== '/admin/first-setup') {
       router.push('/admin/login');
     }
   }, [admin, loading, pathname, router]);

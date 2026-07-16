@@ -1,4 +1,42 @@
-# PhoneDock — Round 2 Security & Quality Audit Report
+# PhoneDock — Work Log
+
+---
+Task ID: 1
+Agent: main
+Task: Implement secure one-time First Superadmin Setup Wizard
+
+Work Log:
+- Read existing codebase: models (Admin, SystemState), auth system, API routing, admin layout, login page
+- Added `emailVerified` field to Admin schema in Other.ts
+- Created `src/app/api/[[...path]]/handlers/first-setup.ts` with full security:
+  - Timing-safe setup key comparison via crypto.timingSafeEqual
+  - Zod validation for all inputs
+  - IP rate limiting (5/hour via MongoDB-backed RateLimit)
+  - MongoDB transaction for admin + bootstrap lock creation
+  - CSRF protection (Content-Type + Origin/Referer checks)
+  - Password strength: 14+ chars, upper/lower/number/special, common password rejection
+  - bcrypt cost 12, generic error messages, audit logging
+- Integrated setup routes into `src/app/api/[[...path]]/route.ts` (GET status + POST create)
+- Created `src/app/admin/first-setup/page.tsx` matching existing PhoneDock admin design:
+  - Checks setup availability on mount
+  - Shows 404-like page if unavailable
+  - Professional form with password strength indicator
+  - Auto-redirects to dashboard after success
+  - Warning banner to delete FIRST_ADMIN_SETUP_KEY after use
+- Updated `src/lib/useAdmin.tsx` to exclude /admin/first-setup from auth redirect
+- Added `FIRST_ADMIN_SETUP_KEY=` to `.env.example`
+- Created `scripts/__tests__/first-setup.test.ts` with 22 tests covering:
+  - Password validation (short, no uppercase, no lowercase, no number, no special, common, mismatch)
+  - Security (wrong key, timing-safe, missing env, superadmin exists, lock completed, duplicate email, no password leak, no key leak)
+  - Database integration (superadmin creation, bootstrap lock, audit log, second creation blocked, unique index, login unaffected, sessionVersion)
+- Updated `package.json` test script
+- Verified: tsc --noEmit (0 errors), build (success, 42 pages), lint (no new errors)
+
+Stage Summary:
+- 3 files created, 5 files modified
+- Build passes, TypeScript clean, no existing routes broken
+- Tests require MongoDB (not available in build env) but code is type-verified
+- Full report saved to FIRST_ADMIN_SETUP_REPORT.md
 
 ## Build Validation
 

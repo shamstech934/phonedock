@@ -3,6 +3,7 @@ import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory } from '@/lib/mo
 import { connectDB, checkIpRateLimit, getClientIp } from './handlers/helpers';
 import { handlePublicGet } from './handlers/public';
 import { handleAdminAuthGet, handleAdminAuthPost } from './handlers/admin-auth';
+import { handleFirstSetupGet, handleFirstSetupPost } from './handlers/first-setup';
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
@@ -78,6 +79,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Download sample data (no auth needed)
     const downloadResult = await handleDownloadSample(req, segments);
     if (downloadResult) return downloadResult;
+
+    // First-setup status check (before public routes — must be available without auth)
+    const setupGetResult = await handleFirstSetupGet(req, segments);
+    if (setupGetResult) return setupGetResult;
 
     // Public routes
     const publicResult = await handlePublicGet(req, segments);
@@ -204,6 +209,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       );
       return NextResponse.json({ success: true, message: 'Price alert subscribed! You will be notified when the price drops.' });
     }
+
+    // First-setup POST (before auth routes — no auth required)
+    const setupPostResult = await handleFirstSetupPost(req, segments);
+    if (setupPostResult) return setupPostResult;
 
     // Admin auth routes (bootstrap, session, login, logout, change-password, forgot-password, reset-password)
     const authResult = await handleAdminAuthPost(req, segments);

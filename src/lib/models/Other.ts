@@ -52,6 +52,7 @@ const AdminSchema = new Schema({
   // Every token includes sessionVersion at signing time. On password change,
   // disable, or revoke-all, this is incremented. Old tokens fail the version check.
   sessionVersion: { type: Number, default: 0 },
+  emailVerified: { type: Boolean, default: false },
   // Password reset token (for forgot-password flow) — stored as hash
   resetTokenHash: { type: String, select: false },
   resetTokenExpires: { type: Date, select: false },

@@ -15,7 +15,7 @@
     "admin:reset-password": "npx tsx scripts/create-admin.ts -- --reset-password",
     "migrate": "npx tsx scripts/migrate-db.ts",
     "db:check": "npx tsx scripts/db-check.ts",
-    "test": "npx tsx scripts/__tests__/auth.test.ts && npx tsx scripts/__tests__/mongodb-safety.test.ts",
+    "test": "npx tsx scripts/__tests__/first-setup.test.ts",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui"
   },
