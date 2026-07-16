@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Link2, ExternalLink } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Link2, ExternalLink } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'Affiliate Disclosure',
   description: 'PhoneDock affiliate link disclosure — how we earn revenue and maintain editorial independence.',
-  alternates: { canonical: 'https://phonedock.pk/affiliate-disclosure' },
+  alternates: { canonical: `${getBaseUrl()}/affiliate-disclosure` },
 };
 
 export default function AffiliateDisclosurePage() {

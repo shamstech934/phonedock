@@ -1,4 +1,8 @@
-export async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
+export function isTurnstileConfigured(): boolean {
+  return !!(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && process.env.TURNSTILE_SECRET_KEY);
+}
+
+export async function verifyTurnstile(token: string, ip?: string): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) return false; // Fail closed if not configured
 

@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -19,6 +20,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/admin/', '/api/'],
       },
     ],
-    sitemap: 'https://phonedock.pk/sitemap.xml',
+    sitemap: `${getBaseUrl()}/sitemap.xml`,
   };
 }

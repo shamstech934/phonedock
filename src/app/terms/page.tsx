@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
 export const metadata: Metadata = {
   title: 'Terms and Conditions',
   description: 'Terms and conditions for using PhoneDock — Pakistan\'s smartphone database and comparison platform.',
-  alternates: { canonical: 'https://phonedock.pk/terms' },
+  alternates: { canonical: `${getBaseUrl()}/terms` },
 };
 
 export default function TermsPage() {

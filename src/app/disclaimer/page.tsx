@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { AlertTriangle, Shield, Info } from 'lucide-react';
@@ -6,7 +7,7 @@ import { AlertTriangle, Shield, Info } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'Disclaimer',
   description: 'Important disclaimers about pricing, PTA status, and general website usage on PhoneDock.',
-  alternates: { canonical: 'https://phonedock.pk/disclaimer' },
+  alternates: { canonical: `${getBaseUrl()}/disclaimer` },
 };
 
 export default function DisclaimerPage() {

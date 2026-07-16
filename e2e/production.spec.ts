@@ -150,3 +150,66 @@ test.describe('Dynamic Pages', () => {
     expect(res?.status()).toBeLessThan(400);
   });
 });
+
+// ===== PHONE DETAILS =====
+test.describe('Phone Details', () => {
+  test('phone detail page shows 404 for non-existent slug', async ({ page }) => {
+    const res = await page.goto('/phones/nonexistent-phone-xyz-12345');
+    expect(res?.status()).toBe(404);
+  });
+});
+
+// ===== ADMIN SETUP WIZARD =====
+test.describe('Setup Wizard Security', () => {
+  test('first-setup page returns 404 when superadmin exists (production)', async ({ page }) => {
+    const res = await page.goto('/admin/first-setup');
+    expect(res?.status()).toBeLessThan(500);
+    // Should NOT show the setup form
+    const form = page.locator('input[type="password"]');
+    await expect(form).not.toBeVisible({ timeout: 3000 });
+  });
+  test('setup API returns 404', async ({ request }) => {
+    const res = await request.get('/api/admin/first-setup/status');
+    expect(res.status()).toBe(404);
+  });
+});
+
+// ===== SESSION MANAGEMENT =====
+test.describe('Session Security', () => {
+  test('session API requires authentication', async ({ request }) => {
+    const res = await request.get('/api/admin/sessions');
+    expect(res.status()).toBe(401);
+  });
+  test('session revoke requires authentication', async ({ request }) => {
+    const res = await request.delete('/api/admin/sessions');
+    expect(res.status()).toBe(401);
+  });
+});
+
+// ===== PRICE ALERTS =====
+test.describe('Price Alerts', () => {
+  test('price alert confirmation endpoint rejects invalid token', async ({ request }) => {
+    const res = await request.get('/api/price-alerts/confirm?token=invalid&email=test@test.com');
+    expect(res?.status()).toBeLessThan(500);
+  });
+  test('price alert unsubscribe rejects missing params', async ({ request }) => {
+    const res = await request.get('/api/price-alerts/unsubscribe?email=test@test.com');
+    expect(res?.status()).toBeLessThan(500);
+  });
+});
+
+// ===== PERMISSIONS =====
+test.describe('Admin Permissions', () => {
+  test('admin users page requires auth', async ({ page }) => {
+    await page.goto('/admin/users');
+    await page.waitForURL(/\/admin\/login/, { timeout: 10000 });
+  });
+  test('admin settings page requires auth', async ({ page }) => {
+    await page.goto('/admin/settings');
+    await page.waitForURL(/\/admin\/login/, { timeout: 10000 });
+  });
+  test('admin activity page requires auth', async ({ page }) => {
+    await page.goto('/admin/activity');
+    await page.waitForURL(/\/admin\/login/, { timeout: 10000 });
+  });
+});

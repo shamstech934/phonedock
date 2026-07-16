@@ -40,3 +40,17 @@ upload/
 # Build artifacts
 build-output.txt
 *.txt.bak
+
+# Logs (explicit)
+dev.log
+
+# Generated
+next-env.d.ts
+
+# Agent work artifacts
+worklog.md
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

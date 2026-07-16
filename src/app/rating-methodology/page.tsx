@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Camera, Cpu, Battery, Monitor, Star, Calculator } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Camera, Cpu, Battery, Monitor, Star, Calculator } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'Rating Methodology',
   description: 'Understand how PhoneDock calculates phone ratings — our scoring formula, category weights, and score breakdown.',
-  alternates: { canonical: 'https://phonedock.pk/rating-methodology' },
+  alternates: { canonical: `${getBaseUrl()}/rating-methodology` },
 };
 
 export default function RatingMethodologyPage() {

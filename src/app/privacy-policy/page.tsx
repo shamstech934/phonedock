@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
   description: 'PhoneDock privacy policy. Learn how we collect, use, and protect your personal information when you visit our website.',
-  alternates: { canonical: 'https://phonedock.pk/privacy-policy' },
+  alternates: { canonical: `${getBaseUrl()}/privacy-policy` },
 };
 
 export default function PrivacyPolicyPage() {

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Smartphone, Target, Users, Mail, Globe, Heart } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Smartphone, Target, Users, Mail, Globe, Heart } from 'lucide-react';
 export const metadata: Metadata = {
   title: 'About Us',
   description: 'Learn about PhoneDock — Pakistan\'s most comprehensive smartphone database. Our mission, team, and commitment to helping Pakistanis find the perfect phone.',
-  alternates: { canonical: 'https://phonedock.pk/about' },
+  alternates: { canonical: `${getBaseUrl()}/about` },
 };
 
 export default function AboutPage() {

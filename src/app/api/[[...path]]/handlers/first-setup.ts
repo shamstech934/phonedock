@@ -21,6 +21,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { getBaseUrl } from '@/lib/urls';
 import { z } from 'zod';
 import { Admin, ActivityLog, RateLimit, SystemState } from '@/lib/models';
 import {
@@ -188,9 +189,8 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
     const origin = req.headers.get('origin') || '';
     const referer = req.headers.get('referer') || '';
     const allowedOrigins = [
+      getBaseUrl(),
       process.env.NEXT_PUBLIC_BASE_URL,
-      'https://phonedock.pk',
-      process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk',
     ].filter(Boolean) as string[];
 
     const originOk = allowedOrigins.some(o => origin === o);

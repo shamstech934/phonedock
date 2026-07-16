@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Database, RefreshCw, Globe, CheckCircle, FileText } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Database, RefreshCw, Globe, CheckCircle, FileText } from 'lucide-react'
 export const metadata: Metadata = {
   title: 'Data Sources',
   description: 'Learn where PhoneDock gets its phone data, our methodology, and how often we update our database.',
-  alternates: { canonical: 'https://phonedock.pk/data-sources' },
+  alternates: { canonical: `${getBaseUrl()}/data-sources` },
 };
 
 export default function DataSourcesPage() {

@@ -53,8 +53,10 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
           email: admin.email,
           role: admin.role,
           sessionVersion: (admin as any).sessionVersion ?? 0,
-        }, req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '', req.headers.get('user-agent') || undefined);
+        });
         response.cookies.set('pd_session', newSession.token, newSession.cookieOptions);
+        // Persist the rotated session record
+        persistSessionRecord(admin._id.toString(), newSession.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
       }
     }
 
@@ -168,7 +170,10 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       email: admin.email,
       role: admin.role,
       sessionVersion: (admin as any).sessionVersion ?? 0,
-    }, getClientIp(req), req.headers.get('user-agent') || undefined);
+    });
+
+    // Persist session record
+    persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
 
     // Single cookie — no token in response body
     const response = NextResponse.json({
@@ -176,6 +181,9 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       admin: { id: admin._id.toString(), email: admin.email, name: admin.name, role: admin.role },
     });
     response.cookies.set('pd_session', session.token, session.cookieOptions);
+
+    // Persist AdminSession record (fire-and-forget — login already succeeded)
+    persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent') || undefined);
 
     try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
     return response;

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Megaphone, Eye, MousePointer, Star, BarChart3, Mail, CheckCircle } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Megaphone, Eye, MousePointer, Star, BarChart3, Mail, CheckCircle } from
 export const metadata: Metadata = {
   title: 'Advertise with PhoneDock',
   description: 'Advertise your phone brand or retail store on Pakistan\'s #1 smartphone database. Reach millions of phone buyers.',
-  alternates: { canonical: 'https://phonedock.pk/advertise' },
+  alternates: { canonical: `${getBaseUrl()}/advertise` },
 };
 
 export default function AdvertisePage() {

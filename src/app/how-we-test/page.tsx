@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Beaker, BarChart3, Cpu, Camera, Battery, Monitor, Star } from 'lucide-react';
@@ -6,7 +7,7 @@ import { Beaker, BarChart3, Cpu, Camera, Battery, Monitor, Star } from 'lucide-r
 export const metadata: Metadata = {
   title: 'How We Test Phones',
   description: 'Learn about PhoneDock\'s phone testing methodology, benchmark procedures, and how we evaluate smartphones.',
-  alternates: { canonical: 'https://phonedock.pk/how-we-test' },
+  alternates: { canonical: `${getBaseUrl()}/how-we-test` },
 };
 
 export default function HowWeTestPage() {

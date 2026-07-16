@@ -9,6 +9,7 @@ import {
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
   Share2, ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
 } from 'lucide-react';
+import { TurnstileWidget } from '@/components/shared/TurnstileWidget';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -147,6 +148,8 @@ function UserReviewsSection({ slug }: { slug: string }) {
   const [formComment, setFormComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState('');
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   useEffect(() => {
     if (!slug) return;
@@ -165,7 +168,7 @@ function UserReviewsSection({ slug }: { slug: string }) {
       const res = await fetch(`/api/phones/${slug}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: formName, email: formEmail, rating: formRating, comment: formComment }),
+        body: JSON.stringify({ name: formName, email: formEmail, rating: formRating, comment: formComment, turnstileToken }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -216,9 +219,14 @@ function UserReviewsSection({ slug }: { slug: string }) {
             ))}
           </div>
           <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+          {turnstileSiteKey && (
+            <div className="flex justify-center">
+              <TurnstileWidget siteKey={turnstileSiteKey} onVerify={setTurnstileToken} />
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">Your email is private and never shown.</p>
-            <button onClick={handleSubmit} disabled={submitting || !formName || !formEmail || formComment.length < 10} className="rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            <button onClick={handleSubmit} disabled={submitting || !formName || !formEmail || formComment.length < 10 || !!((turnstileSiteKey) && !turnstileToken)} className="rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {submitting ? 'Submitting...' : 'Submit Review'}
             </button>
           </div>

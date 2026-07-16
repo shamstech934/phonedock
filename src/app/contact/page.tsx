@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
+import { TurnstileWidget } from '@/components/shared/TurnstileWidget';
 import { Mail, Phone, MapPin, Send, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function ContactPage() {
@@ -10,6 +11,8 @@ export default function ContactPage() {
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +29,7 @@ export default function ContactPage() {
           email: form.email,
           subject: form.subject,
           message: form.message,
+          turnstileToken,
         }),
       });
       const data = await res.json();
@@ -134,9 +138,14 @@ export default function ContactPage() {
                   placeholder="Tell us what you need help with..."
                 />
               </div>
+              {turnstileSiteKey && (
+                <div className="flex justify-center">
+                  <TurnstileWidget siteKey={turnstileSiteKey} onVerify={setTurnstileToken} />
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={sending}
+                disabled={sending || !!((turnstileSiteKey) && !turnstileToken)}
                 className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors disabled:opacity-50 shadow-sm shadow-blue-500/25"
               >
                 {sending ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-4 h-4" />}

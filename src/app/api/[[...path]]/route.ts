@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
-import { hashResetToken } from '@/lib/auth';
 import { handlePublicGet, handlePublicPost } from './handlers/public';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { handleAdminAuthGet, handleAdminAuthPost, handleAdminAuthDelete } from './handlers/admin-auth';
@@ -13,31 +12,6 @@ import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleDownloadSample } from './handlers/download';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
-
-// ============ HELPERS ============
-
-async function sendConfirmationEmail(email: string, rawToken: string, phoneName: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
-  const confirmUrl = `${baseUrl}/api/price-alerts/confirm?token=${rawToken}`;
-  const nodemailer = await import('nodemailer');
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT || '587'),
-    secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-  await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: `Confirm your price alert for ${phoneName}`,
-    html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:20px">
-      <h2 style="color:#1a1a1a">Confirm Your Price Alert</h2>
-      <p style="color:#666">You requested a price drop alert for <strong>${phoneName}</strong> on PhoneDock.</p>
-      <p style="margin:24px 0"><a href="${confirmUrl}" style="display:inline-block;padding:12px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Confirm Alert</a></p>
-      <p style="color:#999;font-size:12px">This link expires in 24 hours. If you didn't request this, ignore this email.</p>
-    </div>`,
-  });
-}
 
 // ============ GET HANDLER ============
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
@@ -104,59 +78,45 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return NextResponse.json({ checked: alerts.length, sent });
     }
 
-    // GET /api/price-alerts/confirm?token=xxx
+    // Price alert confirmation: /api/price-alerts/confirm?token=xxx&email=xxx
     if (segments.length === 2 && segments[0] === 'price-alerts' && segments[1] === 'confirm') {
       await connectDB();
       const { searchParams } = new URL(req.url);
-      const rawToken = searchParams.get('token') || '';
-      if (!rawToken) {
-        return new NextResponse('<html><body style="font-family:system-ui;text-align:center;padding:40px"><h2>Invalid or expired link</h2></body></html>', { headers: { 'Content-Type': 'text/html' } });
+      const token = searchParams.get('token') || '';
+      const email = (searchParams.get('email') || '').toLowerCase();
+      if (!token || !email) {
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
       }
-      const tokenHash = hashResetToken(rawToken);
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const alert = await PriceAlert.findOne({
-        confirmationTokenHash: tokenHash,
-        confirmationTokenExpires: { $gt: new Date() },
+        email,
+        confirmTokenHash: tokenHash,
+        confirmTokenExpires: { $gt: new Date() },
         status: 'pending',
       });
       if (!alert) {
-        return new NextResponse('<html><body style="font-family:system-ui;text-align:center;padding:40px"><h2>Invalid or expired link</h2><p style="color:#999">The confirmation link is invalid or has expired. Please subscribe again.</p></body></html>', { headers: { 'Content-Type': 'text/html' } });
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
       }
-      alert.status = 'confirmed';
-      alert.confirmedAt = new Date();
-      alert.confirmationTokenHash = '';
-      alert.confirmationTokenExpires = null;
-      await alert.save();
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Price Alert Confirmed</title></head><body style="font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;max-width:480px;margin:0 auto">
-        <div style="font-size:48px;margin-bottom:16px">✅</div>
-        <h1 style="color:#16a34a;margin-bottom:8px">Price Alert Confirmed!</h1>
-        <p style="color:#666">You will be notified when the price drops. Thank you for subscribing to PhoneDock alerts.</p>
-      </body></html>`;
-      return new NextResponse(html, { headers: { 'Content-Type': 'text/html' } });
+      await PriceAlert.updateOne({ _id: alert._id }, {
+        $set: { status: 'confirmed', confirmedAt: new Date(), confirmTokenHash: null, confirmTokenExpires: null },
+      });
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=confirmed`);
     }
 
-    // GET /api/price-alerts/unsubscribe?email=xxx&phoneId=xxx
+    // Price alert unsubscribe: /api/price-alerts/unsubscribe?email=xxx&phoneId=xxx
     if (segments.length === 2 && segments[0] === 'price-alerts' && segments[1] === 'unsubscribe') {
       await connectDB();
       const { searchParams } = new URL(req.url);
       const email = (searchParams.get('email') || '').toLowerCase();
       const phoneId = searchParams.get('phoneId') || '';
       if (!email || !phoneId) {
-        return new NextResponse('<html><body style="font-family:system-ui;text-align:center;padding:40px"><h2>Missing parameters</h2></body></html>', { headers: { 'Content-Type': 'text/html' } });
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
       }
-      const alert = await PriceAlert.findOne({ email, phoneId, status: { $in: ['confirmed', 'pending'] } });
-      if (alert) {
-        alert.status = 'unsubscribed';
-        alert.unsubscribedAt = new Date();
-        alert.confirmationTokenHash = '';
-        alert.confirmationTokenExpires = null;
-        await alert.save();
-      }
-      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed</title></head><body style="font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;max-width:480px;margin:0 auto">
-        <div style="font-size:48px;margin-bottom:16px">👋</div>
-        <h1 style="margin-bottom:8px">Unsubscribed Successfully</h1>
-        <p style="color:#666">You will no longer receive price drop alerts for this phone.</p>
-      </body></html>`;
-      return new NextResponse(html, { headers: { 'Content-Type': 'text/html' } });
+      await PriceAlert.updateMany(
+        { email, phoneId, status: { $ne: 'unsubscribed' } },
+        { $set: { status: 'unsubscribed', unsubscribedAt: new Date() } },
+      );
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=unsubscribed`);
     }
 
     // Download sample data (no auth needed)
@@ -294,44 +254,69 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
       const emailLower = email.toLowerCase().trim();
 
-      const existing = await PriceAlert.findOne({ phoneId: phone._id, email: emailLower });
+      const confirmToken = crypto.randomUUID();
+      const tokenHash = crypto.createHash('sha256').update(confirmToken).digest('hex');
+      const confirmExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-      if (existing) {
-        if (existing.status === 'unsubscribed') {
-          // Re-activate as pending with new token
-          const rawToken = crypto.randomBytes(32).toString('hex');
-          const tokenHash = hashResetToken(rawToken);
-          existing.status = 'pending';
-          existing.confirmationTokenHash = tokenHash;
-          existing.confirmationTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-          existing.confirmedAt = null;
-          existing.notified = false;
-          existing.unsubscribedAt = null;
-          await existing.save();
-          if (isEmailConfigured()) {
-            await sendConfirmationEmail(emailLower, rawToken, phone.modelName);
-          }
-          return NextResponse.json({ success: true, message: 'Confirmation email sent. Please check your inbox.' });
+      // Check for existing pending alert (allow re-send)
+      const existingPending = await PriceAlert.findOne({ phoneId: phone._id, email: emailLower, status: 'pending' });
+      if (existingPending) {
+        // Update token and re-send
+        await PriceAlert.updateOne({ _id: existingPending._id }, { $set: { confirmTokenHash: tokenHash, confirmTokenExpires: confirmExpiry } });
+      } else {
+        // Check if already confirmed
+        const existingConfirmed = await PriceAlert.findOne({ phoneId: phone._id, email: emailLower, status: 'confirmed' });
+        if (existingConfirmed) {
+          return NextResponse.json({ success: true, message: 'You are already subscribed to price alerts for this phone.' });
         }
-        // Already confirmed or pending — return generic message
-        return NextResponse.json({ success: true, message: 'Confirmation email sent. Please check your inbox.' });
+        // Check if unsubscribed — re-activate as pending
+        const existingUnsub = await PriceAlert.findOne({ phoneId: phone._id, email: emailLower, status: 'unsubscribed' });
+        if (existingUnsub) {
+          await PriceAlert.updateOne({ _id: existingUnsub._id }, {
+            $set: { status: 'pending', confirmTokenHash: tokenHash, confirmTokenExpires: confirmExpiry, confirmedAt: null, notified: false, unsubscribedAt: null },
+          });
+        } else {
+          await PriceAlert.create({
+            phoneId: phone._id,
+            email: emailLower,
+            targetPrice: 0,
+            notified: false,
+            status: 'pending',
+            confirmTokenHash: tokenHash,
+            confirmTokenExpires: confirmExpiry,
+          });
+        }
       }
 
-      // New subscription — create as pending
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = hashResetToken(rawToken);
-      await PriceAlert.create({
-        phoneId: phone._id,
-        email: emailLower,
-        targetPrice: 0,
-        notified: false,
-        status: 'pending',
-        confirmationTokenHash: tokenHash,
-        confirmationTokenExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      });
+      // Send confirmation email if email is configured
       if (isEmailConfigured()) {
-        await sendConfirmationEmail(emailLower, rawToken, phone.modelName);
+        const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+        const confirmLink = `${siteUrl}/api/price-alerts/confirm?token=${confirmToken}&email=${encodeURIComponent(emailLower)}`;
+        const unsubscribeLink = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(emailLower)}&phoneId=${phone._id}`;
+        try {
+          const nodemailer = await import('nodemailer');
+          const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: parseInt(process.env.EMAIL_PORT || '587'),
+            secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+          });
+          await transporter.sendMail({
+            from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
+            to: emailLower,
+            subject: `Confirm: Price Alert for ${phone.modelName}`,
+            html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:20px">
+        <h2 style="color:#1a1a1a">Confirm Your Price Alert</h2>
+        <p>You subscribed to price drop alerts for <strong>${phone.modelName}</strong>.</p>
+        <p>Click below to confirm your subscription:</p>
+        <a href="${confirmLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Confirm Subscription</a>
+        <p style="color:#999;font-size:12px;margin-top:16px">This link expires in 24 hours. If you didn't request this, ignore this email.</p>
+        <p style="font-size:12px"><a href="${unsubscribeLink}">Unsubscribe</a></p>
+      </div>`,
+          });
+        } catch (e) { console.error('[PriceAlert] Confirmation email failed:', (e as Error).message); }
       }
+
       return NextResponse.json({ success: true, message: 'Confirmation email sent. Please check your inbox.' });
     }
 

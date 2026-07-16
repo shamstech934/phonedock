@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'fdn2.gsmarena.com' },
       { protocol: 'https', hostname: 'res.cloudinary.com' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
-      { protocol: 'https', hostname: 'sfile.chatglm.cn' },
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
       { protocol: 'https', hostname: 'i.ytimg.com' },
     ],
@@ -42,12 +41,13 @@ const nextConfig: NextConfig = {
             // TODO: Future hardening — adopt Next.js nonce-based CSP via middleware once
             // the framework supports it fully, then remove 'unsafe-inline' and 'unsafe-eval'.
             value: [
+              "object-src 'none'",
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com",
+              "img-src 'self' data: https://fdn2.gsmarena.com https://res.cloudinary.com https://images.unsplash.com https://upload.wikimedia.org https://i.ytimg.com blob:",
+              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com https://mongodb.googleapis.com",
               "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
@@ -63,12 +63,13 @@ const nextConfig: NextConfig = {
           {
             key: 'Content-Security-Policy',
             value: [
+              "object-src 'none'",
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com",
+              "img-src 'self' data: https://fdn2.gsmarena.com https://res.cloudinary.com https://images.unsplash.com https://upload.wikimedia.org https://i.ytimg.com blob:",
+              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com https://mongodb.googleapis.com",
               "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
               "frame-ancestors 'self'",
               "base-uri 'self'",
