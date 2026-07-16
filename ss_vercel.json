@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Based on the Vercel dashboard screenshot, here are the visible projects:\n\n## Project 1: phonedock\n- **Project Name**: phonedock\n- **URL/Domain**: phonedock-pi.vercel.app\n- **Status**: Active (indicated by the checkmark icon)\n- **Repository**: shamstech934/phonedock\n- **Recent Activity**: \"fix: brands page official logos from Wikipedia\" (34m ago on main branch)\n\n## Project 2: my-project\n- **Project Name**: my-project\n- **URL/Domain**: No Production Deployment\n- **Status**: No Production Deployment (indicated by the checkmark icon)\n- **Repository**: shamstech934/phonedock\n- **Recent Activity**: \"fix: brands page official logos from Wikipedia\" (3h ago on main branch)\n\n## Search Results for Specific Projects:\n- ✅ **phonedock**: Found (first project)\n- ✅ **phonedock-pi**: Found (in the URL/domain for the first project)\n- ❌ **techtrack**: Not found on this dashboard\n\nThe dashboard shows two projects total, with usage metrics for the last 30 days displayed in the left panel. The first project (phonedock) appears to be actively deployed, while the second project (my-project) has no production deployment yet.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1784212732,
+  "id": "20260716223845408268ca72034376",
+  "model": "glm-4.6v",
+  "object": "chat.completion",
+  "request_id": "20260716223845408268ca72034376",
+  "usage": {
+    "completion_tokens": 283,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 2218,
+    "prompt_tokens_details": {
+      "cached_tokens": 7
+    },
+    "total_tokens": 2501
+  }
+}
