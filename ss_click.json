@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "The screenshot shows a **phone specs page** for the Google Pixel 10 Pro on the PhoneDock website.  \n\n### Key Details:  \n- **Page Type**: Phone specs page (with a video section).  \n- **URL in Browser**: Not visible (the URL bar is not shown in the screenshot).  \n- **Content Visible**:  \n  - **Phone Specs**:  \n    - Brand: Google  \n    - Model: Pixel 10 Pro  \n    - Description: “Google Pixel 10 Pro is a flagship smartphone featuring a Snapdragon 8 Elite chipset, 12GB RAM and 512GB storage, built for gaming and performance.”  \n    - Quick Verdict: 8/10 (Highly Recommended)  \n    - Ratings: Camera (9), Performance (9), Display (8), Battery (8), Value (9)  \n    - Price in Pakistan: PKR 203,500  \n    - PTA Status: PTA Approved  \n  - **Video Section**: A “Video Reviews” section (placeholder for video content, currently empty).  \n  - **Visuals**: Image of the Google Pixel 10 Pro (front and back views).  \n\n\n### Additional UI Elements:  \n- **Navigation Bar**: PhoneDock logo, Home, Brands, Compare, News, About, Contact, Admin, Search, and Theme toggle.  \n- **Breadcrumb**: Phones > Google > Pixel 10 Pro.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1784217085,
+  "id": "202607162351188f6595a8516b4d8b",
+  "model": "glm-4.6v",
+  "object": "chat.completion",
+  "request_id": "202607162351188f6595a8516b4d8b",
+  "usage": {
+    "completion_tokens": 289,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 2196,
+    "prompt_tokens_details": {
+      "cached_tokens": 5
+    },
+    "total_tokens": 2485
+  }
+}
