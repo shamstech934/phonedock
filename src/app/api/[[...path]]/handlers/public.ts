@@ -104,7 +104,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
       { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
     ]);
-    return cached(brands.map((b: any) => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } })), 120, 300);
+    return cached({ brands: brands.map((b: any) => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } })) }, 120, 300);
   }
 
   // ---- /api/brands/:slug ----
