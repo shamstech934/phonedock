@@ -138,7 +138,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -12 }}
               transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-[15px] border border-white/[0.12] shadow-lg shadow-black/10"
+              className="bg-white/[0.08] backdrop-blur-xl rounded-2xl p-[17px] border border-white/[0.12] shadow-lg shadow-black/10"
             >
               {/* Brand name */}
               <p className="text-[9px] text-blue-300 font-semibold uppercase tracking-wider mb-0.5 leading-none">

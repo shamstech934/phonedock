@@ -51,6 +51,26 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
 }
 
 // ============ BRANDS GRID ============
+// Official brand logos from manufacturer websites / Wikipedia
+const OFFICIAL_LOGOS: Record<string, string> = {
+  samsung: 'https://upload.wikimedia.org/wikipedia/commons/9/9c/Samsung_logo_wordmark.svg',
+  apple: 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg',
+  xiaomi: 'https://upload.wikimedia.org/wikipedia/commons/a/ae/Xiaomi_logo_%282021-%29.svg',
+  realme: 'https://upload.wikimedia.org/wikipedia/commons/a/a2/Realme_logo.svg',
+  tecno: 'https://upload.wikimedia.org/wikipedia/commons/5/5e/Tecno_Mobile_logo.svg',
+  infinix: 'https://upload.wikimedia.org/wikipedia/commons/e/e0/Infinix_logo.svg',
+  oneplus: 'https://upload.wikimedia.org/wikipedia/commons/a/a0/OnePlus_logo.svg',
+  oppo: 'https://upload.wikimedia.org/wikipedia/commons/0/0a/OPPO_LOGO_2019.svg',
+  vivo: 'https://upload.wikimedia.org/wikipedia/commons/1/13/Vivo_logo_2019.svg',
+  huawei: 'https://upload.wikimedia.org/wikipedia/commons/d/db/Huawei_wordmark_2019.svg',
+  motorola: 'https://upload.wikimedia.org/wikipedia/commons/f/f9/Motorola_new_logo.svg',
+  honor: 'https://upload.wikimedia.org/wikipedia/commons/2/20/Honor_Logo_%282020%29.svg',
+  nokia: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Nokia_2023.svg',
+  google: 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg',
+  nothing: 'https://upload.wikimedia.org/wikipedia/commons/3/30/Nothing.svg',
+  'google pixel': 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg',
+};
+
 function BrandsGrid({ brands }: { brands: Brand[] }) {
   if (!brands.length) return null;
   const displayBrands = brands.filter(b => (b._count?.phones || 0) > 0).slice(0, 12);
@@ -60,19 +80,22 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
     <section className="space-y-4">
       <SectionHeader title="Popular Brands" icon={Layers} link="/brands" linkText="All Brands" />
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-        {displayBrands.map(brand => (
-          <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium p-4 flex flex-col items-center justify-center gap-2 group hover:shadow-lg hover:shadow-black/5 transition-all duration-300 text-center">
-            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-              {brand.logo ? (
-                <Image src={brand.logo} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
-              ) : (
-                <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
-              )}
-            </div>
-            <span className="text-xs font-semibold text-gray-700 group-hover:text-blue-600 transition-colors line-clamp-1">{brand.name}</span>
-            <span className="text-[10px] text-muted-foreground">{brand._count?.phones || 0} phones</span>
-          </Link>
-        ))}
+        {displayBrands.map(brand => {
+          const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
+          return (
+            <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium p-4 flex flex-col items-center justify-center gap-2 group hover:shadow-lg hover:shadow-black/5 transition-all duration-300 text-center">
+              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                {logoSrc ? (
+                  <Image src={logoSrc} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
+                ) : (
+                  <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                )}
+              </div>
+              <span className="text-xs font-semibold text-gray-700 group-hover:text-blue-600 transition-colors line-clamp-1">{brand.name}</span>
+              <span className="text-[10px] text-muted-foreground">{brand._count?.phones || 0} phones</span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
@@ -157,7 +180,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
           <div className="glass-orb glass-orb-yellow" />
           <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
             {/* Hero */}
-            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-6 sm:p-8 lg:p-10 text-white relative overflow-hidden sky-glow">
+            <section className="hero-gradient hero-shimmer-effect rounded-3xl p-5 sm:p-7 lg:p-[34px] text-white relative overflow-hidden sky-glow">
               <div className="hero-particles">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="hero-particle" style={{ left: `${8 + (i * 7.5) % 85}%`, '--delay': `${i * 0.5}s`, '--duration': `${5 + (i % 4) * 1.5}s`, '--drift': `${(i % 2 === 0 ? 1 : -1) * (15 + i * 5)}px`, width: `${3 + (i % 3)}px`, height: `${3 + (i % 3)}px` } as React.CSSProperties} />
@@ -207,7 +230,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                 </div>
 
                 {/* Right side — 55% Featured Phone Showcase */}
-                <div className="w-full lg:w-[55%] h-[240px] sm:h-[280px] lg:h-[315px] flex-shrink-0">
+                <div className="w-full lg:w-[55%] h-[204px] sm:h-[238px] lg:h-[268px] flex-shrink-0">
                   {heroPhones.length > 0 ? (
                     <HeroPhoneShowcase phones={heroPhones} />
                   ) : (
@@ -218,6 +241,9 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                 </div>
               </div>
             </section>
+
+            {/* Popular Brands */}
+            <BrandsGrid brands={data.brands} />
 
             {/* Featured Phones */}
             <PhoneSection phones={data.featured} title="Featured Phones" icon={Star} link="/phones" linkText="All Phones" showEmpty />
@@ -259,9 +285,6 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
 
             {/* Trending Now */}
             <PhoneSection phones={data.trending} title="Trending Now" icon={TrendingUp} link="/phones" linkText="All Phones" showEmpty />
-
-            {/* Popular Brands */}
-            <BrandsGrid brands={data.brands} />
 
             {/* Best in Category */}
             <section className="space-y-5">
