@@ -28,6 +28,7 @@ export default function AdminVideosPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active'>('all');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [pendingCount, setPendingCount] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export default function AdminVideosPage() {
       .then(d => {
         setVideos(d.videos || []);
         setTotal(d.total || 0);
+        setTotalPages(d.totalPages || 1);
         setPendingCount(d.pendingCount || 0);
         setLoading(false);
       })
