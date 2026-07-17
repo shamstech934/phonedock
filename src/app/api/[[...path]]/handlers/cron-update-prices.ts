@@ -3,6 +3,7 @@ import { Phone, PriceHistory } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { SystemState } from '@/lib/models';
 import { connectDB } from './helpers';
+import { revalidatePricePages } from '@/lib/revalidate';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -44,6 +45,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
   // ── Process listings ──
   const summary = { processed: 0, updated: 0, failed: 0, pending: 0 };
+  const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
 
   try {
     // Get all enabled+trusted sources
@@ -214,7 +216,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           if (pctChange < 2) {
             // Auto-approve: change < 2%
             if (!isManualLock) {
-              await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              if (slug) updatedSlugs.push(slug);
             }
             // Always record history
             await PriceTrackerHistory.create({
@@ -234,7 +237,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           } else if (pctChange <= 15) {
             // Auto-approve but log: change 2-15%
             if (!isManualLock) {
-              await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              if (slug) updatedSlugs.push(slug);
             }
             await PriceTrackerHistory.create({
               phoneId: phone._id,
@@ -283,6 +287,15 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         }
       }
     }
+    // ── Targeted cache revalidation for updated phones ──
+    if (updatedSlugs.length > 0) {
+      // Deduplicate slugs
+      const uniqueSlugs = [...new Set(updatedSlugs)];
+      for (const slug of uniqueSlugs) {
+        revalidatePricePages(slug);
+      }
+      console.log(`[cron:prices] Revalidated cache for ${uniqueSlugs.length} phone(s)`);
+    }
   } finally {
     // Always release the lock
     await SystemState.findOneAndUpdate(
@@ -301,9 +314,9 @@ async function applyPriceToPhone(
   _oldPrice: number,
   source: any,
   _changeType: string,
-): Promise<void> {
+): Promise<string | null> {
   const phone = await Phone.findById(phoneId);
-  if (!phone) return;
+  if (!phone) return null;
 
   const currentPhonePrice = (phone as any).currentPrice || 0;
   const difference = newPrice - currentPhonePrice;
@@ -331,4 +344,7 @@ async function applyPriceToPhone(
   try {
     await PriceHistory.create({ phoneId, storeName: (source as any).name || null, price: newPrice });
   } catch (e) { console.error('[PriceHistory]', e); }
+
+  // Return slug for cache revalidation
+  return (phone as any).slug || null;
 }

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
+import { revalidatePricePages } from '@/lib/revalidate';
 
 // ============ ADMIN CRUD GET ============
 
@@ -1158,6 +1159,8 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     // Record base price history if changed
     if (pricePKR !== undefined && pricePKR > 0 && pricePKR !== (phone as any)._previousPricePKR) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
+    // Targeted cache revalidation when price changes
+    if (pricePKR !== undefined) revalidatePricePages(phone.slug);
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: phone._id?.toString() });
   }

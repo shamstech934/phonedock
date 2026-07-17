@@ -28,7 +28,9 @@ export type Permission =
   // Trash
   | 'trash:read' | 'trash:restore' | 'trash:delete'
   // Videos
-  | 'videos:read' | 'videos:edit' | 'videos:manage';
+  | 'videos:read' | 'videos:edit' | 'videos:manage'
+  // Price Tracker
+  | 'prices:read' | 'prices:edit';
 
 // ============ PERMISSION MAPS ============
 
@@ -46,6 +48,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'media:upload', 'media:delete',
   'trash:read', 'trash:restore', 'trash:delete',
   'videos:read', 'videos:edit', 'videos:manage',
+  'prices:read', 'prices:edit',
 ];
 
 const rolePermissions: Record<AdminRole, Set<Permission>> = {
@@ -64,6 +67,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'media:upload', 'media:delete',
     'trash:read', 'trash:restore', 'trash:delete',
     'videos:read', 'videos:edit', 'videos:manage',
+    'prices:read', 'prices:edit',
   ]),
   editor: new Set<Permission>([
     'dashboard:read',
@@ -72,6 +76,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'news:read', 'news:create', 'news:edit',
     'activity:read',
     'media:upload',
+    'prices:read',
   ]),
   reviewer: new Set<Permission>([
     'phones:read',
@@ -79,6 +84,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'news:read',
     'activity:read',
     'collectors:read',
+    'prices:read',
   ]),
   moderator: new Set<Permission>([
     'dashboard:read',

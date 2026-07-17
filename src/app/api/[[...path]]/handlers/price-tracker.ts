@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Phone, Brand, ActivityLog, PriceHistory } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
+import { revalidatePricePages } from '@/lib/revalidate';
 
 // ============ PRICE TRACKER GET ============
 
@@ -394,6 +395,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
+    // Targeted cache revalidation
+    revalidatePricePages(phone.slug);
+
     const updated = await Phone.findById(phoneId).lean();
     return NextResponse.json({
       success: true,
@@ -700,6 +704,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
+    // Targeted cache revalidation on approve
+    if (action === 'approve') {
+      const phoneForReval = await Phone.findById(history.phoneId).select('slug').lean();
+      revalidatePricePages((phoneForReval as any)?.slug);
+    }
+
     return NextResponse.json({ success: true, id: history._id?.toString(), verificationStatus: history.verificationStatus });
   }
 
@@ -765,6 +775,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         entityId: history.phoneId?.toString(),
       });
     } catch (e) { console.error('[ActivityLog]', e); }
+
+    // Targeted cache revalidation
+    revalidatePricePages((phone as any)?.slug);
 
     return NextResponse.json({ success: true, id: history._id?.toString(), verificationStatus: 'confirmed' });
   }
