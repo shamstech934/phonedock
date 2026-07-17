@@ -81,13 +81,62 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     return NextResponse.json({ brands: brands.map((b: any) => ({ ...b, id: b._id?.toString() })) });
   }
 
-  // ---- /api/admin/news ----
+  // ---- /api/admin/news/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [total, published, draft, scheduled, pending, featured, todayPublished, totalViews] = await Promise.all([
+      News.countDocuments({}),
+      News.countDocuments({ published: true, status: 'published' }),
+      News.countDocuments({ published: false, status: { $ne: 'published' } }),
+      News.countDocuments({ status: 'scheduled' }),
+      News.countDocuments({ status: 'pending' }),
+      News.countDocuments({ featured: true }),
+      News.countDocuments({ published: true, createdAt: { $gte: todayStart } }),
+      News.aggregate([{ $group: { _id: null, total: { $sum: '$views' } } }]),
+    ]);
+    return NextResponse.json({ total, published, draft, scheduled, pending, featured, todayPublished, totalViews: totalViews[0]?.total || 0 });
+  }
+
+  // ---- /api/admin/news (ENHANCED LIST) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'news') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
     await connectDB();
-    const news = await News.find().sort({ createdAt: -1 }).lean();
-    return NextResponse.json({ news: news.map((n: any) => ({ ...n, id: n._id?.toString() })) });
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const skip = (page - 1) * limit;
+    const filter: any = {};
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [{ title: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }, { excerpt: { $regex: safe, $options: 'i' } }];
+    }
+    const status = url.searchParams.get('status');
+    if (status === 'published') filter.published = true;
+    else if (status === 'draft') { filter.published = false; filter.status = { $ne: 'published' }; }
+    else if (status === 'featured') filter.featured = true;
+    else if (status === 'scheduled') filter.status = 'scheduled';
+    else if (status === 'archived') filter.status = 'archived';
+    const category = url.searchParams.get('category');
+    if (category) filter.category = category;
+    const sortParam = url.searchParams.get('sort');
+    let sort: any = { createdAt: -1 };
+    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    else if (sortParam === 'views') sort = { views: -1 };
+    else if (sortParam === 'alpha') sort = { title: 1 };
+    else if (sortParam === 'updated') sort = { updatedAt: -1 };
+    const [news, total] = await Promise.all([
+      News.find(filter).sort(sort).skip(skip).limit(limit).lean(),
+      News.countDocuments(filter),
+    ]);
+    return NextResponse.json({
+      news: news.map((n: any) => ({ ...n, id: n._id?.toString() })),
+      total, page, limit, totalPages: Math.ceil(total / limit),
+    });
   }
 
   // ---- /api/admin/users ----
@@ -544,6 +593,29 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (brandId) update.brandId = brandId;
     const result = await Video.updateMany({ _id: { $in: ids } }, { $set: update });
     try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_videos`, details: `Bulk ${action}: ${result.modifiedCount} videos`, entityType: 'video' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, modified: result.modifiedCount });
+  }
+
+  // ---- /api/admin/news/bulk (BULK ACTIONS) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'news' && segments[2] === 'bulk') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'news:delete'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const { ids, action } = body;
+    if (!Array.isArray(ids) || ids.length === 0) return NextResponse.json({ error: 'ids array required' }, { status: 400 });
+    const update: Record<string, any> = {};
+    if (action === 'publish') { update.published = true; update.status = 'published'; }
+    else if (action === 'draft') { update.published = false; }
+    else if (action === 'feature') { update.featured = true; }
+    else if (action === 'archive') { update.status = 'archived'; update.published = false; }
+    else if (action === 'delete') {
+      const result = await News.deleteMany({ _id: { $in: ids } });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_news', details: `Bulk deleted ${result.deletedCount} articles`, entityType: 'news' }); } catch (e) { console.error('[ActivityLog]', e); }
+      return NextResponse.json({ success: true, deleted: result.deletedCount });
+    } else { return NextResponse.json({ error: 'Invalid action' }, { status: 400 }); }
+    const result = await News.updateMany({ _id: { $in: ids } }, { $set: update });
+    try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_news`, details: `Bulk ${action}: ${result.modifiedCount} articles`, entityType: 'news' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, modified: result.modifiedCount });
   }
 
