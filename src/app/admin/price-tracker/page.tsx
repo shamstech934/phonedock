@@ -218,6 +218,12 @@ export default function AdminPriceTrackerPage() {
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState('');
 
+  // ── Settings Tab ──
+  const [settings, setSettings] = useState({ autoApproveThreshold: 2, reviewThreshold: 15, batchSize: 10, checkFrequency: 'daily' });
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   /* ── Debounced search for phones ── */
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -321,6 +327,29 @@ export default function AdminPriceTrackerPage() {
     } catch {}
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const res = await fetch('/api/admin/price-tracker/settings', { credentials: 'include' });
+      if (res.ok) {
+        const d = await res.json();
+        setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
+      }
+    } catch {} finally { setSettingsLoading(false); }
+  }, []);
+
+  const saveSettings = useCallback(async () => {
+    setSettingsSaving(true);
+    setSettingsSaved(false);
+    try {
+      const res = await fetch('/api/admin/price-tracker/settings', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+      if (res.ok) {
+        setSettingsSaved(true);
+        setTimeout(() => setSettingsSaved(false), 3000);
+      }
+    } catch {} finally { setSettingsSaving(false); }
+  }, [settings]);
+
   // ── Load data on tab change ──
   useEffect(() => {
     switch (activeTab) {
@@ -330,8 +359,9 @@ export default function AdminPriceTrackerPage() {
       case 'changes': fetchChanges(); break;
       case 'pending': fetchPending(); break;
       case 'history': fetchPhoneOptions(); break;
+      case 'settings': fetchSettings(); break;
     }
-  }, [activeTab, fetchOverview, fetchPhones, fetchSources, fetchChanges, fetchPending, fetchPhoneOptions]);
+  }, [activeTab, fetchOverview, fetchPhones, fetchSources, fetchChanges, fetchPending, fetchPhoneOptions, fetchSettings]);
 
   // Re-fetch phones when filters change (only on phones tab)
   useEffect(() => {
@@ -1380,39 +1410,110 @@ export default function AdminPriceTrackerPage() {
     <div className="space-y-4">
       {/* Threshold Configuration */}
       <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-900 mb-1">Threshold Configuration</h3>
-        <p className="text-xs text-gray-500 mb-4">Default values — configuration will be editable in a future version.</p>
-        <div className="space-y-3">
-          {[
-            { label: 'Auto-approve threshold', value: '2%', desc: 'Changes within this % are auto-approved without review' },
-            { label: 'Review threshold', value: '15%', desc: 'Changes above this % are flagged for mandatory review' },
-            { label: 'Check frequency', value: 'Daily', desc: 'How often prices are checked from all sources' },
-            { label: 'Batch size', value: '10', desc: 'Number of phones checked per batch run' },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div>
-                <p className="text-sm font-medium text-gray-700">{item.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{item.desc}</p>
-              </div>
-              <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">{item.value}</span>
-            </div>
-          ))}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Threshold Configuration</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Controls how automatic price changes are processed.</p>
+          </div>
+          {settingsSaved && (
+            <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200/50">Saved</span>
+          )}
         </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Auto-approve threshold (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={settings.autoApproveThreshold}
+                onChange={e => setSettings(s => ({ ...s, autoApproveThreshold: Number(e.target.value) || 0 }))}
+                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+              />
+              <p className="text-xs text-gray-400 mt-1">Changes within this % are auto-approved silently</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Review threshold (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={settings.reviewThreshold}
+                onChange={e => setSettings(s => ({ ...s, reviewThreshold: Number(e.target.value) || 0 }))}
+                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+              />
+              <p className="text-xs text-gray-400 mt-1">Changes above this % are flagged for mandatory review</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Batch size</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={settings.batchSize}
+                onChange={e => setSettings(s => ({ ...s, batchSize: Number(e.target.value) || 10 }))}
+                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+              />
+              <p className="text-xs text-gray-400 mt-1">Number of phones checked per batch run</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Check frequency</label>
+              <select
+                value={settings.checkFrequency}
+                onChange={e => setSettings(s => ({ ...s, checkFrequency: e.target.value }))}
+                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+              >
+                <option value="hourly">Hourly</option>
+                <option value="twice-daily">Twice Daily</option>
+                <option value="daily">Daily</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">How often prices are checked from all sources</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={saveSettings}
+            disabled={settingsSaving || settings.autoApproveThreshold >= settings.reviewThreshold}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {settingsSaving ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle className="w-4 h-4" />
+            )}
+            {settingsSaving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+        {settings.autoApproveThreshold >= settings.reviewThreshold && (
+          <p className="mt-2 text-xs text-red-500">Auto-approve threshold must be less than review threshold.</p>
+        )}
       </div>
 
       {/* Cron Configuration */}
       <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
         <h3 className="text-sm font-semibold text-gray-900 mb-1">Cron Job</h3>
         <p className="text-xs text-gray-500 mb-4">Configure your server cron to trigger automatic price updates.</p>
-        <div className="p-3 bg-gray-900 rounded-lg">
-          <div className="flex items-center justify-between">
-            <code className="text-sm text-green-400 font-mono">/api/cron/update-prices</code>
-            <button
-              onClick={() => navigator.clipboard?.writeText('/api/cron/update-prices')}
-              className="text-xs text-gray-400 hover:text-white transition-colors"
-            >
-              Copy
-            </button>
+        <div className="space-y-3">
+          <div className="p-3 bg-gray-900 rounded-lg">
+            <div className="flex items-center justify-between">
+              <code className="text-sm text-green-400 font-mono">/api/cron/update-prices</code>
+              <button
+                onClick={() => navigator.clipboard?.writeText('/api/cron/update-prices')}
+                className="text-xs text-gray-400 hover:text-white transition-colors"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 font-medium mb-1">Example crontab (daily at 6 AM PKT):</p>
+            <code className="text-xs text-gray-800 font-mono">0 1 * * * curl -s -H &quot;x-cron-secret: $CRON_SECRET&quot; https://your-domain.com/api/cron/update-prices</code>
           </div>
         </div>
         <div className="mt-3 flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
@@ -1421,7 +1522,7 @@ export default function AdminPriceTrackerPage() {
             <p className="text-xs font-medium text-yellow-700">CRON_SECRET Required</p>
             <p className="text-xs text-yellow-600 mt-0.5">
               The cron endpoint requires a <code className="font-mono bg-yellow-100 px-1 rounded">CRON_SECRET</code> environment variable.
-              Requests must include <code className="font-mono bg-yellow-100 px-1 rounded">?secret=YOUR_SECRET</code> in the URL.
+              Requests must include <code className="font-mono bg-yellow-100 px-1 rounded">x-cron-secret: YOUR_SECRET</code> header or <code className="font-mono bg-yellow-100 px-1 rounded">Authorization: Bearer YOUR_SECRET</code>.
             </p>
           </div>
         </div>

@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, ActivityLog, PriceHistory } from '@/lib/models';
+import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
+
+// ── Price Tracker Settings (stored in SystemState) ──
+const PT_SETTINGS_KEY = 'price_tracker_settings';
+
+export const DEFAULT_PT_SETTINGS = {
+  autoApproveThreshold: 2,   // % — changes below this are auto-approved silently
+  reviewThreshold: 15,       // % — changes above this are flagged for review
+  batchSize: 10,             // phones per batch run
+  checkFrequency: 'daily',   // daily | twice-daily | hourly
+};
+
+export async function getPriceTrackerSettings() {
+  const doc = await SystemState.findOne({ key: PT_SETTINGS_KEY }).lean();
+  if (!doc?.metadata) return { ...DEFAULT_PT_SETTINGS };
+  return { ...DEFAULT_PT_SETTINGS, ...doc.metadata };
+}
 
 // ============ PRICE TRACKER GET ============
 
@@ -304,6 +320,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         verificationStatus: l.verificationStatus || 'pending',
       })),
     });
+  }
+
+  // ---- /api/admin/price-tracker/settings ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'settings') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'prices:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const settings = await getPriceTrackerSettings();
+    return NextResponse.json(settings);
   }
 
   return undefined;
@@ -1034,6 +1059,68 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     } catch (e) { console.error('[ActivityLog]', e); }
 
     return NextResponse.json({ success: true, id: listingId });
+  }
+
+  // ---- /api/admin/price-tracker/settings ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'settings') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const body = await req.json();
+    const { autoApproveThreshold, reviewThreshold, batchSize, checkFrequency } = body;
+
+    const updates: Record<string, any> = {};
+
+    if (autoApproveThreshold !== undefined) {
+      const v = Number(autoApproveThreshold);
+      if (isNaN(v) || v < 0 || v > 100) return NextResponse.json({ error: 'autoApproveThreshold must be 0-100' }, { status: 400 });
+      updates.autoApproveThreshold = v;
+    }
+    if (reviewThreshold !== undefined) {
+      const v = Number(reviewThreshold);
+      if (isNaN(v) || v < 0 || v > 100) return NextResponse.json({ error: 'reviewThreshold must be 0-100' }, { status: 400 });
+      updates.reviewThreshold = v;
+    }
+    if (batchSize !== undefined) {
+      const v = Number(batchSize);
+      if (isNaN(v) || v < 1 || v > 100) return NextResponse.json({ error: 'batchSize must be 1-100' }, { status: 400 });
+      updates.batchSize = v;
+    }
+    if (checkFrequency !== undefined) {
+      if (!['hourly', 'twice-daily', 'daily'].includes(checkFrequency)) {
+        return NextResponse.json({ error: 'checkFrequency must be hourly, twice-daily, or daily' }, { status: 400 });
+      }
+      updates.checkFrequency = checkFrequency;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    // Validate: autoApproveThreshold must be < reviewThreshold
+    const current = await getPriceTrackerSettings();
+    const merged = { ...current, ...updates };
+    if (merged.autoApproveThreshold >= merged.reviewThreshold) {
+      return NextResponse.json({ error: 'autoApproveThreshold must be less than reviewThreshold' }, { status: 400 });
+    }
+
+    await SystemState.findOneAndUpdate(
+      { key: PT_SETTINGS_KEY },
+      { $set: { metadata: merged } },
+      { upsert: true },
+    );
+
+    try {
+      await ActivityLog.create({
+        adminId: authResult.admin._id,
+        action: 'update_price_tracker_settings',
+        details: `Updated price tracker settings: ${JSON.stringify(updates)}`,
+        entityType: 'price_source',
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, settings: merged });
   }
 
   return undefined;

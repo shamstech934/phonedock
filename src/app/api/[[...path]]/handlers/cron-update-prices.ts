@@ -4,6 +4,8 @@ import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/mode
 import { SystemState } from '@/lib/models';
 import { connectDB } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { getPriceTrackerSettings } from './price-tracker';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -47,6 +49,12 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   const summary = { processed: 0, updated: 0, failed: 0, pending: 0 };
   const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
 
+  // Load configurable settings
+  const ptSettings = await getPriceTrackerSettings();
+  const AUTO_APPROVE_THRESHOLD = ptSettings.autoApproveThreshold;
+  const REVIEW_THRESHOLD = ptSettings.reviewThreshold;
+  const BATCH_SIZE = ptSettings.batchSize;
+
   try {
     // Get all enabled+trusted sources
     const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' })
@@ -72,7 +80,6 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       return NextResponse.json({ ...summary, message: 'No eligible listings to process' });
     }
 
-    const BATCH_SIZE = 10;
     const batches: any[][] = [];
     for (let i = 0; i < listings.length; i += BATCH_SIZE) {
       batches.push(listings.slice(i, i + BATCH_SIZE));
@@ -99,6 +106,15 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         let detectedPrice: number | null = null;
         let availability = 'unknown' as string;
         let fetchError = false;
+
+        // ── SSRF protection ──
+        const sourceAllowedDomains = (source as any).allowedDomains || [];
+        const ssrfCheck = await validateUrlForFetch(listing.productUrl, sourceAllowedDomains);
+        if (!ssrfCheck.safe) {
+          console.warn(`[cron:prices] SSRF blocked: ${listing.productUrl} — ${ssrfCheck.reason}`);
+          summary.failed++;
+          continue;
+        }
 
         // Attempt to fetch the product URL
         try {
@@ -213,7 +229,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           // Determine action based on change percentage
           const isManualLock = (phone as any).manualLock === true;
 
-          if (pctChange < 2) {
+          if (pctChange < AUTO_APPROVE_THRESHOLD) {
             // Auto-approve: change < 2%
             if (!isManualLock) {
               const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
@@ -234,7 +250,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               capturedAt: new Date(),
             });
             summary.updated++;
-          } else if (pctChange <= 15) {
+          } else if (pctChange <= REVIEW_THRESHOLD) {
             // Auto-approve but log: change 2-15%
             if (!isManualLock) {
               const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
@@ -255,7 +271,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             });
             summary.updated++;
           } else {
-            // Create pending review: change > 15%
+            // Create pending review: change > REVIEW_THRESHOLD%
             await PriceTrackerHistory.create({
               phoneId: phone._id,
               oldPrice: previousSourcePrice,

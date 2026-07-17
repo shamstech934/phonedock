@@ -1,20 +1,25 @@
 ---
 Task ID: 1
 Agent: main
-Task: Price Tracker V1 — gap analysis, permissions fix, cache revalidation, build verification
+Task: Price Tracker V1 — Complete missing pieces
 
 Work Log:
-- Inspected entire existing Price Tracker codebase: 3 models (PriceSource, PhoneRetailListing, PriceTrackerHistory), Phone model extensions, admin 7-tab UI, full API handler (18 endpoints), cron handler, public price history graph
-- Identified 3 critical gaps: (1) `prices:read`/`prices:edit` permissions missing from permission system, (2) no targeted cache revalidation, (3) phone-form already had price tracking fields
-- Added `prices:read` and `prices:edit` to Permission type, ALL_PERMISSIONS array, and role assignments (superadmin+admin: both, editor+reviewer: read only)
-- Created `src/lib/revalidate.ts` with `revalidatePricePages(slug?)` for targeted revalidation of 9 global paths + phone-specific path
-- Integrated revalidation into: cron handler (batch slug collection + dedup), manual price update, review approval, direct approval, phone edit form
-- Verified phone-form component exists at `src/components/admin/phone-form/` with Price Tracking section (priceMode, manualLock, manualLockReason, priceSourceUrl)
-- TypeScript typecheck: 0 errors
-- Next.js build: compiled successfully, 43/43 static pages generated
-- Created PRICE_TRACKER_VERSION1_REPORT.md with full architecture documentation
+- Inspected existing codebase: found ~90% of Price Tracker V1 was already implemented (models, 7-tab admin UI, API handlers, cron endpoint, price history graph, phone form extensions)
+- Identified 6 gaps: SSRF protection, configurable settings, test-source endpoint, CRON_SECRET docs fix, tests, report
+- Created `src/lib/ssrf-guard.ts` — comprehensive SSRF protection with IPv4/IPv6 private IP detection, DNS resolution checking, domain whitelist matching
+- Added SSRF validation to cron endpoint before every URL fetch
+- Added GET/PUT `/api/admin/price-tracker/settings` endpoints with validation (stored in SystemState)
+- Updated cron to use configurable thresholds (autoApproveThreshold, reviewThreshold, batchSize) from settings
+- Made Settings tab editable with live form, save button, validation, and "Saved" feedback
+- Fixed CRON_SECRET documentation (was showing `?secret=` query param, corrected to `x-cron-secret` header)
+- Wrote 43 SSRF guard unit tests (all passing) covering safeHostname, isPrivateUrl, isDomainAllowed, validateUrlForFetch
+- Fixed IPv4→IPv6 CIDR comparison bug in initial ssrf-guard implementation
+- Removed duplicate BATCH_SIZE variable in cron handler
+- Verified: tsc --noEmit pass, ESLint pass, next build pass
+- Created PRICE_TRACKER_VERSION1_REPORT.md
 
 Stage Summary:
-- Price Tracker V1 was ~90% pre-implemented. This session fixed the critical permission gap, added targeted cache revalidation (the main missing feature), and verified the build.
-- Files created: src/lib/revalidate.ts, PRICE_TRACKER_VERSION1_REPORT.md
-- Files modified: src/lib/permissions.ts, src/app/api/[[...path]]/handlers/price-tracker.ts, src/app/api/[[...path]]/handlers/cron-update-prices.ts, src/app/api/[[...path]]/handlers/admin-crud.ts
+- All Price Tracker V1 features are now complete
+- Key new files: src/lib/ssrf-guard.ts, scripts/__tests__/ssrf-guard.test.ts, PRICE_TRACKER_VERSION1_REPORT.md
+- Key modified files: cron-update-prices.ts (SSRF + configurable thresholds), price-tracker.ts (settings API), price-tracker/page.tsx (editable settings tab)
+- Build and tests verified passing
