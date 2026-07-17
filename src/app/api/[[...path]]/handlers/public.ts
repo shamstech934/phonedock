@@ -59,11 +59,22 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
     const search = url.searchParams.get('search') || '';
     const brand = url.searchParams.get('brand') || '';
-    const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views']);
+    const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
     const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'createdAt';
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
 
+    // Boolean/enum filters
+    const ptaFilter = url.searchParams.get('pta') || '';
+    const fiveGFilter = url.searchParams.get('5g') || '';
+    const nfcFilter = url.searchParams.get('nfc') || '';
+    const trendingOnly = url.searchParams.get('trending') === 'true';
+    const priceDropOnly = url.searchParams.get('priceDrop') === 'true';
+
     const filter: any = { active: true, status: 'published' };
+    if (trendingOnly) filter.trending = true;
+    if (ptaFilter === 'approved') filter.ptaApproved = true;
+    else if (ptaFilter === 'pending') filter.ptaApproved = false;
+    if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
     if (search) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
@@ -90,7 +101,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (priceMax > 0) filter.pricePKR = { ...(filter.pricePKR || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin);
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '';
 
     if (hasSpecFilters) {
       const specFilter: any = {};
@@ -102,6 +113,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...(specFilter.screenSizeInch || {}), $lte: screenMax };
       if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
       if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+      if (fiveGFilter === 'yes') specFilter.fiveG = { $regex: /yes|supported|true/i };
+      else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
+      if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
+      else if (nfcFilter === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
 
       const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
       filter._id = { ...(filter._id || {}), $in: matchingSpecPhoneIds };

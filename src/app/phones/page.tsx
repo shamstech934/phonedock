@@ -59,6 +59,7 @@ function PhonesContent() {
   const fiveGParam = searchParams.get('5g') || 'all';
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
+  const priceDropParam = searchParams.get('priceDrop') || '';
   const pageParam = parseInt(searchParams.get('page') || '1');
 
   const [search, setSearch] = useState(q);
@@ -95,11 +96,24 @@ function PhonesContent() {
       'price-high': 'pricePKR',
       'rating': 'overallRating',
       'name': 'modelName',
+      'trending': 'trending',
     };
     if (sortMap[sortParam]) {
       params.set('sort', sortMap[sortParam]);
       params.set('order', sortParam === 'price-low' || sortParam === 'name' ? 'asc' : 'desc');
     }
+
+    // PTA filter
+    if (ptaParam !== 'all') params.set('pta', ptaParam);
+
+    // 5G filter
+    if (fiveGParam !== 'all') params.set('5g', fiveGParam);
+
+    // NFC filter
+    if (nfcParam !== 'all') params.set('nfc', nfcParam);
+
+    // Price drop filter
+    if (priceDropParam === 'true') params.set('priceDrop', 'true');
 
     Promise.all([
       fetch(`/api/phones?${params.toString()}`).then(r => r.json()),
@@ -113,7 +127,7 @@ function PhonesContent() {
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, search, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam]);
+  }, [pageParam, search, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -136,7 +150,7 @@ function PhonesContent() {
   };
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, search ? 'search' : ''].filter(f => f && f !== 'all').length;
+  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, search ? 'search' : '', priceDropParam ? 'priceDrop' : ''].filter(f => f && f !== 'all').length;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -158,6 +172,7 @@ function PhonesContent() {
               <div className="flex gap-2 flex-wrap">
                 <select value={sortParam} onChange={e => updateParam('sort', e.target.value)} className="h-11 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                   <option value="newest">Newest</option>
+                  <option value="trending">Trending</option>
                   <option value="price-low">Price: Low to High</option>
                   <option value="price-high">Price: High to Low</option>
                   <option value="rating">Top Rated</option>

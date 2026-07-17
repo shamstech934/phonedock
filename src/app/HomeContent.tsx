@@ -23,15 +23,15 @@ import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
 // ============ QUICK CATEGORY STRIP ============
 const QUICK_CATEGORIES = [
-  { emoji: '\u{1F4F1}', label: 'Latest', href: '/phones' },
-  { emoji: '\u{1F525}', label: 'Trending', href: '/phones' },
+  { emoji: '\u{1F4F1}', label: 'Latest', href: '/phones?sort=newest' },
+  { emoji: '\u{1F525}', label: 'Trending', href: '/phones?sort=trending' },
   { emoji: '\u{1F3AE}', label: 'Gaming', href: '/best-gaming-phone' },
   { emoji: '\u{1F4F7}', label: 'Camera', href: '/best-camera-phone' },
   { emoji: '\u{1F50B}', label: 'Battery', href: '/best-battery-phone' },
   { emoji: '\u{1F4B0}', label: 'Budget', href: '/best-budget-phone' },
-  { emoji: '\u{1F451}', label: 'Flagship', href: '/best-value-phone' },
-  { emoji: '\u{1F1F5}\u{1F1F0}', label: 'PTA', href: '/phones' },
-  { emoji: '\u{1F4C8}', label: 'Price Drops', href: '/price-ranges' },
+  { emoji: '\u{1F451}', label: 'Flagship', href: '/phones?price=above100k&sort=rating' },
+  { emoji: '\u{1F1F5}\u{1F1F0}', label: 'PTA', href: '/phones?pta=approved' },
+  { emoji: '\u{1F4C8}', label: 'Price Drops', href: '/phones?priceDrop=true' },
   { emoji: '\u{1F4FA}', label: 'Reviews', href: '/reviews' },
   { emoji: '\u25B6', label: 'Videos', href: '/videos' },
 ];
@@ -480,49 +480,49 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
               </div>
 
               {/* Content — can overflow for floating phone effect */}
-              <div className="relative z-10 p-5 sm:p-7 lg:p-[34px]">
+              <div className="relative z-10 p-4 sm:p-7 lg:p-[34px]">
                 <div className="relative flex flex-col lg:flex-row items-center gap-8 lg:gap-6">
                   {/* Left side — 45% */}
                   <div className="w-full lg:w-[45%]">
                     <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
-                      <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-5 text-xs font-medium">
+                      <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-3 sm:mb-5 text-[10px] sm:text-xs font-medium">
                         <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
                       </Badge>
                     </div>
-                    <h1 className="hero-text-reveal font-display text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
+                    <h1 className="hero-text-reveal font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3 sm:mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
                       Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.74em' }}>Smartphone</span>
                     </h1>
-                    <p className="hero-animate text-gray-300/80 text-sm sm:text-base mb-6 leading-relaxed max-w-lg" style={{ animationDelay: '0.5s' }}>
-                      Compare specs, check PTA status, read reviews, and find the best prices in Pakistan across all major brands.
+                    <p className="hero-animate text-gray-300/80 text-xs sm:text-base mb-4 sm:mb-6 leading-relaxed" style={{ animationDelay: '0.5s' }}>
+                      Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.
                     </p>
 
                     <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
                       <div className="relative flex-1">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <input placeholder="Phone name, brand or chipset..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-12 pr-4 h-12 text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
+                        <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+                        <input placeholder="Phone name, brand..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-9 sm:pl-12 pr-3 sm:pr-4 h-10 sm:h-12 text-xs sm:text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
                       </div>
-                      <button onClick={handleHomeSearch} className="glass-float text-white h-12 px-6 text-sm font-semibold flex items-center gap-2">
-                        <Search className="w-4 h-4" /> Search
+                      <button onClick={handleHomeSearch} className="glass-float text-white h-10 sm:h-12 px-4 sm:px-6 text-xs sm:text-sm font-semibold flex items-center gap-1.5 sm:gap-2">
+                        <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Search
                       </button>
                     </div>
 
-                    <div className="hero-animate flex flex-wrap gap-3 mt-6" style={{ animationDelay: '0.9s' }}>
-                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/brands')}>
-                        <Smartphone className="w-4 h-4 mr-2" /> Browse Phones
+                    <div className="hero-animate flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6" style={{ animationDelay: '0.9s' }}>
+                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border-white/20 text-xs sm:text-sm" onClick={() => router.push('/brands')}>
+                        <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Browse Phones
                       </Button>
-                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-10 px-5 border-white/20" onClick={() => router.push('/compare')}>
-                        <TrendingUp className="w-4 h-4 mr-2" /> Compare
+                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border-white/20 text-xs sm:text-sm" onClick={() => router.push('/compare')}>
+                        <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Compare
                       </Button>
                     </div>
-                    <div className="flex flex-wrap gap-5 mt-6 text-xs sm:text-sm text-gray-300/70">
-                      <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-4 h-4 text-emerald-400" /> PTA Status</span>
-                      <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-4 h-4 text-blue-400" /> PKR Prices</span>
-                      <span className="hero-feature-slide flex items-center gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-4 h-4 text-amber-400" /> Expert Reviews</span>
+                    <div className="flex flex-wrap gap-3 sm:gap-5 mt-4 sm:mt-6 text-[10px] sm:text-sm text-gray-300/70">
+                      <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> PTA Status</span>
+                      <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" /> PKR Prices</span>
+                      <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.3s' }}><Star className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> Expert Reviews</span>
                     </div>
                   </div>
 
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
-                  <div className="w-full lg:w-[55%] h-[240px] sm:h-[280px] lg:h-[320px] flex-shrink-0 -mb-6 lg:-mb-10">
+                  <div className="w-full lg:w-[55%] h-[200px] sm:h-[280px] lg:h-[320px] flex-shrink-0 -mb-4 sm:-mb-6 lg:-mb-10">
                     {heroPhones.length > 0 ? (
                       <HeroPhoneShowcase phones={heroPhones} />
                     ) : (

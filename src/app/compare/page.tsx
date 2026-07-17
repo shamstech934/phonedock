@@ -238,6 +238,19 @@ function CompareContent() {
 
       {showPicker && !compared ? (
         <div className="card-premium p-4 sm:p-6 space-y-4">
+          {/* Pre-selected phones shown prominently */}
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs font-medium text-muted-foreground self-center mr-1">Selected:</span>
+              {selected.map(p => (
+                <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full animate-in fade-in">
+                  {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={14} height={14} className="w-3.5 h-3.5 object-contain rounded" unoptimized /> : <Smartphone className="w-3.5 h-3.5" />}
+                  {p.modelName}
+                  <button onClick={() => removePhone(p.id)} className="hover:bg-blue-600 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
@@ -261,7 +274,8 @@ function CompareContent() {
         </div>
       ) : null}
 
-      {selected.length > 0 && (
+      {/* Compare button — only show when picker is hidden (i.e. >= 2 phones) */}
+      {!showPicker && !compared && selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-muted-foreground mr-1">Selected:</span>
           {selected.map(p => (
@@ -270,11 +284,9 @@ function CompareContent() {
               <button onClick={() => removePhone(p.id)} className="hover:bg-blue-600 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
             </span>
           ))}
-          {!compared && (
-            <button onClick={() => { if (selected.length >= 2) { setCompared(true); setShowPicker(false); updateURL(selected); } }} disabled={selected.length < 2} className="ml-auto bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 h-10 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25 disabled:shadow-none flex items-center gap-2">
-              <GitCompare className="w-4 h-4" /> Compare ({selected.length})
-            </button>
-          )}
+          <button onClick={() => { if (selected.length >= 2) { setCompared(true); setShowPicker(false); updateURL(selected); } }} disabled={selected.length < 2} className="ml-auto bg-blue-500 hover:bg-blue-600 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 h-10 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25 disabled:shadow-none flex items-center gap-2">
+            <GitCompare className="w-4 h-4" /> Compare ({selected.length})
+          </button>
         </div>
       )}
 
