@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
@@ -188,6 +188,49 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     // Group by storeName for chart data
     const storeNames = [...new Set(history.map((h: any) => h.storeName ?? 'Base Price'))];
     return cached({ history, storeNames }, 60, 300);
+  }
+
+  // ---- /api/phones/:slug/price-tracker ----
+  if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-tracker') {
+    await connectDB();
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
+    if (!phone) return cachedError('Not found', 404, 60, 300);
+
+    const confirmed = await PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed' })
+      .sort({ capturedAt: -1 })
+      .limit(90)
+      .lean();
+
+    const currentPrice = phone.pricePKR || 0;
+    const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
+    const allPrices = confirmed.map((h: any) => h.newPrice);
+    const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+    const highestPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
+    const priceChange = previousPrice > 0 ? currentPrice - previousPrice : 0;
+    const percentageChange = previousPrice > 0 ? Math.round((priceChange / previousPrice) * 10000) / 100 : 0;
+    const lastPriceChangedAt = confirmed.length > 0 ? confirmed[0].capturedAt : null;
+
+    return cached({
+      currentPrice,
+      previousPrice,
+      lowestPrice,
+      highestPrice,
+      priceChange,
+      percentageChange,
+      lastPriceChangedAt,
+      priceMode: phone.priceMode || 'manual',
+      manualLock: phone.manualLock || false,
+      history: confirmed.map((h: any) => ({
+        id: h._id?.toString(),
+        oldPrice: h.oldPrice,
+        newPrice: h.newPrice,
+        difference: h.difference,
+        percentageChange: h.percentageChange,
+        changeType: h.changeType,
+        sourceType: h.sourceType,
+        capturedAt: h.capturedAt,
+      })),
+    }, 60, 300);
   }
 
   // ---- /api/phones/:slug/reviews ----

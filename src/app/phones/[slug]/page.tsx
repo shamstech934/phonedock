@@ -72,6 +72,90 @@ function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; s
   );
 }
 
+// ── Price Tracker Chart (from PriceTrackerHistory records) ──
+function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; capturedAt: string }> }) {
+  // history is sorted desc from API — reverse for chronological order
+  const sorted = [...history].reverse();
+  if (sorted.length < 2) return null;
+
+  const [hovered, setHovered] = useState<number | null>(null);
+  const prices = sorted.map(h => h.newPrice);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const range = maxP - minP || 1;
+  const w = 600, h = 200, pad = { t: 16, r: 16, b: 32, l: 56 };
+  const plotW = w - pad.l - pad.r;
+  const plotH = h - pad.t - pad.b;
+
+  const pts = sorted.map((h, i) => ({
+    x: pad.l + (i / (sorted.length - 1)) * plotW,
+    y: pad.t + plotH - ((h.newPrice - minP) / range) * plotH,
+    price: h.newPrice,
+    date: new Date(h.capturedAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', year: '2-digit' }),
+  }));
+
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  const areaPath = `${linePath} L${pts[pts.length - 1].x},${pad.t + plotH} L${pts[0].x},${pad.t + plotH} Z`;
+
+  // Determine trend: compare first and last
+  const trendDown = prices[prices.length - 1] <= prices[0];
+  const lineColor = trendDown ? '#16a34a' : '#dc2626'; // green-600 / red-600
+  const gradId = 'ptGrad';
+  const fmtShort = (n: number) => n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
+
+  // X-axis labels: show every 5th
+  const xLabels = pts.filter((_, i) => i % 5 === 0 || i === pts.length - 1);
+  // Y-axis labels
+  const ySteps = 4;
+  const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => {
+    const val = maxP - (i / ySteps) * range;
+    return { val, y: pad.t + (i / ySteps) * plotH };
+  });
+
+  return (
+    <div className="relative w-full" style={{ maxHeight: '200px' }}>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '200px' }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {/* Y axis labels + grid */}
+        {yLabels.map((yl, i) => (
+          <g key={`y${i}`}>
+            <line x1={pad.l} y1={yl.y} x2={w - pad.r} y2={yl.y} stroke="#f3f4f6" strokeWidth="0.5" />
+            <text x={pad.l - 6} y={yl.y + 3} textAnchor="end" fontSize="9" fill="#9ca3af">{fmtShort(yl.val)}</text>
+          </g>
+        ))}
+        {/* X axis labels */}
+        {xLabels.map((p, i) => (
+          <text key={`x${i}`} x={p.x} y={h - 6} textAnchor="middle" fontSize="8" fill="#9ca3af">{p.date}</text>
+        ))}
+        {/* Area fill */}
+        <path d={areaPath} fill={`url(#${gradId})`} />
+        {/* Line */}
+        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Dots — larger on hover */}
+        {pts.map((p, i) => (
+          <g key={`d${i}`} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="cursor-pointer">
+            <circle cx={p.x} cy={p.y} r={hovered === i ? 5 : (pts.length <= 15 ? 3 : 1.5)} fill={lineColor} stroke="white" strokeWidth={hovered === i ? 2 : 1.5} />
+          </g>
+        ))}
+        {/* Tooltip */}
+        {hovered !== null && pts[hovered] && (
+          <g>
+            <rect x={pts[hovered].x - 60} y={pts[hovered].y - 36} width="120" height="28" rx="6" fill="#1f2937" fillOpacity="0.92" />
+            <text x={pts[hovered].x} y={pts[hovered].y - 18} textAnchor="middle" fontSize="10" fill="white" fontWeight="600">
+              Rs.{pts[hovered].price.toLocaleString()} — {pts[hovered].date}
+            </text>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
   if (mini) {
     return (
@@ -269,6 +353,12 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
   const [shareOpen, setShareOpen] = useState(false);
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [priceTracker, setPriceTracker] = useState<{
+    currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
+    priceChange: number; percentageChange: number; lastPriceChangedAt: string | null;
+    priceMode: string; manualLock: boolean;
+    history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
+  } | null>(null);
 
   useEffect(() => {
     params.then(p => setSlug(p.slug));
@@ -282,6 +372,8 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
     // Fetch price history
     setHistoryLoading(true);
     fetch(`/api/phones/${slug}/price-history`).then(r => r.json()).then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } }).catch(() => { if (!cancelled) setHistoryLoading(false); });
+    // Fetch price tracker data
+    fetch(`/api/phones/${slug}/price-tracker`).then(r => r.json()).then(d => { if (!cancelled && !d.error) setPriceTracker(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, [slug]);
 
@@ -435,8 +527,49 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                 )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Price in Pakistan</span>
-                  <span className="text-xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
+                  <span className="text-2xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
                 </div>
+                {/* Price tracking badges */}
+                {priceTracker && (
+                  <div className="space-y-2">
+                    {/* Previous price + change badge */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {priceTracker.previousPrice > 0 && priceTracker.previousPrice !== priceTracker.currentPrice && (
+                        <span className="text-sm text-gray-400 line-through">{formatPrice(priceTracker.previousPrice)}</span>
+                      )}
+                      {priceTracker.priceChange !== 0 ? (
+                        priceTracker.priceChange < 0 ? (
+                          <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                            Price Dropped ▼ {formatPrice(Math.abs(priceTracker.priceChange))} ({Math.abs(priceTracker.percentageChange)}%)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full border border-red-200/50">
+                            Price Increased ▲ {formatPrice(priceTracker.priceChange)} ({priceTracker.percentageChange}%)
+                          </span>
+                        )
+                      ) : priceTracker.history.length > 0 ? (
+                        <span className="text-[10px] font-medium bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">No Change</span>
+                      ) : null}
+                    </div>
+                    {/* Lowest price + last updated + mode */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                      {priceTracker.lowestPrice > 0 && priceTracker.lowestPrice < priceTracker.currentPrice && (
+                        <span className="text-emerald-600 font-medium">Lowest: {formatPrice(priceTracker.lowestPrice)}</span>
+                      )}
+                      {priceTracker.lastPriceChangedAt && (
+                        <span className="text-gray-400">Last updated: {new Date(priceTracker.lastPriceChangedAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${priceTracker.priceMode === 'manual' ? 'bg-blue-50 text-blue-700 border-blue-200/50' : 'bg-purple-50 text-purple-700 border-purple-200/50'}`}>
+                        {priceTracker.priceMode === 'manual' ? 'Manually Verified' : 'Auto Tracked'}
+                      </span>
+                      {priceTracker.manualLock && (
+                        <span className="text-[10px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200/50">Price Locked</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <Separator className="bg-gray-100" />
                 {/* Price Drop Alert */}
                 <PriceAlertButton phoneId={p.id} slug={slug} />
@@ -530,8 +663,25 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                 );
               })()}
 
-              {/* Price History Chart */}
-              {priceHistory.length >= 2 && (
+              {/* Price Tracker Chart */}
+              {priceTracker && priceTracker.history.length >= 2 ? (
+                <div className="card-premium p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" /> Price Tracker
+                  </h3>
+                  <PriceTrackerChart history={priceTracker.history} />
+                </div>
+              ) : priceTracker && priceTracker.history.length < 2 ? (
+                <div className="card-premium p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" /> Price Tracker
+                  </h3>
+                  <p className="text-xs text-muted-foreground text-center py-4">Price history not available yet</p>
+                </div>
+              ) : null}
+
+              {/* Price History Chart (legacy — keep if tracker has no data) */}
+              {!priceTracker && priceHistory.length >= 2 && (
                 <div className="card-premium p-4">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-blue-500" /> Price History

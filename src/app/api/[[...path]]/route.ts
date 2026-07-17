@@ -24,6 +24,8 @@ import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdmi
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleDownloadSample } from './handlers/download';
+import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut } from './handlers/price-tracker';
+import { handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
 
@@ -33,6 +35,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
+    // Cron: /api/cron/update-prices — protected by CRON_SECRET, NO rate limiting
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
+      const cronResult = await handleCronUpdatePrices(req);
+      if (cronResult) return cronResult;
+    }
+
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'sync-youtube') {
       const secret = req.headers.get('authorization')?.replace('Bearer ', '');
@@ -160,6 +168,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Import routes (history)
     const importResult = await handleImportGet(req, segments);
     if (importResult) return importResult;
+
+    // Price Tracker GET routes (stats, phones, sources, changes, pending, history, listings)
+    const priceTrackerGetResult = await handlePriceTrackerGet(req, segments);
+    if (priceTrackerGetResult) return priceTrackerGetResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
@@ -354,6 +366,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     const collectorResult = await handleCollectorPost(req, segments);
     if (collectorResult) return collectorResult;
 
+    // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)
+    const priceTrackerPostResult = await handlePriceTrackerPost(req, segments);
+    if (priceTrackerPostResult) return priceTrackerPostResult;
+
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
     console.error('API POST error:', e.message);
@@ -389,6 +405,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     // Collector routes (sources toggle)
     const collectorResult = await handleCollectorPut(req, segments);
     if (collectorResult) return collectorResult;
+
+    // Price Tracker PUT routes (sources, listings)
+    const priceTrackerPutResult = await handlePriceTrackerPut(req, segments);
+    if (priceTrackerPutResult) return priceTrackerPutResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {

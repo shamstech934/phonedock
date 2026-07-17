@@ -52,6 +52,18 @@ export interface IPhone extends Document {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  currentPrice: number;
+  previousPrice: number;
+  lowestPrice: number;
+  highestPrice: number;
+  priceChange: number;
+  percentageChange: number;
+  lastPriceCheckedAt: Date | null;
+  lastPriceChangedAt: Date | null;
+  priceMode: 'manual' | 'automatic';
+  manualLock: boolean;
+  manualLockReason: string;
+  preferredPriceSourceId: Types.ObjectId | null;
 }
 
 export interface IPhoneModel extends Model<IPhone> {
@@ -98,6 +110,18 @@ const PhoneSchema = new Schema<IPhone>({
   publishedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
   publishedAt: { type: Date, default: null },
   deletedAt: { type: Date, default: null },
+  currentPrice: { type: Number, default: 0 },
+  previousPrice: { type: Number, default: 0 },
+  lowestPrice: { type: Number, default: 0 },
+  highestPrice: { type: Number, default: 0 },
+  priceChange: { type: Number, default: 0 },
+  percentageChange: { type: Number, default: 0 },
+  lastPriceCheckedAt: { type: Date, default: null },
+  lastPriceChangedAt: { type: Date, default: null },
+  priceMode: { type: String, enum: ['manual', 'automatic'], default: 'manual' },
+  manualLock: { type: Boolean, default: false },
+  manualLockReason: { type: String, default: '' },
+  preferredPriceSourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource' },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
