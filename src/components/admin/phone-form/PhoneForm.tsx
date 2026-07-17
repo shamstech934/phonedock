@@ -79,7 +79,7 @@ export default function PhoneForm({
 
         // Map API response to form state
         setForm({
-          brand: data.brand ?? data.brandId ?? '',
+          brand: data.brand?.id || data.brand?._id?.toString() || data.brandId || '',
           modelName: data.modelName ?? data.model_name ?? '',
           slug: data.slug ?? '',
           pakistaniPricePKR: toNumberOrEmpty(
