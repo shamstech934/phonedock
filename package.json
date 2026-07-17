@@ -18,6 +18,8 @@
     "admin:reset-password": "npx tsx scripts/create-admin.ts -- --reset-password",
     "db:check": "npx tsx scripts/db-check.ts",
     "migrate": "npx tsx scripts/migrate-db.ts",
+    "scores:preview": "npx tsx scripts/calc-scores.ts --dry-run",
+    "scores:calculate": "npx tsx scripts/calc-scores.ts",
     "production:audit": "npm run verify"
   },
   "dependencies": {
