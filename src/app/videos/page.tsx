@@ -97,11 +97,11 @@ export default function VideosPage() {
 
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-3 mt-8">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} aria-label="Previous page" className="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                   <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} aria-label="Next page" className="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -120,13 +120,13 @@ export default function VideosPage() {
 
       {/* Video Player Modal */}
       {activeVideo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={closeModal}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={closeModal} role="dialog" aria-modal="true" aria-label="Video player">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
           {/* Modal Content */}
           <div className="relative z-10 w-full max-w-4xl" onClick={e => e.stopPropagation()}>
             {/* Close button */}
-            <button onClick={closeModal} className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors p-2">
+            <button onClick={closeModal} aria-label="Close video" className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors p-2">
               <X className="w-6 h-6" />
             </button>
             {/* Video iframe */}

@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+
+function timingSafeEqual(a: string, b: string): boolean {
+  try {
+    const aBuf = Buffer.from(a, 'utf8');
+    const bBuf = Buffer.from(b, 'utf8');
+    if (aBuf.length !== bBuf.length) {
+      crypto.timingSafeEqual(aBuf, aBuf);
+      return false;
+    }
+    return crypto.timingSafeEqual(aBuf, bBuf);
+  } catch {
+    return false;
+  }
+}
 import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
 import { handlePublicGet, handlePublicPost } from './handlers/public';
@@ -22,7 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'sync-youtube') {
       const secret = req.headers.get('authorization')?.replace('Bearer ', '');
-      if (secret !== process.env.CRON_SECRET) {
+      if (!timingSafeEqual(secret || '', process.env.CRON_SECRET || '')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       const result = await syncYouTubeVideos();
@@ -32,7 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Cron: /api/cron/check-price-drops — protected by CRON_SECRET
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'check-price-drops') {
       const secret = req.headers.get('authorization')?.replace('Bearer ', '');
-      if (secret !== process.env.CRON_SECRET) {
+      if (!timingSafeEqual(secret || '', process.env.CRON_SECRET || '')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       await connectDB();

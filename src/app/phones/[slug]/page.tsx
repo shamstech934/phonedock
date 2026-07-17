@@ -128,7 +128,7 @@ function PriceAlertButton({ phoneId, slug }: { phoneId: string; slug: string }) 
 
   return (
     <div className="flex gap-2">
-      <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email for price drop alert" className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400" />
+      <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email for price drop alert" aria-label="Email for price drop alert" className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400" />
       <button onClick={handleSubscribe} disabled={loading || !email} className="shrink-0 rounded-lg bg-blue-50 text-blue-600 px-3 py-2 text-xs font-medium hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1">
         <Bell className="w-3 h-3" /> {loading ? '...' : 'Notify'}
       </button>
@@ -207,8 +207,8 @@ function UserReviewsSection({ slug }: { slug: string }) {
       {showForm && (
         <div className="card-premium p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="Your name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-            <input value={formEmail} onChange={e => setFormEmail(e.target.value)} type="email" placeholder="Your email (private)" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="Your name" aria-label="Your name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={formEmail} onChange={e => setFormEmail(e.target.value)} type="email" placeholder="Your email (private)" aria-label="Your email" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-muted-foreground mr-2">Rating:</span>
@@ -218,7 +218,7 @@ function UserReviewsSection({ slug }: { slug: string }) {
               </button>
             ))}
           </div>
-          <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+          <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} aria-label="Your review" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           {turnstileSiteKey && (
             <div className="flex justify-center">
               <TurnstileWidget siteKey={turnstileSiteKey} onVerify={setTurnstileToken} />
@@ -393,6 +393,8 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
             <span className="font-medium text-gray-900">{p.modelName}</span>
           </div>
 
+          <h1 className="sr-only">{p.brand?.name} {p.modelName}</h1>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Column: Images & Info */}
             <div className="lg:col-span-1 space-y-4">
@@ -463,7 +465,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                   <Link href={`/compare?ids=${p.id}`} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25">
                     <GitCompare className="w-4 h-4" /> Compare
                   </Link>
-                  <button onClick={handleShare} className="h-11 px-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center">
+                  <button onClick={handleShare} aria-label="Share this phone" className="h-11 px-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center">
                     <Share2 className="w-4 h-4 text-gray-600" />
                   </button>
                 </div>
@@ -545,7 +547,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
             <div className="lg:col-span-2 space-y-5">
               <div>
                 <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
-                <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h1>
+                <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h2>
                 {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
               </div>
 

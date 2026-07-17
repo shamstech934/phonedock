@@ -5,7 +5,7 @@ import {
   Activity, Plus, Edit, Trash2, Search, ChevronLeft, ChevronRight,
   Clock, Shield, AlertTriangle, RefreshCw, BarChart3, Users,
   Download, Monitor, Smartphone, Database, FileText, Video, Star,
-  Radio, Upload, Zap, Eye, Key
+  Radio, Upload, Zap, Eye, Key, AlertCircle, ChevronDown
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -61,7 +61,9 @@ export default function AdminActivityPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimer = useRef<NodeJS.Timeout>(undefined);
   const [moduleFilter, setModuleFilter] = useState('');
+  const [sort, setSort] = useState('newest');
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -77,19 +79,24 @@ export default function AdminActivityPage() {
   }, [autoRefresh]);
 
   const fetchLogs = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(rowsPerPage) });
+      const params = new URLSearchParams({ page: String(page), limit: String(rowsPerPage), sort });
       if (debouncedSearch.length >= 2) params.set('search', debouncedSearch);
       if (moduleFilter) params.set('module', moduleFilter);
       const res = await fetch(`/api/admin/activity?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setLogs(d.logs || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch {} finally { setLoading(false); }
-  }, [page, rowsPerPage, debouncedSearch, moduleFilter]);
+    } catch (e: any) { setError(e.message || 'Failed to load activity logs'); } finally { setLoading(false); }
+  }, [page, rowsPerPage, debouncedSearch, moduleFilter, sort]);
 
   const fetchStats = useCallback(async () => {
-    try { const res = await fetch('/api/admin/activity/stats', { credentials: 'include' }); setStats(await res.json()); } catch {}
+    try {
+      const res = await fetch('/api/admin/activity/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+      setStats(await res.json());
+    } catch (e: any) { console.error('Failed to load activity stats:', e); }
   }, []);
 
   useEffect(() => { fetchLogs(); fetchStats(); }, [fetchLogs, fetchStats]);
@@ -181,10 +188,28 @@ export default function AdminActivityPage() {
         <select value={moduleFilter} onChange={e => { setModuleFilter(e.target.value); setPage(1); }} className="h-9 px-2.5 rounded-xl border border-gray-200 text-xs bg-white" aria-label="Module filter">
           {MODULE_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
+        <select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }} className="h-9 px-2.5 rounded-xl border border-gray-200 text-xs bg-white" aria-label="Sort order">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
         <select value={rowsPerPage} onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1); }} className="h-9 px-2.5 rounded-xl border border-gray-200 text-xs bg-white" aria-label="Per page">
           {[25, 50, 100, 200].map(n => <option key={n} value={n}>{n}/page</option>)}
         </select>
       </div>
+
+      {/* Error Card */}
+      {error && (
+        <div className="card-premium p-6 border border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
+            <div className="flex-1">
+              <h3 className="font-bold text-sm text-red-900">Failed to load data</h3>
+              <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => { setError(''); fetchLogs(); fetchStats(); }} className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors">Retry</button>
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       {loading ? (

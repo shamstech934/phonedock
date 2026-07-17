@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Smartphone, Layers, TrendingUp, Star, Tag, Newspaper,
   Upload, RefreshCw, Eye, BarChart3, Activity, Database, Plus, Edit, Trash2,
+  Video, MessageSquare, HandCoins, ShieldCheck, Cog, Webhook, ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 import { formatPrice } from '@/components/shared/formatPrice';
@@ -13,11 +14,13 @@ export default function AdminDashboardPage() {
   const { admin } = useAdmin();
   const [stats, setStats] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/admin/stats', { credentials: 'include' })
-      .then(r => r.json()).then(d => { setStats(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(r => { if (!r.ok) throw new Error(`Request failed (${r.status})`); return r.json(); })
+      .then(d => { setStats(d); setLoading(false); })
+      .catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); });
   }, []);
 
   const statCards = [
@@ -27,6 +30,10 @@ export default function AdminDashboardPage() {
     { label: 'Featured', value: stats.featuredCount ?? 0, icon: Star, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
     { label: 'Avg Price', value: stats.avgPrice ? formatPrice(stats.avgPrice) : 'N/A', icon: Tag, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
     { label: 'News', value: stats.newsCount ?? 0, icon: Newspaper, bg: 'bg-cyan-50', iconColor: 'text-cyan-500' },
+    { label: 'Videos', value: stats.totalVideos ?? 0, icon: Video, bg: 'bg-rose-50', iconColor: 'text-rose-500' },
+    { label: 'Reviews', value: stats.totalReviews ?? 0, icon: MessageSquare, bg: 'bg-sky-50', iconColor: 'text-sky-500' },
+    { label: 'Sponsors', value: stats.totalSponsors ?? 0, icon: HandCoins, bg: 'bg-orange-50', iconColor: 'text-orange-500' },
+    { label: 'Admin Users', value: stats.totalAdmins ?? 0, icon: ShieldCheck, bg: 'bg-teal-50', iconColor: 'text-teal-500' },
   ];
 
   const quickActions = [
@@ -36,6 +43,8 @@ export default function AdminDashboardPage() {
     { label: 'Brands', icon: Layers, href: '/admin/brands' },
     { label: 'News', icon: Newspaper, href: '/admin/news' },
     { label: 'Activity', icon: Activity, href: '/admin/activity' },
+    { label: 'Collector', icon: Webhook, href: '/admin/collector' },
+    { label: 'Settings', icon: Cog, href: '/admin/settings' },
   ];
 
   const priceDist = stats.priceDistribution || [
@@ -52,14 +61,27 @@ export default function AdminDashboardPage() {
           <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with PhoneDock</p>
         </div>
         <Link href="/" className="self-start bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 h-9 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
-          <Eye className="w-4 h-4" /> View Site
+          <Eye className="w-4 h-4 shrink-0" /> View Site
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {error && (
+        <div className="card-premium p-4 border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center shrink-0"><AlertTriangle className="w-4 h-4 text-red-500 shrink-0" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-800">Failed to load dashboard</p>
+              <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => { setError(null); setLoading(true); fetch('/api/admin/stats', { credentials: 'include' }).then(r => r.json()).then(d => { setStats(d); setLoading(false); }).catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); }); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline shrink-0">Retry</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {statCards.map(s => (
           <div key={s.label} className="card-premium p-4">
-            <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor}`} /></div>
+            <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor} shrink-0`} /></div>
             <p className="text-2xl font-extrabold text-gray-900">{s.value}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
           </div>
@@ -80,10 +102,10 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
         {quickActions.map(a => (
           <Link key={a.label} href={a.href} className="card-premium p-3 sm:p-4 text-center group">
-            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-50 transition-colors"><a.icon className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors" /></div>
+            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2 group-hover:bg-blue-50 transition-colors"><a.icon className="w-5 h-5 text-gray-500 group-hover:text-blue-500 transition-colors shrink-0" /></div>
             <p className="text-xs font-semibold text-gray-700">{a.label}</p>
           </Link>
         ))}
@@ -91,7 +113,7 @@ export default function AdminDashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card-premium p-5">
-          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500" /> Price Distribution</h3>
+          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500 shrink-0" /> Price Distribution</h3>
           <div className="space-y-3">
             {priceDist.map((d: any, i: number) => (
               <div key={i}>
@@ -105,12 +127,15 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="card-premium p-5">
-          <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Recent Activity</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500 shrink-0" /> Recent Activity</h3>
+            <Link href="/admin/activity" className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 shrink-0">View All <ArrowRight className="w-3 h-3" /></Link>
+          </div>
           <div className="space-y-3">
             {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
-                {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500" /> : <Plus className="w-3.5 h-3.5 text-emerald-500" />}
+                {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>

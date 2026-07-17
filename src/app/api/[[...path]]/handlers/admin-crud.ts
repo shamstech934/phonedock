@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 
@@ -12,13 +12,17 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'dashboard:read'); if (permCheck) return permCheck;
     await connectDB();
-    const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity] = await Promise.all([
+    const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity, totalVideos, totalReviews, totalAdmins, totalSponsors] = await Promise.all([
       Phone.countDocuments({ active: true }),
       Brand.countDocuments({ active: true }),
       Phone.countDocuments({ active: true, trending: true }),
       Phone.countDocuments({ active: true, featured: true }),
       News.countDocuments({ published: true }),
       ActivityLog.find().sort({ createdAt: -1 }).limit(20).populate('adminId', 'name email').lean(),
+      Video.countDocuments({ active: true }),
+      UserReview.countDocuments({}),
+      Admin.countDocuments({ active: true }),
+      Sponsor.countDocuments({}),
     ]);
     const priceResult = await Phone.aggregate([
       { $match: { active: true, pricePKR: { $gt: 0 } } },
@@ -37,7 +41,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     ]);
     const distLabels = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
     return NextResponse.json({
-      totalPhones, totalBrands, trendingCount, featuredCount, newsCount,
+      totalPhones, totalBrands, trendingCount, featuredCount, newsCount, totalVideos, totalReviews, totalAdmins, totalSponsors,
       avgPrice: priceResult[0]?.avg || 0,
       priceDistribution: priceDistribution.map((d: any, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
       recentActivity: recentActivity.map((l: any) => ({
@@ -48,13 +52,93 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     });
   }
 
-  // ---- /api/admin/phones ----
+  // ---- /api/admin/phones/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const [total, published, draft, upcoming, trending, featured, ptaApproved, priceResult] = await Promise.all([
+      Phone.countDocuments({ active: true }),
+      Phone.countDocuments({ active: true, status: 'published' }),
+      Phone.countDocuments({ active: true, status: 'draft' }),
+      Phone.countDocuments({ active: true, upcoming: true }),
+      Phone.countDocuments({ active: true, trending: true }),
+      Phone.countDocuments({ active: true, featured: true }),
+      Phone.countDocuments({ active: true, ptaApproved: true }),
+      Phone.aggregate([{ $match: { active: true, pricePKR: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$pricePKR' } } }]),
+    ]);
+    return NextResponse.json({ total, published, draft, upcoming, trending, featured, ptaApproved, avgPrice: Math.round(priceResult[0]?.avg || 0) });
+  }
+
+  // ---- /api/admin/phones (ENHANCED LIST with search, filter, sort, pagination) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
-    const phones = await Phone.find({ active: true }).sort({ createdAt: -1 }).populate('brand').lean();
-    return NextResponse.json({ phones: phones.map((p: any) => phoneToJSON(p)) });
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const skip = (page - 1) * limit;
+    const filter: any = { active: true };
+    // Search
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const brandMatches = await Brand.find({ name: { $regex: safe, $options: 'i' } }).select('_id').lean();
+      const brandIds = brandMatches.map((b: any) => b._id);
+      const searchOr: any[] = [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+      ];
+      if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
+      filter.$or = searchOr;
+    }
+    // Status filter
+    const status = url.searchParams.get('status');
+    if (status === 'published') filter.status = 'published';
+    else if (status === 'draft') filter.status = 'draft';
+    else if (status === 'pending') filter.status = 'pending';
+    else if (status === 'archived') filter.status = 'archived';
+    else if (status === 'upcoming') filter.upcoming = true;
+    else if (status === 'trending') filter.trending = true;
+    else if (status === 'featured') filter.featured = true;
+    // Brand filter
+    const brandId = url.searchParams.get('brandId');
+    if (brandId) filter.brandId = brandId;
+    // PTA filter
+    const ptaFilter = url.searchParams.get('pta');
+    if (ptaFilter === 'approved') filter.ptaApproved = true;
+    else if (ptaFilter === 'non-pta') filter.ptaApproved = false;
+    // Price range filter
+    const minPrice = url.searchParams.get('minPrice');
+    const maxPrice = url.searchParams.get('maxPrice');
+    if (minPrice || maxPrice) {
+      filter.pricePKR = {} as any;
+      if (minPrice) (filter.pricePKR as any).$gte = parseInt(minPrice, 10);
+      if (maxPrice) (filter.pricePKR as any).$lte = parseInt(maxPrice, 10);
+    }
+    // Featured/Trending toggles
+    if (url.searchParams.get('featured') === 'true') filter.featured = true;
+    if (url.searchParams.get('trending') === 'true') filter.trending = true;
+    // Sort
+    let sort: any = { createdAt: -1 };
+    const sortParam = url.searchParams.get('sort');
+    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    else if (sortParam === 'price-low') sort = { pricePKR: 1 };
+    else if (sortParam === 'price-high') sort = { pricePKR: -1 };
+    else if (sortParam === 'name-az') sort = { modelName: 1 };
+    else if (sortParam === 'name-za') sort = { modelName: -1 };
+    else if (sortParam === 'rating') sort = { overallRating: -1 };
+    else if (sortParam === 'views') sort = { views: -1 };
+
+    const [phones, total] = await Promise.all([
+      Phone.find(filter).sort(sort).skip(skip).limit(limit).populate('brand').lean(),
+      Phone.countDocuments(filter),
+    ]);
+    return NextResponse.json({
+      phones: phones.map((p: any) => phoneToJSON(p)),
+      total, page, limit, totalPages: Math.ceil(total / limit),
+    });
   }
 
   // ---- /api/admin/phones/:id ----
@@ -73,13 +157,74 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
   }
 
+  // ---- /api/admin/brands/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'brands:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const [total, active, inactive, withLogos, countries, phonesAgg] = await Promise.all([
+      Brand.countDocuments({}),
+      Brand.countDocuments({ active: true }),
+      Brand.countDocuments({ active: false }),
+      Brand.countDocuments({ logo: { $ne: null, $exists: true } }),
+      Brand.distinct('country'),
+      Phone.aggregate([{ $group: { _id: null, total: { $sum: 1 } } }]),
+    ]);
+    return NextResponse.json({
+      total,
+      active,
+      inactive,
+      withLogos,
+      countries: countries.filter((c: string) => c && c.trim()).length,
+      totalPhones: phonesAgg[0]?.total || 0,
+    });
+  }
+
   // ---- /api/admin/brands ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'brands') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'brands:read'); if (permCheck) return permCheck;
     await connectDB();
-    const brands = await Brand.find().sort({ sortOrder: 1 }).lean();
-    return NextResponse.json({ brands: brands.map((b: any) => ({ ...b, id: b._id?.toString() })) });
+
+    const sp = req.nextUrl.searchParams;
+    const search = sp.get('search')?.trim() || '';
+    const status = sp.get('status') || 'all';
+    const country = sp.get('country') || '';
+    const sort = sp.get('sort') || 'sort-order';
+    const page = Math.max(1, parseInt(sp.get('page') || '1') || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(sp.get('pageSize') || '24') || 24));
+
+    // Build filter
+    const filter: any = {};
+    if (search.length >= 2) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { slug: { $regex: search, $options: 'i' } },
+      ];
+    }
+    if (status === 'active') filter.active = true;
+    else if (status === 'inactive') filter.active = false;
+    if (country) filter.country = country;
+
+    // Build sort
+    const sortObj: any = {};
+    if (sort === 'name') sortObj.name = 1;
+    else if (sort === 'sort-order') sortObj.sortOrder = 1;
+    else if (sort === 'newest') sortObj.createdAt = -1;
+    else if (sort === 'oldest') sortObj.createdAt = 1;
+
+    const [total, brands, phoneCounts] = await Promise.all([
+      Brand.countDocuments(filter),
+      Brand.find(filter).sort(sortObj).skip((page - 1) * pageSize).limit(pageSize).lean(),
+      Phone.aggregate([{ $group: { _id: '$brandId', count: { $sum: 1 } } }]),
+    ]);
+
+    const phoneCountMap = new Map(phoneCounts.map((p: any) => [p._id?.toString(), p.count]));
+
+    return NextResponse.json({
+      brands: brands.map((b: any) => ({ ...b, id: b._id?.toString(), phonesCount: phoneCountMap.get(b._id?.toString()) || 0 })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    });
   }
 
   // ---- /api/admin/news/stats ----
@@ -348,9 +493,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const module = url.searchParams.get('module');
     if (module) filter.entityType = module;
     const actionType = url.searchParams.get('action');
-    if (actionType) filter.action = { $regex: actionType, $options: 'i' };
+    if (actionType) {
+      const safeActionType = actionType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.action = { $regex: safeActionType, $options: 'i' };
+    }
+    const sortParam = url.searchParams.get('sort') || 'newest';
+    const sortDir = sortParam === 'oldest' ? 1 : -1;
     const [logs, total] = await Promise.all([
-      ActivityLog.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('adminId', 'name email role').lean(),
+      ActivityLog.find(filter).sort({ createdAt: sortDir }).skip((page - 1) * limit).limit(limit).populate('adminId', 'name email role').lean(),
       ActivityLog.countDocuments(filter),
     ]);
     return NextResponse.json({
@@ -1054,7 +1204,11 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       news.published = body.published;
     }
     if (body.featured !== undefined) news.featured = body.featured;
-    if (body.status !== undefined) news.status = body.status;
+    if (body.status !== undefined) {
+      const validStatuses = ['published', 'draft', 'scheduled', 'archived', 'pending'];
+      if (!validStatuses.includes(body.status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+      news.status = body.status;
+    }
     await news.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_news', details: `Updated: ${news.title}`, entityType: 'news', entityId: news._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: news._id?.toString() });
@@ -1220,7 +1374,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       if (body[key] !== undefined) update[key] = body[key];
     }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true }).lean();
-    try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings' }); } catch (e) { console.error('[ActivityLog]', e); }
+    try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings', entityId: 'main' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
   }
 

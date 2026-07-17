@@ -171,12 +171,15 @@ async function handleFileUpload(req: NextRequest): Promise<NextResponse> {
       skipExisting,
     });
 
-    await ActivityLog.create({
-      adminId: admin._id,
-      action: 'import',
-      details: `Imported ${file.name}: ${result.inserted} new, ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed in ${Math.round(result.duration / 1000)}s`,
-      entityType: 'phone',
-    });
+    try {
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: 'import_data',
+        details: `Imported ${result.inserted} records from ${file.name}`,
+        entityType: 'import',
+        entityId: result.historyId,
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
 
     return NextResponse.json({
       success: true,
@@ -192,6 +195,6 @@ async function handleFileUpload(req: NextRequest): Promise<NextResponse> {
       historyId: result.historyId,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: `Import error: ${e.message}` }, { status: 500 });
+    return NextResponse.json({ error: 'Import failed. Check file format and try again.' }, { status: 500 });
   }
 }

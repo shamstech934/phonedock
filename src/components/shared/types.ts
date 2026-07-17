@@ -130,6 +130,10 @@ export interface Phone {
   reviewSummary?: string;
   reviewVerdict?: string;
   published?: boolean;
+  status?: string;
+  views?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface NewsItem {

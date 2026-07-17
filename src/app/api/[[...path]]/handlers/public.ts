@@ -108,7 +108,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     }
 
     const [phones, total] = await Promise.all([
-      Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
+      Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit)
+        .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+        .populate('brand').lean(),
       Phone.countDocuments(filter),
     ]);
     return cached({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit }, 120, 300);
@@ -230,7 +232,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const brand = await Brand.findOne({ slug: segments[1], active: true }).lean();
     if (!brand) return cachedError('Not found', 404, 60, 300);
-    const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' }).populate('brand').lean();
+    const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
+      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+      .populate('brand').lean();
     return cached({ brand, phones: phones.map((p: any) => phoneToJSON(p)) }, 300, 600);
   }
 
@@ -262,7 +266,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
         { modelName: { $regex: safe, $options: 'i' } },
         { slug: { $regex: safe, $options: 'i' } },
         { description: { $regex: safe, $options: 'i' } },
-      ] }).sort({ createdAt: -1 }).limit(20).populate('brand').lean(),
+      ] }).sort({ createdAt: -1 }).limit(20)
+        .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+        .populate('brand').lean(),
       Brand.aggregate([
         { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
         { $sort: { sortOrder: 1 } },
@@ -341,6 +347,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const limit = 20;
     const [phones, total] = await Promise.all([
       Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } })
+        .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .sort({ pricePKR: 1 }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
       Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } }),
     ]);

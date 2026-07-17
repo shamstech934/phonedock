@@ -122,6 +122,7 @@ PhoneSchema.index({ slug: 1 }, { unique: true });
 PhoneSchema.index({ createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, createdAt: -1 });
 PhoneSchema.index({ brandId: 1, status: 1 });
+PhoneSchema.index({ active: 1, status: 1, pricePKR: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });

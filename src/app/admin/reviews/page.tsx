@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Star, Check, X, Trash2, Clock, AlertTriangle, Eye, Search, Filter,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flag, Shield,
-  MessageSquare, BarChart3, TrendingDown, Users, Zap
+  MessageSquare, BarChart3, TrendingDown, Users, Zap, AlertCircle
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -58,6 +58,7 @@ export default function AdminReviewsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailReview, setDetailReview] = useState<ReviewItem | null>(null);
   const [deleteModal, setDeleteModal] = useState<ReviewItem | null>(null);
+  const [error, setError] = useState('');
 
   // Debounced search
   useEffect(() => {
@@ -67,36 +68,47 @@ export default function AdminReviewsPage() {
   }, [searchQuery]);
 
   const fetchReviews = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(rowsPerPage), status: statusFilter, sort });
       if (debouncedSearch.length >= 2) params.set('search', debouncedSearch);
       if (ratingFilter) params.set('rating', ratingFilter);
       const res = await fetch(`/api/admin/reviews?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setReviews(d.reviews || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) { setError(e.message || 'Failed to load reviews'); } finally { setLoading(false); }
   }, [page, rowsPerPage, statusFilter, sort, debouncedSearch, ratingFilter]);
 
   const fetchStats = useCallback(async () => {
-    try { const res = await fetch('/api/admin/reviews/stats', { credentials: 'include' }); setStats(await res.json()); } catch {}
+    try {
+      const res = await fetch('/api/admin/reviews/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+      setStats(await res.json());
+    } catch (e: any) { console.error('Failed to load review stats:', e); }
   }, []);
 
   useEffect(() => { fetchReviews(); fetchStats(); }, [fetchReviews, fetchStats]);
 
   const updateStatus = async (id: string, status: string) => {
     setActionLoading(id);
-    await fetch(`/api/admin/reviews/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }) });
-    fetchReviews(); fetchStats();
-    if (detailReview?.id === id) setDetailReview(null);
+    try {
+      const res = await fetch(`/api/admin/reviews/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status }) });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+      fetchReviews(); fetchStats();
+      if (detailReview?.id === id) setDetailReview(null);
+    } catch (e: any) { console.error('Update status failed:', e); }
     setActionLoading(null);
   };
 
   const deleteReview = async (r: ReviewItem) => {
     setActionLoading(r.id);
-    await fetch(`/api/admin/reviews/${r.id}`, { method: 'DELETE', credentials: 'include' });
-    setDeleteModal(null); setDetailReview(null);
-    fetchReviews(); fetchStats();
+    try {
+      const res = await fetch(`/api/admin/reviews/${r.id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+      setDeleteModal(null); setDetailReview(null);
+      fetchReviews(); fetchStats();
+    } catch (e: any) { console.error('Delete review failed:', e); }
     setActionLoading(null);
   };
 
@@ -108,7 +120,7 @@ export default function AdminReviewsPage() {
         fetch(`/api/admin/reviews/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status: action }) })
       ));
       setSelected(new Set()); fetchReviews(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleSelect = (id: string) => {
@@ -203,6 +215,20 @@ export default function AdminReviewsPage() {
             ))}
           </div>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-blue-600 hover:underline">Clear</button>
+        </div>
+      )}
+
+      {/* Error Card */}
+      {error && (
+        <div className="card-premium p-6 border border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
+            <div className="flex-1">
+              <h3 className="font-bold text-sm text-red-900">Failed to load data</h3>
+              <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => { setError(''); fetchReviews(); fetchStats(); }} className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors">Retry</button>
+          </div>
         </div>
       )}
 

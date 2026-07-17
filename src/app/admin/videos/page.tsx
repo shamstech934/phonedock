@@ -101,6 +101,7 @@ export default function AdminVideosPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [error, setError] = useState('');
 
   // Debounced search
   useEffect(() => {
@@ -114,7 +115,7 @@ export default function AdminVideosPage() {
 
   // Fetch videos
   const fetchVideos = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams({
         page: String(page), limit: String(rowsPerPage), sort,
@@ -123,20 +124,22 @@ export default function AdminVideosPage() {
       if (debouncedSearch.length >= 2) params.set('search', debouncedSearch);
       if (dateFilter) params.set('dateFilter', dateFilter);
       const res = await fetch(`/api/admin/videos?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setVideos(d.videos || []);
       setTotal(d.total || 0);
       setTotalPages(d.totalPages || 1);
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) { setError(e.message || 'Failed to load videos'); } finally { setLoading(false); }
   }, [page, rowsPerPage, sort, statusFilter, syncFilter, debouncedSearch, dateFilter]);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/videos/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setStats(d);
-    } catch {}
+    } catch (e: any) { console.error('Failed to load video stats:', e); }
   }, []);
 
   useEffect(() => { fetchVideos(); fetchStats(); }, [fetchVideos, fetchStats]);
@@ -149,7 +152,7 @@ export default function AdminVideosPage() {
       const data = await res.json();
       setSyncResult(data);
       fetchVideos(); fetchStats();
-    } catch {} finally { setSyncing(false); }
+    } catch (e: any) { console.error('Sync failed:', e); } finally { setSyncing(false); }
   };
 
   // Single actions
@@ -161,7 +164,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ active: !v.active, status: !v.active ? 'live' : 'pending', autoLinked: false }),
       });
       fetchVideos(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Toggle active failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleToggleFeatured = async (v: VideoItem) => {
@@ -172,7 +175,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ featured: !v.featured }),
       });
       fetchVideos(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleToggleHidden = async (v: VideoItem) => {
@@ -183,7 +186,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ hidden: !v.hidden, status: !v.hidden ? 'hidden' : 'live', active: v.hidden }),
       });
       fetchVideos(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Toggle hidden failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleDelete = async () => {
@@ -193,7 +196,7 @@ export default function AdminVideosPage() {
       await fetch(`/api/admin/videos/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
       setDeleteModal(null);
       fetchVideos(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleCopyUrl = (v: VideoItem) => {
@@ -211,7 +214,7 @@ export default function AdminVideosPage() {
       });
       const d = await res.json();
       if (d.success) { setSelected(new Set()); fetchVideos(); fetchStats(); }
-    } catch {} finally { setBulkLoading(false); }
+    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setBulkLoading(false); }
   };
 
   // Import video
@@ -225,7 +228,7 @@ export default function AdminVideosPage() {
       const d = await res.json();
       if (d.error) { setImportError(d.error); }
       else { setAddVideoModal(false); setImportUrl(''); fetchVideos(); fetchStats(); }
-    } catch { setImportError('Failed to import video'); }
+    } catch (e: any) { setImportError(e.message || 'Failed to import video'); }
     finally { setImportLoading(false); }
   };
 
@@ -375,6 +378,20 @@ export default function AdminVideosPage() {
             ))}
           </div>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-blue-600 hover:underline">Clear</button>
+        </div>
+      )}
+
+      {/* ─── Error Card ─── */}
+      {error && (
+        <div className="card-premium p-6 border border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
+            <div className="flex-1">
+              <h3 className="font-bold text-sm text-red-900">Failed to load data</h3>
+              <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => { setError(''); fetchVideos(); fetchStats(); }} className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors">Retry</button>
+          </div>
         </div>
       )}
 

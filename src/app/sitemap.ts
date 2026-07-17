@@ -28,9 +28,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const conn = await connectDBSafe();
     if (!conn) return staticPages;
 
-    const [phones, brands] = await Promise.all([
+    const [phones, brands, newsArticles] = await Promise.all([
       Phone.find({ active: true, status: 'published' }).select('slug updatedAt').lean(),
       Brand.find({ active: true }).select('slug updatedAt').lean(),
+      News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
     ]);
 
     const phonePages: MetadataRoute.Sitemap = phones.map((p: any) => ({
@@ -47,7 +48,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    return [...staticPages, ...phonePages, ...brandPages];
+    const newsPages: MetadataRoute.Sitemap = newsArticles.map((n: any) => ({
+      url: `${BASE_URL}/news/${n.slug}`,
+      lastModified: n.updatedAt ? new Date(n.updatedAt) : new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }));
+
+    const reviewPages: MetadataRoute.Sitemap = phones.map((p: any) => ({
+      url: `${BASE_URL}/reviews/${p.slug}`,
+      lastModified: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    }));
+
+    return [...staticPages, ...phonePages, ...brandPages, ...newsPages, ...reviewPages];
   } catch {
     return staticPages;
   }

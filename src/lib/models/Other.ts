@@ -19,6 +19,7 @@ const NewsSchema = new Schema({
 NewsSchema.index({ slug: 1 }, { unique: true });
 NewsSchema.index({ status: 1 });
 NewsSchema.index({ published: 1, status: 1 });
+NewsSchema.index({ published: 1, status: 1, createdAt: -1 });
 
 export const News = mongoose.models.News || mongoose.model('News', NewsSchema);
 
@@ -106,6 +107,7 @@ const ActivityLogSchema = new Schema({
 }, { timestamps: true });
 
 ActivityLogSchema.index({ createdAt: -1 }, { expireAfterSeconds: 7776000 });
+ActivityLogSchema.index({ adminId: 1, createdAt: -1 });
 
 export const ActivityLog = mongoose.models.ActivityLog || mongoose.model('ActivityLog', ActivityLogSchema);
 

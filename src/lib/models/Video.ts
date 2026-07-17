@@ -57,5 +57,6 @@ VideoSchema.index({ status: 1 });
 VideoSchema.index({ featured: 1 });
 VideoSchema.index({ syncStatus: 1 });
 VideoSchema.index({ createdAt: -1 });
+VideoSchema.index({ active: 1, publishedAt: -1 });
 
 export const Video = (mongoose.models.Video as mongoose.Model<IVideo>) || mongoose.model<IVideo>('Video', VideoSchema);

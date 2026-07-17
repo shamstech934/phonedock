@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Newspaper, Plus, Edit, Trash2, Check, X, Eye, Star, Archive, Copy,
   Search, Filter, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  BarChart3, FileText, Calendar, TrendingUp, Clock, BookOpen
+  BarChart3, FileText, Calendar, TrendingUp, Clock, BookOpen, AlertCircle
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -55,6 +55,7 @@ export default function AdminNewsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteModal, setDeleteModal] = useState<NewsItem | null>(null);
+  const [error, setError] = useState('');
 
   // Debounced search
   useEffect(() => {
@@ -64,20 +65,25 @@ export default function AdminNewsPage() {
   }, [searchQuery]);
 
   const fetchNews = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(rowsPerPage), sort });
       if (debouncedSearch.length >= 2) params.set('search', debouncedSearch);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (categoryFilter) params.set('category', categoryFilter);
       const res = await fetch(`/api/admin/news?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setNews(d.news || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) { setError(e.message || 'Failed to load news articles'); } finally { setLoading(false); }
   }, [page, rowsPerPage, sort, statusFilter, categoryFilter, debouncedSearch]);
 
   const fetchStats = useCallback(async () => {
-    try { const res = await fetch('/api/admin/news/stats', { credentials: 'include' }); setStats(await res.json()); } catch {}
+    try {
+      const res = await fetch('/api/admin/news/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+      setStats(await res.json());
+    } catch (e: any) { console.error('Failed to load news stats:', e); }
   }, []);
 
   useEffect(() => { fetchNews(); fetchStats(); }, [fetchNews, fetchStats]);
@@ -87,7 +93,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${n.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ published: !n.published, status: !n.published ? 'published' : 'draft' }) });
       fetchNews(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Toggle publish failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleFeatured = async (n: NewsItem) => {
@@ -95,7 +101,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${n.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ featured: !n.featured }) });
       fetchNews(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleDelete = async () => {
@@ -104,7 +110,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
       setDeleteModal(null); fetchNews(); fetchStats();
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleBulkAction = async (action: string) => {
@@ -117,7 +123,7 @@ export default function AdminNewsPage() {
       });
       const d = await res.json();
       if (d.success) { setSelected(new Set()); fetchNews(); fetchStats(); }
-    } catch {} finally { setActionLoading(null); }
+    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleSelect = (id: string) => {
@@ -224,6 +230,20 @@ export default function AdminNewsPage() {
             ))}
           </div>
           <button onClick={() => setSelected(new Set())} className="ml-auto text-[11px] text-blue-600 hover:underline">Clear</button>
+        </div>
+      )}
+
+      {/* Error Card */}
+      {error && (
+        <div className="card-premium p-6 border border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
+            <div className="flex-1">
+              <h3 className="font-bold text-sm text-red-900">Failed to load data</h3>
+              <p className="text-xs text-red-600 mt-0.5">{error}</p>
+            </div>
+            <button onClick={() => { setError(''); fetchNews(); fetchStats(); }} className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors">Retry</button>
+          </div>
         </div>
       )}
 

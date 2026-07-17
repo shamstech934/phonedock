@@ -244,7 +244,7 @@ export default function AdminUsersPage() {
       setStatsLoading(true);
       const res = await apiFetch('/api/admin/users/stats');
       if (res.ok) setStats(await res.json());
-    } catch (e) { console.error('[stats]', e); }
+    } catch (e) { console.error('[stats]', e); showToast('Failed to load stats', 'error'); }
     setStatsLoading(false);
   }, []);
 
@@ -296,7 +296,7 @@ export default function AdminUsersPage() {
         setDetailUser(data);
         setEditPerms(data.customPermissions || []);
       }
-    } catch (e) { console.error('[detail]', e); }
+    } catch (e) { console.error('[detail]', e); showToast('Failed to load user details', 'error'); }
     setDetailLoading(false);
   };
 
@@ -400,7 +400,8 @@ export default function AdminUsersPage() {
     try {
       const res = await apiFetch('/api/admin/sessions', { method: 'DELETE' });
       if (res.ok) { showToast('All other sessions revoked'); if (detailUser?.id === userId) openDetail(userId); }
-    } catch {}
+      else showToast('Failed to revoke sessions', 'error');
+    } catch { showToast('Connection error', 'error'); }
   };
 
   // Save permissions
@@ -426,6 +427,9 @@ export default function AdminUsersPage() {
     if (selected.size === users.length) setSelected(new Set());
     else setSelected(new Set(users.map(u => u.id)));
   };
+
+  // Check if user is the last superadmin (cannot be deleted or demoted)
+  const isLastSuperAdmin = (u: { role: string }) => (stats?.superAdmins ?? 0) <= 1 && u.role === 'superadmin';
 
   // Edit user modal
   const openEdit = (u: AdminUser) => {
@@ -649,8 +653,11 @@ export default function AdminUsersPage() {
                             )}
                             <button onClick={() => { handleUpdateUser(u.id, { requirePasswordChange: true }); setShowBulkMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2"><KeyRound className="w-3.5 h-3.5 text-gray-500" /> Force Reset</button>
                             <button onClick={() => { handleUpdateUser(u.id, { twoFactorEnabled: !u.twoFactorEnabled }); setShowBulkMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2"><Fingerprint className="w-3.5 h-3.5 text-gray-500" /> {u.twoFactorEnabled ? 'Disable' : 'Enable'} 2FA</button>
-                            {u.id !== admin?.id && (
+                            {u.id !== admin?.id && !isLastSuperAdmin(u) && (
                               <button onClick={() => { setDeleteConfirm(u.id); setShowBulkMenu(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 flex items-center gap-2 text-red-600"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+                            )}
+                            {u.id !== admin?.id && isLastSuperAdmin(u) && (
+                              <span className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-gray-400 cursor-not-allowed"><Trash2 className="w-3.5 h-3.5" /> Delete (last superadmin)</span>
                             )}
                           </div>
                         )}
@@ -783,9 +790,10 @@ export default function AdminUsersPage() {
               {editUser.id !== admin?.id && (
                 <div>
                   <label className="text-xs font-medium text-gray-700 mb-1 block">Role</label>
-                  <select value={editRole} onChange={e => setEditRole(e.target.value)} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white">
+                  <select value={editRole} onChange={e => setEditRole(e.target.value)} disabled={isLastSuperAdmin(editUser)} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500">
                     {ALL_ROLES.filter(r => isSuperAdmin || r !== 'superadmin').map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
                   </select>
+                  {isLastSuperAdmin(editUser) && <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1"><ShieldAlert className="w-3 h-3" />Cannot demote the last superadmin</p>}
                 </div>
               )}
             </div>
@@ -1013,19 +1021,27 @@ export default function AdminUsersPage() {
                           <p className="text-xs">No recent activity</p>
                         </div>
                       ) : (
-                        detailUser.recentActivity.map((log, i) => (
-                          <div key={log.id || i} className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
-                            <div className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
-                              <Activity className="w-3.5 h-3.5 text-gray-400" />
+                        <>
+                          {detailUser.recentActivity.map((log, i) => (
+                            <div key={log.id || i} className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
+                              <div className="w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 mt-0.5">
+                                <Activity className="w-3.5 h-3.5 text-gray-400" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-gray-900">{log.action.replace(/_/g, ' ')}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{log.details}</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{formatRelative(log.createdAt)}</p>
+                              </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-gray-900">{log.action.replace(/_/g, ' ')}</p>
-                              <p className="text-[10px] text-muted-foreground truncate">{log.details}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">{formatRelative(log.createdAt)}</p>
-                            </div>
-                          </div>
-                        ))
+                          ))}
+                        </>
                       )}
+                      <a
+                        href={`/admin/activity?adminId=${detailUser.id}`}
+                        className="flex items-center justify-center gap-1.5 pt-3 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors border-t border-gray-100 mt-2"
+                      >
+                        <ExternalLink className="w-3 h-3" /> View Full Audit Log
+                      </a>
                     </div>
                   )}
 
@@ -1081,9 +1097,15 @@ export default function AdminUsersPage() {
                       <div className="border border-amber-100 bg-amber-50/50 rounded-xl p-3 mt-4">
                         <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Danger Zone</p>
                         <p className="text-[10px] text-amber-700 mt-1">Permanently delete this user and revoke all sessions.</p>
-                        <button onClick={() => { setDeleteConfirm(detailUser.id); }} className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600 transition-colors">
-                          Delete User
-                        </button>
+                        {isLastSuperAdmin(detailUser) ? (
+                          <span className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-gray-300 text-gray-500 cursor-not-allowed">
+                            <ShieldAlert className="w-3 h-3" /> Cannot delete last superadmin
+                          </span>
+                        ) : (
+                          <button onClick={() => { setDeleteConfirm(detailUser.id); }} className="mt-2 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600 transition-colors">
+                            Delete User
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

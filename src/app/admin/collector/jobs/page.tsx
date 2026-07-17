@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -15,13 +15,21 @@ export default function AdminCollectorJobsPage() {
   useAdmin();
   const [jobs, setJobs] = useState<CollectorJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
   const [deleteModal, setDeleteModal] = useState<CollectorJob | null>(null);
 
-  useEffect(() => {
+  const fetchJobs = useCallback(() => {
+    setLoading(true);
+    setError(null);
     fetch('/api/collector/jobs', { credentials: 'include' })
-      .then(r => r.json()).then(d => { setJobs(d.jobs || []); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(r => { if (!r.ok) throw new Error('Failed to fetch jobs'); return r.json(); })
+      .then(d => { setJobs(d.jobs || []); setLoading(false); })
+      .catch((e) => { setError(e?.message || 'Failed to load jobs. Please try again.'); setLoading(false); });
   }, []);
+
+  useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   const deleteJob = async (id: string) => {
     try {
@@ -39,9 +47,39 @@ export default function AdminCollectorJobsPage() {
     cancelled: { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-50', label: 'Cancelled' },
   };
 
-  const running = jobs.filter(j => j.status === 'running').length;
+  const totalJobs = jobs.length;
   const completed = jobs.filter(j => j.status === 'completed').length;
   const failed = jobs.filter(j => j.status === 'failed').length;
+  const running = jobs.filter(j => j.status === 'running').length;
+  const totalCollected = jobs.reduce((sum, j) => sum + (j.phonesCollected || 0), 0);
+
+  const filteredJobs = jobs
+    .filter(j => {
+      if (statusFilter !== 'all' && j.status !== statusFilter) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      const jobId = j.id?.slice(-6).toLowerCase() || '';
+      return jobId.includes(q);
+    });
+
+  if (error) return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-extrabold text-gray-900">Collector Jobs</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Job history and status</p>
+        </div>
+      </div>
+      <div className="card-premium p-6 text-center">
+        <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><AlertTriangle className="w-7 h-7 text-red-500" /></div>
+        <p className="text-sm font-semibold text-gray-900 mb-1">Unable to Load Jobs</p>
+        <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto">{error}</p>
+        <button onClick={fetchJobs} className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors">
+          <RotateCcw className="w-3.5 h-3.5" /> Retry
+        </button>
+      </div>
+    </div>
+  );
 
   if (loading) return <div className="space-y-3">{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-16 rounded-xl" />)}</div>;
 
@@ -55,18 +93,20 @@ export default function AdminCollectorJobsPage() {
         </div>
         <div className="flex items-center gap-2">
           {running > 0 && <Badge className="bg-blue-50 text-blue-700 text-[10px] font-medium border border-blue-200/50 animate-pulse"><Loader className="w-3 h-3 mr-1 animate-spin" /> {running} Running</Badge>}
-          <button onClick={() => window.location.reload()} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors" aria-label="Refresh">
+          <button onClick={fetchJobs} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors" aria-label="Refresh">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
+          { label: 'Total Jobs', value: totalJobs, icon: Clock, bg: 'bg-gray-100', color: 'text-gray-600' },
           { label: 'Completed', value: completed, icon: CheckCircle, bg: 'bg-emerald-50', color: 'text-emerald-600' },
           { label: 'Failed', value: failed, icon: XCircle, bg: 'bg-red-50', color: 'text-red-600' },
           { label: 'Running', value: running, icon: Zap, bg: 'bg-blue-50', color: 'text-blue-600' },
+          { label: 'Total Collected', value: totalCollected, icon: BarChart3, bg: 'bg-violet-50', color: 'text-violet-600' },
         ].map(s => (
           <div key={s.label} className="card-premium p-3.5">
             <div className={`w-7 h-7 ${s.bg} rounded-lg flex items-center justify-center mb-2`}><s.icon className={`w-3.5 h-3.5 ${s.color}`} /></div>
@@ -76,9 +116,22 @@ export default function AdminCollectorJobsPage() {
         ))}
       </div>
 
+      {/* Search & Filter */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by job ID..." className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {['all', 'running', 'completed', 'failed', 'pending'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 text-[11px] font-medium rounded-xl transition-colors ${statusFilter === s ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/25' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}</button>
+          ))}
+        </div>
+      </div>
+
       {/* Jobs List */}
       <div className="space-y-2">
-        {jobs.map(job => {
+        {filteredJobs.map(job => {
           const config = statusConfig[job.status] || statusConfig.pending;
           const Icon = config.icon;
           return (
@@ -131,6 +184,16 @@ export default function AdminCollectorJobsPage() {
             </div>
           );
         })}
+        {filteredJobs.length === 0 && jobs.length > 0 && (
+          <div className="text-center py-16">
+            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3"><Filter className="w-7 h-7 text-gray-300" /></div>
+            <p className="text-sm font-medium text-gray-900">No jobs match your filter</p>
+            <p className="text-xs text-muted-foreground mt-1">Try a different status filter or search term.</p>
+            <button onClick={() => { setStatusFilter('all'); setSearch(''); }} className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100">
+              <RotateCcw className="w-3.5 h-3.5" /> Clear Filters
+            </button>
+          </div>
+        )}
         {jobs.length === 0 && (
           <div className="text-center py-20">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4"><Clock className="w-8 h-8 text-gray-300" /></div>
