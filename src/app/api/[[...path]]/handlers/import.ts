@@ -22,6 +22,30 @@ export async function handleImportGet(req: NextRequest, segments: string[]): Pro
     return NextResponse.json(history);
   }
 
+  // ---- /api/import/stats ----
+  if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'imports:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const { ImportHistory } = await import('@/lib/models/ImportHistory');
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [totalImports, successfulImports, failedImports, todayImports] = await Promise.all([
+      ImportHistory.countDocuments({}),
+      ImportHistory.countDocuments({ status: { $ne: 'failed' } }),
+      ImportHistory.countDocuments({ status: 'failed' }),
+      ImportHistory.countDocuments({ createdAt: { $gte: todayStart } }),
+    ]);
+    const lastImport = await ImportHistory.findOne().sort({ createdAt: -1 }).select('createdAt duration filename').lean();
+    const totalRecords = await ImportHistory.aggregate([{ $group: { _id: null, total: { $sum: '$imported' }, updated: { $sum: '$updated' }, failed: { $sum: '$failed' } } }]);
+    const t = totalRecords[0] || {};
+    return NextResponse.json({
+      totalImports, successfulImports, failedImports, todayImports,
+      totalImported: t.total || 0, totalUpdated: t.updated || 0, totalFailed: t.failed || 0,
+      lastImportTime: (lastImport as any)?.createdAt || null,
+      lastImportDuration: (lastImport as any)?.duration || 0,
+    });
+  }
+
   return undefined;
 }
 
