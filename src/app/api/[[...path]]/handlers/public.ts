@@ -128,7 +128,29 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
         .populate('brand').lean(),
       Phone.countDocuments(filter),
     ]);
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit }, 120, 300);
+
+    // Batch-fetch basic specs for Quick View (same pattern as fetchHeroPhones)
+    const phoneIds = phones.map((p: any) => p._id);
+    const specsArr = phoneIds.length > 0 ? await PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean() : [];
+    const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
+
+    const phonesWithSpecs = phones.map((p: any) => {
+      const json = phoneToJSON(p);
+      const sp = specsMap.get(p._id?.toString());
+      if (sp) {
+        json.specs = {
+          ram: sp.ram || '',
+          mainCamera: sp.mainCamera || '',
+          battery: sp.battery || '',
+          chipset: sp.chipset || '',
+          display: sp.display || '',
+          storage: sp.storage || '',
+        };
+      }
+      return json;
+    });
+
+    return cached({ phones: phonesWithSpecs, total, page, limit }, 120, 300);
   }
 
   // ---- /api/phones/lookup (compare phone lookup by slugs/IDs) ----
