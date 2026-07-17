@@ -158,17 +158,51 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     return NextResponse.json({ sponsors: sponsors.map((s: any) => ({ ...s, id: s._id?.toString() })) });
   }
 
-  // ---- /api/admin/activity ----
+  // ---- /api/admin/activity (ENHANCED LIST) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'activity') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
     await connectDB();
-    const logs = await ActivityLog.find().sort({ createdAt: -1 }).limit(100).populate('adminId', 'name email').lean();
-    return NextResponse.json({ logs: logs.map((l: any) => ({
-      ...l,
-      id: l._id?.toString(),
-      admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined,
-    })) });
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
+    const filter: any = {};
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [{ action: { $regex: safe, $options: 'i' } }, { details: { $regex: safe, $options: 'i' } }];
+    }
+    const module = url.searchParams.get('module');
+    if (module) filter.entityType = module;
+    const actionType = url.searchParams.get('action');
+    if (actionType) filter.action = { $regex: actionType, $options: 'i' };
+    const [logs, total] = await Promise.all([
+      ActivityLog.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('adminId', 'name email role').lean(),
+      ActivityLog.countDocuments(filter),
+    ]);
+    return NextResponse.json({
+      logs: logs.map((l: any) => ({
+        ...l, id: l._id?.toString(),
+        admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email, role: l.adminId.role } : undefined,
+      })),
+      total, page, limit, totalPages: Math.ceil(total / limit),
+    });
+  }
+
+  // ---- /api/admin/activity/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'activity' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [total, todayActivities, securityEvents] = await Promise.all([
+      ActivityLog.countDocuments({}),
+      ActivityLog.countDocuments({ createdAt: { $gte: todayStart } }),
+      ActivityLog.countDocuments({ action: { $regex: 'delete|password|login_fail|permission', $options: 'i' } }),
+    ]);
+    const moduleBreakdown = await ActivityLog.aggregate([{ $group: { _id: '$entityType', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 10 }]);
+    const recentAdmins = await ActivityLog.distinct('adminId', { createdAt: { $gte: todayStart } });
+    return NextResponse.json({ total, todayActivities, securityEvents, moduleBreakdown, activeAdminsToday: recentAdmins.length });
   }
 
   // ---- /api/admin/videos/stats ----
