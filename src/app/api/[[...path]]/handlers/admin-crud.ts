@@ -857,6 +857,10 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
     await connectDB();
+    const review = await UserReview.findById(segments[2]);
+    if (review) {
+      try { await ActivityLog.create({ adminId: admin._id, action: 'delete_review', details: `Deleted review by ${review.name}`, entityType: 'review', entityId: segments[2] }); } catch (e) { console.error('[ActivityLog]', e); }
+    }
     await UserReview.findByIdAndDelete(segments[2]);
     return NextResponse.json({ success: true });
   }
@@ -917,28 +921,62 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     return NextResponse.json({ success: true });
   }
 
-  // ---- /api/admin/reviews ----
+  // ---- /api/admin/reviews/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [total, pending, approved, rejected, flagged, spam, todayReviews] = await Promise.all([
+      UserReview.countDocuments({}),
+      UserReview.countDocuments({ status: 'pending' }),
+      UserReview.countDocuments({ status: 'approved' }),
+      UserReview.countDocuments({ status: 'rejected' }),
+      UserReview.countDocuments({ status: 'flagged' }),
+      UserReview.countDocuments({ spamFlags: { $exists: true, $ne: [] } }),
+      UserReview.countDocuments({ createdAt: { $gte: todayStart } }),
+    ]);
+    const avgRating = await UserReview.aggregate([{ $group: { _id: null, avg: { $avg: '$rating' } } }]);
+    return NextResponse.json({ total, pending, approved, rejected, flagged, spam, todayReviews, avgRating: avgRating[0]?.avg ? Number(avgRating[0].avg.toFixed(1)) : 0 });
+  }
+
+  // ---- /api/admin/reviews (ENHANCED LIST) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'reviews') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const status = url.searchParams.get('status') || 'pending';
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = 20;
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
     const filter: any = {};
+    const status = url.searchParams.get('status') || 'all';
     if (status !== 'all') filter.status = status;
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [{ name: { $regex: safe, $options: 'i' } }, { comment: { $regex: safe, $options: 'i' } }, { email: { $regex: safe, $options: 'i' } }];
+    }
+    const rating = url.searchParams.get('rating');
+    if (rating) { const r = parseInt(rating); if (r >= 1 && r <= 5) filter.rating = r; }
+    const sortParam = url.searchParams.get('sort');
+    let sort: any = { createdAt: -1 };
+    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    else if (sortParam === 'highest') sort = { rating: -1 };
+    else if (sortParam === 'lowest') sort = { rating: 1 };
     const [reviews, total] = await Promise.all([
-      UserReview.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      UserReview.find(filter).sort(sort).skip((page - 1) * limit).limit(limit).lean(),
       UserReview.countDocuments(filter),
     ]);
     const phoneIds = [...new Set(reviews.map((r: any) => r.phoneId.toString()))];
-    const phones = await Phone.find({ _id: { $in: phoneIds } }).select('modelName slug thumbnail').lean();
-    const phoneMap = Object.fromEntries(phones.map((p: any) => [p._id.toString(), { modelName: p.modelName, slug: p.slug, thumbnail: p.thumbnail }]));
-    return NextResponse.json({ reviews: reviews.map((r: any) => ({ ...r, id: r._id?.toString(), phone: phoneMap[r.phoneId?.toString()], email: undefined })), total, page, limit });
+    const phones = await Phone.find({ _id: { $in: phoneIds } }).select('modelName slug thumbnail brand').populate('brand', 'name').lean();
+    const phoneMap = Object.fromEntries(phones.map((p: any) => [p._id.toString(), { modelName: p.modelName, slug: p.slug, thumbnail: p.thumbnail, brand: p.brand?.name || '' }]));
+    return NextResponse.json({
+      reviews: reviews.map((r: any) => ({ ...r, id: r._id?.toString(), phone: phoneMap[r.phoneId?.toString()], email: undefined })),
+      total, page, limit, totalPages: Math.ceil(total / limit),
+    });
   }
 
-  // ---- /api/admin/reviews/:id (UPDATE status) ----
+  // ---- /api/admin/reviews/:id (UPDATE status — enhanced) ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
@@ -946,14 +984,14 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const body = await req.json();
     const review = await UserReview.findById(segments[2]);
     if (!review) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    if (body.status && ['approved', 'rejected'].includes(body.status)) review.status = body.status;
+    const validStatuses = ['approved', 'rejected', 'flagged', 'pending', 'spam'];
+    if (body.status && validStatuses.includes(body.status)) {
+      review.status = body.status;
+      try { await ActivityLog.create({ adminId: admin._id, action: `${body.status}_review`, details: `${body.status}: ${review.name} for ${review.phoneId}`, entityType: 'review', entityId: segments[2] }); } catch (e) { console.error('[ActivityLog]', e); }
+    }
+    if (body.featured !== undefined) review.featured = body.featured;
     await review.save();
     return NextResponse.json({ success: true });
-  }
-
-  // ---- /api/admin/reviews/:id (DELETE) ----
-  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
-    // handled by DELETE handler below
   }
 
   return undefined;
