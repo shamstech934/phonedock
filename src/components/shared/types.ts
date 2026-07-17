@@ -167,6 +167,8 @@ export interface HomeData {
   };
   brands: Brand[];
   sponsors?: Sponsor[];
+  totalPhones?: number;
+  totalBrands?: number;
 }
 
 export interface AdminUser {

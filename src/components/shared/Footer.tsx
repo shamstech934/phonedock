@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { Smartphone } from 'lucide-react';
+import { Smartphone, Star, Play, Shield, BarChart3 } from 'lucide-react';
+
+const FOOTER_BRANDS = ['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'];
 
 export function Footer() {
   return (
@@ -19,8 +21,23 @@ export function Footer() {
           <div>
             <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
             <div className="space-y-2.5 text-sm">
-              {['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'].map(b => (
+              {FOOTER_BRANDS.map(b => (
                 <Link key={b} href={`/brands/${b.toLowerCase()}`} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</Link>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 className="font-semibold text-white mb-4 text-sm">Explore</h4>
+            <div className="space-y-2.5 text-sm">
+              {[
+                { l: 'Compare Phones', h: '/compare', icon: BarChart3 },
+                { l: 'Reviews', h: '/reviews', icon: Star },
+                { l: 'Videos', h: '/videos', icon: Play },
+                { l: 'PTA Status', h: '/phones', icon: Shield },
+                { l: 'Price Ranges', h: '/price-ranges', icon: BarChart3 },
+                { l: 'News', h: '/news', icon: null },
+              ].map(item => (
+                <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
               ))}
             </div>
           </div>
@@ -28,8 +45,12 @@ export function Footer() {
             <h4 className="font-semibold text-white mb-4 text-sm">Quick Links</h4>
             <div className="space-y-2.5 text-sm">
               {[
-                { l: 'Home', h: '/' }, { l: 'Compare', h: '/compare' }, { l: 'News', h: '/news' },
-                { l: 'About', h: '/about' }, { l: 'Contact', h: '/contact' }, { l: 'Advertise', h: '/advertise' },
+                { l: 'Home', h: '/' },
+                { l: 'All Brands', h: '/brands' },
+                { l: 'About', h: '/about' },
+                { l: 'Contact', h: '/contact' },
+                { l: 'Advertise', h: '/advertise' },
+                { l: 'Best Budget Phones', h: '/best-budget-phone' },
               ].map(item => (
                 <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
               ))}
@@ -43,19 +64,8 @@ export function Footer() {
                 { l: 'Terms & Conditions', h: '/terms' },
                 { l: 'Disclaimer', h: '/disclaimer' },
                 { l: 'Affiliate Disclosure', h: '/affiliate-disclosure' },
-              ].map(item => (
-                <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h4 className="font-semibold text-white mb-4 text-sm">About Our Data</h4>
-            <div className="space-y-2.5 text-sm">
-              {[
                 { l: 'Data Sources', h: '/data-sources' },
-                { l: 'How We Test', h: '/how-we-test' },
                 { l: 'Rating Methodology', h: '/rating-methodology' },
-                { l: 'FAQ', h: '/faq' },
               ].map(item => (
                 <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
               ))}

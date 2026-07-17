@@ -24,7 +24,7 @@ export async function fetchHomeData() {
     News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
   ]);
 
-  const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors] = await Promise.all([
+  const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors, totalPhones, totalBrands] = await Promise.all([
     Phone.find({ active: true, status: 'published', pricePKR: { $gt: 100000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
     Phone.find({ active: true, status: 'published', pricePKR: { $gt: 60000, $lte: 100000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
     Phone.find({ active: true, status: 'published', pricePKR: { $gt: 40000, $lte: 60000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
@@ -37,6 +37,8 @@ export async function fetchHomeData() {
       { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
     ]),
     Sponsor.find({ active: true }).lean().catch(() => []),
+    Phone.countDocuments({ active: true, status: 'published' }),
+    Brand.countDocuments({ active: true }),
   ]);
 
   const priceCategories = {
@@ -87,6 +89,8 @@ export async function fetchHomeData() {
       position: s.position || 'sidebar',
       active: s.active ?? true,
     })),
+    totalPhones: totalPhones as number,
+    totalBrands: totalBrands as number,
   };
 }
 
