@@ -40,8 +40,9 @@ const AdminSchema = new Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
   password: { type: String, required: true, select: false },
   name: { type: String, default: '', trim: true },
-  role: { type: String, enum: ['superadmin', 'admin', 'editor', 'reviewer'], default: 'admin' },
+  role: { type: String, enum: ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'], default: 'admin' },
   active: { type: Boolean, default: true },
+  phone: { type: String, default: '', trim: true },
   lastLogin: { type: Date },
   lastLoginIp: { type: String, default: '' },
   lastLoginUA: { type: String, default: '' },
@@ -56,10 +57,30 @@ const AdminSchema = new Schema({
   // Password reset token (for forgot-password flow) — stored as hash
   resetTokenHash: { type: String, select: false },
   resetTokenExpires: { type: Date, select: false },
+  // Two-Factor Authentication
+  twoFactorEnabled: { type: Boolean, default: false },
+  twoFactorSecret: { type: String, default: '', select: false },
+  twoFactorRecoveryCodes: { type: [String], default: [], select: false },
+  // Granular custom permissions (override role-based permissions)
+  customPermissions: { type: [String], default: [] },
+  // Suspension
+  suspended: { type: Boolean, default: false },
+  suspendedReason: { type: String, default: '' },
+  suspendedUntil: { type: Date },
+  // Force password reset on next login
+  requirePasswordChange: { type: Boolean, default: false },
+  // Invitation system
+  invitedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
+  invitedAt: { type: Date },
+  invitationTokenHash: { type: String, default: '', select: false },
+  invitationExpires: { type: Date, select: false },
+  invitationAccepted: { type: Boolean, default: false },
 }, { timestamps: true });
 
 AdminSchema.index({ email: 1 }, { unique: true });
 AdminSchema.index({ role: 1 });
+AdminSchema.index({ active: 1 });
+AdminSchema.index({ 'customPermissions': 1 });
 
 export const Admin = mongoose.models.Admin || mongoose.model('Admin', AdminSchema);
 

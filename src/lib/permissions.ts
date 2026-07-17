@@ -1,6 +1,6 @@
 // ============ ROLE-BASED PERMISSION SYSTEM ============
 
-export type AdminRole = 'superadmin' | 'admin' | 'editor' | 'reviewer';
+export type AdminRole = 'superadmin' | 'admin' | 'editor' | 'moderator' | 'reviewer' | 'viewer';
 
 export type Permission =
   // Dashboard
@@ -80,12 +80,35 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'activity:read',
     'collectors:read',
   ]),
+  moderator: new Set<Permission>([
+    'dashboard:read',
+    'phones:read',
+    'brands:read',
+    'news:read',
+    'news:create',
+    'news:edit',
+    'activity:read',
+    'videos:read',
+  ]),
+  viewer: new Set<Permission>([
+    'dashboard:read',
+    'phones:read',
+    'brands:read',
+    'news:read',
+    'activity:read',
+    'videos:read',
+  ]),
 };
 
 // ============ PUBLIC API ============
 
 /** Check if a given role has a specific permission */
-export function hasPermission(role: AdminRole, permission: Permission): boolean {
+export function hasPermission(role: AdminRole, permission: Permission, customPermissions?: string[]): boolean {
+  if (role === 'superadmin') return true;
+  // If custom permissions are provided, use them as an override
+  if (customPermissions && customPermissions.length > 0) {
+    return customPermissions.includes(permission);
+  }
   return rolePermissions[role]?.has(permission) ?? false;
 }
 
@@ -101,5 +124,5 @@ export function getAllPermissions(): Permission[] {
 
 /** Get all defined roles */
 export function getAllRoles(): AdminRole[] {
-  return ['superadmin', 'admin', 'editor', 'reviewer'];
+  return ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'];
 }

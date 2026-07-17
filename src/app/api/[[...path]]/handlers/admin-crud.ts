@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, Admin, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video } from '@/lib/models';
-import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS } from './helpers';
+import crypto from 'crypto';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video } from '@/lib/models';
+import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 
 // ============ ADMIN CRUD GET ============
@@ -139,13 +140,185 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     });
   }
 
-  // ---- /api/admin/users ----
+  // ---- /api/admin/users/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const weekStart = new Date(Date.now() - 7*24*60*60*1000);
+    const monthStart = new Date(Date.now() - 30*24*60*60*1000);
+    const [total, superAdmins, activeAdmins, disabledAdmins, suspendedAdmins, failedToday, twoFactorEnabled, withCustomPerms] = await Promise.all([
+      Admin.countDocuments({}),
+      Admin.countDocuments({ role: 'superadmin' }),
+      Admin.countDocuments({ active: true, $or: [{ suspended: { $ne: true } }, { suspended: { $exists: false } }] }),
+      Admin.countDocuments({ active: false }),
+      Admin.countDocuments({ suspended: true }),
+      Admin.countDocuments({ failedAttempts: { $gt: 0 }, lastLogin: { $lt: todayStart } }),
+      Admin.countDocuments({ twoFactorEnabled: true }),
+      Admin.countDocuments({ customPermissions: { $exists: true, $ne: [] } }),
+    ]);
+    // Count online admins (active sessions in last 30 min)
+    const recentThreshold = new Date(Date.now() - 30*60*1000);
+    const onlineAdmins = await AdminSession.countDocuments({ lastUsedAt: { $gte: recentThreshold }, revokedAt: null, expiresAt: { $gt: new Date() } });
+    // Count active sessions total
+    const activeSessions = await AdminSession.countDocuments({ revokedAt: null, expiresAt: { $gt: new Date() } });
+    // Failed login attempts today
+    const failedLoginToday = await Admin.countDocuments({ failedAttempts: { $gt: 0 }, updatedAt: { $gte: todayStart } });
+    return NextResponse.json({ total, superAdmins, activeAdmins, disabledAdmins, suspendedAdmins, failedToday: failedLoginToday, onlineAdmins, activeSessions, twoFactorEnabled, withCustomPerms });
+  }
+
+  // ---- /api/admin/users/:id (DETAIL) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users' && segments[2] !== 'stats' && segments[2] !== 'bulk' && segments[2] !== 'invite' && segments[2] !== 'export') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const targetUser = await Admin.findById(segments[2]).select('-password -resetTokenHash -resetTokenExpires -invitationTokenHash -invitationExpires -twoFactorSecret').lean();
+    if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // Get sessions
+    const sessions = await getActiveSessions(targetUser._id.toString());
+    // Get recent activity for this user
+    const recentActivity = await ActivityLog.find({ adminId: targetUser._id }).sort({ createdAt: -1 }).limit(20).lean();
+    // Count sessions
+    const sessionCount = sessions.length;
+    // Derive status
+    let status = 'active';
+    if ((targetUser as any).suspended) status = 'suspended';
+    else if (!targetUser.active) status = 'inactive';
+    return NextResponse.json({
+      ...targetUser, id: targetUser._id?.toString(), _id: undefined, __v: undefined,
+      status,
+      sessionCount,
+      sessions: sessions.map((s: any) => ({
+        id: s._id?.toString(),
+        jti: s.tokenJti,
+        ip: s.ip || '',
+        userAgent: (s.userAgent || '').slice(0, 200),
+        lastUsedAt: s.lastUsedAt,
+        createdAt: s.createdAt,
+        isCurrent: false,
+      })),
+      recentActivity: recentActivity.map((l: any) => ({ ...l, id: l._id?.toString(), _id: undefined })),
+    });
+  }
+
+  // ---- /api/admin/users/export ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users' && segments[2] === 'export') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const users = await Admin.find().select('-password -resetTokenHash -resetTokenExpires -twoFactorSecret -twoFactorRecoveryCodes -invitationTokenHash -invitationExpires -customPermissions').sort({ createdAt: -1 }).lean();
+    const csvHeader = 'Name,Email,Role,Status,2FA,Last Login,Failed Attempts,Created At\n';
+    const csvRows = users.map((u: any) => {
+      let status = 'Active';
+      if (u.suspended) status = 'Suspended';
+      else if (!u.active) status = 'Inactive';
+      return `"${(u.name || '').replace(/"/g, '""')}","${u.email}","${u.role}","${status}","${u.twoFactorEnabled ? 'Yes' : 'No'}","${u.lastLogin ? new Date(u.lastLogin).toISOString() : 'Never'}","${u.failedAttempts || 0}","${new Date(u.createdAt).toISOString()}"`;
+    }).join('\n');
+    return new NextResponse(csvHeader + csvRows, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="admin-users-${new Date().toISOString().slice(0,10)}.csv"`,
+      },
+    });
+  }
+
+  // ---- /api/admin/users (ENHANCED LIST) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
     await connectDB();
-    const users = await Admin.find().select('-password -resetTokenHash -resetTokenExpires').sort({ createdAt: -1 }).lean();
-    return NextResponse.json({ users: users.map((u: any) => ({ ...u, id: u._id?.toString() })) });
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const skip = (page - 1) * limit;
+    const filter: any = {};
+    // Search
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { name: { $regex: safe, $options: 'i' } },
+        { email: { $regex: safe, $options: 'i' } },
+        { role: { $regex: safe, $options: 'i' } },
+      ];
+    }
+    // Role filter
+    const role = url.searchParams.get('role');
+    if (role && role !== 'all') filter.role = role;
+    // Status filter
+    const status = url.searchParams.get('status');
+    if (status === 'active') { filter.active = true; filter.$or = filter.$or ? [...filter.$or, { suspended: { $ne: true } }] : undefined; if (!filter.$or) filter.suspended = { $ne: true }; }
+    else if (status === 'inactive') filter.active = false;
+    else if (status === 'suspended') filter.suspended = true;
+    // 2FA filter
+    const tfa = url.searchParams.get('twoFactor');
+    if (tfa === 'enabled') filter.twoFactorEnabled = true;
+    else if (tfa === 'disabled') { filter.$or = filter.$or ? [...filter.$or, { twoFactorEnabled: { $ne: true } }] : [{ twoFactorEnabled: { $ne: true } }]; }
+    // Last login filter
+    const lastLogin = url.searchParams.get('lastLogin');
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    if (lastLogin === 'today') filter.lastLogin = { $gte: todayStart };
+    else if (lastLogin === 'week') filter.lastLogin = { $gte: new Date(Date.now() - 7*24*60*60*1000) };
+    else if (lastLogin === 'month') filter.lastLogin = { $gte: new Date(Date.now() - 30*24*60*60*1000) };
+    // Sort
+    let sort: any = { createdAt: -1 };
+    const sortParam = url.searchParams.get('sort');
+    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    else if (sortParam === 'name') sort = { name: 1 };
+    else if (sortParam === 'recent') sort = { lastLogin: -1 };
+    else if (sortParam === 'role') sort = { role: 1, name: 1 };
+    else if (sortParam === 'status') sort = { active: -1, suspended: 1, name: 1 };
+
+    // Fix $or conflicts between search and other filters
+    if (search.length >= 2 && (status || tfa || lastLogin)) {
+      // Merge $or conditions properly
+      const searchOr = [
+        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { email: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { role: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+      delete filter.$or;
+      // Build proper query with $and
+      const andConditions: any[] = [{ $or: searchOr }];
+      if (status === 'active') andConditions.push({ active: true, suspended: { $ne: true } });
+      else if (status === 'inactive') andConditions.push({ active: false });
+      else if (status === 'suspended') andConditions.push({ suspended: true });
+      if (tfa === 'enabled') andConditions.push({ twoFactorEnabled: true });
+      else if (tfa === 'disabled') andConditions.push({ $or: [{ twoFactorEnabled: false }, { twoFactorEnabled: { $exists: false } }] });
+      if (lastLogin === 'today') andConditions.push({ lastLogin: { $gte: todayStart } });
+      else if (lastLogin === 'week') andConditions.push({ lastLogin: { $gte: new Date(Date.now() - 7*24*60*60*1000) } });
+      else if (lastLogin === 'month') andConditions.push({ lastLogin: { $gte: new Date(Date.now() - 30*24*60*60*1000) } });
+
+      const [users, total] = await Promise.all([
+        Admin.find({ $and: andConditions }).select('-password -resetTokenHash -resetTokenExpires -twoFactorSecret -twoFactorRecoveryCodes -invitationTokenHash -invitationExpires').sort(sort).skip(skip).limit(limit).lean(),
+        Admin.countDocuments({ $and: andConditions }),
+      ]);
+      return NextResponse.json({
+        users: users.map((u: any) => {
+          let userStatus = 'active';
+          if (u.suspended) userStatus = 'suspended';
+          else if (!u.active) userStatus = 'inactive';
+          const sessionCount = 0; // lazy — fetched on detail
+          return { ...u, id: u._id?.toString(), _id: undefined, __v: undefined, status: userStatus, sessionCount };
+        }),
+        total, page, limit, totalPages: Math.ceil(total / limit),
+      });
+    }
+
+    const [users, total] = await Promise.all([
+      Admin.find(filter).select('-password -resetTokenHash -resetTokenExpires -twoFactorSecret -twoFactorRecoveryCodes -invitationTokenHash -invitationExpires').sort(sort).skip(skip).limit(limit).lean(),
+      Admin.countDocuments(filter),
+    ]);
+    return NextResponse.json({
+      users: users.map((u: any) => {
+        let userStatus = 'active';
+        if (u.suspended) userStatus = 'suspended';
+        else if (!u.active) userStatus = 'inactive';
+        return { ...u, id: u._id?.toString(), _id: undefined, __v: undefined, status: userStatus, sessionCount: 0 };
+      }),
+      total, page, limit, totalPages: Math.ceil(total / limit),
+    });
   }
 
   // ---- /api/admin/sponsors ----
@@ -387,7 +560,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (!email || !name || !password) return NextResponse.json({ error: 'Email, name, and password required' }, { status: 400 });
     const pwCheck = isStrongPassword(password);
     if (!pwCheck.valid) return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
-    const validRoles = ['superadmin', 'admin', 'editor', 'reviewer'];
+    const validRoles = ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'];
     const assignedRole = validRoles.includes(role) ? role : 'admin';
     if (assignedRole === 'superadmin' && admin.role !== 'superadmin') {
       return NextResponse.json({ error: 'Only superadmins can create superadmin accounts' }, { status: 403 });
@@ -401,6 +574,111 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_user', details: `Created admin: ${email}`, entityType: 'admin', entityId: newAdmin._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: newAdmin._id?.toString() });
+  }
+
+  // ---- /api/admin/users/invite ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users' && segments[2] === 'invite') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
+    const body = await req.json();
+    const { email, role, expiresInHours = 48 } = body;
+    if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 });
+    const validRoles = ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'];
+    const assignedRole = validRoles.includes(role) ? role : 'admin';
+    if (assignedRole === 'superadmin' && admin.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Only superadmins can invite superadmins' }, { status: 403 });
+    }
+    const existing = await Admin.findOne({ email: email.toLowerCase() });
+    if (existing) return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + (expiresInHours || 48) * 60 * 60 * 1000);
+    // Create admin in pending/invited state
+    const tempPassword = crypto.randomBytes(24).toString('base64url').slice(0, 24);
+    const newAdmin = await Admin.create({
+      email: email.toLowerCase(), name: '', role: assignedRole,
+      password: await hashPassword(tempPassword),
+      active: false, invitationAccepted: false,
+      invitedBy: admin._id, invitedAt: new Date(),
+      invitationTokenHash: tokenHash, invitationExpires: expiresAt,
+      sessionVersion: 0,
+    });
+    try { await ActivityLog.create({ adminId: admin._id, action: 'invite_user', details: `Invited ${email} as ${assignedRole}`, entityType: 'admin', entityId: newAdmin._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    // Send invite email if configured
+    try {
+      if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST, port: parseInt(process.env.EMAIL_PORT || '587'),
+          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || '';
+        const acceptLink = `${baseUrl}/admin/accept-invite?token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER, to: email.toLowerCase(),
+          subject: `Invitation to join PhoneDock Admin`,
+          html: `<p>You've been invited to join PhoneDock as <strong>${assignedRole}</strong>.</p><p><a href="${acceptLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Accept Invitation</a></p><p>This link expires in ${expiresInHours} hours.</p>`,
+        });
+      }
+    } catch (e) { console.error('[Invite] Email failed:', (e as Error).message); }
+    return NextResponse.json({ success: true, id: newAdmin._id?.toString(), message: 'Invitation sent' });
+  }
+
+  // ---- /api/admin/users/bulk ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users' && segments[2] === 'bulk') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const { ids, action, role } = body;
+    if (!Array.isArray(ids) || ids.length === 0) return NextResponse.json({ error: 'ids array required' }, { status: 400 });
+    if (ids.length > 100) return NextResponse.json({ error: 'Max 100 users per bulk action' }, { status: 400 });
+    // Prevent acting on self
+    if (ids.includes(admin._id.toString()) && (action === 'delete' || action === 'deactivate' || action === 'suspend')) {
+      return NextResponse.json({ error: 'Cannot perform this action on your own account' }, { status: 400 });
+    }
+    const update: Record<string, any> = {};
+    if (action === 'activate') { update.active = true; update.suspended = false; }
+    else if (action === 'deactivate') { update.active = false; }
+    else if (action === 'suspend') { update.active = false; update.suspended = true; }
+    else if (action === 'assign_role') {
+      if (!role) return NextResponse.json({ error: 'Role required for assign_role action' }, { status: 400 });
+      const validRoles = ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'];
+      if (!validRoles.includes(role)) return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+      if (role === 'superadmin' && admin.role !== 'superadmin') return NextResponse.json({ error: 'Only superadmins can assign superadmin role' }, { status: 403 });
+      update.role = role;
+    }
+    else if (action === 'force_password_reset') { update.requirePasswordChange = true; update.$inc = { sessionVersion: 1 }; }
+    else if (action === 'delete') {
+      // Delete protection: check last superadmin
+      if (admin.role !== 'superadmin') return NextResponse.json({ error: 'Only superadmins can delete users' }, { status: 403 });
+      const targets = await Admin.find({ _id: { $in: ids } }).select('role').lean();
+      const hasSuperAdmin = targets.some((t: any) => t.role === 'superadmin');
+      if (hasSuperAdmin) {
+        const superCount = await Admin.countDocuments({ role: 'superadmin' });
+        if (superCount <= ids.length) return NextResponse.json({ error: 'Cannot delete all superadmins' }, { status: 400 });
+      }
+      const result = await Admin.deleteMany({ _id: { $in: ids, $ne: admin._id } });
+      // Also revoke their sessions
+      for (const id of ids) {
+        try { await revokeAllSessions(id); } catch {}
+      }
+      try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_users', details: `Bulk deleted ${result.deletedCount} users`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
+      return NextResponse.json({ success: true, deleted: result.deletedCount });
+    }
+    else {
+      return NextResponse.json({ error: 'Invalid action. Use: activate, deactivate, suspend, assign_role, force_password_reset, delete' }, { status: 400 });
+    }
+    const result = await Admin.updateMany({ _id: { $in: ids } }, { $set: update });
+    // If forcing password reset, also revoke sessions
+    if (action === 'force_password_reset') {
+      for (const id of ids) {
+        try { await revokeAllSessions(id); } catch {}
+      }
+    }
+    try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_users`, details: `Bulk ${action}: ${result.modifiedCount} users`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, modified: result.modifiedCount });
   }
 
   // ---- /api/admin/phones (CREATE) ----
@@ -850,6 +1128,85 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     return NextResponse.json({ success: true, id: video._id?.toString() });
   }
 
+  // ---- /api/admin/users/:id (UPDATE) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const targetId = segments[2];
+    const targetUser = await Admin.findById(targetId);
+    if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // Cannot modify own role or delete self
+    if (targetId === admin._id.toString()) {
+      // Allow limited self-edit: name, phone
+      const body = await req.json();
+      const allowed: string[] = [];
+      for (const key of allowed) {
+        if (body[key] !== undefined) (targetUser as any)[key] = body[key];
+      }
+      if (body.name !== undefined) targetUser.name = (body.name as string).trim();
+      if (body.phone !== undefined) targetUser.phone = (body.phone as string).trim();
+      await targetUser.save();
+      return NextResponse.json({ success: true, id: targetUser._id?.toString() });
+    }
+    const body = await req.json();
+    const updates: Record<string, any> = {};
+    let logDetails = '';
+    // Update name
+    if (body.name !== undefined) { updates.name = (body.name as string).trim(); logDetails += `name="${body.name}" `; }
+    // Update phone
+    if (body.phone !== undefined) { updates.phone = (body.phone as string).trim(); logDetails += `phone="${body.phone}" `; }
+    // Update role
+    if (body.role !== undefined) {
+      const validRoles = ['superadmin', 'admin', 'editor', 'moderator', 'reviewer', 'viewer'];
+      if (!validRoles.includes(body.role)) return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+      if (body.role === 'superadmin' && admin.role !== 'superadmin') return NextResponse.json({ error: 'Only superadmins can assign superadmin role' }, { status: 403 });
+      updates.role = body.role;
+      logDetails += `role=${body.role} `;
+    }
+    // Update active status
+    if (body.active !== undefined) { updates.active = body.active; logDetails += `active=${body.active} `; }
+    // Update suspended status
+    if (body.suspended !== undefined) {
+      updates.suspended = body.suspended;
+      if (body.suspended) { updates.active = false; updates.suspendedReason = body.suspendedReason || 'Suspended by admin'; if (body.suspendedUntil) updates.suspendedUntil = new Date(body.suspendedUntil); }
+      else { updates.suspendedReason = ''; updates.suspendedUntil = undefined; }
+      logDetails += `suspended=${body.suspended} `;
+    }
+    // Force password reset
+    if (body.requirePasswordChange !== undefined) {
+      updates.requirePasswordChange = body.requirePasswordChange;
+      if (body.requirePasswordChange) { updates.$inc = { sessionVersion: 1 }; }
+      logDetails += `requirePasswordChange=${body.requirePasswordChange} `;
+    }
+    // 2FA toggle
+    if (body.twoFactorEnabled !== undefined) {
+      updates.twoFactorEnabled = body.twoFactorEnabled;
+      if (!body.twoFactorEnabled) { updates.twoFactorSecret = ''; updates.twoFactorRecoveryCodes = []; }
+      logDetails += `2FA=${body.twoFactorEnabled} `;
+    }
+    // Custom permissions
+    if (body.customPermissions !== undefined) {
+      if (!Array.isArray(body.customPermissions)) return NextResponse.json({ error: 'customPermissions must be an array' }, { status: 400 });
+      updates.customPermissions = body.customPermissions;
+      logDetails += `customPermissions=[${body.customPermissions.length} perms] `;
+    }
+    // Reset failed attempts
+    if (body.resetFailedAttempts) {
+      updates.failedAttempts = 0;
+      updates.lockedUntil = undefined;
+      logDetails += 'resetFailedAttempts ';
+    }
+    if (Object.keys(updates).length === 0) return NextResponse.json({ error: 'No updates provided' }, { status: 400 });
+    const result = await Admin.findByIdAndUpdate(targetId, { $set: updates, ...(updates.$inc ? { $inc: updates.$inc } : {}) }, { new: true }).select('-password -resetTokenHash -resetTokenExpires -twoFactorSecret -twoFactorRecoveryCodes -invitationTokenHash -invitationExpires');
+    // If suspending or forcing password reset, revoke all sessions
+    if (body.suspended || body.requirePasswordChange) {
+      try { await revokeAllSessions(targetId); } catch {}
+    }
+    try { await ActivityLog.create({ adminId: admin._id, action: 'update_user', details: `Updated user ${targetUser.email}: ${logDetails}`, entityType: 'admin', entityId: targetId }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, id: targetId });
+  }
+
   // ---- /api/admin/settings ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'settings') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
@@ -952,6 +1309,30 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
     const { Sponsor } = await import('@/lib/models/Other');
     await Sponsor.findByIdAndDelete(segments[2]);
+    return NextResponse.json({ success: true });
+  }
+
+  // ---- /api/admin/users/:id (DELETE) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'users') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'users:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const targetId = segments[2];
+    // Cannot delete self
+    if (targetId === admin._id.toString()) {
+      return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 });
+    }
+    const targetUser = await Admin.findById(targetId);
+    if (!targetUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // Delete protection: last superadmin
+    if (targetUser.role === 'superadmin') {
+      const superCount = await Admin.countDocuments({ role: 'superadmin' });
+      if (superCount <= 1) return NextResponse.json({ error: 'Cannot delete the last superadmin' }, { status: 400 });
+    }
+    // Revoke all sessions for this user
+    try { await revokeAllSessions(targetId); } catch {}
+    await Admin.findByIdAndDelete(targetId);
+    try { await ActivityLog.create({ adminId: admin._id, action: 'delete_user', details: `Deleted user: ${targetUser.email}`, entityType: 'admin', entityId: targetId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true });
   }
 
