@@ -1145,18 +1145,33 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (manualLockReason !== undefined) (phone as any).manualLockReason = String(manualLockReason).slice(0, 500);
     if (sourceUrl !== undefined) { (phone as any).sourceUrl = String(sourceUrl); (phone as any).sourceName = 'Manual Entry'; }
     await phone.save();
-    if (specs && typeof specs === 'object') { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = specs as any; await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true }); }
-    if (benchmarks && typeof benchmarks === 'object') { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = benchmarks as any; await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true }); }
-    if (images !== undefined) {
-      await PhoneImage.deleteMany({ phoneId: phone._id });
-      if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
-    }
-    if (prices !== undefined) {
-      await PhonePrice.deleteMany({ phoneId: phone._id });
-      if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
-      // Record store price history for changed prices
-      if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
-    }
+    try {
+      if (specs && typeof specs === 'object') {
+        // Remove fields that shouldn't be $set (Mongoose-managed or non-schema)
+        const { _id: _s, __v: _sv, phoneId: _sp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeSpecs } = specs as any;
+        await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true, new: true });
+      }
+    } catch (e: any) { console.error('[SavePhone Specs]', e.message, e.stack); }
+    try {
+      if (benchmarks && typeof benchmarks === 'object') {
+        const { _id: _b, __v: _bv, phoneId: _bp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeBench } = benchmarks as any;
+        await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true });
+      }
+    } catch (e: any) { console.error('[SavePhone Benchmarks]', e.message); }
+    try {
+      if (images !== undefined) {
+        await PhoneImage.deleteMany({ phoneId: phone._id });
+        if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
+      }
+    } catch (e: any) { console.error('[SavePhone Images]', e.message); }
+    try {
+      if (prices !== undefined) {
+        await PhonePrice.deleteMany({ phoneId: phone._id });
+        if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
+        // Record store price history for changed prices
+        if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
+      }
+    } catch (e: any) { console.error('[SavePhone Prices]', e.message); }
     // Record base price history if changed
     if (pricePKR !== undefined && pricePKR > 0 && pricePKR !== (phone as any)._previousPricePKR) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
     // Targeted cache revalidation when price changes

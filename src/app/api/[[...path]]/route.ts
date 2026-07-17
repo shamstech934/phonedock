@@ -412,12 +412,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
-    console.error('API PUT error:', e.message);
+    console.error('API PUT error:', e.message, e.stack);
     const msg = e?.message || '';
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error', details: msg }, { status: 500 });
   }
 }
 
