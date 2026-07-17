@@ -164,8 +164,11 @@ const PRIORITY_ORDER = ['samsung', 'apple', 'google', 'xiaomi', 'oneplus', 'vivo
 function BrandsGrid({ brands }: { brands: Brand[] }) {
   if (!brands.length) return null;
 
+  // Only show brands that have at least 1 phone
+  const brandsWithPhones = brands.filter(b => (b._count?.phones || 0) > 0);
+
   // Sort: priority brands first, then by phone count
-  const sorted = [...brands].sort((a, b) => {
+  const sorted = [...brandsWithPhones].sort((a, b) => {
     const aIdx = PRIORITY_ORDER.indexOf(a.slug.toLowerCase());
     const bIdx = PRIORITY_ORDER.indexOf(b.slug.toLowerCase());
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
