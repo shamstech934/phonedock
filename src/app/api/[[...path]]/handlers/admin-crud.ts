@@ -122,6 +122,34 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     })) });
   }
 
+  // ---- /api/admin/videos/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const [total, liveCount, pendingCount, draftCount, hiddenCount, failedCount, featuredCount, todaySynced, totalViews, totalLikes] = await Promise.all([
+      Video.countDocuments({}),
+      Video.countDocuments({ status: 'live', active: true }),
+      Video.countDocuments({ status: 'pending' }),
+      Video.countDocuments({ status: 'draft' }),
+      Video.countDocuments({ $or: [{ status: 'hidden' }, { hidden: true }] }),
+      Video.countDocuments({ syncStatus: 'failed' }),
+      Video.countDocuments({ featured: true }),
+      Video.countDocuments({ lastSyncedAt: { $gte: todayStart } }),
+      Video.aggregate([{ $group: { _id: null, total: { $sum: '$views' } } }]),
+      Video.aggregate([{ $group: { _id: null, total: { $sum: '$likes' } } }]),
+    ]);
+    const lastSync = await Video.findOne({ lastSyncedAt: { $ne: null } }).sort({ lastSyncedAt: -1 }).select('lastSyncedAt').lean();
+    return NextResponse.json({
+      total, liveCount, pendingCount, draftCount, hiddenCount, failedCount, featuredCount, todaySynced,
+      totalViews: totalViews[0]?.total || 0,
+      totalLikes: totalLikes[0]?.total || 0,
+      lastSyncTime: (lastSync as any)?.lastSyncedAt || null,
+      channelName: process.env.YOUTUBE_CHANNEL_NAME || 'YouTube Channel',
+    });
+  }
+
   // ---- /api/admin/videos/search?q=... (autocomplete for PhoneForm) ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'search') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
@@ -144,23 +172,83 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     })) });
   }
 
-  // ---- /api/admin/videos (LIST) ----
+  // ---- /api/admin/videos (ENHANCED LIST with search, filter, sort) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'videos') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
     const filter: any = {};
+    // Search
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { title: { $regex: safe, $options: 'i' } },
+        { youtubeId: { $regex: safe, $options: 'i' } },
+        { description: { $regex: safe, $options: 'i' } },
+        { channelName: { $regex: safe, $options: 'i' } },
+      ];
+      // Also search by phone model/brand
+      const phoneMatches = await Phone.find({ $or: [{ modelName: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }] }).select('_id').lean();
+      if (phoneMatches.length > 0) filter.$or.push({ phoneId: { $in: phoneMatches.map(p => p._id) } });
+    }
+    // Status filter (new enhanced status field, backward compat with old active filter)
     const status = url.searchParams.get('status');
-    if (status === 'pending') filter.active = false;
-    else if (status === 'active') filter.active = true;
+    if (status && status !== 'all') {
+      if (status === 'active') { filter.active = true; filter.status = 'live'; }
+      else if (status === 'pending_old') { filter.active = false; }
+      else { filter.status = status; }
+    }
+    // Sync status filter
+    const syncStatus = url.searchParams.get('syncStatus');
+    if (syncStatus && syncStatus !== 'all') filter.syncStatus = syncStatus;
+    // Featured filter
+    if (url.searchParams.get('featured') === 'true') filter.featured = true;
+    // Brand filter
+    const brandId = url.searchParams.get('brandId');
+    if (brandId) filter.brandId = brandId;
+    // Phone filter
+    const phoneId = url.searchParams.get('phoneId');
+    if (phoneId) filter.phoneId = phoneId;
+    // Date filter
+    const dateFilter = url.searchParams.get('dateFilter');
+    if (dateFilter === 'today') {
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      filter.createdAt = { $gte: todayStart };
+    } else if (dateFilter === 'week') {
+      const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
+      filter.createdAt = { $gte: weekAgo };
+    } else if (dateFilter === 'month') {
+      const monthAgo = new Date(Date.now() - 30*24*60*60*1000);
+      filter.createdAt = { $gte: monthAgo };
+    } else if (dateFilter === 'custom') {
+      const from = url.searchParams.get('dateFrom');
+      const to = url.searchParams.get('dateTo');
+      if (from || to) {
+        filter.createdAt = {} as any;
+        if (from) (filter.createdAt as any).$gte = new Date(from);
+        if (to) (filter.createdAt as any).$lte = new Date(to);
+      }
+    }
+    // Sort
+    let sort: any = { publishedAt: -1 };
+    const sortParam = url.searchParams.get('sort');
+    if (sortParam === 'oldest') sort = { publishedAt: 1 };
+    else if (sortParam === 'views') sort = { views: -1 };
+    else if (sortParam === 'likes') sort = { likes: -1 };
+    else if (sortParam === 'comments') sort = { commentCount: -1 };
+    else if (sortParam === 'synced') sort = { lastSyncedAt: -1 };
+    else if (sortParam === 'alpha') sort = { title: 1 };
+    else if (sortParam === 'created') sort = { createdAt: -1 };
+
     const [videos, total, pendingCount] = await Promise.all([
-      Video.find(filter).sort({ publishedAt: -1 }).skip(skip).limit(limit).populate('phoneId', 'modelName slug brand').lean(),
+      Video.find(filter).sort(sort).skip(skip).limit(limit).populate('phoneId', 'modelName slug brand').populate('brandId', 'name').populate('createdBy', 'name').lean(),
       Video.countDocuments(filter),
-      Video.countDocuments({ active: false }),
+      Video.countDocuments({ status: 'pending' }),
     ]);
     return NextResponse.json({
       videos: videos.map((v: any) => ({
@@ -171,11 +259,25 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
         publishedAt: v.publishedAt,
         phoneId: v.phoneId?._id?.toString() || null,
         phone: v.phoneId ? { modelName: v.phoneId.modelName, slug: v.phoneId.slug, brand: v.phoneId.brand?.name || '' } : null,
+        brand: v.brandId ? { name: v.brandId.name, id: v.brandId._id?.toString() } : null,
         active: v.active,
         autoLinked: v.autoLinked,
+        status: v.status || (v.active ? 'live' : 'pending'),
+        featured: v.featured || false,
+        hidden: v.hidden || false,
+        syncStatus: v.syncStatus || 'synced',
+        views: v.views || 0,
+        likes: v.likes || 0,
+        commentCount: v.commentCount || 0,
+        duration: v.duration || '',
+        channelName: v.channelName || '',
+        category: v.category || '',
+        lastSyncedAt: v.lastSyncedAt || null,
+        createdBy: v.createdBy ? { name: v.createdBy.name } : null,
         createdAt: v.createdAt,
       })),
       total, page, limit, pendingCount,
+      totalPages: Math.ceil(total / limit),
     });
   }
 
@@ -413,6 +515,38 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     }
   }
 
+  // ---- /api/admin/videos/bulk (BULK ACTIONS) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'bulk') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const { ids, action, phoneId, brandId } = body;
+    if (!Array.isArray(ids) || ids.length === 0) return NextResponse.json({ error: 'ids array required' }, { status: 400 });
+    if (ids.length > 100) return NextResponse.json({ error: 'Max 100 videos per bulk action' }, { status: 400 });
+    const validActions = ['delete', 'approve', 'reject', 'feature', 'unfeature', 'hide', 'show', 'activate', 'deactivate'];
+    if (!validActions.includes(action)) return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    const update: Record<string, any> = {};
+    if (action === 'approve') { update.active = true; update.status = 'live'; update.autoLinked = false; }
+    else if (action === 'reject') { update.status = 'rejected'; update.active = false; }
+    else if (action === 'feature') { update.featured = true; }
+    else if (action === 'unfeature') { update.featured = false; }
+    else if (action === 'hide') { update.hidden = true; update.status = 'hidden'; update.active = false; }
+    else if (action === 'show') { update.hidden = false; update.active = true; update.status = 'live'; }
+    else if (action === 'activate') { update.active = true; update.status = 'live'; update.autoLinked = false; }
+    else if (action === 'deactivate') { update.active = false; update.status = 'pending'; }
+    if (action === 'delete') {
+      const result = await Video.deleteMany({ _id: { $in: ids } });
+      try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_videos', details: `Bulk deleted ${result.deletedCount} videos`, entityType: 'video' }); } catch (e) { console.error('[ActivityLog]', e); }
+      return NextResponse.json({ success: true, deleted: result.deletedCount });
+    }
+    if (phoneId) update.phoneId = phoneId;
+    if (brandId) update.brandId = brandId;
+    const result = await Video.updateMany({ _id: { $in: ids } }, { $set: update });
+    try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_videos`, details: `Bulk ${action}: ${result.modifiedCount} videos`, entityType: 'video' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, modified: result.modifiedCount });
+  }
+
   return undefined;
 }
 
@@ -582,7 +716,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     return NextResponse.json({ success: true, sponsor: { ...updated, id: updated._id?.toString() } });
   }
 
-  // ---- /api/admin/videos/:id (UPDATE) ----
+  // ---- /api/admin/videos/:id (UPDATE — enhanced) ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'videos:edit'); if (permCheck) return permCheck;
@@ -590,9 +724,21 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (!video) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     const body = await req.json();
     if (body.phoneId !== undefined) video.phoneId = body.phoneId || null;
+    if (body.brandId !== undefined) video.brandId = body.brandId || null;
     if (body.active !== undefined) video.active = body.active;
     if (body.autoLinked !== undefined) video.autoLinked = body.autoLinked;
-    if (body.title) video.title = body.title;
+    if (body.title !== undefined) video.title = body.title;
+    if (body.status !== undefined) video.status = body.status;
+    if (body.featured !== undefined) video.featured = body.featured;
+    if (body.hidden !== undefined) video.hidden = body.hidden;
+    if (body.syncStatus !== undefined) video.syncStatus = body.syncStatus;
+    if (body.category !== undefined) video.category = body.category;
+    if (body.duration !== undefined) video.duration = body.duration;
+    if (body.channelName !== undefined) video.channelName = body.channelName;
+    // Auto-sync status and active based on status changes
+    if (body.status === 'live') { video.active = true; video.hidden = false; }
+    if (body.status === 'hidden') { video.hidden = true; video.active = false; }
+    if (body.status === 'pending') { video.active = false; }
     await video.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_video', details: `Updated: ${video.title}`, entityType: 'video', entityId: video._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: video._id?.toString() });
@@ -621,6 +767,19 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
 // ============ ADMIN CRUD DELETE ============
 
 export async function handleAdminCrudDelete(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/videos/:id (DELETE) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'videos:manage'); if (permCheck) return permCheck;
+    await connectDB();
+    const video = await Video.findById(segments[2]);
+    if (!video) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const title = video.title;
+    await Video.deleteOne({ _id: segments[2] });
+    try { await ActivityLog.create({ adminId: admin._id, action: 'delete_video', details: `Deleted: ${title}`, entityType: 'video', entityId: segments[2] }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true });
+  }
+
   // ---- /api/admin/reviews/:id ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
