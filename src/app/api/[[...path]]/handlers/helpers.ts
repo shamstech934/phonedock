@@ -204,5 +204,10 @@ export function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[
     benchmarks: benchmarks || undefined,
     images: images?.map((img: any) => ({ id: img._id?.toString(), url: img.url, altText: img.altText, sortOrder: img.sortOrder })) || [],
     prices: prices?.map((pr: any) => ({ id: pr._id?.toString(), storeName: pr.storeName, price: pr.price, url: pr.url, inStock: pr.inStock })) || [],
+    // Price tracking
+    priceMode: obj.priceMode || 'manual',
+    manualLock: obj.manualLock || false,
+    manualLockReason: obj.manualLockReason || '',
+    sourceUrl: obj.sourceUrl || '',
   };
 }

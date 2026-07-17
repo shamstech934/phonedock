@@ -1098,7 +1098,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       thumbnail, description, featured, trending, upcoming, status: phoneStatus, active,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
-      specs, benchmarks, images, prices } = body;
+      specs, benchmarks, images, prices, priceMode, manualLock, manualLockReason, sourceUrl } = body;
     if (modelName) phone.modelName = modelName;
     if (inputSlug !== undefined && inputSlug !== phone.slug) {
       const existing = await Phone.findOne({ slug: inputSlug, _id: { $ne: phone._id } });
@@ -1139,6 +1139,10 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (seoTitle !== undefined) phone.seoTitle = seoTitle;
     if (seoDescription !== undefined) phone.seoDescription = seoDescription;
     if (keywords !== undefined) phone.keywords = keywords;
+    if (priceMode !== undefined && ['manual', 'automatic'].includes(priceMode)) (phone as any).priceMode = priceMode;
+    if (manualLock !== undefined) (phone as any).manualLock = Boolean(manualLock);
+    if (manualLockReason !== undefined) (phone as any).manualLockReason = String(manualLockReason).slice(0, 500);
+    if (sourceUrl !== undefined) { (phone as any).sourceUrl = String(sourceUrl); (phone as any).sourceName = 'Manual Entry'; }
     await phone.save();
     if (specs && typeof specs === 'object') { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = specs as any; await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true }); }
     if (benchmarks && typeof benchmarks === 'object') { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = benchmarks as any; await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true }); }

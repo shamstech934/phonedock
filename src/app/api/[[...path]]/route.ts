@@ -24,7 +24,7 @@ import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdmi
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleDownloadSample } from './handlers/download';
-import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut } from './handlers/price-tracker';
+import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
 import { handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
@@ -449,6 +449,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     // Collector routes (jobs delete)
     const collectorResult = await handleCollectorDelete(req, segments);
     if (collectorResult) return collectorResult;
+
+    // Price Tracker DELETE routes (sources, listings)
+    const priceTrackerDeleteResult = await handlePriceTrackerDelete(req, segments);
+    if (priceTrackerDeleteResult) return priceTrackerDeleteResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {

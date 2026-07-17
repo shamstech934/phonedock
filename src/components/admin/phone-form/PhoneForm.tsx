@@ -213,6 +213,11 @@ export default function PhoneForm({
                 inStock: Boolean(p.inStock ?? p.in_stock ?? true),
               }))
             : [],
+          // Price Tracking
+          priceMode: data.priceMode === 'automatic' ? 'automatic' as const : 'manual' as const,
+          manualLock: Boolean(data.manualLock ?? false),
+          manualLockReason: String(data.manualLockReason ?? ''),
+          priceSourceUrl: String(data.sourceUrl ?? data.source_url ?? ''),
         });
       } catch (err: unknown) {
         if (!cancelled) {
@@ -383,6 +388,11 @@ export default function PhoneForm({
           url: p.url,
           inStock: p.inStock,
         })),
+        // Price tracking fields
+        priceMode: form.priceMode,
+        manualLock: form.manualLock,
+        manualLockReason: form.manualLockReason,
+        sourceUrl: form.priceSourceUrl,
       };
 
       const res = await fetch(url, {

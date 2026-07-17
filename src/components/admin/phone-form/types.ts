@@ -131,6 +131,11 @@ export interface PhoneFormData {
   // Images & Prices
   images: PhoneImage[];
   prices: PhonePrice[];
+  // Price Tracking
+  priceMode: 'manual' | 'automatic';
+  manualLock: boolean;
+  manualLockReason: string;
+  priceSourceUrl: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -281,4 +286,8 @@ export const createEmptyFormData = (): PhoneFormData => ({
   batteryMAh: '',
   images: [],
   prices: [],
+  priceMode: 'manual' as const,
+  manualLock: false,
+  manualLockReason: '',
+  priceSourceUrl: '',
 });

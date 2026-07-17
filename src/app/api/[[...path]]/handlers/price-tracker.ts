@@ -6,8 +6,8 @@ import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 // ============ PRICE TRACKER GET ============
 
 export async function handlePriceTrackerGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  // ---- /api/admin/price-tracker/stats ----
-  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'stats') {
+  // ---- /api/admin/price-tracker/stats (aliased as 'overview' by admin UI) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && (segments[2] === 'stats' || segments[2] === 'overview')) {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
@@ -40,11 +40,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     ]);
 
     return NextResponse.json({
-      totalPhonesWithPrices,
-      manualCount,
-      automaticCount,
-      priceDropsToday,
-      priceIncreasesToday,
+      monitoredPhones: totalPhonesWithPrices,
+      manualPrices: manualCount,
+      automaticPrices: automaticCount,
+      dropsToday: priceDropsToday,
+      increasesToday: priceIncreasesToday,
       pendingReview,
       failedChecks,
       lastSuccessfulUpdate: lastSuccessfulUpdate?.capturedAt || null,
@@ -646,7 +646,64 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     });
   }
 
-  // ---- /api/admin/price-tracker/approve/:historyId ----
+  // ---- /api/admin/price-tracker/review (unified approve/reject from admin UI) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'review') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const body = await req.json();
+    const { changeId, action } = body;
+    if (!changeId || !action) return NextResponse.json({ error: 'changeId and action are required' }, { status: 400 });
+    if (!['approve', 'reject'].includes(action)) return NextResponse.json({ error: 'action must be approve or reject' }, { status: 400 });
+
+    const history = await PriceTrackerHistory.findById(changeId);
+    if (!history) return NextResponse.json({ error: 'History record not found' }, { status: 404 });
+    if (history.verificationStatus !== 'pending') {
+      return NextResponse.json({ error: `History record is already ${history.verificationStatus}` }, { status: 400 });
+    }
+
+    history.verificationStatus = action === 'approve' ? 'confirmed' : 'rejected';
+    history.approvedByAdminId = admin._id;
+    await history.save();
+
+    if (action === 'approve') {
+      const phone = await Phone.findById(history.phoneId);
+      if (phone && history.newPrice > 0) {
+        const oldPrice = (phone as any).currentPrice || 0;
+        if (oldPrice !== history.newPrice) {
+          const difference = history.newPrice - oldPrice;
+          const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
+          const updates: any = {
+            currentPrice: history.newPrice, previousPrice: oldPrice,
+            priceChange: difference, percentageChange,
+            lastPriceChangedAt: new Date(), lastPriceCheckedAt: new Date(),
+            pricePKR: history.newPrice,
+          };
+          const lowest = (phone as any).lowestPrice || 0;
+          const highest = (phone as any).highestPrice || 0;
+          if (history.newPrice < lowest || lowest === 0) updates.lowestPrice = history.newPrice;
+          if (history.newPrice > highest) updates.highestPrice = history.newPrice;
+          await Phone.findByIdAndUpdate(history.phoneId, { $set: updates });
+          try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: history.newPrice }); } catch (e) { console.error('[PriceHistory]', e); }
+        }
+      }
+    }
+
+    try {
+      const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean();
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: action === 'approve' ? 'approve_price_change' : 'reject_price_change',
+        details: `${action === 'approve' ? 'Approved' : 'Rejected'} price change for ${(phoneDoc as any)?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
+        entityType: 'phone', entityId: history.phoneId?.toString(),
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, id: history._id?.toString(), verificationStatus: history.verificationStatus });
+  }
+
+  // ---- /api/admin/price-tracker/approve/:historyId (direct approve) ----
   if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'approve') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
@@ -782,6 +839,68 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     return NextResponse.json({ success: true, manualLock: lock });
   }
 
+  // ---- /api/admin/price-tracker/sources/:id/toggle ----
+  if (segments.length === 5 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'sources' && segments[4] === 'toggle') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const sourceId = segments[3];
+    if (!sourceId) return NextResponse.json({ error: 'Source ID required' }, { status: 400 });
+
+    const source = await PriceSource.findById(sourceId);
+    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+
+    const newStatus = source.status === 'active' ? 'paused' : 'active';
+    const newEnabled = newStatus === 'active';
+
+    await PriceSource.findByIdAndUpdate(sourceId, {
+      $set: { status: newStatus, enabled: newEnabled },
+    });
+
+    try {
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: newStatus === 'active' ? 'activate_price_source' : 'pause_price_source',
+        details: `${newStatus === 'active' ? 'Activated' : 'Paused'} price source: ${source.name}`,
+        entityType: 'price_source',
+        entityId: sourceId,
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, status: newStatus, enabled: newEnabled });
+  }
+
+  // ---- /api/admin/price-tracker/phones/:phoneId/toggle (5 segments) ----
+  if (segments.length === 5 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'phones' && segments[4] === 'toggle') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const phoneId = segments[3];
+    if (!phoneId) return NextResponse.json({ error: 'Phone ID required' }, { status: 400 });
+
+    const phone = await Phone.findById(phoneId);
+    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+
+    const newLock = !((phone as any).manualLock || false);
+    await Phone.findByIdAndUpdate(phoneId, {
+      $set: { manualLock: newLock, manualLockReason: newLock ? 'Toggled from phones list' : '' },
+    });
+
+    try {
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: newLock ? 'lock_price' : 'unlock_price',
+        details: `${newLock ? 'Locked' : 'Unlocked'} price for ${phone.modelName}`,
+        entityType: 'phone',
+        entityId: phone._id?.toString(),
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, manualLock: newLock });
+  }
+
   return undefined;
 }
 
@@ -896,6 +1015,68 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
         adminId: admin._id,
         action: 'update_retail_listing',
         details: `Updated retail listing ${listingId}`,
+        entityType: 'retail_listing',
+        entityId: listingId,
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, id: listingId });
+  }
+
+  return undefined;
+}
+
+// ============ PRICE TRACKER DELETE ============
+
+export async function handlePriceTrackerDelete(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/price-tracker/sources/:id ----
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'sources') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const sourceId = segments[3];
+    if (!sourceId) return NextResponse.json({ error: 'Source ID required' }, { status: 400 });
+
+    const source = await PriceSource.findById(sourceId);
+    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+
+    // Delete all listings under this source
+    await PhoneRetailListing.deleteMany({ sourceId });
+    await PriceSource.findByIdAndDelete(sourceId);
+
+    try {
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: 'delete_price_source',
+        details: `Deleted price source: ${source.name} and all its listings`,
+        entityType: 'price_source',
+        entityId: sourceId,
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, id: sourceId });
+  }
+
+  // ---- /api/admin/price-tracker/listings/:id ----
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'listings') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const listingId = segments[3];
+    if (!listingId) return NextResponse.json({ error: 'Listing ID required' }, { status: 400 });
+
+    const listing = await PhoneRetailListing.findById(listingId);
+    if (!listing) return NextResponse.json({ error: 'Listing not found' }, { status: 404 });
+
+    await PhoneRetailListing.findByIdAndDelete(listingId);
+
+    try {
+      await ActivityLog.create({
+        adminId: admin._id,
+        action: 'delete_retail_listing',
+        details: `Deleted retail listing ${listingId}`,
         entityType: 'retail_listing',
         entityId: listingId,
       });

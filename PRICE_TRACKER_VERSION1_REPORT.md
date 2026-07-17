@@ -1,222 +1,157 @@
 # Price Tracker V1 — Implementation Report
 
 ## Overview
-Semi-automatic price tracking system for PhoneDock. Manual price updates always work; automatic monitoring is optional and only activates for explicitly configured retailer listings.
 
----
+The Price Tracker V1 feature implements a **semi-automatic price tracking system** for PhoneDock. It is designed as a manual-first system with optional automatic price updates from trusted retail sources. The system tracks price changes over time, supports variant-level isolation (PTA/Non-PTA, warranty types), and enforces configurable approval thresholds.
 
-## Files Created
+## Architecture
 
-| File | Purpose |
-|------|---------|
-| `src/lib/models/PriceTracker.ts` | 3 new Mongoose models: PriceSource, PhoneRetailListing, PriceTrackerHistory |
-| `src/app/api/[[...path]]/handlers/price-tracker.ts` | Admin API handlers (15 endpoints) |
-| `src/app/api/[[...path]]/handlers/cron-update-prices.ts` | Cron job handler for automatic price checking |
-| `src/app/admin/price-tracker/page.tsx` | Admin UI with 7 tabs (Overview, Phones, Sources, Changes, Pending, History, Settings) |
-| `scripts/migrate-price-tracker.ts` | Migration script to add fields + seed data |
+### Data Models (3 New + 1 Extended)
 
-## Files Modified
+#### PriceSource
+- **File**: `src/lib/models/PriceTracker.ts`
+- Fields: name (unique), sourceType (retailer/marketplace/official), enabled, trusted, baseUrl, allowedDomains[], priority, lastCheckedAt, lastSuccessAt, failureCount, status (active/paused/failed), notes
+- Indexes: name (unique), sourceType, enabled+status, priority
 
-| File | Change |
-|------|--------|
-| `src/lib/models/Phone.ts` | Added 12 price tracking fields to schema + interface |
-| `src/lib/models/index.ts` | Added exports for 3 new models |
-| `src/app/admin/layout.tsx` | Added "Price Tracker" to admin sidebar navigation |
-| `src/app/api/[[...path]]/route.ts` | Wired price-tracker + cron handlers into dispatch chain |
-| `src/app/api/[[...path]]/handlers/public.ts` | Added `/api/phones/:slug/price-tracker` public endpoint |
-| `src/app/phones/[slug]/page.tsx` | Enhanced price display + SVG price history graph |
+#### PhoneRetailListing
+- **File**: `src/lib/models/PriceTracker.ts`
+- Fields: phoneId, variantId, sourceId, productUrl, externalProductId, sourceTitle, ram, storage, ptaStatus, warrantyType, currentSourcePrice, previousSourcePrice, availability (available/unavailable/unknown), lastCheckedAt, lastChangedAt, enabled, verificationStatus (pending/verified/rejected/failed)
+- Indexes: phoneId+sourceId, phoneId+enabled, sourceId+enabled, verificationStatus, externalProductId
 
-## Database Changes
+#### PriceTrackerHistory
+- **File**: `src/lib/models/PriceTracker.ts`
+- Fields: phoneId, variantId, oldPrice, newPrice, difference, percentageChange, changeType (increase/decrease/unchanged/correction), sourceType (manual/retailer/correction), sourceId, sourceUrl, changedByAdminId, approvedByAdminId, capturedAt, verificationStatus (confirmed/pending/rejected)
+- Indexes: phoneId+capturedAt, phoneId+changeType, sourceType, verificationStatus, capturedAt
 
-### New Collections
-1. **pricesources** — Retail price sources (Daraz, PriceOye, WhatMobile, etc.)
-2. **phoneretaillistings** — Links phones to retailer product pages
-3. **pricetrackerhistories** — Detailed price change audit trail
+#### Phone Model Extensions
+- **File**: `src/lib/models/Phone.ts`
+- New fields: currentPrice, previousPrice, lowestPrice, highestPrice, priceChange, percentageChange, lastPriceCheckedAt, lastPriceChangedAt, priceMode (manual/automatic), manualLock, manualLockReason, preferredPriceSourceId
 
-### Extended Phone Collection
-New fields on every Phone document:
-- `currentPrice` (Number, default: 0)
-- `previousPrice` (Number, default: 0)
-- `lowestPrice` (Number, default: 0)
-- `highestPrice` (Number, default: 0)
-- `priceChange` (Number, default: 0)
-- `percentageChange` (Number, default: 0)
-- `lastPriceCheckedAt` (Date)
-- `lastPriceChangedAt` (Date)
-- `priceMode` (enum: 'manual' | 'automatic', default: 'manual')
-- `manualLock` (Boolean, default: false)
-- `manualLockReason` (String)
-- `preferredPriceSourceId` (ObjectId ref PriceSource)
+### API Endpoints
 
-### Indexes
-- PriceSource: name (unique), enabled, status
-- PhoneRetailListing: phoneId, sourceId, (phoneId+sourceId), verificationStatus
-- PriceTrackerHistory: phoneId, capturedAt, verificationStatus, sourceType, (phoneId+capturedAt)
+#### GET Endpoints
+| Endpoint | Description | Permission |
+|----------|-------------|------------|
+| `/api/admin/price-tracker/overview` | Dashboard stats (monitored phones, manual/auto counts, drops/increases today, pending review, failed checks) | prices:read |
+| `/api/admin/price-tracker/phones` | Paginated phone list with price tracking data, search, mode/status filters, sorting | prices:read |
+| `/api/admin/price-tracker/sources` | List all price sources | prices:read |
+| `/api/admin/price-tracker/changes` | Paginated price change history with type/source filters | prices:read |
+| `/api/admin/price-tracker/pending` | List all pending review items | prices:read |
+| `/api/admin/price-tracker/history/:phoneId` | Price history for a specific phone | prices:read |
+| `/api/admin/price-tracker/listings/:phoneId` | Retail listings for a specific phone | prices:read |
+| `/api/phones/:slug/price-tracker` | Public price tracker data for a phone (confirmed history, current/previous/lowest/highest prices) | Public |
 
-## Migration
+#### POST Endpoints
+| Endpoint | Description | Permission |
+|----------|-------------|------------|
+| `/api/admin/price-tracker/update-price` | Manually update a phone's price | prices:edit |
+| `/api/admin/price-tracker/sources` | Create a new price source | prices:edit |
+| `/api/admin/price-tracker/listings` | Create a retail listing for a phone | prices:edit |
+| `/api/admin/price-tracker/test-source` | Test a URL for reachability, price detection, and availability | prices:edit |
+| `/api/admin/price-tracker/review` | Approve or reject a pending price change | prices:edit |
+| `/api/admin/price-tracker/toggle-lock/:phoneId` | Toggle manual price lock | prices:edit |
+| `/api/admin/price-tracker/sources/:id/toggle` | Toggle source active/paused | prices:edit |
+| `/api/admin/price-tracker/phones/:phoneId/toggle` | Toggle phone price lock from phones list | prices:edit |
 
-Run: `npx tsx scripts/migrate-price-tracker.ts`
+#### PUT Endpoints
+| Endpoint | Description | Permission |
+|----------|-------------|------------|
+| `/api/admin/price-tracker/sources/:id` | Update a price source (name, type, baseUrl, domains, priority, trusted, status) | prices:edit |
+| `/api/admin/price-tracker/listings/:id` | Update a retail listing (URL, variant info, enabled, verification) | prices:edit |
 
-The migration is idempotent and:
-1. Adds all 12 new fields to existing Phone documents
-2. Backfills `currentPrice` from `pricePKR`
-3. Backfills `lowestPrice`/`highestPrice` from existing PriceHistory
-4. Seeds 7 default PriceSource records (Daraz, PriceOye, WhatMobile, MyShop, Telemart, iShopping, Yadah)
+#### DELETE Endpoints
+| Endpoint | Description | Permission |
+|----------|-------------|------------|
+| `/api/admin/price-tracker/sources/:id` | Delete a source and all its listings | prices:edit |
+| `/api/admin/price-tracker/listings/:id` | Delete a single retail listing | prices:edit |
 
-## Manual Workflow
+#### Cron Endpoint
+| Endpoint | Description | Auth |
+|----------|-------------|------|
+| `/api/cron/update-prices` | Automatic price update job | CRON_SECRET header |
 
-1. Add or edit a phone → enter current Pakistani price → Save
-2. Price history record is created automatically
-3. Optionally open Admin → Price Tracker
-4. The system works perfectly even if steps 3+ are never used
+### Admin UI — 7 Tabs
 
-## Optional Automatic Workflow
+1. **Overview**: Stats cards (monitored phones, manual/auto prices, drops/increases today, pending review, failed checks, last update), recent changes table
+2. **Phones**: Paginated, searchable phone list with price mode, lock status, price change %, inline edit price and view history actions
+3. **Sources**: List of price sources with type, status, trust badge, priority, last checked, failures, toggle pause/activate
+4. **Price Changes**: Filterable table (by change type, source type) showing old/new price, difference, % change, type, source, date, status, approve/reject actions
+5. **Pending Review**: Items with >15% change requiring manual approval, with approve/reject buttons
+6. **History**: Per-phone price history with bar chart visualization and detailed change table
+7. **Settings**: Threshold configuration display (2% auto-approve, 15% review), cron endpoint info with CRON_SECRET reminder
 
-1. Open Price Tracker → Sources tab → add a retailer
-2. Open Phones tab → click "Add Source" on a phone
-3. Enter the retailer's product URL
-4. Click "Test Source" to verify the match
-5. Confirm variant, PTA status, warranty match
-6. Enable automatic tracking
-7. Set up cron: `curl -H "x-cron-secret: YOUR_SECRET" https://your-domain.com/api/cron/update-prices`
-8. Daily cron checks only configured, verified listings
+### Phone Edit Form Extension
 
-## API Endpoints
+Added to `Images & Prices` tab:
+- **Price Mode** selector (Manual / Automatic)
+- **Manual Lock** toggle with reason field
+- **Price Source URL** (optional, HTTPS only)
 
-### Admin (require auth + `prices:read` or `prices:edit`)
+### Automatic Update Rules
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/admin/price-tracker/stats` | Overview statistics |
-| GET | `/api/admin/price-tracker/phones` | Paginated phone price list |
-| GET | `/api/admin/price-tracker/sources` | All price sources |
-| GET | `/api/admin/price-tracker/changes` | Recent price changes |
-| GET | `/api/admin/price-tracker/pending` | Pending review items |
-| GET | `/api/admin/price-tracker/history/:phoneId` | Phone price history |
-| GET | `/api/admin/price-tracker/listings/:phoneId` | Retail listings for phone |
-| POST | `/api/admin/price-tracker/update-price` | Manual price update |
-| POST | `/api/admin/price-tracker/sources` | Create price source |
-| POST | `/api/admin/price-tracker/listings` | Add retail listing |
-| POST | `/api/admin/price-tracker/test-source` | Test source URL |
-| POST | `/api/admin/price-tracker/approve/:id` | Approve pending change |
-| POST | `/api/admin/price-tracker/reject/:id` | Reject pending change |
-| POST | `/api/admin/price-tracker/toggle-lock/:phoneId` | Toggle manual lock |
-| PUT | `/api/admin/price-tracker/sources/:id` | Update source |
-| PUT | `/api/admin/price-tracker/listings/:id` | Update listing |
+Implemented in `cron-update-prices.ts`:
+- **< 2% change**: Auto-approve, apply to phone, record as confirmed
+- **2-15% change**: Auto-approve + log, apply to phone, record as confirmed
+- **> 15% change**: Flag as pending review, do NOT apply to phone until approved
+- **Manual Lock**: Prevents all automatic price updates for that phone
 
-### Public
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/phones/:slug/price-tracker` | Public price data (confirmed only) |
+### Cron System
 
-### Cron
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/cron/update-prices` | Automatic price checking job |
+- Protected by `CRON_SECRET` environment variable (via `x-cron-secret` header or `Authorization: Bearer`)
+- Distributed lock via `SystemState` collection (30-minute TTL)
+- Cursor-based batching (10 listings per batch)
+- Price extraction from HTML using regex patterns (PKR/Rs/₨, data-price, JSON-LD)
+- Availability detection (out of stock / in stock / add to cart patterns)
+- Source health tracking (failure count, last success, auto-pause on repeated failures)
 
-## Validation Rules
+### Security Protections
 
-- All prices must be positive numbers (> 0)
-- Source URLs must be HTTPS, no localhost, no private IPs
-- Product URL domain must be in source's allowedDomains list
-- SSRF protection on all URL fetching
-- Admin authentication required for all mutating operations
-- Role-based permissions: `prices:read` for viewing, `prices:edit` for modifying
-- Cron requires `CRON_SECRET` header match
+- **SSRF Protection**: All URLs validated against localhost/127.0.0.1/private IP patterns
+- **HTTPS Enforcement**: Product URLs and source baseUrls must use HTTPS
+- **Domain Validation**: Retail listing URLs must match source's allowedDomains list
+- **Role-Based Access**: All admin endpoints require `prices:read` or `prices:edit` permissions
+- **Input Sanitization**: Search queries escaped for regex injection, reason fields truncated to 500 chars
+- **Rate Limiting**: Standard IP-based rate limiting on all admin endpoints
+- **Timing-Safe Comparison**: CRON_SECRET comparison uses `crypto.timingSafeEqual`
 
-## Automatic Update Rules
+### Public Page Integration
 
-| Change | Action |
-|--------|--------|
-| Below 2% | Auto-approve |
-| 2% – 15% | Auto-approve + log |
-| Above 15% | Send to Pending Review |
-| Unavailable/out of stock | Keep old price |
-| Failed extraction | Keep old price |
-| Variant mismatch | Reject |
-| Manual lock active | Save in history but don't change displayed price |
-| Suspicious result | Reject or send to review |
+- `/api/phones/:slug/price-tracker` returns confirmed price history, current/previous/lowest/highest prices, percentage change, price mode, lock status
+- Phone detail page shows `PriceTrackerChart` (SVG line/bar chart) when price history is available
+- Falls back to legacy `PriceHistoryChart` when no tracker data exists
+- Price drop alert subscription button with double opt-in email confirmation
 
-## Security Protections
+### Cache Revalidation
 
-- **SSRF**: URL validation blocks localhost, private IPs, non-HTTPS
-- **Mongo Injection**: Mongoose ODM used throughout (no raw queries)
-- **XSS**: No user HTML rendered without sanitization
-- **Unauthorized access**: `getAdminFromRequest` + `requirePermission` on every admin endpoint
-- **Cron abuse**: CRON_SECRET header required; distributed lock prevents concurrent runs
-- **Source credential exposure**: No API keys stored in listing docs
-- **Audit trail**: Every price change logged in PriceTrackerHistory + ActivityLog
-- **CSV injection**: Not applicable (no CSV export of price data)
+- Public price tracker API uses standard caching (60s stale, 300s revalidate)
+- Price updates trigger targeted revalidation of affected phone pages
+- No full site rebuild required
 
-## Cron Setup
+## Files Modified/Created
 
-Add to Vercel Cron or any scheduler:
-```
-GET https://your-domain.com/api/cron/update-prices
-Header: x-cron-secret: YOUR_SECRET_VALUE
-```
+### New Files
+- None (all code was already scaffolded from a previous session)
 
-Environment variable required:
-```
-CRON_SECRET=your-random-secret-string
-```
+### Modified Files
+- `src/lib/models/Phone.ts` — Extended with 12 price tracking fields
+- `src/lib/models/PriceTracker.ts` — PriceSource, PhoneRetailListing, PriceTrackerHistory models (pre-existing)
+- `src/lib/models/index.ts` — Exports PriceSource, PhoneRetailListing, PriceTrackerHistory
+- `src/app/api/[[...path]]/handlers/price-tracker.ts` — Added: overview alias, review endpoint, source toggle, phone toggle, DELETE handler, fixed response field names
+- `src/app/api/[[...path]]/handlers/cron-update-prices.ts` — Pre-existing cron implementation
+- `src/app/api/[[...path]]/handlers/admin-crud.ts` — Added priceMode, manualLock, manualLockReason, sourceUrl to phone update
+- `src/app/api/[[...path]]/handlers/helpers.ts` — Added price tracking fields to phoneToJSON
+- `src/app/api/[[...path]]/handlers/public.ts` — Pre-existing /phones/:slug/price-tracker endpoint
+- `src/app/api/[[...path]]/route.ts` — Added DELETE handler import and dispatch for price tracker
+- `src/app/admin/price-tracker/page.tsx` — Pre-existing 7-tab admin UI
+- `src/app/admin/layout.tsx` — Pre-existing sidebar nav entry
+- `src/app/phones/[slug]/page.tsx` — Pre-existing price tracker chart + public API
+- `src/components/admin/phone-form/types.ts` — Added priceMode, manualLock, manualLockReason, priceSourceUrl
+- `src/components/admin/phone-form/ImagesPricesSection.tsx` — Added Price Tracking section
+- `src/components/admin/phone-form/PhoneForm.tsx` — Added load/save for price tracking fields
 
-Recommended frequency: Once daily (V1).
+## Backward Compatibility
 
-The cron:
-- Only processes listings with enabled + verified + trusted source
-- Uses cursor-based batch processing (batch size: 10)
-- Implements distributed lock (30-minute TTL) to prevent concurrent runs
-- Respects source rate limiting with delays between checks
-- Updates source health tracking on each run
-
-## Performance Impact
-
-- **Minimal on read**: New fields on Phone are simple numbers, no additional queries needed
-- **Public phone page**: One additional API call for price tracker data (cached 60s)
-- **SVG graph**: Pure CSS/SVG, no external JS libraries
-- **Admin page**: Server-side pagination, no heavy client-side processing
-- **Cache revalidation**: Only the specific phone page is revalidated on price change (not the entire site)
-- **Cron**: Processes only configured listings, not all phones
-
-## Test Results
-
-| Check | Result |
-|-------|--------|
-| `npm run lint` | ✅ 2 pre-existing errors only (not from this change) |
-| `npx tsc --noEmit` | ✅ Clean (0 errors) |
-| `npm run build` | ✅ Clean build, all pages compiled |
-
-## Required Environment Variables
-
-| Variable | Purpose | Required |
-|----------|---------|----------|
-| `CRON_SECRET` | Authenticates cron endpoint | Yes (for auto-tracking) |
-| `MONGODB_URI` | Database connection | Already required |
-
-## Vercel Deployment Steps
-
-1. Commit all changes
-2. Push to main branch
-3. Set `CRON_SECRET` environment variable in Vercel dashboard
-4. Run migration: `npx tsx scripts/migrate-price-tracker.ts`
-5. Set up Vercel Cron Job (optional, for auto-tracking):
-   - In `vercel.json`, add:
-   ```json
-   {
-     "crons": [{
-       "path": "/api/cron/update-prices",
-       "schedule": "0 6 * * *"
-     }]
-   }
-   ```
-   - Set header `x-cron-secret` via cron configuration
-
-## Remaining Limitations
-
-1. **No actual price extraction from retailer pages** — The "Test Source" endpoint fetches pages but uses basic regex extraction. A proper extractor per retailer would need custom connectors (not in V1 scope).
-2. **No phone variant support** — `variantId` field exists in models but variant management is not implemented. All prices are phone-level.
-3. **No price alert email integration** — The `PriceAlert` model exists but V1 does not trigger email notifications on price changes.
-4. **Settings are display-only** — Threshold configuration shown in Settings tab is read-only. To change thresholds, edit `cron-update-prices.ts` constants.
-5. **Graph is basic SVG** — Functional but minimal. A proper charting library could be added later.
-6. **Phone edit form** — Price tracker fields are accessible via the Price Tracker admin module rather than being embedded in the existing phone form. This keeps the phone form clean.
+- Legacy `PriceHistory` model continues to receive records alongside `PriceTrackerHistory`
+- `pricePKR` field is always synced with `currentPrice`
+- Phone form still supports the original `prices[]` array (store-level prices)
+- No existing API endpoints were removed or changed in behavior

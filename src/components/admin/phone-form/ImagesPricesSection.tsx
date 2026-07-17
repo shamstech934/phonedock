@@ -266,6 +266,97 @@ export default function ImagesPricesSection({ form, set }: SectionProps) {
           ))}
         </div>
       </section>
+
+      {/* Price Tracking Settings */}
+      <section>
+        <h3 className="mb-4 text-base font-semibold text-gray-900">
+          Price Tracking
+        </h3>
+        <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          {/* Price Mode */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Price Mode
+            </label>
+            <select
+              value={form.priceMode}
+              onChange={(e) =>
+                set(
+                  'priceMode',
+                  e.target.value as 'manual' | 'automatic',
+                )
+              }
+              className="mt-1 block w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              <option value="manual">Manual</option>
+              <option value="automatic">Automatic (from sources)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Manual mode means prices are set by admins. Automatic mode means prices are updated from retail sources.
+            </p>
+          </div>
+
+          {/* Manual Lock */}
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                checked={form.manualLock}
+                onChange={(e) => set('manualLock', e.target.checked)}
+                className="peer sr-only"
+              />
+              <div className="h-6 w-11 rounded-full bg-gray-300 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500"></div>
+            </label>
+            <div>
+              <span className="text-sm font-medium text-gray-700">
+                Lock Manual Price
+              </span>
+              <p className="text-xs text-gray-400">
+                When locked, automatic price updates from sources will be ignored for this phone.
+              </p>
+            </div>
+          </div>
+
+          {form.manualLock && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Lock Reason
+              </label>
+              <input
+                type="text"
+                value={form.manualLockReason}
+                onChange={(e) =>
+                  set('manualLockReason', e.target.value)
+                }
+                placeholder="e.g. Verified market price, promotional price"
+                className="mt-1 block w-full max-w-md rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+          )}
+
+          {/* Source URL (optional) */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Price Source URL{' '}
+              <span className="text-xs font-normal text-gray-400">
+                (optional)
+              </span>
+            </label>
+            <input
+              type="url"
+              value={form.priceSourceUrl}
+              onChange={(e) =>
+                set('priceSourceUrl', e.target.value)
+              }
+              placeholder="https://example.com/phone-product-page"
+              className="mt-1 block w-full max-w-lg rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Optional product page URL. Must use HTTPS. Used for automatic price tracking.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
