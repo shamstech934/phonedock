@@ -237,40 +237,77 @@ function CompareContent() {
       )}
 
       {showPicker && !compared ? (
-        <div className="card-premium p-4 sm:p-6 space-y-4">
-          {/* Pre-selected phones shown prominently */}
+        <div className="space-y-4">
+          {/* Selected phones as proper cards with clear Remove button */}
           {selected.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <span className="text-xs font-medium text-muted-foreground self-center mr-1">Selected:</span>
-              {selected.map(p => (
-                <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white text-xs font-semibold rounded-full animate-in fade-in">
-                  {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={14} height={14} className="w-3.5 h-3.5 object-contain rounded" unoptimized /> : <Smartphone className="w-3.5 h-3.5" />}
-                  {p.modelName}
-                  <button onClick={() => removePhone(p.id)} className="hover:bg-blue-600 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
-                </span>
-              ))}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-gray-900">Selected Phones ({selected.length}/4)</h2>
+                {selected.length > 0 && (
+                  <button onClick={() => { selected.forEach(p => removePhone(p.id)); }} className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors">Clear All</button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {selected.map(p => (
+                  <div key={p.id} className="card-premium p-3 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-1">
+                    {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={48} height={48} className="w-12 h-12 object-contain rounded-xl bg-[#F8FAFC] p-1 shrink-0" unoptimized /> : <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0"><Smartphone className="w-6 h-6 text-gray-400" /></div>}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
+                      <p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p>
+                    </div>
+                    <button onClick={() => removePhone(p.id)} className="shrink-0 w-8 h-8 rounded-lg border border-red-200 flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-all" title="Remove">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                {/* Add phone slot */}
+                {selected.length < 4 && (
+                  <div className="card-premium p-3 flex items-center justify-center gap-2 border-dashed border-2 border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 cursor-pointer transition-all min-h-[72px] rounded-2xl" onClick={() => {
+                    const input = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
+                    if (input) input.focus();
+                  }}>
+                    <Plus className="w-5 h-5" />
+                    <span className="text-sm font-medium">{selected.length === 0 ? 'Add phones to compare' : 'Add another phone'}</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input placeholder="Search phones to compare..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
+
+          {/* Search section */}
+          <div className="card-premium p-4 sm:p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2"><Search className="w-4 h-4 text-blue-500" /> Search & Add Phones</h3>
+              <span className="text-[10px] text-muted-foreground">Select 2-4 phones</span>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input placeholder="Type phone name to search..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
+            </div>
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
+              {search.length >= 2 && autocompleteResults.length === 0 && (
+                <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>
+              )}
+              {search.length < 2 && (
+                <div className="text-center py-10 text-sm text-muted-foreground">Type at least 2 characters to search</div>
+              )}
+              {autocompleteResults.slice(0, 20).map(p => (
+                <label key={p.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
+                  <input type="checkbox" checked={selected.some(s => s.id === p.id)} onChange={() => togglePhone(p)} disabled={!selected.some(s => s.id === p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
+                  {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 object-contain rounded-lg bg-[#F8FAFC] p-0.5" unoptimized /> : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
+                  <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p><p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p></div>
+                  {selected.some(s => s.id === p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
+                </label>
+              ))}
+            </div>
           </div>
-          <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50 max-h-96">
-            {search.length >= 2 && autocompleteResults.length === 0 && (
-              <div className="text-center py-10 text-sm text-muted-foreground">No phones found</div>
-            )}
-            {search.length < 2 && (
-              <div className="text-center py-10 text-sm text-muted-foreground">Type at least 2 characters to search</div>
-            )}
-            {autocompleteResults.slice(0, 20).map(p => (
-              <label key={p.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
-                <input type="checkbox" checked={selected.some(s => s.id === p.id)} onChange={() => togglePhone(p)} disabled={!selected.some(s => s.id === p.id) && selected.length >= 4} className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500/30" />
-                {p.thumbnail ? <Image src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 object-contain rounded-lg bg-[#F8FAFC] p-0.5" unoptimized /> : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center"><Smartphone className="w-4 h-4 text-gray-400" /></div>}
-                <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p><p className="text-xs text-muted-foreground">{p.brand?.name} · {formatPrice(p.pricePKR)}</p></div>
-                {selected.some(s => s.id === p.id) && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
-              </label>
-            ))}
-          </div>
+
+          {/* Compare button */}
+          {selected.length >= 2 && (
+            <button onClick={() => { setCompared(true); setShowPicker(false); updateURL(selected); }} className="w-full bg-blue-500 hover:bg-blue-600 text-white h-12 rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-blue-500/25 flex items-center justify-center gap-2">
+              <GitCompare className="w-4 h-4" /> Compare {selected.length} Phones
+            </button>
+          )}
         </div>
       ) : null}
 

@@ -218,7 +218,16 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
                 </Link>
               </>
             ) : (
-              <p className="text-[10px] text-gray-400 text-center py-3">No specs available</p>
+              <div className="text-center py-2">
+                <p className="text-[10px] text-gray-400 mb-2">Loading specs...</p>
+                <Link
+                  href={`/phones/${phone.slug}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-500 hover:text-blue-600"
+                >
+                  View Full Specs →
+                </Link>
+              </div>
             )}
           </div>
         )}
