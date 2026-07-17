@@ -230,7 +230,14 @@ function CompareContent() {
               </div>
             ))}
             {selected.length < 4 && (
-              <button onClick={() => { setShowPicker(true); setCompared(false); }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-500 hover:bg-blue-50 hover:border-blue-400 transition-colors shrink-0">
+              <button onClick={() => {
+                setShowPicker(true);
+                setCompared(false);
+                setTimeout(() => {
+                  const input = document.getElementById('compare-search-input');
+                  if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
+                }, 100);
+              }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-500 hover:bg-blue-50 hover:border-blue-400 transition-colors shrink-0">
                 <Plus className="w-4 h-4" /> Add Phones
               </button>
             )}
@@ -268,8 +275,8 @@ function CompareContent() {
                 {/* Add phone slot */}
                 {selected.length < 4 && (
                   <div className="card-premium p-3 flex items-center justify-center gap-2 border-dashed border-2 border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500 cursor-pointer transition-all min-h-[72px] rounded-2xl" onClick={() => {
-                    const input = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
-                    if (input) input.focus();
+                    const input = document.getElementById('compare-search-input');
+                    if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
                   }}>
                     <Plus className="w-5 h-5" />
                     <span className="text-sm font-medium">{selected.length === 0 ? 'Add phones to compare' : 'Add another phone'}</span>
@@ -287,7 +294,7 @@ function CompareContent() {
             </div>
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input placeholder="Type phone name to search..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
+              <input id="compare-search-input" placeholder="Type phone name to search..." value={search} onChange={e => setSearch(e.target.value)} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
             </div>
             <div className="max-h-72 overflow-y-auto rounded-xl border border-gray-100 divide-y divide-gray-50">
               {search.length >= 2 && autocompleteResults.length === 0 && (

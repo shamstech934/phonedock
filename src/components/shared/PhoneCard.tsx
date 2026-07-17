@@ -25,6 +25,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
   const [showQuickView, setShowQuickView] = useState(false);
   const [qvSpecs, setQvSpecs] = useState<Record<string, string> | null>(null);
   const [qvLoading, setQvLoading] = useState(false);
+  const [qvFetched, setQvFetched] = useState(false);
   const displaySize = extractDisplaySize(phone.specs?.display);
 
   // Quick specs for Quick View popover (from already-loaded specs or fetched on demand)
@@ -49,24 +50,25 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
     e.stopPropagation();
     if (showQuickView) { setShowQuickView(false); return; }
     setShowQuickView(true);
-    if (!phone.specs && !qvSpecs) {
+    if (!phone.specs && !qvSpecs && !qvFetched) {
       setQvLoading(true);
+      setQvFetched(true);
       fetch(`/api/phones/${phone.slug}`)
         .then(r => r.json())
         .then(d => {
           if (d?.phone?.specs) {
             const s = d.phone.specs;
-            setQvSpecs({
-              ...(s.chipset && { Chipset: s.chipset }),
-              ...(s.ram && { RAM: s.ram }),
-              ...(s.storage && { Storage: s.storage }),
-              ...(s.display && { Display: s.display }),
-              ...(s.battery && { Battery: s.battery }),
-              ...(s.mainCamera && { Camera: s.mainCamera }),
-            });
+            const mapped: Record<string, string> = {};
+            if (s.chipset) mapped.Chipset = s.chipset;
+            if (s.ram) mapped.RAM = s.ram;
+            if (s.storage) mapped.Storage = s.storage;
+            if (s.display) mapped.Display = s.display;
+            if (s.battery) mapped.Battery = s.battery;
+            if (s.mainCamera) mapped.Camera = s.mainCamera;
+            setQvSpecs(mapped);
           }
         })
-        .catch(() => {})
+        .catch((err) => { console.error('[QuickView] fetch failed for', phone.slug, err); })
         .finally(() => setQvLoading(false));
     }
   };
@@ -219,7 +221,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               </>
             ) : (
               <div className="text-center py-2">
-                <p className="text-[10px] text-gray-400 mb-2">Loading specs...</p>
+                <p className="text-[10px] text-gray-400 mb-2">No specs available yet</p>
                 <Link
                   href={`/phones/${phone.slug}`}
                   onClick={(e) => e.stopPropagation()}
