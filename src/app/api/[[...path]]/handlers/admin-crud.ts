@@ -760,6 +760,74 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
 // ============ ADMIN CRUD POST ============
 
 export async function handleAdminCrudPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/specs-backfill ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-backfill') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:manage'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const { flattenCollectedPhoneSpecs } = await import('@/lib/normalize-specs');
+    const allPhones = await Phone.find({ active: true, status: 'published' }).select('_id slug modelName').lean();
+    const existingSpecIds = new Set(
+      (await PhoneSpecs.find({}, { projection: { phoneId: 1 } }).lean())
+        .map((s: any) => s.phoneId?.toString())
+    );
+    const missingPhones = allPhones.filter((p: any) => !existingSpecIds.has(p._id.toString()));
+
+    if (missingPhones.length === 0) {
+      return NextResponse.json({ success: true, message: 'All phones already have specs', created: 0, skipped: 0 });
+    }
+
+    // Find CollectedPhone docs for missing phones
+    const missingOids = missingPhones.map((p: any) => p._id);
+    const collectedDocs = await CollectedPhone.find({
+      approvedPhoneId: { $in: missingOids },
+      status: { $in: ['approved', 'imported'] },
+    }).lean();
+
+    const collectedByPhoneId = new Map<string, any>();
+    for (const c of collectedDocs) {
+      if (c.approvedPhoneId) collectedByPhoneId.set(c.approvedPhoneId.toString(), c);
+    }
+
+    let created = 0;
+    let skipped = 0;
+    const details: string[] = [];
+
+    for (const phone of missingPhones) {
+      const collected = collectedByPhoneId.get(phone._id.toString());
+      if (!collected) { skipped++; continue; }
+
+      const flatSpecs = flattenCollectedPhoneSpecs(collected);
+      if (Object.keys(flatSpecs).length === 0) { skipped++; continue; }
+
+      try {
+        await PhoneSpecs.findOneAndUpdate(
+          { phoneId: phone._id },
+          { $set: { phoneId: phone._id, ...flatSpecs } },
+          { upsert: true, strict: false },
+        );
+        created++;
+        details.push(`${phone.slug} — ${Object.keys(flatSpecs).length} fields`);
+      } catch (err: any) {
+        details.push(`${phone.slug} — ERROR: ${err.message}`);
+      }
+    }
+
+    try {
+      await ActivityLog.create({ adminId: admin._id, action: 'specs_backfill', details: `Backfilled specs for ${created} phones`, entityType: 'system' });
+    } catch {}
+
+    return NextResponse.json({
+      success: true,
+      message: `Created ${created} PhoneSpecs, skipped ${skipped}`,
+      created,
+      skipped,
+      total: missingPhones.length,
+      details,
+    });
+  }
+
   // ---- /api/admin/users (CREATE — superadmin only) ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'users') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
