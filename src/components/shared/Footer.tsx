@@ -76,6 +76,9 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
           <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
           <p className="text-cyan-400/60 font-medium">Phone prices may vary. Check with retailers.</p>
+          {process.env.NEXT_PUBLIC_BUILD_ID && (
+            <p className="text-gray-700 text-[10px]">Build: {process.env.NEXT_PUBLIC_BUILD_ID}</p>
+          )}
         </div>
       </div>
     </footer>

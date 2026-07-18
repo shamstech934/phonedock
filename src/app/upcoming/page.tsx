@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 export const revalidate = 300;
 import { Clock } from 'lucide-react';
 import type { Metadata } from 'next';

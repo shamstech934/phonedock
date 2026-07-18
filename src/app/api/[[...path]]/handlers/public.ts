@@ -36,6 +36,16 @@ async function attachListSpecs(phones: any[]): Promise<any[]> {
 // ============ PUBLIC GET HANDLERS ============
 
 export async function handlePublicGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/build-info (deployment verification) ----
+  if (segments.length === 1 && segments[0] === 'build-info') {
+    return NextResponse.json({
+      buildId: process.env.NEXT_PUBLIC_BUILD_ID || 'local',
+      commit: process.env.VERCEL_GIT_COMMIT_SHA || 'local',
+      branch: process.env.VERCEL_GIT_COMMIT_REF || 'local',
+      environment: process.env.VERCEL_ENV || 'local',
+    });
+  }
+
   // ---- /api/health (public, no auth) — no env var status disclosure ----
   if (segments.length === 1 && segments[0] === 'health') {
     try {

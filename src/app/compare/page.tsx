@@ -539,18 +539,23 @@ function CompareContent() {
                   </thead>
                   <tbody>
                     {filteredSpecRows.map((row, i) => {
-                      const values = comparePhones.map(p => row.get(p) || '');
+                      const values = comparePhones.map(p => {
+                        const v = row.get(p);
+                        if (!v || v === 'undefined' || v === 'null' || v === '[object Object]') return '';
+                        return String(v).trim();
+                      });
                       const nonEmptyValues = values.filter(v => v && v !== '—');
                       const allSame = nonEmptyValues.length > 0 && new Set(nonEmptyValues).size <= 1;
                       return (
                         <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F8FAFC]'}>
                           <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-inherit">{row.label}</td>
                           {comparePhones.map(p => {
-                            const val = row.get(p) || '—';
-                            const isBest = !allSame && val !== '—' && val === nonEmptyValues[0];
+                            const val = values.find((_, idx) => comparePhones[idx].id === p.id) || '';
+                            const displayVal = val || <span className="text-muted-foreground italic text-xs">Not available</span>;
+                            const isBest = !allSame && val && val === nonEmptyValues[0];
                             return (
                               <td key={p.id} className={`px-4 py-3 text-gray-900 ${isBest ? 'font-semibold bg-sky-50' : ''}`}>
-                                {val}
+                                {displayVal}
                               </td>
                             );
                           })}

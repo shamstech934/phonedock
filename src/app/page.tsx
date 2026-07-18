@@ -5,6 +5,7 @@ import { fetchHomeData } from '@/lib/fetch-home-data';
 import type { HomeData } from '@/components/shared/types';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 
+export const dynamic = 'force-dynamic';
 // ISR: revalidate every 60 seconds — Vercel CDN serves cached pages,
 // only re-generates in background when cache expires.
 export const revalidate = 60;
