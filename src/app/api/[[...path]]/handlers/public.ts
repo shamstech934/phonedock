@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory } from '@/lib/models';
-import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured } from './helpers';
+import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 
@@ -27,22 +27,8 @@ async function attachListSpecs(phones: any[]): Promise<any[]> {
   if (phones.length === 0) return phones;
   const ids = phones.map((p: any) => p._id);
   const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
-  const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
-  return phones.map((p: any) => {
-    const json = phoneToJSON(p);
-    const sp = specsMap.get(p._id?.toString());
-    if (sp) {
-      json.specs = {
-        ram: sp.ram || '',
-        mainCamera: sp.mainCamera || '',
-        battery: sp.battery || '',
-        chipset: sp.chipset || '',
-        display: sp.display || '',
-        storage: sp.storage || '',
-      };
-    }
-    return json;
-  });
+  const specsMap = buildSpecsMap(specsArr);
+  return attachSpecsToRawPhones(phones, specsMap);
 }
 
 // ============ PUBLIC GET HANDLERS ============

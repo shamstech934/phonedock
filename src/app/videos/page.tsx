@@ -74,7 +74,7 @@ export default function VideosPage() {
                 {videos.map(v => (
                   <div key={v.id} onClick={() => setActiveVideo(v)} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
                     <div className="relative aspect-video bg-gray-100">
-                      {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
+                      {v.thumbnailUrl ? <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized /> : <div className="w-full h-full flex items-center justify-center"><Play className="w-10 h-10 text-gray-300" /></div>}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                         <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                           <Play className="w-5 h-5 text-gray-900 ml-0.5" fill="currentColor" />

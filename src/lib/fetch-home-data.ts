@@ -6,41 +6,20 @@
 
 import { Phone, Brand, News, PhoneSpecs, Sponsor } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
-import { phoneToJSON } from '@/app/api/[[...path]]/handlers/helpers';
+import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 
-// Reusable: batch-attach basic specs to phone JSON objects (for Quick View)
+// ============ BATCH SPECS ATTACHMENT (shared with public.ts) ============
+
+/** Attach specs to an array of phone JSON objects.
+ *  Phones must already be run through phoneToJSON (they have `id` as string). */
 async function attachBasicSpecs(phones: any[]): Promise<any[]> {
   if (phones.length === 0) return phones;
-  const ids = phones.map((p: any) => {
-    // phoneToJSON stores id, but original _id may be needed for lookup
-    return p.id || p._id?.toString();
-  });
-  // Try to get specs by phoneId — need original ObjectIds
-  // We stored the phones before phoneToJSON, so let's work differently
-  const specsArr = await PhoneSpecs.find({
-    phoneId: { $in: ids.map((id: string) => id) }
-  }).lean();
-  const specsMap = new Map<string, any>();
-  for (const s of specsArr) {
-    specsMap.set(s.phoneId.toString(), s);
-  }
-  return phones.map((p: any) => {
-    const sp = specsMap.get(p.id);
-    if (sp) {
-      return {
-        ...p,
-        specs: {
-          ram: sp.ram || '',
-          mainCamera: sp.mainCamera || '',
-          battery: sp.battery || '',
-          chipset: sp.chipset || '',
-          display: sp.display || '',
-          storage: sp.storage || '',
-        },
-      };
-    }
-    return p;
-  });
+  // Collect both string ids and original ObjectIds for the lookup
+  const ids = phones.map((p: any) => p.id).filter(Boolean);
+  if (ids.length === 0) return phones;
+  const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
+  const specsMap = buildSpecsMap(specsArr);
+  return attachSpecsToJsonPhones(phones, specsMap);
 }
 
 // ============ HOMEPAGE DATA ============
@@ -144,21 +123,7 @@ export async function fetchHeroPhones() {
 
   const ids = phones.map((p: any) => p._id);
   const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
-  const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
+  const specsMap = buildSpecsMap(specsArr);
 
-  return phones.map((p: any) => {
-    const json = phoneToJSON(p);
-    const specs = specsMap.get(p._id?.toString());
-    return {
-      ...json,
-      specs: specs ? {
-        ram: specs.ram || '',
-        mainCamera: specs.mainCamera || '',
-        battery: specs.battery || '',
-        chipset: specs.chipset || '',
-        display: specs.display || '',
-        storage: specs.storage || '',
-      } : null,
-    };
-  });
+  return attachSpecsToRawPhones(phones, specsMap);
 }

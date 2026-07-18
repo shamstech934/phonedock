@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
+import Link from 'next/link';
 import { HelpCircle, ChevronDown } from 'lucide-react';
 
 const faqs = [
@@ -98,9 +99,9 @@ export default function FAQPage() {
 
           <div className="card-premium p-6 mt-8 text-center animate-fade-in">
             <p className="text-sm text-gray-600">Still have questions?</p>
-            <a href="/contact" className="inline-flex items-center gap-1.5 mt-2 text-sm font-medium text-blue-500 hover:text-blue-600 transition-colors">
+            <Link href="/contact" className="inline-flex items-center gap-1.5 mt-2 text-sm font-medium text-blue-500 hover:text-blue-600 transition-colors">
               Contact us and we&apos;ll be happy to help
-            </a>
+            </Link>
           </div>
         </div>
       </main>

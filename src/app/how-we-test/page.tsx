@@ -3,6 +3,7 @@ import { getBaseUrl } from '@/lib/urls';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { Beaker, BarChart3, Cpu, Camera, Battery, Monitor, Star } from 'lucide-react';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'How We Test Phones',
@@ -104,7 +105,7 @@ export default function HowWeTestPage() {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-4">
-                For the detailed formula and methodology behind our overall rating, please see our <a href="/rating-methodology" className="text-blue-500 hover:text-blue-600 font-medium">Rating Methodology</a> page.
+                For the detailed formula and methodology behind our overall rating, please see our <Link href="/rating-methodology" className="text-blue-500 hover:text-blue-600 font-medium">Rating Methodology</Link> page.
               </p>
             </section>
           </div>

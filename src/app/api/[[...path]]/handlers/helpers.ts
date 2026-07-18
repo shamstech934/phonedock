@@ -171,6 +171,75 @@ export function requirePermission(admin: any, permission: string): NextResponse 
   return null;
 }
 
+// ============ SHARED PHONE SPECS SERIALIZATION ============
+// Single source of truth for converting a raw PhoneSpecs MongoDB document
+// into the normalized PhoneSpecs shape used everywhere (listings, detail, Quick View).
+
+const SPECS_FIELDS = [
+  'display','displayType','resolution','refreshRate','protection','brightness',
+  'chipset','cpu','gpu','process','ram','ramType','storage','cardSlot',
+  'mainCamera','mainCameraSensor','aperture','ois','eis','ultrawide','telephoto','zoom','cameraFeatures','videoRecording',
+  'selfieCamera','selfieSensor','selfieVideo',
+  'battery','charging','chargingSpeed','wirelessCharge','wirelessSpeed','reverseCharge',
+  'weight','dimensions','build','sim','ipRating','network','fiveG','wifi','bluetooth','nfc','usb','infrared',
+  'fingerprint','faceUnlock','sensors','colors',
+  'os','osVersion','osUI','updatePolicy','specialFeatures',
+] as const;
+
+const NUMERIC_SPECS_FIELDS = ['ramGB','storageGB','screenSizeInch','mainCameraMP','batteryMAh'] as const;
+
+/** Serialize a raw PhoneSpecs document into the normalized frontend shape.
+ *  Returns null when rawSpecs is falsy (no specs document exists).
+ *  Strips MongoDB metadata (_id, __v, phoneId, createdAt, updatedAt). */
+export function serializePhoneSpecs(rawSpecs: any): Record<string, string | number | null> | null {
+  if (!rawSpecs) return null;
+  const result: Record<string, string | number | null> = {};
+  for (const f of SPECS_FIELDS) {
+    const val = rawSpecs[f];
+    result[f] = (typeof val === 'string' && val) ? val : '';
+  }
+  for (const f of NUMERIC_SPECS_FIELDS) {
+    const val = rawSpecs[f];
+    result[f] = (val !== undefined && val !== null) ? val : null;
+  }
+  return result;
+}
+
+/** Create a phoneId-to-specs Map from an array of PhoneSpecs lean docs. */
+export function buildSpecsMap(specsArr: any[]): Map<string, any> {
+  const map = new Map<string, any>();
+  for (const s of specsArr) {
+    const key = s.phoneId?.toString?.() || s.phoneId;
+    if (key) map.set(key, s);
+  }
+  return map;
+}
+
+/** Attach serialized specs to an array of phone JSON objects (already run through phoneToJSON).
+ *  Used by listing endpoints and fetch-home-data. */
+export function attachSpecsToJsonPhones(phones: any[], specsMap: Map<string, any>): any[] {
+  return phones.map(p => {
+    const rawSpec = specsMap.get(p.id || p._id?.toString());
+    if (rawSpec) {
+      return { ...p, specs: serializePhoneSpecs(rawSpec) };
+    }
+    return p;
+  });
+}
+
+/** Attach serialized specs to raw Mongoose phone docs (before phoneToJSON).
+ *  Used by API listing handlers that call phoneToJSON inside. */
+export function attachSpecsToRawPhones(phones: any[], specsMap: Map<string, any>): any[] {
+  return phones.map(p => {
+    const json = phoneToJSON(p);
+    const rawSpec = specsMap.get(p._id?.toString());
+    if (rawSpec) {
+      json.specs = serializePhoneSpecs(rawSpec);
+    }
+    return json;
+  });
+}
+
 export function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[], prices?: any[]) {
   const obj = p.toObject ? p.toObject() : p;
   return {
@@ -200,7 +269,8 @@ export function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[
     reviewSummary: obj.reviewSummary || '',
     reviewVerdict: obj.reviewVerdict || '',
     published: obj.status === 'published',
-    specs: specs ? { ...specs, id: specs._id?.toString() } : undefined,
+    // Use the shared serializer for full specs (detail page path)
+    specs: specs ? serializePhoneSpecs(specs) : undefined,
     benchmarks: benchmarks || undefined,
     images: images?.map((img: any) => ({ id: img._id?.toString(), url: img.url, altText: img.altText, sortOrder: img.sortOrder })) || [],
     prices: prices?.map((pr: any) => ({ id: pr._id?.toString(), storeName: pr.storeName, price: pr.price, url: pr.url, inStock: pr.inStock })) || [],

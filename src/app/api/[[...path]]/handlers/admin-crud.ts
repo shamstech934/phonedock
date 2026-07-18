@@ -1163,6 +1163,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     try {
       await phone.save();
     } catch (e: any) {
+      console.error('[SavePhone] phone.save() failed:', e.message);
       const msg = e?.message || '';
       // Extract useful info from Mongoose validation errors
       if (msg.includes('ValidationError')) {
@@ -1170,23 +1171,68 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
         const field = fieldMatch ? fieldMatch[1] : 'unknown';
         return NextResponse.json({ error: `Validation failed on field "${field}": ${msg.split(':').pop()?.trim() || msg}` }, { status: 400 });
       }
+      if (msg.includes('duplicate key') || msg.includes('E11000')) {
+        return NextResponse.json({ error: 'Duplicate key conflict. A phone with this slug may already exist.' }, { status: 409 });
+      }
       return NextResponse.json({ error: 'Failed to save phone', details: msg }, { status: 500 });
     }
 
     // Save specs (independent of phone save)
     try {
-      if (specs && typeof specs === 'object') {
-        const { _id: _s, __v: _sv, phoneId: _sp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeSpecs } = specs as any;
-        await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true, new: true });
+      if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) {
+        // Strip ALL non-schema fields to prevent StrictModeError / CastError
+        const { _id, __v, phoneId, id, createdAt, updatedAt, _count, ...rest } = specs as any;
+        // Further strip any non-schema keys — PhoneSpecs only has known string/number fields
+        const allowedSpecKeys = new Set([
+          'display','displayType','resolution','refreshRate','protection','brightness',
+          'chipset','cpu','gpu','process','ram','ramType','storage','cardSlot',
+          'mainCamera','mainCameraSensor','aperture','ois','eis','ultrawide','telephoto','zoom','cameraFeatures','videoRecording',
+          'selfieCamera','selfieSensor','selfieVideo',
+          'battery','charging','chargingSpeed','wirelessCharge','wirelessSpeed','reverseCharge',
+          'weight','dimensions','build','sim','ipRating','network','fiveG','wifi','bluetooth','nfc','usb','infrared',
+          'fingerprint','faceUnlock','sensors','colors',
+          'os','osVersion','osUI','updatePolicy','specialFeatures',
+          'ramGB','storageGB','screenSizeInch','mainCameraMP','batteryMAh',
+        ]);
+        const safeSpecs: Record<string, any> = {};
+        for (const [key, val] of Object.entries(rest)) {
+          if (!allowedSpecKeys.has(key)) continue;
+          // Coerce numeric fields
+          if (['ramGB','storageGB','screenSizeInch','mainCameraMP','batteryMAh'].includes(key)) {
+            safeSpecs[key] = val !== null && val !== undefined && val !== '' ? Number(val) || null : null;
+          } else {
+            // String fields — ensure string type
+            safeSpecs[key] = val !== null && val !== undefined ? String(val) : '';
+          }
+        }
+        await PhoneSpecs.findOneAndUpdate(
+          { phoneId: phone._id },
+          { $set: safeSpecs },
+          { upsert: true, new: true, strict: false }
+        );
       }
-    } catch (e: any) { console.error('[SavePhone Specs]', e.message, e.stack); }
+    } catch (e: any) {
+      console.error('[SavePhone Specs] Failed:', e.message, e.stack);
+      // Don't fail the entire save — specs failure is non-critical
+    }
     // Save benchmarks
     try {
       if (benchmarks && typeof benchmarks === 'object') {
-        const { _id: _b, __v: _bv, phoneId: _bp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeBench } = benchmarks as any;
-        await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true });
+        const { _id, __v, phoneId, id, createdAt, updatedAt, ...rest } = benchmarks as any;
+        const allowedBenchKeys = new Set([
+          'antutu','geekbenchSingle','geekbenchMulti','gamingScore',
+          'pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery',
+        ]);
+        const safeBench: Record<string, any> = {};
+        for (const [key, val] of Object.entries(rest)) {
+          if (!allowedBenchKeys.has(key)) continue;
+          safeBench[key] = typeof val === 'number' ? val : (Number(val) || 0);
+        }
+        if (Object.keys(safeBench).length > 0) {
+          await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench }, { upsert: true, new: true, strict: false });
+        }
       }
-    } catch (e: any) { console.error('[SavePhone Benchmarks]', e.message); }
+    } catch (e: any) { console.error('[SavePhone Benchmarks] Failed:', e.message); }
     // Save images
     try {
       if (images !== undefined) {

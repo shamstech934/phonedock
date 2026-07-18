@@ -296,6 +296,9 @@ export default function PhoneForm({
 
   // ── Submit handler ──
   const handleSubmit = async () => {
+    // Double-submit prevention
+    if (saving) return;
+
     // Validation
     if (!form.brand) {
       setError('Brand is required.');

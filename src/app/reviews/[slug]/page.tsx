@@ -321,7 +321,7 @@ export default async function PhoneReviewPage({
       url: BASE_URL,
       logo: {
         '@type': 'ImageObject',
-        url: `${BASE_URL}/logo.png`,
+        url: `${BASE_URL}/logo.svg`,
       },
     },
     mainEntityOfPage: {

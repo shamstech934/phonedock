@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Search, Smartphone, Layers } from 'lucide-react';
+import { Search, Smartphone, Layers, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
@@ -47,14 +47,19 @@ function SearchContent() {
 
   const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
   const [loading, setLoading] = useState(true);
+  const [searchError, setSearchError] = useState(false);
 
   useEffect(() => {
-    if (!query) { setLoading(false); return; }
+    if (!query) { setLoading(false); setSearchError(false); return; }
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => r.json()).then(d => {
+    setSearchError(false);
+    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then(d => {
       if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); }
-    }).catch(() => { if (!cancelled) setLoading(false); });
+    }).catch(() => { if (!cancelled) { setLoading(false); setSearchError(true); } });
     return () => { cancelled = true; };
   }, [query]);
 
@@ -133,7 +138,16 @@ function SearchContent() {
         </section>
       )}
 
-      {total === 0 && (
+      {searchError && (
+        <div className="text-center py-20 text-muted-foreground">
+          <AlertCircle className="w-14 h-14 mx-auto mb-4 text-amber-400" />
+          <h3 className="text-lg font-bold text-gray-900 mb-1">Something went wrong</h3>
+          <p className="text-sm mb-4">Unable to load search results. Please try again.</p>
+          <Button variant="outline" className="rounded-xl" onClick={() => window.location.reload()}>Try Again</Button>
+        </div>
+      )}
+
+      {!searchError && total === 0 && (
         <div className="text-center py-20 text-muted-foreground">
           <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
           <h3 className="text-lg font-bold text-gray-900 mb-1">No results found for &ldquo;{query}&rdquo;</h3>
