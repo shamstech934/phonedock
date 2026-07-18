@@ -145,3 +145,13 @@ PriceAlertSchema.index({ notified: 1, createdAt: -1 });
 PriceAlertSchema.index({ confirmTokenHash: 1 }, { sparse: true });
 
 export const PriceAlert = mongoose.models.PriceAlert || mongoose.model('PriceAlert', PriceAlertSchema);
+
+// ─── Newsletter Subscriber ──────────────────────────────────────────
+const NewsletterSubscriberSchema = new Schema({
+  email: { type: String, required: true, lowercase: true, trim: true },
+  active: { type: Boolean, default: true },
+}, { timestamps: true });
+
+NewsletterSubscriberSchema.index({ email: 1 }, { unique: true });
+
+export const NewsletterSubscriber = mongoose.models.NewsletterSubscriber || mongoose.model('NewsletterSubscriber', NewsletterSubscriberSchema);

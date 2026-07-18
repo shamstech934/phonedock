@@ -135,6 +135,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage'],
       editor: ['phones:read','phones:create','phones:edit','brands:read','news:read','news:create','news:edit','activity:read','media:upload'],
       reviewer: ['phones:read','brands:read','news:read','activity:read','collectors:read'],
+      viewer: ['phones:read','brands:read','news:read','activity:read'],
+      moderator: ['phones:read','phones:edit','brands:read','news:read','news:edit','activity:read','reviews:read','reviews:manage','media:upload'],
     };
     return (rolePerms[admin.role] || []).includes(link.permission);
   });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages } from '@/lib/revalidate';
@@ -491,8 +491,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [{ action: { $regex: safe, $options: 'i' } }, { details: { $regex: safe, $options: 'i' } }];
     }
-    const module = url.searchParams.get('module');
-    if (module) filter.entityType = module;
+    const moduleName = url.searchParams.get('module');
+    if (moduleName) filter.entityType = moduleName;
     const actionType = url.searchParams.get('action');
     if (actionType) {
       const safeActionType = actionType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1555,6 +1555,11 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
       PhoneBenchmark.deleteMany({ phoneId: id }),
       PhoneImage.deleteMany({ phoneId: id }),
       PhonePrice.deleteMany({ phoneId: id }),
+      PriceHistory.deleteMany({ phoneId: id }),
+      UserReview.deleteMany({ phoneId: id }),
+      PriceAlert.deleteMany({ phoneId: id }),
+      PhoneRetailListing.deleteMany({ phoneId: id }),
+      PriceTrackerHistory.deleteMany({ phoneId: id }),
     ]);
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_phone', details: `Deleted: ${name}`, entityType: 'phone', entityId: id }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true });

@@ -404,12 +404,30 @@ function ComingSoonTeasers() {
 function NewsletterSection() {
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubscribe = () => {
-    if (email.trim() && email.includes('@')) {
-      setSubscribed(true);
-      setEmail('');
+  const handleSubscribe = async () => {
+    if (!email.trim() || !email.includes('@')) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setSubscribed(true);
+        setEmail('');
+      } else {
+        setError(d.error || 'Subscription failed. Try again.');
+      }
+    } catch {
+      setError('Network error. Please try again.');
     }
+    setLoading(false);
   };
 
   return (
@@ -423,7 +441,8 @@ function NewsletterSection() {
             <Check className="w-4 h-4" /> Subscribed successfully! Check your inbox.
           </div>
         ) : (
-          <div className="flex gap-2 max-w-md mx-auto">
+          <div className="space-y-2 max-w-md mx-auto">
+          <div className="flex gap-2">
             <input
               type="email"
               placeholder="your@email.com"
@@ -432,9 +451,11 @@ function NewsletterSection() {
               onKeyDown={e => e.key === 'Enter' && handleSubscribe()}
               className="flex-1 h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
             />
-            <button onClick={handleSubscribe} className="btn-primary h-11 px-6 rounded-xl text-sm font-semibold whitespace-nowrap">
-              Subscribe
+            <button onClick={handleSubscribe} disabled={loading} className="btn-primary h-11 px-6 rounded-xl text-sm font-semibold whitespace-nowrap disabled:opacity-50">
+              {loading ? 'Subscribing...' : 'Subscribe'}
             </button>
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
           </div>
         )}
       </div>

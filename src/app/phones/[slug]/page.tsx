@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -74,11 +73,11 @@ function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; s
 
 // ── Price Tracker Chart (from PriceTrackerHistory records) ──
 function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; capturedAt: string }> }) {
+  const [hovered, setHovered] = useState<number | null>(null);
   // history is sorted desc from API — reverse for chronological order
   const sorted = [...history].reverse();
   if (sorted.length < 2) return null;
 
-  const [hovered, setHovered] = useState<number | null>(null);
   const prices = sorted.map(h => h.newPrice);
   const minP = Math.min(...prices);
   const maxP = Math.max(...prices);
@@ -186,10 +185,12 @@ function PriceAlertButton({ phoneId, slug }: { phoneId: string; slug: string }) 
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubscribe = async () => {
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
     setLoading(true);
+    setError('');
     try {
       const res = await fetch(`/api/phones/${slug}/price-alerts`, {
         method: 'POST',
@@ -198,7 +199,10 @@ function PriceAlertButton({ phoneId, slug }: { phoneId: string; slug: string }) 
       });
       const d = await res.json();
       if (res.ok) { setSubscribed(true); }
-    } catch {}
+      else { setError(d.error || d.message || 'Subscription failed. Try again.'); }
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    }
     setLoading(false);
   };
 
@@ -211,11 +215,14 @@ function PriceAlertButton({ phoneId, slug }: { phoneId: string; slug: string }) 
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-2">
       <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email for price drop alert" aria-label="Email for price drop alert" className="flex-1 min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400" />
       <button onClick={handleSubscribe} disabled={loading || !email} className="shrink-0 rounded-lg bg-blue-50 text-blue-600 px-3 py-2 text-xs font-medium hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1">
         <Bell className="w-3 h-3" /> {loading ? '...' : 'Notify'}
       </button>
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
   );
 }
@@ -510,7 +517,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                   <div className="flex gap-2 p-3 overflow-x-auto no-scrollbar">
                     {images.map((img, i) => (
                       <button key={img.id} onClick={() => setActiveImage(i)} className={`w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-colors ${i === activeImage ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}>
-                        <Image src={img.url} alt={img.altText || ''} width={64} height={64} className="object-contain w-full h-full p-1" unoptimized />
+                        <Image src={img.url} alt={img.altText || phone.modelName} width={64} height={64} className="object-contain w-full h-full p-1" unoptimized />
                       </button>
                     ))}
                   </div>

@@ -14,7 +14,7 @@ function timingSafeEqual(a: string, b: string): boolean {
     return false;
   }
 }
-import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory } from '@/lib/models';
+import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory, NewsletterSubscriber } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
 import { handlePublicGet, handlePublicPost } from './handlers/public';
 import { verifyTurnstile } from '@/lib/turnstile';
@@ -67,8 +67,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         if (lastPrice && lastPrice.price > phone.pricePKR) {
           // Price has dropped! Send notification email (using nodemailer)
           try {
-            const nodemailer = require('nodemailer');
-            const transporter = nodemailer.createTransport({
+            const nm = await import('nodemailer');
+            const transporter = nm.default.createTransport({
               host: process.env.EMAIL_HOST,
               port: parseInt(process.env.EMAIL_PORT || '587'),
               secure: process.env.EMAIL_SECURE === 'true',
@@ -265,6 +265,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       }
       await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: email.trim().toLowerCase().slice(0, 200), rating, comment: comment.trim().slice(0, 1000), status: 'pending', spamFlags: [] });
       return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
+    }
+
+    // Newsletter subscription: /api/newsletter
+    if (segments.length === 1 && segments[0] === 'newsletter') {
+      if (!await checkIpRateLimit(`newsletter:${ip}`, 3, 3600_000, RateLimit)) {
+        return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
+      }
+      await connectDB();
+      const body = await req.json();
+      const email = (body.email || '').trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
+      }
+      try {
+        await NewsletterSubscriber.create({ email });
+        return NextResponse.json({ success: true, message: 'Subscribed successfully!' });
+      } catch (e: any) {
+        if (e.code === 11000) {
+          return NextResponse.json({ success: true, message: 'You are already subscribed!' });
+        }
+        throw e;
+      }
     }
 
     // Public price alert subscription: /api/phones/:slug/price-alerts (double opt-in)

@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  Search, Star, X, Check, Trophy, Camera, Cpu, Battery, Tag, Smartphone, GitCompare, Monitor, Shield,
+  Search, Star, X, Check, Trophy, Camera, Cpu, Battery, Tag, Smartphone, GitCompare, Monitor, Shield, Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -13,10 +13,6 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
-
-function Plus(props: React.SVGProps<SVGSVGElement>) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M5 12h14" /><path d="M12 5v14" /></svg>;
-}
 
 function CompareContent() {
   const searchParams = useSearchParams();

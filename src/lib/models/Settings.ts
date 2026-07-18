@@ -37,8 +37,7 @@ const SettingsSchema = new Schema<ISettings>({
   googleAnalyticsId: { type: String, default: '' },
   maintenanceMode: { type: Boolean, default: false },
   footerText: { type: String, default: '' },
-  updatedAt: { type: Date, default: Date.now },
-});
+}, { timestamps: true });
 
 // Singleton: only one document
 export const Settings = (mongoose.models.Settings as mongoose.Model<ISettings>) || mongoose.model<ISettings>('Settings', SettingsSchema);

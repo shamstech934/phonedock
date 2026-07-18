@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Star, Check, X, Trash2, Clock, AlertTriangle, Eye, Search, Filter,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Flag, Shield,
-  MessageSquare, BarChart3, TrendingDown, Users, Zap, AlertCircle
+  MessageSquare, BarChart3, Zap, AlertCircle
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Newspaper, Plus, Edit, Trash2, Check, X, Eye, Star, Archive, Copy,
+  Newspaper, Plus, Edit, Trash2, Check, X, Eye, Star, Archive,
   Search, Filter, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   BarChart3, FileText, Calendar, TrendingUp, Clock, BookOpen, AlertCircle
 } from 'lucide-react';

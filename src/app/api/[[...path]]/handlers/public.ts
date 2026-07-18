@@ -211,7 +211,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' });
     if (!phone) return cachedError('Not found', 404, 60, 300);
-    const history = await PriceHistory.find({ phoneId: phone._id }).sort({ recordedAt: 1 }).lean();
+    const history = await PriceHistory.find({ phoneId: phone._id }).sort({ recordedAt: 1 }).limit(365).lean();
     // Group by storeName for chart data
     const storeNames = [...new Set(history.map((h: any) => h.storeName ?? 'Base Price'))];
     return cached({ history, storeNames }, 60, 300);

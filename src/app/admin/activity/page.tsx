@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Activity, Plus, Edit, Trash2, Search, ChevronLeft, ChevronRight,
   Clock, Shield, AlertTriangle, RefreshCw, BarChart3, Users,
-  Download, Monitor, Smartphone, Database, FileText, Video, Star,
-  Radio, Upload, Zap, Eye, Key, AlertCircle, ChevronDown
+  Monitor, Smartphone, Database, FileText, Video, Star,
+  Radio, Upload, Zap, Key, AlertCircle, ChevronDown
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 

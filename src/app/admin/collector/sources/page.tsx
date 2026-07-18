@@ -49,7 +49,7 @@ export default function AdminCollectorSourcesPage() {
   const handleDelete = async () => {
     if (!deleteModal) return;
     try {
-      await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ sourceId: deleteModal.id }) }).catch(() => {});
+      await fetch(`/api/collector/sources/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
       setDeleteModal(null); fetchSources();
     } catch {}
   };

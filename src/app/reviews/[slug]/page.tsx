@@ -12,7 +12,7 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
 import { connectDB } from '@/lib/mongodb';
-import { Phone as PhoneModel, PhoneSpecs, UserReview } from '@/lib/models';
+import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models';
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
@@ -116,6 +116,10 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
       active: true,
       status: 'published',
     };
+    if (brandSlug) {
+      const brand = await Brand.findOne({ slug: brandSlug }).select('_id').lean();
+      if (brand) query.brandId = brand._id;
+    }
 
     const phones = await PhoneModel.find(query)
       .populate('brand', 'name slug logo')
@@ -248,14 +252,15 @@ export default async function PhoneReviewPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [{ phone, reviews }, relatedPhones] = await Promise.all([
+  const [{ phone, reviews }] = await Promise.all([
     getPhoneWithReviews(slug),
-    getRelatedPhones(slug),
   ]);
 
   if (!phone) {
     notFound();
   }
+
+  const relatedPhones = await getRelatedPhones(slug, phone.brand?.slug);
 
   const avgUserRating =
     reviews.length > 0
