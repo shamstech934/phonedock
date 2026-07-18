@@ -1,10 +1,15 @@
 // Data Quality Rules — barrel export
-import { ALL_RULES, getRuleById, getRulesForEntityType } from './phone-rules';
+import { ALL_RULES, getRulesForEntityType } from './phone-rules';
 import { EXTENDED_RULES } from './extended-rules';
 
 export const ALL_QUALITY_RULES = [...ALL_RULES, ...EXTENDED_RULES];
 
-export { getRuleById, getRulesForEntityType };
+// FIX #12: getRuleById now searches BOTH phone rules AND extended rules
+export function getRuleById(ruleId: string): any {
+  return ALL_QUALITY_RULES.find(r => r.ruleId === ruleId);
+}
+
+export { getRulesForEntityType };
 
 // Re-export rule definitions by ID for direct import
 export {

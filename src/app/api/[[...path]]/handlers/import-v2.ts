@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { ImportJob, ImportBatch } from '@/lib/models';
-import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate } from '@/lib/import/import-v2-engine';
+import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
 import { safePost, safeFetch } from '@/lib/import/safe-fetch';
 
@@ -109,11 +109,56 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
   }
 }
 
+// ============ POST /api/admin/import-v2/jobs/:id/validate ============
+// Re-validate an uploaded job — returns preview stats and records.
+// URL: /api/admin/import-v2/jobs/imp_xxx/validate → segments[3]=importId, segments[4]='validate'
+
+export async function handleImportV2Validate(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'validate') return undefined;
+  const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+  const permCheck = requirePermission(authResult.admin, 'imports:read'); if (permCheck) return permCheck;
+
+  const importId = segments[3];
+  const job = await ImportJob.findOne({ importId }).lean();
+  if (!job) return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'Import job not found' } }, { status: 404 });
+
+  const recognizedFields: string[] = [];
+  const ignoredFields: string[] = [];
+  const missingFields: string[] = [];
+
+  if (job.previewStats) {
+    if (job.previewStats.recognizedFields) recognizedFields.push(...job.previewStats.recognizedFields);
+    if (job.previewStats.ignoredFields) ignoredFields.push(...job.previewStats.ignoredFields);
+    if (job.previewStats.missingFields) missingFields.push(...job.previewStats.missingFields);
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      importId,
+      totalRecords: job.totalRecords,
+      validRecords: job.previewStats?.validRecords || 0,
+      invalidRecords: job.previewStats?.invalidRecords || 0,
+      warnings: job.previewStats?.warnings || 0,
+      duplicateEstimate: job.previewStats?.duplicateEstimate || 0,
+      fields: { recognizedFields, ignoredFields, missingFields },
+      preview: (job.previewData || []).map((r: any) => ({
+        rowNumber: r.rowNumber,
+        normalized: r.normalizedData,
+        errors: r.errors,
+        warnings: r.warnings,
+        duplicateKey: r.duplicateKey,
+      })),
+    },
+  });
+}
+
 // ============ POST /api/admin/import-v2/jobs/:id/config ============
 // Set duplicate mode, batch size, publish mode, dry run.
+// URL: /api/admin/import-v2/jobs/imp_xxx/config → segments[3]=importId, segments[4]='config'
 
 export async function handleImportV2Config(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== 'config') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'config') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
@@ -145,9 +190,10 @@ export async function handleImportV2Config(req: NextRequest, segments: string[])
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/start ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/start → segments[3]=importId, segments[4]='start'
 
 export async function handleImportV2Start(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== 'start') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'start') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
@@ -169,14 +215,15 @@ export async function handleImportV2Start(req: NextRequest, segments: string[]):
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/batches/:batchNumber ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/batches/1 → segments[3]=importId, segments[4]='batches', segments[5]=batchNumber
 
 export async function handleImportV2Batch(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[3] !== 'batches') return undefined;
+  if (segments.length !== 6 || segments[2] !== 'jobs' || segments[4] !== 'batches') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
   const importId = segments[3];
-  const batchNumber = parseInt(segments[4]);
+  const batchNumber = parseInt(segments[5]);
   const body = await req.json();
 
   if (!body.records || !Array.isArray(body.records)) {
@@ -208,6 +255,8 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
 
     return NextResponse.json({ success: true, data: result });
   } catch (err: any) {
+    // FIX #8: Mark batch as failed and transition job so it never stays stuck in 'processing'
+    try { await markBatchFailed(importId, batchNumber, err.message || 'Unknown error'); } catch { /* best effort */ }
     return NextResponse.json({
       success: false,
       error: { code: 'BATCH_FAILED', message: err.message || 'Batch processing failed' },
@@ -217,9 +266,15 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
 }
 
 // ============ GET /api/admin/import-v2/jobs/:id ============
+// URL: /api/admin/import-v2/jobs/imp_xxx → segments[3]=importId
+// Must NOT match known action names (config, start, batches, retry, cancel, rollback, errors.csv, quality-scan)
+
+const IMPORT_V2_ACTIONS = new Set(['config', 'start', 'batches', 'retry', 'cancel', 'rollback', 'errors.csv', 'quality-scan', 'progress', 'failed-rows', 'validate']);
 
 export async function handleImportV2GetJob(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== undefined) return undefined;
+  if (segments.length !== 4 || segments[2] !== 'jobs' || !segments[3]) return undefined;
+  // Never treat action names as importId
+  if (IMPORT_V2_ACTIONS.has(segments[3])) return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:read'); if (permCheck) return permCheck;
 
@@ -252,9 +307,10 @@ export async function handleImportV2GetJob(req: NextRequest, segments: string[])
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/retry ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/retry → segments[3]=importId, segments[4]='retry'
 
 export async function handleImportV2Retry(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== 'retry') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'retry') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
@@ -310,9 +366,10 @@ export async function handleImportV2Retry(req: NextRequest, segments: string[]):
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/cancel ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/cancel → segments[3]=importId, segments[4]='cancel'
 
 export async function handleImportV2Cancel(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== 'cancel') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'cancel') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
@@ -322,9 +379,10 @@ export async function handleImportV2Cancel(req: NextRequest, segments: string[])
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/rollback ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/rollback → segments[3]=importId, segments[4]='rollback'
 
 export async function handleImportV2Rollback(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 4 || segments[2] !== 'jobs' || segments[3] !== 'rollback') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'rollback') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
@@ -347,9 +405,10 @@ export async function handleImportV2Rollback(req: NextRequest, segments: string[
 }
 
 // ============ GET /api/admin/import-v2/jobs/:id/errors.csv ============
+// URL: /api/admin/import-v2/jobs/imp_xxx/errors.csv → segments[3]=importId, segments[4]='errors.csv'
 
 export async function handleImportV2ErrorsCsv(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[3] !== 'errors.csv') return undefined;
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'errors.csv') return undefined;
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:read'); if (permCheck) return permCheck;
 
@@ -432,6 +491,7 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
 
 // ============ POST /api/admin/import-v2/jobs/:id/quality-scan ============
 // Trigger a data quality scan on phones from a completed import job.
+// URL: /api/admin/import-v2/jobs/imp_xxx/quality-scan → segments[3]=importId, segments[4]='quality-scan'
 
 export async function handleImportV2QualityScan(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
   if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'quality-scan') return undefined;
@@ -450,9 +510,10 @@ export async function handleImportV2QualityScan(req: NextRequest, segments: stri
     importId,
   });
 
-  // Execute asynchronously
+  // FIX #12: Execute scan with error handling — don't fire-and-forget
   executeScan(scanId).catch(e => {
     console.error(`[ImportV2] Post-import quality scan ${scanId} failed:`, e);
+    // Scan job status is already set to 'failed' by executeScan's catch block
   });
 
   return NextResponse.json({ success: true, scanId, message: 'Quality scan started for imported phones' });

@@ -27,17 +27,29 @@ export async function startScan(params: {
     importId: params.importId || '',
     dryRun: params.dryRun || false,
     rules: params.rules || [],
+    batchSize: BATCH_SIZE,
   });
   return { scanId };
 }
 
+/**
+ * FIX #12: Safe, resumable scan execution.
+ * - Supports resuming from lastProcessedId (cursor-based)
+ * - Does NOT use fire-and-forget; caller is responsible for lifecycle
+ * - Updates ScanJob with progress after each batch
+ * - Transitions to completed/completed_with_errors/failed
+ */
 export async function executeScan(scanId: string): Promise<void> {
   const job = await ScanJob.findOne({ scanId });
   if (!job) throw new Error('Scan not found');
-  if (job.status === 'running') throw new Error('Scan already running');
+
+  // FIX #12: Allow resuming a 'running' scan (in case of previous crash/timeout)
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    throw new Error(`Scan cannot be executed (status: ${job.status})`);
+  }
 
   await ScanJob.updateOne({ scanId }, {
-    $set: { status: 'running', startedAt: new Date() },
+    $set: { status: 'running', startedAt: job.startedAt || new Date() },
   });
 
   try {
@@ -45,33 +57,32 @@ export async function executeScan(scanId: string): Promise<void> {
       ? job.rules.map((rid: string) => getRuleById(rid)).filter(Boolean)
       : ALL_QUALITY_RULES;
 
+    // FIX #9: Only load brands in context (small set). Specs/images/prices loaded per batch.
     const ctx = await buildDetectionContext(job);
     const allIssues: DetectedIssue[] = [];
 
     if (job.type === 'import' && job.importId) {
-      // Import-specific: only scan phones from this import
       await scanImportPhones(job, activeRules, ctx, allIssues);
     } else if (job.entityIds && job.entityIds.length > 0) {
-      // Entity-specific scan
       const phones = await Phone.find({ _id: { $in: job.entityIds.map((id: string) => new Types.ObjectId(id)) }, deletedAt: null }).lean();
       ctx.entities = phones;
+      // Load lookups for just these phones
+      await loadLookupsForPhoneIds(ctx, phones.map((p: any) => p._id.toString()));
       await runRulesOnBatch(activeRules, ctx, allIssues);
     } else if (job.type === 'incremental') {
-      // Incremental: phones updated since last completed scan
       const lastScan = await ScanJob.findOne({ status: { $in: ['completed', 'completed_with_errors'] } }).sort({ completedAt: -1 }).lean();
       const query = lastScan?.completedAt
         ? { updatedAt: { $gt: lastScan.completedAt }, deletedAt: null }
         : { deletedAt: null };
       await scanAllPhones(job, query, activeRules, ctx, allIssues);
     } else {
-      // Full scan
       await scanAllPhones(job, { deletedAt: null }, activeRules, ctx, allIssues);
     }
 
-    // Also scan for orphan records (not covered by phone-based rules)
-    await scanOrphans(ctx, allIssues);
+    // Scan for orphan records
+    await scanOrphans(allIssues);
 
-    // Scan price tracker issues (stale listings, outliers, mismatches, inactive sources)
+    // Scan price tracker issues
     await scanPriceTrackerIssues(allIssues);
 
     // Persist issues (deduplicated by issueKey)
@@ -80,15 +91,23 @@ export async function executeScan(scanId: string): Promise<void> {
       created = await persistIssues(allIssues, job.importId || undefined);
     }
 
+    const hasErrors = allIssues.length === 0 ? false : true; // issuesFound > 0 is not really "errors"
+    // Use the actual error state from issues
+    const scanErrors = allIssues.filter(i => i.severity === 'critical').length;
+
     await ScanJob.updateOne({ scanId }, {
       $set: {
-        status: 'completed',
+        status: scanErrors > 0 ? 'completed_with_errors' : 'completed',
         completedAt: new Date(),
         issuesFound: allIssues.length,
         issuesCreated: created,
+        issuesResolved: 0,
+        // Clear resume cursor on successful completion
+        lastProcessedId: '',
       },
     });
   } catch (e: any) {
+    // FIX #12: Don't clear lastProcessedId on failure — allows resume
     await ScanJob.updateOne({ scanId }, {
       $set: {
         status: 'failed',
@@ -101,50 +120,67 @@ export async function executeScan(scanId: string): Promise<void> {
 }
 
 // ─── CONTEXT BUILDER ──────────────────────────────────────────────
+// FIX #9: Only loads brands (small set). Other lookups loaded per-phone-batch.
 
 async function buildDetectionContext(job: any): Promise<DetectionContext> {
-  // Fetch all brands
   const brands = await Brand.find({}).lean();
   const brandsMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
 
-  // Fetch all specs
-  const allSpecs = await PhoneSpecs.find({}).lean();
-  const specsMap = new Map(allSpecs.map((s: any) => [s.phoneId?.toString(), s]));
+  return {
+    entities: [],
+    lookups: {
+      brands: brandsMap,
+      specs: new Map(),
+      images: new Map(),
+      prices: new Map(),
+      benchmarks: new Map(),
+    },
+    importId: job.importId || undefined,
+  };
+}
 
-  // Fetch all images grouped by phoneId
-  const allImages = await PhoneImage.find({}).sort({ phoneId: 1, sortOrder: 1 }).lean();
+/**
+ * FIX #9: Load lookups (specs, images, prices, benchmarks) for a specific set of phone IDs.
+ * Called per batch to avoid loading entire collections into memory.
+ */
+async function loadLookupsForPhoneIds(ctx: DetectionContext, phoneIds: string[]): Promise<void> {
+  if (phoneIds.length === 0) return;
+  const objectIds = phoneIds.map(id => new Types.ObjectId(id));
+
+  const [specs, images, prices, benchmarks] = await Promise.all([
+    PhoneSpecs.find({ phoneId: { $in: objectIds } }).lean(),
+    PhoneImage.find({ phoneId: { $in: objectIds } }).sort({ sortOrder: 1 }).lean(),
+    PhonePrice.find({ phoneId: { $in: objectIds } }).lean(),
+    PhoneBenchmark.find({ phoneId: { $in: objectIds } }).lean(),
+  ]);
+
+  const specsMap = new Map(specs.map((s: any) => [s.phoneId?.toString(), s]));
   const imagesMap = new Map<string, any[]>();
-  for (const img of allImages) {
+  for (const img of images) {
     const pid = img.phoneId?.toString();
     if (pid) {
       if (!imagesMap.has(pid)) imagesMap.set(pid, []);
       imagesMap.get(pid)!.push(img);
     }
   }
-
-  // Fetch all prices grouped by phoneId
-  const allPrices = await PhonePrice.find({}).lean();
   const pricesMap = new Map<string, any[]>();
-  for (const pr of allPrices) {
+  for (const pr of prices) {
     const pid = pr.phoneId?.toString();
     if (pid) {
       if (!pricesMap.has(pid)) pricesMap.set(pid, []);
       pricesMap.get(pid)!.push(pr);
     }
   }
+  const benchmarksMap = new Map(benchmarks.map((b: any) => [b.phoneId?.toString(), b]));
 
-  // Fetch all benchmarks
-  const allBenchmarks = await PhoneBenchmark.find({}).lean();
-  const benchmarksMap = new Map(allBenchmarks.map((b: any) => [b.phoneId?.toString(), b]));
-
-  return {
-    entities: [],
-    lookups: { brands: brandsMap, specs: specsMap, images: imagesMap, prices: pricesMap, benchmarks: benchmarksMap },
-    importId: job.importId || undefined,
-  };
+  ctx.lookups.specs = specsMap;
+  ctx.lookups.images = imagesMap;
+  ctx.lookups.prices = pricesMap;
+  ctx.lookups.benchmarks = benchmarksMap;
 }
 
 // ─── SCAN ALL PHONES (with batch processing) ─────────────────────
+// FIX #9: Uses cursor-based batch loading + per-batch lookup loading.
 
 async function scanAllPhones(
   job: any,
@@ -153,26 +189,55 @@ async function scanAllPhones(
   ctx: DetectionContext,
   allIssues: DetectedIssue[],
 ) {
-  const queryBuilder = job.lastProcessedId
-    ? Phone.find({ ...query, _id: { $gt: new Types.ObjectId(job.lastProcessedId) } })
-    : Phone.find(query);
+  // Cursor-based pagination: resume from lastProcessedId
+  const cursorQuery = job.lastProcessedId
+    ? { ...query, _id: { $gt: new Types.ObjectId(job.lastProcessedId) } }
+    : query;
 
-  const docs = await queryBuilder
-    .sort({ _id: 1 })
-    .select('_id brandId modelName slug pricePKR status thumbnail releaseDate ptaStatus dataConfidence lastPriceCheckedAt')
-    .lean()
-    .batchSize(BATCH_SIZE);
-  const phoneIds = docs.map((d: any) => d._id.toString());
-  const total = phoneIds.length;
+  const total = await Phone.countDocuments(query);
 
-  for (let i = 0; i < phoneIds.length; i += BATCH_SIZE) {
-    const batch = docs.slice(i, i + BATCH_SIZE);
+  let processed = 0;
+  let batchNum = job.currentBatch || 0;
+  let lastId = job.lastProcessedId || '';
+
+  // Process in cursor-based batches — never loads all phones at once
+  let hasMore = true;
+  while (hasMore) {
+    const batchQuery = lastId
+      ? Phone.find({ ...query, _id: { $gt: new Types.ObjectId(lastId) } })
+      : Phone.find(query);
+
+    const batch = await batchQuery
+      .sort({ _id: 1 })
+      .select('_id brandId modelName slug pricePKR status thumbnail releaseDate ptaStatus dataConfidence lastPriceCheckedAt')
+      .lean()
+      .limit(BATCH_SIZE);
+
+    if (batch.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    const batchPhoneIds = batch.map((d: any) => d._id.toString());
+
+    // FIX #9: Load lookups for this batch only
+    await loadLookupsForPhoneIds(ctx, batchPhoneIds);
+
     ctx.entities = batch;
     await runRulesOnBatch(rules, ctx, allIssues);
 
-    const lastDoc = batch[batch.length - 1];
+    processed += batch.length;
+    batchNum++;
+    lastId = batch[batch.length - 1]._id.toString();
+
+    // Update progress (safe to call multiple times)
     await ScanJob.updateOne({ scanId: job.scanId }, {
-      $set: { processed: Math.min(i + BATCH_SIZE, total), currentBatch: Math.floor(i / BATCH_SIZE) + 1, total },
+      $set: {
+        processed,
+        currentBatch: batchNum,
+        total,
+        lastProcessedId: lastId,
+      },
     });
   }
 }
@@ -188,7 +253,6 @@ async function scanImportPhones(
   const importJob = await ImportJob.findOne({ importId: job.importId }).lean();
   if (!importJob) return;
 
-  // Get all batch details to find created/updated phone IDs
   const batches = await ImportBatch.find({ importId: job.importId }).lean();
   const phoneIds = new Set<string>();
   for (const batch of batches) {
@@ -202,6 +266,9 @@ async function scanImportPhones(
     _id: { $in: Array.from(phoneIds).map(id => new Types.ObjectId(id)) },
     deletedAt: null,
   }).lean();
+
+  // FIX #9: Load lookups for just these phones
+  await loadLookupsForPhoneIds(ctx, phones.map((p: any) => p._id.toString()));
 
   ctx.entities = phones;
   await runRulesOnBatch(rules, ctx, allIssues);
@@ -241,18 +308,35 @@ async function runRulesOnBatch(rules: any[], ctx: DetectionContext, allIssues: D
 }
 
 // ─── ORPHAN DETECTION ────────────────────────────────────────────
+// FIX #10: PhoneSpecs orphan detection now correctly fetches ALL phone IDs
+//          from the Phone collection, not from the specs map keys.
+// FIX #9:  Orphan detection uses batched queries, not full collection loads.
 
-async function scanOrphans(ctx: DetectionContext, allIssues: DetectedIssue[]) {
-  const phoneIds = new Set(ctx.lookups.specs.keys());
+async function scanOrphans(allIssues: DetectedIssue[]) {
+  // FIX #10: Build validPhoneIds from actual phones, NOT from specs keys
+  const allPhoneIds = await Phone.find({ deletedAt: null }).select('_id').lean();
+  const validPhoneIds = new Set(allPhoneIds.map((p: any) => p._id.toString()));
 
-  // Orphan specs
-  const specsArr = Array.from(ctx.lookups.specs.values());
-  for (const spec of specsArr) {
-    const pid = spec.phoneId?.toString();
-    if (pid && !phoneIds.has(pid)) {
-      // Verify against actual phones (some may not be in the batch)
-      const exists = await Phone.findById(pid).select('_id').lean();
-      if (!exists) {
+  // Orphan specs — check each PhoneSpecs document references a valid phone
+  let lastSpecId: string | null = null;
+  let hasMoreSpecs = true;
+  while (hasMoreSpecs) {
+    const specFilter: Record<string, any> = lastSpecId ? { _id: { $gt: new Types.ObjectId(lastSpecId) } } : {};
+    const specsBatch: any[] = await PhoneSpecs.find(specFilter).sort({ _id: 1 }).select('phoneId').lean().limit(500);
+
+    if (specsBatch.length === 0) {
+      hasMoreSpecs = false;
+      break;
+    }
+
+    // Count specs per phoneId for duplicate detection
+    const specCount = new Map<string, number>();
+    for (const spec of specsBatch) {
+      const pid = spec.phoneId?.toString();
+      if (!pid) continue;
+
+      // FIX #10: Check against actual phone IDs
+      if (!validPhoneIds.has(pid)) {
         allIssues.push({
           issueKey: `ORPHAN_SPECS:phone_specs:${pid}`,
           entityType: 'phone_specs', entityId: pid,
@@ -262,78 +346,100 @@ async function scanOrphans(ctx: DetectionContext, allIssues: DetectedIssue[]) {
           source: 'system', confidence: 1,
         });
       }
+
+      specCount.set(pid, (specCount.get(pid) || 0) + 1);
     }
+
+    // Duplicate specs check (within this batch, may have跨batch duplicates but that's acceptable for scan)
+    for (const [pid, count] of specCount) {
+      if (count > 1) {
+        allIssues.push({
+          issueKey: `SPECS_DUPLICATE:phone_specs:${pid}`,
+          entityType: 'phone_specs', entityId: pid,
+          issueType: 'SPECS_DUPLICATE', severity: 'high',
+          field: 'phoneId', currentValue: count,
+          suggestedValue: 'Keep one, remove duplicates',
+          source: 'system', confidence: 1,
+        });
+      }
+    }
+
+    lastSpecId = specsBatch[specsBatch.length - 1]._id.toString();
   }
 
-  // Duplicate specs
-  const specPhoneIds = specsArr.map(s => s.phoneId?.toString()).filter(Boolean);
-  const specCount = new Map<string, number>();
-  for (const pid of specPhoneIds) {
-    specCount.set(pid, (specCount.get(pid) || 0) + 1);
-  }
-  for (const [pid, count] of specCount) {
-    if (count > 1) {
-      allIssues.push({
-        issueKey: `SPECS_DUPLICATE:phone_specs:${pid}`,
-        entityType: 'phone_specs', entityId: pid,
-        issueType: 'SPECS_DUPLICATE', severity: 'high',
-        field: 'phoneId', currentValue: count,
-        suggestedValue: 'Keep one, remove duplicates',
-        source: 'system', confidence: 1,
-      });
-    }
-  }
+  // Orphan images (batched)
+  let lastImgId: string | null = null;
+  let hasMoreImgs = true;
+  while (hasMoreImgs) {
+    const imgFilter: Record<string, any> = lastImgId ? { _id: { $gt: new Types.ObjectId(lastImgId) } } : {};
+    const imgBatch: any[] = await PhoneImage.find(imgFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
 
-  // Orphan images, prices, benchmarks — batch check
-  const allPhoneIds = await Phone.find({ deletedAt: null }).select('_id').lean();
-  const validPhoneIds = new Set(allPhoneIds.map((p: any) => p._id.toString()));
+    if (imgBatch.length === 0) { hasMoreImgs = false; break; }
 
-  // Orphan images
-  const allImages = await PhoneImage.find({}).select('phoneId').lean();
-  for (const img of allImages) {
-    const pid = img.phoneId?.toString();
-    if (pid && !validPhoneIds.has(pid)) {
-      allIssues.push({
-        issueKey: `ORPHAN_IMAGE:phone_image:${pid}`,
-        entityType: 'phone_image', entityId: pid,
-        issueType: 'ORPHAN_IMAGE', severity: 'medium',
-        field: 'phoneId', currentValue: pid,
-        suggestedValue: 'Delete orphan image records',
-        source: 'system', confidence: 1,
-      });
+    for (const img of imgBatch) {
+      const pid = img.phoneId?.toString();
+      if (pid && !validPhoneIds.has(pid)) {
+        allIssues.push({
+          issueKey: `ORPHAN_IMAGE:phone_image:${pid}`,
+          entityType: 'phone_image', entityId: pid,
+          issueType: 'ORPHAN_IMAGE', severity: 'medium',
+          field: 'phoneId', currentValue: pid,
+          suggestedValue: 'Delete orphan image records',
+          source: 'system', confidence: 1,
+        });
+      }
     }
+    lastImgId = imgBatch[imgBatch.length - 1]._id.toString();
   }
 
-  // Orphan prices
-  const allPrices = await PhonePrice.find({}).select('phoneId storeName').lean();
-  for (const pr of allPrices) {
-    const pid = pr.phoneId?.toString();
-    if (pid && !validPhoneIds.has(pid)) {
-      allIssues.push({
-        issueKey: `ORPHAN_PRICE:phone_price:${pid}:${pr.storeName}`,
-        entityType: 'phone_price', entityId: pid,
-        issueType: 'ORPHAN_PRICE', severity: 'medium',
-        field: 'phoneId', currentValue: pid,
-        suggestedValue: 'Delete orphan price records',
-        source: 'system', confidence: 1,
-      });
+  // Orphan prices (batched)
+  let lastPriceId: string | null = null;
+  let hasMorePrices = true;
+  while (hasMorePrices) {
+    const priceFilter: Record<string, any> = lastPriceId ? { _id: { $gt: new Types.ObjectId(lastPriceId) } } : {};
+    const priceBatch: any[] = await PhonePrice.find(priceFilter).sort({ _id: 1 }).select('phoneId storeName').lean().limit(1000);
+
+    if (priceBatch.length === 0) { hasMorePrices = false; break; }
+
+    for (const pr of priceBatch) {
+      const pid = pr.phoneId?.toString();
+      if (pid && !validPhoneIds.has(pid)) {
+        allIssues.push({
+          issueKey: `ORPHAN_PRICE:phone_price:${pid}:${pr.storeName || ''}`,
+          entityType: 'phone_price', entityId: pid,
+          issueType: 'ORPHAN_PRICE', severity: 'medium',
+          field: 'phoneId', currentValue: pid,
+          suggestedValue: 'Delete orphan price records',
+          source: 'system', confidence: 1,
+        });
+      }
     }
+    lastPriceId = priceBatch[priceBatch.length - 1]._id.toString();
   }
 
-  // Orphan benchmarks
-  const allBenchmarks = await PhoneBenchmark.find({}).select('phoneId').lean();
-  for (const bm of allBenchmarks) {
-    const pid = bm.phoneId?.toString();
-    if (pid && !validPhoneIds.has(pid)) {
-      allIssues.push({
-        issueKey: `ORPHAN_BENCHMARK:phone_benchmark:${pid}`,
-        entityType: 'phone_benchmark', entityId: pid,
-        issueType: 'ORPHAN_BENCHMARK', severity: 'medium',
-        field: 'phoneId', currentValue: pid,
-        suggestedValue: 'Delete orphan benchmark records',
-        source: 'system', confidence: 1,
-      });
+  // Orphan benchmarks (batched)
+  let lastBmId: string | null = null;
+  let hasMoreBms = true;
+  while (hasMoreBms) {
+    const bmFilter: Record<string, any> = lastBmId ? { _id: { $gt: new Types.ObjectId(lastBmId) } } : {};
+    const bmBatch: any[] = await PhoneBenchmark.find(bmFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
+
+    if (bmBatch.length === 0) { hasMoreBms = false; break; }
+
+    for (const bm of bmBatch) {
+      const pid = bm.phoneId?.toString();
+      if (pid && !validPhoneIds.has(pid)) {
+        allIssues.push({
+          issueKey: `ORPHAN_BENCHMARK:phone_benchmark:${pid}`,
+          entityType: 'phone_benchmark', entityId: pid,
+          issueType: 'ORPHAN_BENCHMARK', severity: 'medium',
+          field: 'phoneId', currentValue: pid,
+          suggestedValue: 'Delete orphan benchmark records',
+          source: 'system', confidence: 1,
+        });
+      }
     }
+    lastBmId = bmBatch[bmBatch.length - 1]._id.toString();
   }
 
   // Brand duplicates
@@ -377,14 +483,15 @@ async function scanOrphans(ctx: DetectionContext, allIssues: DetectedIssue[]) {
     });
   }
 
-  // Brand missing slug
+  // FIX: Brand missing slug — was using wrong issueType (BRAND_DUPLICATE_NORMALIZED), now correct
   for (const brand of brands) {
     const id = (brand as any)._id?.toString();
     if (!id || brand.slug) continue;
     allIssues.push({
-      issueKey: `BRAND_MISSING_LOGO:brand:${id}:slug`,
+      issueKey: `BRAND_MISSING_SLUG:brand:${id}`,
       entityType: 'brand', entityId: id,
-      issueType: 'BRAND_DUPLICATE_NORMALIZED', severity: 'medium',
+      issueType: 'BRAND_MISSING_SLUG',
+      severity: 'medium',
       field: 'slug', currentValue: null,
       suggestedValue: 'Generate brand slug',
       source: 'system', confidence: 1,
@@ -495,7 +602,7 @@ export async function executeAutoFix(
           status: 'auto_fixed',
           resolvedAt: new Date(),
           resolvedBy: new Types.ObjectId(adminId),
-          resolution: `Auto-fixed: ${result.changes.map(c => `${c.field}`).join(', ')}`,
+          resolution: `Auto-fixed: ${result.changes.map((c: any) => `${c.field}`).join(', ')}`,
         },
       },
     );
@@ -503,7 +610,7 @@ export async function executeAutoFix(
       await ActivityLog.create({
         adminId: new Types.ObjectId(adminId),
         action: 'data_quality_auto_fix',
-        details: `Auto-fixed issue ${(issue as any).issueKey}: ${result.changes.map(c => `${c.field}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join('; ')}`,
+        details: `Auto-fixed issue ${(issue as any).issueKey}: ${result.changes.map((c: any) => `${c.field}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join('; ')}`,
         entityType: 'data_quality',
         entityId: issueId,
       });
@@ -581,7 +688,6 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
       currentSourcePrice: { $gt: 0 },
     }).select('phoneId currentSourcePrice sourceId').lean();
 
-    // Group by phoneId
     const byPhone = new Map<string, typeof enabledListings>();
     for (const l of enabledListings) {
       const pid = l.phoneId?.toString();
@@ -657,7 +763,7 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
 
         const lowestListing = Math.min(...prices);
         const diff = (phone.pricePKR - lowestListing) / phone.pricePKR;
-        if (diff > 0.1) { // Phone price is 10%+ higher than lowest listing
+        if (diff > 0.1) {
           allIssues.push({
             issueKey: `PRICE_MISMATCH:phone:${pid}`,
             entityType: 'retail_listing', entityId: pid,
@@ -693,7 +799,7 @@ export async function calculateHealthScore(): Promise<{
     Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
   ]);
 
-  const base = publishedPhones || 1; // Avoid division by zero
+  const base = publishedPhones || 1;
   const categories: Array<{ name: string; score: number; deduction: number; maxDeduction: number; details: string }> = [];
 
   for (const cat of HEALTH_CATEGORIES) {

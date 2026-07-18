@@ -24,7 +24,7 @@ import { handleFirstSetupGet, handleFirstSetupPost } from './handlers/first-setu
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
-import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan } from './handlers/import-v2';
+import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv } from './handlers/import-v2';
 import { handleDownloadSample } from './handlers/download';
 import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
 import { handleCronUpdatePrices } from './handlers/cron-update-prices';
@@ -175,9 +175,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     const collectorResult = await handleCollectorGet(req, segments);
     if (collectorResult) return collectorResult;
 
-    // Import routes (history)
+    // Import routes (V1 history)
     const importResult = await handleImportGet(req, segments);
     if (importResult) return importResult;
+
+    // Import V2 GET routes (job detail, history, errors.csv)
+    const importV2GetResult = await handleImportV2GetJob(req, segments)
+      || await handleImportV2History(req, segments)
+      || await handleImportV2ErrorsCsv(req, segments);
+    if (importV2GetResult) return importV2GetResult;
 
     // Price Tracker GET routes (stats, phones, sources, changes, pending, history, listings)
     const priceTrackerGetResult = await handlePriceTrackerGet(req, segments);
@@ -390,6 +396,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     // Import V2 routes (chunked import engine)
     const importV2Result = await handleImportV2Upload(req, segments)
+      || await handleImportV2Validate(req, segments)
       || await handleImportV2Config(req, segments)
       || await handleImportV2Start(req, segments)
       || await handleImportV2Batch(req, segments)
@@ -398,8 +405,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       || await handleImportV2Rollback(req, segments)
       || await handleImportV2QualityScan(req, segments);
     if (importV2Result) return importV2Result;
-
-    // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
 
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
     const crudResult = await handleAdminCrudPost(req, segments);

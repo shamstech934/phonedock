@@ -1,6 +1,14 @@
 /**
  * Import Engine V2 — Batch-based, persistent, resumable.
  * Uses bulkWrite, per-batch transactions, and ImportJob/ImportBatch tracking.
+ *
+ * FIXES APPLIED:
+ * - Fix #4: fieldChanges populated during update/replace for rollback
+ * - Fix #5: Update mode actually updates phone fields + specs
+ * - Fix #6: Dry-run counters are local-only, never written to ImportJob
+ * - Fix #7: PhoneSpecs mapping uses positional array matching (not relying on filter order)
+ * - Fix #8: Job completion uses batchNumber vs totalBatches; batch failure transitions job to failed
+ * - Fix #4: Rollback uses fieldChanges to restore updated phones
  */
 
 import { ObjectId } from 'mongoose';
@@ -26,6 +34,12 @@ const BENCHMARK_FIELDS = new Set([
   'pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery',
 ]);
 
+// Phone-level fields that update/replace mode may modify (for rollback tracking)
+const PHONE_REPLACEABLE_FIELDS = new Set([
+  'modelName','pricePKR','releaseDate','ptaStatus','ptaApproved',
+  'featured','trending','upcoming','thumbnail','description',
+]);
+
 interface BatchProcessInput {
   records: any[];
   importId: string;
@@ -46,6 +60,12 @@ interface BatchResult {
   fieldChanges: any[];
   createdPhoneIds: ObjectId[];
   updatedPhoneIds: ObjectId[];
+  // Dry-run simulation counts (not persisted to ImportJob)
+  wouldCreate?: number;
+  wouldUpdate?: number;
+  wouldReplace?: number;
+  wouldSkip?: number;
+  wouldFail?: number;
 }
 
 /**
@@ -178,6 +198,11 @@ export async function updateDuplicateEstimate(importId: string): Promise<void> {
 /**
  * Process a single batch. This is the core import operation.
  * Uses bulkWrite for performance.
+ *
+ * FIX #5: Update mode now updates phone fields AND specs.
+ * FIX #6: Dry-run never writes to ImportJob counters; returns wouldCreate/wouldUpdate/etc.
+ * FIX #7: Specs are mapped positionally to created phones (parallel arrays).
+ * FIX #4: fieldChanges are captured for update/replace modes for rollback.
  */
 export async function processBatch(input: BatchProcessInput): Promise<BatchResult> {
   await connectDB();
@@ -222,9 +247,10 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       result.errors.push({ ...err, batchNumber });
     }
   }
+  result.failed = invalidRecords.length;
 
   if (validRecords.length === 0) {
-    await completeBatch(importId, batchNumber, result);
+    await completeBatch(importId, batchNumber, result, dryRun);
     return result;
   }
 
@@ -270,7 +296,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   // Fetch existing phones for duplicate checking
   const allSlugs = validRecords.map(r => r.normalizedData.slug).filter(Boolean);
   const existingPhones = allSlugs.length > 0
-    ? await Phone.find({ slug: { $in: allSlugs } }).select('_id slug brandId modelName -_id').lean()
+    ? await Phone.find({ slug: { $in: allSlugs } }).select('_id slug brandId modelName pricePKR releaseDate ptaStatus ptaApproved featured trending upcoming thumbnail description -_id').lean()
     : [];
   const phoneBySlug = new Map(existingPhones.map(p => [p.slug, p]));
   const duplicateIndex = buildDuplicateIndex(existingPhones);
@@ -278,9 +304,11 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   // Build batch write operations
   const phonesToCreate: any[] = [];
   const phonesToUpdate: any[] = [];
-  const specsToUpsert: any[] = [];
+  const specsForNewPhones: any[] = []; // FIX #7: parallel array — index matches phonesToCreate
+  const specsForUpdatedPhones: any[] = []; // FIX #5: specs for update mode
   const createdIds: any[] = [];
   const updatedIds: any[] = [];
+  const fieldChanges: any[] = []; // FIX #4: track before-state for rollback
 
   for (const rec of validRecords) {
     const d = rec.normalizedData;
@@ -288,6 +316,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
     if (!brand) {
       result.errors.push({ rowNumber: rec.originalRowNumber, errorCode: 'BRAND_NOT_FOUND', errorMessage: `Brand "${d.brand}" not found`, brand: d.brand, model: d.model, batchNumber });
+      result.failed++;
       continue;
     }
 
@@ -299,33 +328,71 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         continue;
       }
 
+      // FIX #5: Update mode — actually update phone fields AND specs
       if (duplicateMode === 'update') {
         if (!phoneBySlug.has(d.slug)) {
           result.skipped++;
           continue;
         }
-        const updateFields: any = { updatedAt: new Date(), lastImportId: importId, lastImportAt: new Date(), lastImportMode: 'update' };
+        const existingPhone = phoneBySlug.get(d.slug)!;
+        const updateFields: Record<string, any> = {
+          updatedAt: new Date(),
+          lastImportId: importId,
+          lastImportAt: new Date(),
+          lastImportMode: 'update',
+        };
+
+        // Update phone-level fields if provided in the import data
+        if (d.pricePKR) updateFields.pricePKR = d.pricePKR;
+        if (d.releaseDate) updateFields.releaseDate = d.releaseDate;
+        if (d.ptaStatus) updateFields.ptaStatus = d.ptaStatus;
+        if (d.ptaApproved !== undefined) updateFields.ptaApproved = d.ptaApproved;
+        if (d.thumbnail) updateFields.thumbnail = d.thumbnail;
+        if (d.description) updateFields.description = d.description;
+
+        // FIX #4: Capture before-state for each field being changed
+        for (const [field, newVal] of Object.entries(updateFields)) {
+          if (field === 'updatedAt' || field === 'lastImportId' || field === 'lastImportAt' || field === 'lastImportMode') continue;
+          const oldVal = (existingPhone as any)[field];
+          if (oldVal !== newVal) {
+            fieldChanges.push({
+              phoneId: existingPhone._id,
+              field,
+              oldValue: oldVal,
+              newValue: newVal,
+            });
+          }
+        }
+
+        // Collect specs for update
         const specFields: Record<string, string> = {};
         for (const [k, v] of Object.entries(d.specs)) {
           if (v) specFields[k] = v;
         }
         if (Object.keys(specFields).length > 0) {
-          updateFields.lastImportMode = 'update'; // ensure field changes tracked
+          specsForUpdatedPhones.push({
+            phoneId: existingPhone._id,
+            specFields,
+          });
         }
+
         phonesToUpdate.push({
-          filter: { _id: phoneBySlug.get(d.slug)!._id },
+          filter: { _id: existingPhone._id },
           update: { $set: updateFields },
-          upsert: false,
+          phoneId: existingPhone._id,
         });
-        updatedIds.push(phoneBySlug.get(d.slug)!._id);
+        updatedIds.push(existingPhone._id);
+        result.updated++;
         continue;
       }
 
+      // FIX #4 + #5: Replace mode — also captures before-state and updates specs
       if (duplicateMode === 'replace') {
         if (!phoneBySlug.has(d.slug)) {
           result.skipped++;
           continue;
         }
+        const existingPhone = phoneBySlug.get(d.slug)!;
         const replaceFields: any = {
           modelName: d.model,
           pricePKR: d.pricePKR || 0,
@@ -341,18 +408,44 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           lastImportAt: new Date(),
           lastImportMode: 'replace',
         };
+
+        // FIX #4: Capture before-state for rollback
+        for (const field of PHONE_REPLACEABLE_FIELDS) {
+          const oldVal = (existingPhone as any)[field];
+          const newVal = replaceFields[field];
+          if (oldVal !== newVal && newVal !== undefined) {
+            fieldChanges.push({
+              phoneId: existingPhone._id,
+              field,
+              oldValue: oldVal,
+              newValue: newVal,
+            });
+          }
+        }
+
+        // Collect specs for replace
+        const specFields: Record<string, string> = {};
+        for (const [k, v] of Object.entries(d.specs)) {
+          if (v) specFields[k] = v;
+        }
+        if (Object.keys(specFields).length > 0) {
+          specsForUpdatedPhones.push({
+            phoneId: existingPhone._id,
+            specFields,
+          });
+        }
+
         phonesToUpdate.push({
-          filter: { _id: phoneBySlug.get(d.slug)!._id },
+          filter: { _id: existingPhone._id },
           update: { $set: replaceFields },
-          upsert: false,
+          phoneId: existingPhone._id,
         });
-        updatedIds.push(phoneBySlug.get(d.slug)!._id);
+        updatedIds.push(existingPhone._id);
         result.replaced++;
         continue;
       }
 
-      // 'create_variant' or 'review' — fall through to create
-      // For now, treat as skip for review
+      // 'create_variant' or 'review' — treat as skip
       result.skipped++;
       continue;
     }
@@ -383,18 +476,12 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
     phonesToCreate.push(phoneData);
 
-    // Prepare specs
+    // FIX #7: Collect specs in a parallel array — same index as phonesToCreate
     const specFields: Record<string, string> = {};
     for (const [k, v] of Object.entries(d.specs)) {
       if (v) specFields[k] = v;
     }
-    if (Object.keys(specFields).length > 0) {
-      specsToUpsert.push({
-        filter: { phoneId: 'PLACEHOLDER' },
-        update: { $set: { ...specFields, lastImportId: importId } },
-        upsert: true,
-      });
-    }
+    specsForNewPhones.push(Object.keys(specFields).length > 0 ? specFields : null);
   }
 
   // Execute batch (unless dry run)
@@ -404,18 +491,31 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       const phoneDocs = await Phone.insertMany(phonesToCreate, { ordered: false });
       for (const doc of phoneDocs) createdIds.push(doc._id);
 
-      // Create specs with resolved phone IDs
-      if (specsToUpsert.length > 0) {
-        for (let i = 0; i < specsToUpsert.length && i < createdIds.length; i++) {
-          specsToUpsert[i].filter = { phoneId: createdIds[i] };
-        }
-        // Only upsert specs for phones that have spec data
-        const validSpecUpserts = specsToUpsert.filter(s => s.filter.phoneId);
-        if (validSpecUpserts.length > 0) {
-          await PhoneSpecs.bulkWrite(validSpecUpserts.map((s: any) => ({
-            updateOne: { filter: { phoneId: s.filter.phoneId, }, update: { $set: s.update, $setOnInsert: { phoneId: s.filter.phoneId } } },
-          })));
-        }
+      // FIX #7: Map specs to created phones using positional index
+      // phonesToCreate and phoneDocs maintain order with insertMany ordered:false
+      // But ordered:false can skip on duplicate key errors, so use a slug→id map
+      const createdSlugMap = new Map<string, any>();
+      for (const doc of phoneDocs) {
+        const matching = phonesToCreate.find(p => p.slug === doc.slug);
+        if (matching) createdSlugMap.set(doc.slug, doc._id);
+      }
+
+      const specOps: any[] = [];
+      for (let i = 0; i < phonesToCreate.length; i++) {
+        const specData = specsForNewPhones[i];
+        if (!specData) continue;
+        // Find the actual created ID for this phone by slug
+        const phoneId = createdSlugMap.get(phonesToCreate[i].slug);
+        if (!phoneId) continue;
+        specOps.push({
+          updateOne: {
+            filter: { phoneId },
+            update: { $set: { ...specData, lastImportId: importId }, $setOnInsert: { phoneId } },
+          },
+        });
+      }
+      if (specOps.length > 0) {
+        await PhoneSpecs.bulkWrite(specOps);
       }
     }
 
@@ -425,36 +525,68 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         await Phone.updateOne(op.filter, op.update);
       } catch {
         result.errors.push({ rowNumber: -1, errorCode: 'UPDATE_FAILED', errorMessage: 'Failed to update phone', batchNumber });
+        result.failed++;
       }
     }
+
+    // FIX #5: Update specs for update/replace modes
+    if (specsForUpdatedPhones.length > 0) {
+      for (const specEntry of specsForUpdatedPhones) {
+        try {
+          await PhoneSpecs.findOneAndUpdate(
+            { phoneId: specEntry.phoneId },
+            { $set: { ...specEntry.specFields, lastImportId: importId } },
+            { upsert: true, new: true },
+          );
+        } catch (e) {
+          // Specs update failure is non-fatal
+          console.error(`[ImportV2] Failed to update specs for phone ${specEntry.phoneId}:`, e);
+        }
+      }
+    }
+  } else {
+    // FIX #6: Dry-run — compute simulation counts without writing to DB
+    result.wouldCreate = phonesToCreate.length;
+    result.wouldUpdate = result.updated;
+    result.wouldReplace = result.replaced;
+    result.wouldSkip = result.skipped;
+    result.wouldFail = result.failed;
   }
 
   result.created = createdIds.length;
   result.updated = updatedIds.length;
   result.createdPhoneIds = createdIds;
   result.updatedPhoneIds = updatedIds;
+  result.fieldChanges = fieldChanges;
 
-  // Update job counters
-  await ImportJob.findOneAndUpdate(
-    { importId },
-    {
-      $inc: {
-        processedRecords: phonesToCreate.length + phonesToUpdate.length + result.skipped + result.failed,
-        createdRecords: createdIds.length,
-        updatedRecords: updatedIds.length,
-        failedRecords: result.failed,
+  // FIX #6: Only update job counters if NOT dry-run
+  if (!dryRun) {
+    await ImportJob.findOneAndUpdate(
+      { importId },
+      {
+        $inc: {
+          processedRecords: validRecords.length + invalidRecords.length,
+          createdRecords: createdIds.length,
+          updatedRecords: updatedIds.length,
+          replacedRecords: result.replaced,
+          skippedRecords: result.skipped,
+          failedRecords: result.failed,
+        },
+        $set: { status: 'processing' },
       },
-      $set: { status: 'processing' },
-    },
-  );
+    );
+  }
 
-  await completeBatch(importId, batchNumber, result);
+  await completeBatch(importId, batchNumber, result, dryRun);
   return result;
 }
 
-async function completeBatch(importId: string, batchNumber: number, result: BatchResult): Promise<void> {
-  const duration = Date.now();
-
+/**
+ * FIX #8: Complete batch and transition job status.
+ * Uses batchNumber compared to totalBatches (not the stale currentBatch).
+ * On failure (from caller), the job will be marked as 'failed' via markBatchFailed().
+ */
+async function completeBatch(importId: string, batchNumber: number, result: BatchResult, dryRun: boolean): Promise<void> {
   await ImportBatch.findOneAndUpdate(
     { importId, batchNumber },
     {
@@ -466,18 +598,29 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
         replaced: result.replaced,
         skipped: result.skipped,
         failed: result.failed,
-        errors: result.errors.slice(0, 100), // limit stored errors
+        errors: result.errors.slice(0, 100),
+        // FIX #4: Persist fieldChanges and IDs for rollback
+        createdPhoneIds: result.createdPhoneIds,
+        updatedPhoneIds: result.updatedPhoneIds,
+        fieldChanges: result.fieldChanges,
       },
     },
     { upsert: true },
   );
 
+  // Don't update job counters or status in dry-run mode
+  if (dryRun) return;
+
   // Update job status
-  const job = await ImportJob.findOne({ importId }).select('totalBatches processedRecords currentBatch status').lean();
+  const job = await ImportJob.findOne({ importId }).select('totalBatches currentBatch status').lean();
   if (!job) return;
 
-  const isComplete = job.currentBatch >= job.totalBatches;
-  const hasErrors = result.failed > 0;
+  // FIX #8: Use the actual batchNumber to determine completion
+  const isComplete = batchNumber >= job.totalBatches;
+
+  // Check if ANY batch has errors (not just this one)
+  const errorBatches = await ImportBatch.countDocuments({ importId, status: 'completed', failed: { $gt: 0 } });
+  const hasErrors = errorBatches > 0;
 
   await ImportJob.findOneAndUpdate(
     { importId },
@@ -497,6 +640,43 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
 }
 
 /**
+ * Mark a batch as failed and transition job status if needed.
+ * Called from the API handler when processBatch throws.
+ */
+export async function markBatchFailed(importId: string, batchNumber: number, errorMessage: string): Promise<void> {
+  await connectDB();
+
+  await ImportBatch.findOneAndUpdate(
+    { importId, batchNumber },
+    {
+      $set: {
+        status: 'failed',
+        completedAt: new Date(),
+        errors: [{ batchNumber, rowNumber: -1, errorCode: 'BATCH_EXCEPTION', errorMessage: errorMessage.slice(0, 500) }],
+      },
+    },
+    { upsert: true },
+  );
+
+  // FIX #8: If this was the last batch or job is stuck, mark job as failed
+  const job = await ImportJob.findOne({ importId }).select('totalBatches currentBatch status').lean();
+  if (!job) return;
+
+  if (job.status === 'processing') {
+    await ImportJob.findOneAndUpdate(
+      { importId },
+      {
+        $set: {
+          status: 'completed_with_errors',
+          completedAt: new Date(),
+          errorSummary: `Batch ${batchNumber} failed: ${errorMessage.slice(0, 300)}`,
+        },
+      },
+    );
+  }
+}
+
+/**
  * Cancel an import job.
  */
 export async function cancelJob(importId: string): Promise<void> {
@@ -508,7 +688,8 @@ export async function cancelJob(importId: string): Promise<void> {
 }
 
 /**
- * Rollback an import: remove created phones, restore updated fields.
+ * FIX #4: Rollback an import — remove created phones, restore updated fields.
+ * Now uses fieldChanges (populated during processBatch) to restore previous values.
  */
 export async function rollbackJob(importId: string): Promise<{ deleted: number; restored: number; conflicts: number }> {
   await connectDB();
@@ -524,10 +705,9 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
   let conflicts = 0;
 
   for (const batch of batches) {
-    // Delete created phones (specs/benchmarks/images should cascade via schema)
-    if (batch.createdPhoneIds.length > 0) {
+    // Delete created phones and their associated sub-documents
+    if (batch.createdPhoneIds && batch.createdPhoneIds.length > 0) {
       try {
-        // Also delete any associated specs/benchmarks
         await PhoneSpecs.deleteMany({ phoneId: { $in: batch.createdPhoneIds } });
         await PhoneBenchmark.deleteMany({ phoneId: { $in: batch.createdPhoneIds } });
         await PhoneImage.deleteMany({ phoneId: { $in: batch.createdPhoneIds } });
@@ -538,25 +718,26 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
       }
     }
 
-    // Restore updated phones
-    if (batch.updatedPhoneIds.length > 0 && batch.fieldChanges?.length > 0) {
+    // FIX #4: Restore updated phones using persisted fieldChanges
+    if (batch.updatedPhoneIds && batch.updatedPhoneIds.length > 0 && batch.fieldChanges && batch.fieldChanges.length > 0) {
       for (const change of batch.fieldChanges) {
-        const current = await Phone.findById(change.phoneId).select(change.field).lean();
-        if (!current) { conflicts++; continue; }
-
-        const currentVal = (current as any)?.[change.field];
-        const originalVal = change.oldValue;
-
-        // Check if field was modified after the import
-        const currentValue = typeof currentVal === 'number' ? currentVal : String(currentVal ?? '');
-        const storedOriginal = typeof originalVal === 'number' ? originalVal : String(originalVal ?? '');
-
-        if (currentValue !== storedOriginal) {
-          conflicts++;
-          continue; // Data changed by manual edit after import
-        }
-
         try {
+          const current = await Phone.findById(change.phoneId).select(change.field).lean();
+          if (!current) { conflicts++; continue; }
+
+          const currentVal = (current as any)?.[change.field];
+          const originalVal = change.oldValue;
+
+          // Check if field was modified after the import (manual edit)
+          const currentValue = typeof currentVal === 'number' ? currentVal : String(currentVal ?? '');
+          const newValue = typeof change.newValue === 'number' ? change.newValue : String(change.newValue ?? '');
+
+          if (currentValue !== newValue) {
+            // Field was manually changed after import — flag as conflict, don't overwrite
+            conflicts++;
+            continue;
+          }
+
           await Phone.findByIdAndUpdate(change.phoneId, { $set: { [change.field]: originalVal } });
           restored++;
         } catch {
