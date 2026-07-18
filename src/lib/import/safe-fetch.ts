@@ -30,7 +30,7 @@ export async function safeFetch<T = any>(
     if (!res.ok) {
       let body = '';
       try { body = ct.includes('json') ? await res.json() : await res.text(); } catch { body = ''; }
-      const msg = typeof body === 'object' && body?.error ? body.error
+      const msg = typeof body === 'object' && (body as any)?.error ? (body as any).error
         : typeof body === 'string' && body.length < 200 ? body
         : `HTTP ${res.status}`;
       return { ok: false, data: null, error: msg, status: res.status };

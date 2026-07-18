@@ -30,7 +30,7 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
   // Size check
   const MAX_SIZE = 10 * 1024 * 1024;
   if (file.size > MAX_SIZE) {
-    return NextResponse.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `File too large (${(file.size / 1024 / 1024} MB, max 10 MB)` } }, { status: 413 });
+    return NextResponse.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `File too large (${(file.size / 1024 / 1024).toFixed(2)} MB, max 10 MB)` } }, { status: 413 });
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -39,14 +39,14 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
   const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 12);
 
   try {
-    const parsed = await parseImportFile(buffer, file.name, file.type);
+    const parsed = await parseImportFile(buffer.buffer as ArrayBuffer, file.name, file.type);
 
     const job = await ImportJob.create({
       importId,
       fileName: file.name,
       fileType: parsed.fileType,
       fileSize: file.size,
-      fileHash,
+      fileHash: hash,
       totalRecords: parsed.totalRecords,
       status: 'parsing',
       totalBatches: 0,
@@ -96,7 +96,7 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
           duplicateKey: r.duplicateKey,
         })),
         totalBatches,
-        sampleInvalidRecords: normalized.filter(r => !r.errors.length === 0).slice(0, 10).map(r => ({
+        sampleInvalidRecords: normalized.filter(r => r.errors.length > 0).slice(0, 10).map(r => ({
           rowNumber: r.originalRowNumber,
           brand: r.normalizedData.brand,
           model: r.normalizedData.model,
@@ -380,7 +380,7 @@ export async function handleImportV2ErrorsCsv(req: NextRequest, segments: string
   }
 
   const csv = rows.map(r => r.join(',')).join('\n');
-  return new Response(csv, {
+  return new NextResponse(csv, {
     headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="import-${importId}-errors.csv"` },
   });
 }
@@ -428,4 +428,32 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
     page,
     limit,
   } });
+}
+
+// ============ POST /api/admin/import-v2/jobs/:id/quality-scan ============
+// Trigger a data quality scan on phones from a completed import job.
+
+export async function handleImportV2QualityScan(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  if (segments.length !== 5 || segments[2] !== 'jobs' || segments[4] !== 'quality-scan') return undefined;
+  const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+  const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
+
+  const importId = segments[3];
+  const job = await ImportJob.findOne({ importId }).lean();
+  if (!job) return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'Import job not found' } }, { status: 404 });
+
+  const { startScan, executeScan } = await import('@/lib/data-quality/scanner');
+
+  const { scanId } = await startScan({
+    type: 'import',
+    adminId: authResult.admin._id.toString(),
+    importId,
+  });
+
+  // Execute asynchronously
+  executeScan(scanId).catch(e => {
+    console.error(`[ImportV2] Post-import quality scan ${scanId} failed:`, e);
+  });
+
+  return NextResponse.json({ success: true, scanId, message: 'Quality scan started for imported phones' });
 }

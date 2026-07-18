@@ -105,6 +105,7 @@ export async function validateRecords(
           duplicateEstimate: 0, // will be calculated with DB
         },
       },
+    },
     { new: true, upsert: true },
   );
 
@@ -229,7 +230,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
   // Fetch all unique brands needed
   const brandNames = [...new Set(validRecords.map(r => r.normalizedData.brand).filter(Boolean))];
-  const existingBrands = await Brand.find({ name: { $in: brandNames.map(n => new RegExp(`^${n}$`, 'i') } })
+  const brandRegexes = brandNames.map(n => new RegExp(`^${n}$`, 'i'));
+  const existingBrands = await Brand.find({ name: { $in: brandRegexes } })
     .select('_id name slug')
     .lean();
 
@@ -277,8 +279,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const phonesToCreate: any[] = [];
   const phonesToUpdate: any[] = [];
   const specsToUpsert: any[] = [];
-  const createdIds: ObjectId[] = [];
-  const updatedIds: ObjectId[] = [];
+  const createdIds: any[] = [];
+  const updatedIds: any[] = [];
 
   for (const rec of validRecords) {
     const d = rec.normalizedData;
@@ -410,7 +412,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         // Only upsert specs for phones that have spec data
         const validSpecUpserts = specsToUpsert.filter(s => s.filter.phoneId);
         if (validSpecUpserts.length > 0) {
-          await PhoneSpecs.bulkWrite(validSpecsUpserts.map(s => ({
+          await PhoneSpecs.bulkWrite(validSpecUpserts.map((s: any) => ({
             updateOne: { filter: { phoneId: s.filter.phoneId, }, update: { $set: s.update, $setOnInsert: { phoneId: s.filter.phoneId } } },
           })));
         }
@@ -542,7 +544,7 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
         const current = await Phone.findById(change.phoneId).select(change.field).lean();
         if (!current) { conflicts++; continue; }
 
-        const currentVal = current?.[change.field];
+        const currentVal = (current as any)?.[change.field];
         const originalVal = change.oldValue;
 
         // Check if field was modified after the import

@@ -162,7 +162,11 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const query: any = {};
     if (severity) query.severity = severity;
-    if (issueType) query.issueType = issueType;
+    if (issueType) {
+      // Support comma-separated issue types for $in queries
+      const types = issueType.split(',').map(t => t.trim()).filter(Boolean);
+      query.issueType = types.length > 1 ? { $in: types } : issueType;
+    }
     if (status && status !== 'all') query.status = status;
     if (entityType) query.entityType = entityType;
     if (importId) query.importId = importId;
@@ -264,6 +268,144 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     }
 
     return NextResponse.json({ groups: resultGroups, total: resultGroups.length });
+  }
+
+  // GET /api/admin/data-quality/rules
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'rules') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { ALL_QUALITY_RULES } = await import('@/lib/data-quality/rules');
+    const rules = ALL_QUALITY_RULES.map(r => ({
+      ruleId: r.ruleId,
+      title: r.title,
+      description: r.description,
+      severity: r.severity,
+      entityType: r.entityType,
+      canAutoFix: r.canAutoFix,
+    }));
+    return NextResponse.json({ rules, total: rules.length });
+  }
+
+  // GET /api/admin/data-quality/stats
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const [totalIssues, openIssues, resolvedToday, autoFixed] = await Promise.all([
+      DataQualityIssue.countDocuments({}),
+      DataQualityIssue.countDocuments({ status: 'open' }),
+      DataQualityIssue.countDocuments({ resolvedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
+      DataQualityIssue.countDocuments({ status: 'auto_fixed' }),
+    ]);
+
+    const byType = await DataQualityIssue.aggregate([
+      { $match: { status: 'open' } },
+      { $group: { _id: '$issueType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    return NextResponse.json({
+      totalIssues, openIssues, resolvedToday, autoFixed,
+      byType: byType.map((b: any) => ({ issueType: b._id, count: b.count })),
+    });
+  }
+
+  // GET /api/admin/data-quality/rules
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'rules') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { ALL_QUALITY_RULES } = await import('@/lib/data-quality/rules');
+    const rules = ALL_QUALITY_RULES.map(r => ({
+      ruleId: r.ruleId,
+      title: r.title,
+      description: r.description,
+      severity: r.severity,
+      entityType: r.entityType,
+      canAutoFix: r.canAutoFix,
+    }));
+    return NextResponse.json({ rules, total: rules.length });
+  }
+
+  // GET /api/admin/data-quality/stats
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const [totalIssues, openIssues, resolvedToday, autoFixed] = await Promise.all([
+      DataQualityIssue.countDocuments({}),
+      DataQualityIssue.countDocuments({ status: 'open' }),
+      DataQualityIssue.countDocuments({ resolvedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
+      DataQualityIssue.countDocuments({ status: 'auto_fixed' }),
+    ]);
+
+    const byType = await DataQualityIssue.aggregate([
+      { $match: { status: 'open' } },
+      { $group: { _id: '$issueType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    return NextResponse.json({
+      totalIssues, openIssues, resolvedToday, autoFixed,
+      byType: byType.map((b: any) => ({ issueType: b._id, count: b.count })),
+    });
+  }
+
+  // GET /api/admin/data-quality/rules
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'rules') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { ALL_QUALITY_RULES } = await import('@/lib/data-quality/rules');
+    const rules = ALL_QUALITY_RULES.map(r => ({
+      ruleId: r.ruleId,
+      title: r.title,
+      description: r.description,
+      severity: r.severity,
+      entityType: r.entityType,
+      canAutoFix: r.canAutoFix,
+    }));
+    return NextResponse.json({ rules, total: rules.length });
+  }
+
+  // GET /api/admin/data-quality/stats
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const [totalIssues, openIssues, resolvedToday, autoFixed] = await Promise.all([
+      DataQualityIssue.countDocuments({}),
+      DataQualityIssue.countDocuments({ status: 'open' }),
+      DataQualityIssue.countDocuments({ resolvedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) } }),
+      DataQualityIssue.countDocuments({ status: 'auto_fixed' }),
+    ]);
+
+    const byType = await DataQualityIssue.aggregate([
+      { $match: { status: 'open' } },
+      { $group: { _id: '$issueType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    return NextResponse.json({
+      totalIssues, openIssues, resolvedToday, autoFixed,
+      byType: byType.map((b: any) => ({ issueType: b._id, count: b.count })),
+    });
   }
 
   // GET /api/admin/data-quality/export.csv
@@ -433,7 +575,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
 
     try {
       const result = await executeAutoFix(issueId, authResult.admin._id.toString(), dryRun);
-      return NextResponse.json({ success: true, ...result, dryRun });
+      return NextResponse.json({ ...result, dryRun });
     } catch (e: any) {
       return NextResponse.json({ error: e.message || 'Auto-fix failed' }, { status: 400 });
     }
@@ -574,7 +716,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
           id: mergeIntoId, modelName: (mergePhone as any).modelName, hasSpecs: !!mergeSpecs,
           imageCount: mergeImages.length, priceCount: mergeImages.length, hasBench: !!mergeBench,
           wouldMoveImages: mergeImages.length,
-          wouldMovePrices: mergeImages.length,
+          wouldMovePrices: (await PhonePrice.find({ phoneId: mergeIntoId }).lean()).length,
           wouldMoveBench: !!mergeBench,
           wouldDelete: true,
         },
@@ -625,6 +767,66 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     } catch (e: any) {
       return NextResponse.json({ error: e.message || 'Merge failed' }, { status: 500 });
     }
+  }
+
+  // POST /api/admin/data-quality/scans/:id/execute
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans' && segments[4] === 'execute') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:scan');
+    if (permCheck) return permCheck;
+
+    const scanId = segments[3];
+    const job = await ScanJob.findOne({ scanId });
+    if (!job) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
+    if (job.status === 'running') return NextResponse.json({ error: 'Scan already running' }, { status: 409 });
+    if (job.status === 'completed' || job.status === 'completed_with_errors') {
+      return NextResponse.json({ error: 'Scan already completed. Start a new scan.' }, { status: 400 });
+    }
+
+    executeScan(scanId).catch(e => {
+      console.error(`[DataQuality] Scan ${scanId} execute failed:`, e);
+    });
+
+    return NextResponse.json({ scanId, status: 'running' });
+  }
+
+  // POST /api/admin/data-quality/cleanup
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'cleanup') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:delete');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const { olderThanDays, status: targetStatus } = body;
+    const days = Math.max(1, Math.min(365, olderThanDays || 30));
+    const status = targetStatus || 'resolved';
+    const validStatuses = ['resolved', 'auto_fixed', 'false_positive'];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
+    }
+
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const result = await DataQualityIssue.deleteMany({
+      status,
+      $or: [
+        { resolvedAt: { $lt: cutoff } },
+        { resolvedAt: null, updatedAt: { $lt: cutoff } },
+      ],
+    });
+
+    try {
+      await ActivityLog.create({
+        adminId: authResult.admin._id,
+        action: 'data_quality_cleanup',
+        details: `Cleaned up ${result.deletedCount} ${status} issues older than ${days} days`,
+        entityType: 'data_quality',
+        entityId: '',
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ deleted: result.deletedCount, status, olderThanDays: days });
   }
 
   return undefined;

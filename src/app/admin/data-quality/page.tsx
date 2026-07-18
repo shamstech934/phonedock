@@ -6,12 +6,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck, AlertTriangle, AlertCircle, Info, XCircle,
   Smartphone, Image, DollarSign, Copy, Ghost, Clock, Upload,
-  ScanSearch, FileCheck, History,
+  ScanSearch, FileCheck, History, BarChart3,
   CheckCircle, X, Download, Play, Eye, EyeOff, Wrench,
-  ChevronRight, Loader2, RefreshCw, Search,
+  ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag,
 } from 'lucide-react';
 
-type TabId = 'overview' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'scan-history' | 'settings';
+type TabId = 'overview' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
 
 interface SummaryData {
   health: {
@@ -26,7 +26,7 @@ interface SummaryData {
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
 
-const TABS: { id: TabId; label: string; icon: any; queueFilter?: string; issueTypeFilter?: string }[] = [
+const TABS: { id: TabId; label: string; icon: any; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'issues', label: 'All Issues', icon: AlertTriangle },
   { id: 'missing-specs', label: 'Missing Specs', icon: Smartphone, issueTypeFilter: 'PHONE_MISSING_SPECS' },
@@ -36,6 +36,9 @@ const TABS: { id: TabId; label: string; icon: any; queueFilter?: string; issueTy
   { id: 'orphans', label: 'Orphans', icon: Ghost, issueTypeFilter: 'ORPHAN_SPECS' },
   { id: 'stale-prices', label: 'Stale Prices', icon: Clock, issueTypeFilter: 'PHONE_STALE_PRICE' },
   { id: 'import-warnings', label: 'Import Warnings', icon: Upload, entityTypeFilter: 'import' },
+  { id: 'low-confidence', label: 'Low Confidence', icon: Tag, issueTypeFilter: 'IMPORT_LOW_CONFIDENCE' },
+  { id: 'price-issues', label: 'Price Issues', icon: DollarSign, issueTypeFilter: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' },
+  { id: 'brand-issues', label: 'Brand Issues', icon: ShieldCheck, issueTypeFilter: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO' },
   { id: 'scan-history', label: 'Scan History', icon: History },
 ];
 
@@ -147,6 +150,28 @@ export default function DataQualityPage() {
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+          <button
+            onClick={async () => {
+              if (!confirm('Delete resolved/auto-fixed issues older than 30 days? This cannot be undone.')) return;
+              try {
+                const res = await fetch('/api/admin/data-quality/cleanup', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ olderThanDays: 30, status: 'resolved' }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  alert(`Cleaned up ${data.deleted} issues`);
+                  fetchSummary();
+                }
+              } catch (e) { console.error(e); }
+            }}
+            className="p-2 bg-white border border-red-200 text-red-500 rounded-xl hover:bg-red-50 transition-colors"
+            title="Cleanup old resolved issues"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -214,20 +239,28 @@ export default function DataQualityPage() {
       {activeTab === 'missing-specs' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_SPECS' }} />}
       {activeTab === 'missing-images' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_PRIMARY_IMAGE' }} />}
       {activeTab === 'missing-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_PRICE' }} />}
-      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }} />}
+      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
       {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
       {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ entityType: 'import' }} />}
+      {activeTab === 'low-confidence' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'IMPORT_LOW_CONFIDENCE' }} />}
+      {activeTab === 'price-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' }} />}
+      {activeTab === 'brand-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO' }} />}
       {activeTab === 'duplicates' && <DuplicatesTab onRefresh={fetchSummary} />}
       {activeTab === 'scan-history' && <ScanHistoryTab />}
     </div>
   );
 }
 
-function getQueueCountKey(issueType: string): string {
-  const map: Record<string, string> = {
+function getQueueCountKey(issueType: string): keyof NonNullable<SummaryData['queues']> {
+  const map: Record<string, keyof NonNullable<SummaryData['queues']>> = {
     'PHONE_MISSING_SPECS': 'missingSpecs',
     'PHONE_MISSING_PRIMARY_IMAGE': 'missingImages',
     'PHONE_MISSING_PRICE': 'missingPrices',
+    'PHONE_DUPLICATE_SLUG': 'duplicates',
+    'PHONE_DUPLICATE_NORMALIZED': 'duplicates',
+    'PHONE_STALE_PRICE': 'stalePrices',
+    'ORPHAN_SPECS': 'orphans',
+    'IMPORT_LOW_CONFIDENCE': 'missingSpecs',
   };
   return map[issueType] || 'missingSpecs';
 }
@@ -419,9 +452,6 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       if (severityFilter) params.set('severity', severityFilter);
       if (defaultFilter?.issueType) params.set('issueType', defaultFilter.issueType);
       if (defaultFilter?.entityType) params.set('entityType', defaultFilter.entityType);
-      if (Array.isArray(defaultFilter?.issueType)) {
-        // For $in queries, just use the first type for now
-      }
 
       const res = await fetch(`/api/admin/data-quality/issues?${params}`, { credentials: 'include' });
       if (res.ok) {
@@ -739,6 +769,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState<string | null>(null);
+  const isMerging = merging !== null;
   const [mergeModal, setMergeModal] = useState<{ groupId: string; entities: any[] } | null>(null);
 
   const fetchDuplicates = useCallback(async () => {
@@ -846,15 +877,15 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
                 const keep = mergeModal.entities[0];
                 const merge = mergeModal.entities[1];
                 handleMerge(keep.id, merge.id);
-              }} disabled={merging} className="flex-1 h-9 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
-                {merging ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Merge (Keep First)'}
+              }} disabled={isMerging} className="flex-1 h-9 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                {isMerging ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Merge (Keep First)'}
               </button>
               <button onClick={() => {
                 const keep = mergeModal.entities[1];
                 const merge = mergeModal.entities[0];
                 handleMerge(keep.id, merge.id);
-              }} disabled={merging} className="flex-1 h-9 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
-                {merging ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Merge (Keep Second)'}
+              }} disabled={isMerging} className="flex-1 h-9 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                {isMerging ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Merge (Keep Second)'}
               </button>
               <button onClick={() => setMergeModal(null)} className="h-9 px-4 border border-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-50">Cancel</button>
             </div>

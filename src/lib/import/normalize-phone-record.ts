@@ -4,6 +4,8 @@
  * Maps raw input to NormalizedPhoneImportRecord.
  */
 
+import { Types } from 'mongoose';
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface NormalizedPhoneImportRecord {
@@ -97,7 +99,7 @@ const FIELD_ALIASES: Record<string, string> = {
   'ptaapproved': 'ptaApproved', 'pta_approved': 'ptaApproved',
   // Display
   'displaysize': 'display', 'display_size': 'display', 'screensize': 'display',
-  'screentype': 'displayType', 'display_type': 'displayType', 'screentype': 'displayType',
+  'screentype': 'displayType', 'display_type': 'displayType',
   'resolution': 'resolution', 'screenresolution': 'resolution',
   'refreshrate': 'refreshRate', 'refresh_rate': 'refreshRate',
   'protection': 'protection',
@@ -113,7 +115,7 @@ const FIELD_ALIASES: Record<string, string> = {
   'cardslot': 'cardSlot', 'card_slot': 'cardSlot', 'microsd': 'cardSlot',
   // Camera
   'maincamera': 'mainCamera', 'main_camera': 'mainCamera', 'rearcamera': 'mainCamera',
-  'rearcamera': 'mainCamera', 'backcamera': 'mainCamera',
+  'backcamera': 'mainCamera',
   'maincameramp': 'mainCameraMP', 'main_camera_mp': 'mainCameraMP',
   'maincamerasensor': 'mainCameraSensor', 'camera_sensor': 'mainCameraSensor',
   'selfiecamera': 'selfieCamera', 'frontcamera': 'selfieCamera',
@@ -144,7 +146,7 @@ const FIELD_ALIASES: Record<string, string> = {
   'colors': 'colors', 'colour': 'colors', 'availablecolors': 'colors',
   // Connectivity
   'network': 'network', 'networktype': 'network',
-  '5g': 'fiveG', '5g': 'fiveG', 'fiveg': 'fiveG', 'has5g': 'fiveG',
+  '5g': 'fiveG', 'fiveg': 'fiveG', 'has5g': 'fiveG',
   'wifi': 'wifi', 'wifistandard': 'wifi',
   'bluetooth': 'bluetooth', 'bt': 'bluetooth', 'bluetoothversion': 'bluetooth',
   'nfc': 'nfc', 'hasnfc': 'nfc',
@@ -239,7 +241,7 @@ function normalizeDate(val: unknown): string | null {
   const dmy = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
   if (dmy) {
     const [, a, b, c] = dmy;
-    const day = parseInt(a), month = parseInt(b), year = parseInt(c);
+    let day = parseInt(a), month = parseInt(b), year = parseInt(c);
     if (year < 100) year += 2000;
     const date = new Date(year, month - 1, day);
     if (!isNaN(date.getTime()) && date.getFullYear() >= 2000 && date.getFullYear() <= 2100) {
@@ -336,7 +338,7 @@ function isSafeObject(val: unknown, depth = 0): boolean {
   if (val == null || typeof val !== 'object') return true;
   if (Array.isArray(val)) return val.length <= MAX_ARRAY_LENGTH && val.every(v => isSafeObject(v, depth + 1));
   if (val instanceof Date) return true;
-  if (val instanceof ObjectId) return true;
+  if (val instanceof Types.ObjectId) return true;
   if (val.constructor?.name === 'Object') {
     const keys = Object.keys(val);
     return keys.length <= 200 && !keys.some(k => k === '__proto__' || k === 'constructor' || k === 'prototype');

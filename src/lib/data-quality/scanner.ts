@@ -42,7 +42,7 @@ export async function executeScan(scanId: string): Promise<void> {
 
   try {
     const activeRules = job.rules.length > 0
-      ? job.rules.map(rid => getRuleById(rid)).filter(Boolean)
+      ? job.rules.map((rid: string) => getRuleById(rid)).filter(Boolean)
       : ALL_QUALITY_RULES;
 
     const ctx = await buildDetectionContext(job);
@@ -53,7 +53,7 @@ export async function executeScan(scanId: string): Promise<void> {
       await scanImportPhones(job, activeRules, ctx, allIssues);
     } else if (job.entityIds && job.entityIds.length > 0) {
       // Entity-specific scan
-      const phones = await Phone.find({ _id: { $in: job.entityIds.map(id => new Types.ObjectId(id)) }, deletedAt: null }).lean();
+      const phones = await Phone.find({ _id: { $in: job.entityIds.map((id: string) => new Types.ObjectId(id)) }, deletedAt: null }).lean();
       ctx.entities = phones;
       await runRulesOnBatch(activeRules, ctx, allIssues);
     } else if (job.type === 'incremental') {
@@ -70,6 +70,9 @@ export async function executeScan(scanId: string): Promise<void> {
 
     // Also scan for orphan records (not covered by phone-based rules)
     await scanOrphans(ctx, allIssues);
+
+    // Scan price tracker issues (stale listings, outliers, mismatches, inactive sources)
+    await scanPriceTrackerIssues(allIssues);
 
     // Persist issues (deduplicated by issueKey)
     let created = 0;
@@ -150,13 +153,15 @@ async function scanAllPhones(
   ctx: DetectionContext,
   allIssues: DetectedIssue[],
 ) {
-  let cursor = job.lastProcessedId
+  const queryBuilder = job.lastProcessedId
     ? Phone.find({ ...query, _id: { $gt: new Types.ObjectId(job.lastProcessedId) } })
     : Phone.find(query);
 
-  cursor = cursor.sort({ _id: 1 }).select('_id brandId modelName slug pricePKR status thumbnail releaseDate ptaStatus dataConfidence lastPriceCheckedAt').lean().batchSize(BATCH_SIZE);
-
-  const docs = await cursor.lean();
+  const docs = await queryBuilder
+    .sort({ _id: 1 })
+    .select('_id brandId modelName slug pricePKR status thumbnail releaseDate ptaStatus dataConfidence lastPriceCheckedAt')
+    .lean()
+    .batchSize(BATCH_SIZE);
   const phoneIds = docs.map((d: any) => d._id.toString());
   const total = phoneIds.length;
 
@@ -506,6 +511,169 @@ export async function executeAutoFix(
   }
 
   return result;
+}
+
+// ─── PRICE TRACKER ISSUE SCANNER ─────────────────────────────────
+
+async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void> {
+  // 1. Stale tracked prices — listings not checked in 14+ days
+  try {
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const staleListings = await PhoneRetailListing.find({
+      enabled: true,
+      $or: [
+        { lastCheckedAt: null },
+        { lastCheckedAt: { $lt: fourteenDaysAgo } },
+      ],
+    }).select('phoneId currentSourcePrice lastCheckedAt sourceId').lean();
+
+    for (const listing of staleListings) {
+      const pid = listing.phoneId?.toString();
+      const lid = listing._id?.toString();
+      if (!pid || !lid) continue;
+      allIssues.push({
+        issueKey: `PRICE_STALE_TRACKED:retail_listing:${lid}`,
+        entityType: 'retail_listing', entityId: lid,
+        issueType: 'PRICE_STALE_TRACKED', severity: 'low',
+        field: 'lastCheckedAt',
+        currentValue: listing.lastCheckedAt?.toISOString() || 'never',
+        suggestedValue: 'Re-check this listing',
+        source: 'price_tracker', confidence: 0.9,
+        metadata: { phoneId: pid, sourcePrice: listing.currentSourcePrice },
+      });
+    }
+  } catch (e) {
+    console.error('[DataQuality] Price stale scan error:', e);
+  }
+
+  // 2. Inactive / failed price sources
+  try {
+    const inactiveSources = await PriceSource.find({
+      $or: [
+        { enabled: false, status: { $ne: 'active' } },
+        { status: 'failed', failureCount: { $gt: 3 } },
+      ],
+    }).lean();
+
+    for (const src of inactiveSources) {
+      const sid = src._id?.toString();
+      if (!sid) continue;
+      allIssues.push({
+        issueKey: `PRICE_SOURCE_INACTIVE:price_source:${sid}`,
+        entityType: 'price_source', entityId: sid,
+        issueType: 'PRICE_SOURCE_INACTIVE', severity: 'info',
+        field: 'status',
+        currentValue: src.status || (src.enabled ? 'enabled' : 'disabled'),
+        suggestedValue: src.status === 'failed' ? 'Fix source configuration or disable' : 'Review source status',
+        source: 'price_tracker', confidence: 1,
+        metadata: { sourceName: src.name, failureCount: src.failureCount, enabled: src.enabled },
+      });
+    }
+  } catch (e) {
+    console.error('[DataQuality] Price source scan error:', e);
+  }
+
+  // 3. Price outliers — listing price >50% different from phone.pricePKR
+  try {
+    const enabledListings = await PhoneRetailListing.find({
+      enabled: true,
+      verificationStatus: { $ne: 'rejected' },
+      currentSourcePrice: { $gt: 0 },
+    }).select('phoneId currentSourcePrice sourceId').lean();
+
+    // Group by phoneId
+    const byPhone = new Map<string, typeof enabledListings>();
+    for (const l of enabledListings) {
+      const pid = l.phoneId?.toString();
+      if (!pid) continue;
+      if (!byPhone.has(pid)) byPhone.set(pid, []);
+      byPhone.get(pid)!.push(l);
+    }
+
+    const phoneIds = [...byPhone.keys()];
+    if (phoneIds.length > 0) {
+      const phones = await Phone.find({ _id: { $in: phoneIds } }).select('_id pricePKR modelName').lean();
+      const phoneMap = new Map(phones.map((p: any) => [p._id.toString(), p]));
+
+      for (const [pid, listings] of byPhone) {
+        const phone = phoneMap.get(pid);
+        if (!phone || !phone.pricePKR || phone.pricePKR <= 0) continue;
+
+        for (const listing of listings) {
+          const lid = listing._id?.toString();
+          const deviation = (listing.currentSourcePrice - phone.pricePKR) / phone.pricePKR;
+          if (Math.abs(deviation) > 0.5) {
+            allIssues.push({
+              issueKey: `PRICE_OUTLIER:retail_listing:${lid}`,
+              entityType: 'retail_listing', entityId: lid,
+              issueType: 'PRICE_OUTLIER', severity: 'medium',
+              field: 'currentSourcePrice',
+              currentValue: listing.currentSourcePrice,
+              suggestedValue: `Phone price is PKR ${phone.pricePKR.toLocaleString()} (${Math.round(deviation * 100)}% deviation)`,
+              source: 'price_tracker', confidence: 0.7,
+              metadata: { phoneId: pid, phonePrice: phone.pricePKR, deviation: Math.round(deviation * 100) },
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[DataQuality] Price outlier scan error:', e);
+  }
+
+  // 4. Price mismatch — lowest listing is much lower but phone not updated
+  try {
+    const activeListings = await PhoneRetailListing.find({
+      enabled: true,
+      availability: 'in_stock',
+      verificationStatus: { $in: ['verified', 'pending'] },
+      currentSourcePrice: { $gt: 0 },
+    }).select('phoneId currentSourcePrice').lean();
+
+    const byPhone = new Map<string, number[]>();
+    for (const l of activeListings) {
+      const pid = l.phoneId?.toString();
+      if (!pid) continue;
+      if (!byPhone.has(pid)) byPhone.set(pid, []);
+      byPhone.get(pid)!.push(l.currentSourcePrice);
+    }
+
+    const phoneIds = [...byPhone.keys()];
+    if (phoneIds.length > 0) {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const phones = await Phone.find({
+        _id: { $in: phoneIds },
+        manualLock: { $ne: true },
+        $or: [
+          { lastPriceChangedAt: null },
+          { lastPriceChangedAt: { $lt: thirtyDaysAgo } },
+        ],
+      }).select('_id pricePKR lastPriceChangedAt').lean();
+      const phoneMap = new Map(phones.map((p: any) => [p._id.toString(), p]));
+
+      for (const [pid, prices] of byPhone) {
+        const phone = phoneMap.get(pid);
+        if (!phone || !phone.pricePKR || phone.pricePKR <= 0) continue;
+
+        const lowestListing = Math.min(...prices);
+        const diff = (phone.pricePKR - lowestListing) / phone.pricePKR;
+        if (diff > 0.1) { // Phone price is 10%+ higher than lowest listing
+          allIssues.push({
+            issueKey: `PRICE_MISMATCH:phone:${pid}`,
+            entityType: 'retail_listing', entityId: pid,
+            issueType: 'PRICE_MISMATCH', severity: 'medium',
+            field: 'pricePKR',
+            currentValue: phone.pricePKR,
+            suggestedValue: `Lowest listing is PKR ${lowestListing.toLocaleString()} (${Math.round(diff * 100)}% lower)`,
+            source: 'price_tracker', confidence: 0.6,
+            metadata: { lowestListing, deviation: Math.round(diff * 100) },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[DataQuality] Price mismatch scan error:', e);
+  }
 }
 
 // ─── HEALTH SCORE CALCULATOR ─────────────────────────────────────

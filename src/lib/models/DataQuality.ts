@@ -23,7 +23,7 @@ const DataQualityIssueSchema = new Schema({
 }, { timestamps: true });
 
 // Unique index: only one open/ignored/needs_review issue per issueKey
-DataQualityIssueSchema.index({ issueKey: 1, status: { $in: ['open', 'ignored', 'needs_review'] } }, { unique: true, sparse: true });
+DataQualityIssueSchema.index({ issueKey: 1, status: 1 }, { unique: true, partialFilterExpression: { status: { $in: ['open', 'ignored', 'needs_review'] } } });
 DataQualityIssueSchema.index({ entityType: 1, entityId: 1, status: 1 });
 DataQualityIssueSchema.index({ issueType: 1, status: 1 });
 

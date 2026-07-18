@@ -118,14 +118,14 @@ export function parseCSV(content: string, fileName: string): ParsedFile {
     return { records: [], fileType: 'csv', fileName, totalRecords: 0, warnings: [`CSV parse errors: ${result.errors.length}`] };
   }
 
-  const records = result.data;
+  let records = result.data;
   if (records.length > MAX_RECORDS) {
     warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${records.length})`);
     records = records.slice(0, MAX_RECORDS);
   }
 
   // Sanitize each record for prototype pollution
-  const safeRecords = records.filter(r => isSafeObject(r));
+  const safeRecords = records.filter(r => isSafeObject(r)) as Record<string, unknown>[];
 
   return { records: safeRecords, fileType: 'csv', fileName, totalRecords: records.length, warnings };
 }
@@ -145,7 +145,7 @@ export function parseXLSX(buffer: ArrayBuffer, fileName: string): ParsedFile {
       return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: ['No sheets found in workbook'] };
     }
 
-    const records: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    let records: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
     if (records.length > MAX_RECORDS) {
       warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${records.length})`);
@@ -168,7 +168,7 @@ export async function parseZIP(buffer: ArrayBuffer, fileName: string): Promise<P
   const warnings: string[] = [];
 
   try {
-    const zip = new AdmZip(buffer);
+    const zip = new AdmZip(Buffer.from(buffer));
 
     // Security: check compression ratio
     const compressedSize = buffer.byteLength;
@@ -215,7 +215,7 @@ export async function parseZIP(buffer: ArrayBuffer, fileName: string): Promise<P
       } else if (ext === 'csv') {
         parsed = parseCSV(new TextDecoder().decode(data), entryName);
       } else if (ext === 'xlsx') {
-        parsed = parseXLSX(data.buffer, entryName);
+        parsed = parseXLSX(data.buffer as ArrayBuffer, entryName);
       } else {
         continue;
       }
@@ -264,7 +264,7 @@ export async function parseImportFile(
 ): Promise<ParsedFile> {
   const detected = detectFileType(fileName, mimeType);
 
-  if (detected === 'zip') {
+  if (detected === 'zip' as string) {
     return parseZIP(buffer, fileName);
   }
   if (detected === 'xlsx') {

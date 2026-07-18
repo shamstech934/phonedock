@@ -4,10 +4,8 @@ const nextConfig: NextConfig = {
   // output: "standalone",
   typescript: {
     ignoreBuildErrors: false,
-    node: { // Allow node:crypto for crypto operations
-      crypto: 'default',
-    },
   },
+  serverExternalPackages: ['crypto'],
   reactStrictMode: true,
   images: {
     remotePatterns: [

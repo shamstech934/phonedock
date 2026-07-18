@@ -1,5 +1,6 @@
 import { RuleDefinition, DetectedIssue, DetectionContext, FixContext, FixResult } from '../types';
 import { Types } from 'mongoose';
+import { PhoneSpecs, PhoneImage } from '@/lib/models';
 
 // ─── Helper: build stable issue key ───────────────────────────────
 function issueKey(ruleId: string, entityType: string, entityId: string, field?: string): string {
@@ -411,15 +412,30 @@ export const SPECS_OBJECT_IN_STRING: RuleDefinition = {
     }
     return issues;
   },
-  async autoFix(issue: DetectedIssue, _ctx: FixContext): Promise<FixResult> {
-    // Convert object to JSON string representation
-    if (typeof issue.currentValue === 'object') {
+  async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
+    if (ctx.dryRun) {
       return {
         success: true,
-        changes: [{ field: issue.field, oldValue: '[object Object]', newValue: JSON.stringify(issue.currentValue) }],
+        changes: [{ field: issue.field, oldValue: '[object Object]', newValue: '(would convert to JSON string)' }],
       };
     }
-    return { success: false, changes: [], error: 'Value is not an object' };
+    try {
+      const specs = await PhoneSpecs.findOne({ phoneId: issue.entityId });
+      if (!specs) return { success: false, changes: [], error: 'PhoneSpecs not found' };
+      const val = specs.get(issue.field);
+      if (typeof val === 'object' && val !== null) {
+        const newStr = JSON.stringify(val);
+        specs.set(issue.field, newStr);
+        await specs.save();
+        return {
+          success: true,
+          changes: [{ field: issue.field, oldValue: '[object Object]', newValue: newStr }],
+        };
+      }
+      return { success: false, changes: [], error: 'Value is no longer an object (may have been fixed already)' };
+    } catch (e: any) {
+      return { success: false, changes: [], error: e.message || 'Fix failed' };
+    }
   },
 };
 
@@ -617,12 +633,29 @@ export const IMAGE_MULTIPLE_PRIMARY: RuleDefinition = {
     }
     return issues;
   },
-  async autoFix(issue: DetectedIssue, _ctx: FixContext): Promise<FixResult> {
-    // Fix: reassign sequential sortOrder
-    return {
-      success: true,
-      changes: [{ field: 'sortOrder', oldValue: 'multiple 0', newValue: 'sequential 0,1,2...' }],
-    };
+  async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
+    if (ctx.dryRun) {
+      return {
+        success: true,
+        changes: [{ field: 'sortOrder', oldValue: 'multiple 0', newValue: 'sequential 0,1,2...' }],
+      };
+    }
+    try {
+      const images = await PhoneImage.find({ phoneId: issue.entityId }).sort({ sortOrder: 1 }).lean();
+      if (images.length <= 1) return { success: false, changes: [], error: 'No duplicate primaries found' };
+      const changes: Array<{ field: string; oldValue: any; newValue: any }> = [];
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        if (img.sortOrder !== i) {
+          changes.push({ field: 'sortOrder', oldValue: img.sortOrder, newValue: i });
+          await PhoneImage.updateOne({ _id: img._id }, { $set: { sortOrder: i } });
+        }
+      }
+      if (changes.length === 0) return { success: false, changes: [], error: 'Already sequential' };
+      return { success: true, changes };
+    } catch (e: any) {
+      return { success: false, changes: [], error: e.message || 'Fix failed' };
+    }
   },
 };
 
