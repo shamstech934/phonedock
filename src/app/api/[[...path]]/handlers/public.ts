@@ -182,15 +182,22 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
         { modelName: { $regex: safe, $options: 'i' } },
         { slug: { $regex: safe, $options: 'i' } },
       ]
-    }).select('slug modelName thumbnail pricePKR brandId').populate('brand', 'name slug').sort({ modelName: 1 }).limit(20).lean();
-    return cached({ phones: phones.map((p: any) => ({
-      id: p._id?.toString(),
-      slug: p.slug,
-      modelName: p.modelName,
-      thumbnail: p.thumbnail || '',
-      pricePKR: p.pricePKR,
-      brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name, slug: p.brand.slug } : null,
-    })) }, 60, 180);
+    }).select('slug modelName thumbnail pricePKR brandId').sort({ modelName: 1 }).limit(20).lean();
+    // Manual brand lookup — virtual populate + .lean() drops selected fields
+    const brandIds = [...new Set(phones.map((p: any) => p.brandId?.toString()).filter(Boolean))];
+    const brands = brandIds.length > 0 ? await Brand.find({ _id: { $in: brandIds } }).select('name slug').lean() : [];
+    const brandMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+    return cached({ phones: phones.map((p: any) => {
+      const b = brandMap.get(p.brandId?.toString());
+      return {
+        id: p._id?.toString(),
+        slug: p.slug,
+        modelName: p.modelName,
+        thumbnail: p.thumbnail || '',
+        pricePKR: p.pricePKR,
+        brand: b ? { id: p.brandId?.toString(), name: b.name, slug: b.slug } : null,
+      };
+    })}, 60, 180);
   }
 
   // ---- /api/phones/:slug ----

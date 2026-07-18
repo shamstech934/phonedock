@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Shield, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Monitor, RefreshCw, AlertCircle } from 'lucide-react';
+import { Shield, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Monitor, RefreshCw, AlertCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
