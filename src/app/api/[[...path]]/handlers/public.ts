@@ -3,6 +3,8 @@ import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice,
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
+import { escapeRegex } from '@/lib/utils';
+import { getEmailTransporter } from '@/lib/email';
 
 // ============ CACHE-CONTROL HELPERS ============
 // Vercel CDN respects these headers — repeat requests are served from edge cache
@@ -86,7 +88,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     else if (ptaFilter === 'pending') filter.ptaApproved = false;
     if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
     if (search) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [
         { modelName: { $regex: safe, $options: 'i' } },
         { slug: { $regex: safe, $options: 'i' } },
@@ -163,7 +165,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return cached({ phones: [] }, 60, 180);
-    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const safe = escapeRegex(q);
     const phones = await Phone.find({
       active: true, status: 'published',
       $or: [
@@ -184,14 +186,14 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   // ---- /api/phones/:slug ----
   if (segments.length === 2 && segments[0] === 'phones') {
     await connectDB();
-    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).populate('brand');
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').populate('brand');
     if (!phone) return cachedError('Not found', 404, 60, 300);
     const [specs, benchmarks, images, prices, related, phoneVideos] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      PhonePrice.find({ phoneId: phone._id }).lean(),
-      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
+      PhonePrice.find({ phoneId: phone._id }).limit(20).lean(),
+      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
       Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
     ]);
     const phoneJSON: any = phoneToJSON(phone, specs, benchmarks, images, prices);
@@ -293,7 +295,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       { $sort: { sortOrder: 1 } },
       { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
       { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
-    ]);
+    ]).limit(100);
     return cached({ brands: brands.map((b: any) => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } })) }, 120, 300);
   }
 
@@ -304,6 +306,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (!brand) return cachedError('Not found', 404, 60, 300);
     const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+      .limit(100)
       .populate('brand').lean();
     return cached({ brand, phones: await attachListSpecs(phones) }, 300, 600);
   }
@@ -311,7 +314,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   // ---- /api/news ----
   if (segments.length === 1 && segments[0] === 'news') {
     await connectDB();
-    const news = await News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).lean();
+    const news = await News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(20).lean();
     return cached({ news: news.map((n: any) => ({ id: n._id?.toString(), ...n, imageUrl: n.image || '' })) }, 120, 300);
   }
 
@@ -330,7 +333,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
     if (!q) return cached({ phones: [], brands: [], query: q }, 60, 180);
-    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const safe = escapeRegex(q);
     const [phones, brandAgg] = await Promise.all([
       Phone.find({ active: true, status: 'published', $or: [
         { modelName: { $regex: safe, $options: 'i' } },
@@ -396,6 +399,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
     const phones = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
+      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .sort({ [sort]: order }).limit(limit).populate('brand').lean();
     return cached({ phones: await attachListSpecs(phones), sortBy: sort }, 300, 600);
   }
@@ -404,7 +408,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   if (segments.length === 1 && segments[0] === 'upcoming-phones') {
     await connectDB();
     const phones = await Phone.find({ active: true, upcoming: true })
-      .sort({ createdAt: -1 }).populate('brand').lean();
+      .sort({ createdAt: -1 }).limit(20).populate('brand').lean();
     return cached({ phones: await attachListSpecs(phones) }, 300, 600);
   }
 
@@ -497,13 +501,7 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
     // Send email if configured, otherwise just log
     if (isEmailConfigured()) {
       try {
-        const nodemailer = await import('nodemailer');
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST,
-          port: parseInt(process.env.EMAIL_PORT || '587'),
-          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-        });
+        const transporter = await getEmailTransporter();
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: process.env.EMAIL_USER, // Send to site owner

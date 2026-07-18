@@ -16,6 +16,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory, NewsletterSubscriber } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
+import { getEmailTransporter } from '@/lib/email';
 import { handlePublicGet, handlePublicPost } from './handlers/public';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { handleAdminAuthGet, handleAdminAuthPost, handleAdminAuthDelete } from './handlers/admin-auth';
@@ -60,20 +61,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       await connectDB();
       const alerts = await PriceAlert.find({ status: 'confirmed', notified: false }).populate('phoneId').lean();
       let sent = 0;
+      // Batch-fetch latest prices for all alerted phones
+      const phoneIds = alerts.map(a => {
+        const p = a.phoneId as any;
+        return p._id;
+      }).filter(Boolean);
+
+      const latestPricesArr = await PriceHistory.aggregate([
+        { $match: { phoneId: { $in: phoneIds }, storeName: null } },
+        { $sort: { recordedAt: -1 } },
+        { $group: { _id: '$phoneId', price: { $first: '$price' } } },
+      ]);
+      const priceMap = new Map(latestPricesArr.map((p: any) => [p._id.toString(), p.price]));
+
       for (const alert of alerts) {
         const phone = alert.phoneId as any;
         if (!phone || !phone.pricePKR) continue;
-        const lastPrice = await PriceHistory.findOne({ phoneId: phone._id, storeName: null }).sort({ recordedAt: -1 }).lean();
-        if (lastPrice && lastPrice.price > phone.pricePKR) {
+        const lastPriceVal = priceMap.get(phone._id.toString());
+        if (lastPriceVal && lastPriceVal > phone.pricePKR) {
           // Price has dropped! Send notification email (using nodemailer)
           try {
-            const nm = await import('nodemailer');
-            const transporter = nm.default.createTransport({
-              host: process.env.EMAIL_HOST,
-              port: parseInt(process.env.EMAIL_PORT || '587'),
-              secure: process.env.EMAIL_SECURE === 'true',
-              auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-            });
+            const transporter = await getEmailTransporter();
             const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
             const unsubscribeUrl = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(alert.email)}&phoneId=${phone._id}`;
             await transporter.sendMail({
@@ -84,7 +92,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
                 <h2 style="color:#1a1a1a">Price Drop Alert</h2>
                 <p style="color:#666">Great news! The price of <strong>${phone.modelName}</strong> has dropped.</p>
                 <table style="width:100%;border-collapse:collapse;margin:16px 0"><tr>
-                  <td style="padding:12px;background:#fef2f2;text-decoration:line-through;color:#999;font-size:14px">PKR ${(lastPrice.price).toLocaleString()}</td>
+                  <td style="padding:12px;background:#fef2f2;text-decoration:line-through;color:#999;font-size:14px">PKR ${lastPriceVal.toLocaleString()}</td>
                   <td style="padding:0 8px;color:#ccc">→</td>
                   <td style="padding:12px;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:bold">PKR ${phone.pricePKR.toLocaleString()}</td>
                 </tr></table>
@@ -342,13 +350,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         const confirmLink = `${siteUrl}/api/price-alerts/confirm?token=${confirmToken}&email=${encodeURIComponent(emailLower)}`;
         const unsubscribeLink = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(emailLower)}&phoneId=${phone._id}`;
         try {
-          const nodemailer = await import('nodemailer');
-          const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: parseInt(process.env.EMAIL_PORT || '587'),
-            secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-          });
+          const transporter = await getEmailTransporter();
           await transporter.sendMail({
             from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
             to: emailLower,

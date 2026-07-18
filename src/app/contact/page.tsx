@@ -98,8 +98,9 @@ export default function ContactPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">Name *</label>
+                  <label htmlFor="contact-name" className="text-xs font-medium text-gray-700 mb-1 block">Name *</label>
                   <input
+                    id="contact-name"
                     type="text" required
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
@@ -108,8 +109,9 @@ export default function ContactPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-700 mb-1 block">Email *</label>
+                  <label htmlFor="contact-email" className="text-xs font-medium text-gray-700 mb-1 block">Email *</label>
                   <input
+                    id="contact-email"
                     type="email" required
                     value={form.email}
                     onChange={e => setForm({ ...form, email: e.target.value })}
@@ -119,8 +121,9 @@ export default function ContactPage() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-700 mb-1 block">Subject</label>
+                <label htmlFor="contact-subject" className="text-xs font-medium text-gray-700 mb-1 block">Subject</label>
                 <input
+                  id="contact-subject"
                   type="text"
                   value={form.subject}
                   onChange={e => setForm({ ...form, subject: e.target.value })}
@@ -129,8 +132,9 @@ export default function ContactPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-700 mb-1 block">Message *</label>
+                <label htmlFor="contact-message" className="text-xs font-medium text-gray-700 mb-1 block">Message *</label>
                 <textarea
+                  id="contact-message"
                   required rows={5}
                   value={form.message}
                   onChange={e => setForm({ ...form, message: e.target.value })}

@@ -43,7 +43,9 @@ function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; s
   const fmtShort = (n: number) => n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="phTitle phDesc">
+      <title id="phTitle">Price history chart</title>
+      <desc id="phDesc">Price trend from PKR {minP?.toLocaleString()} to PKR {maxP?.toLocaleString()} over {points?.length || 0} data points</desc>
       <defs>
         <linearGradient id="phGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2" />
@@ -113,7 +115,9 @@ function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; cap
 
   return (
     <div className="relative w-full" style={{ maxHeight: '200px' }}>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '200px' }}>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '200px' }} role="img" aria-labelledby="ptTitle ptDesc">
+        <title id="ptTitle">Price tracker chart</title>
+        <desc id="ptDesc">Tracked price from PKR {Math.min(...prices)?.toLocaleString()} to PKR {Math.max(...prices)?.toLocaleString()} over {sorted.length} data points</desc>
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={lineColor} stopOpacity="0.15" />
@@ -303,11 +307,13 @@ function UserReviewsSection({ slug }: { slug: string }) {
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-muted-foreground mr-2">Rating:</span>
-            {[1,2,3,4,5].map(i => (
-              <button key={i} type="button" onClick={() => setFormRating(i)} className="p-0.5">
-                <Star className={`w-5 h-5 transition-colors ${i <= formRating ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= formRating ? 'currentColor' : 'none'} />
-              </button>
-            ))}
+            <div role="radiogroup" aria-label="Rating">
+              {[1,2,3,4,5].map(i => (
+                <button key={i} type="button" role="radio" aria-checked={i <= formRating} aria-label={`${i} star${i > 1 ? 's' : ''}`} onClick={() => setFormRating(i)} className="p-0.5">
+                  <Star className={`w-5 h-5 transition-colors ${i <= formRating ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= formRating ? 'currentColor' : 'none'} />
+                </button>
+              ))}
+            </div>
           </div>
           <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} aria-label="Your review" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           {turnstileSiteKey && (
@@ -484,13 +490,15 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
       <main className="flex-1">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
-            <Link href="/phones" className="hover:text-blue-500 transition-colors flex items-center gap-1"><ChevronLeft className="w-3.5 h-3.5" /> Phones</Link>
-            <ChevronRight className="w-3.5 h-3.5" />
-            <Link href={`/brands/${p.brand?.slug}`} className="hover:text-blue-500 transition-colors">{p.brand?.name}</Link>
-            <ChevronRight className="w-3.5 h-3.5" />
-            <span className="font-medium text-gray-900">{p.modelName}</span>
-          </div>
+          <nav aria-label="Breadcrumb">
+            <ol className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
+              <li><Link href="/phones" className="hover:text-blue-500 transition-colors flex items-center gap-1"><ChevronLeft className="w-3.5 h-3.5" /> Phones</Link></li>
+              <li><ChevronRight className="w-3.5 h-3.5" /></li>
+              <li><Link href={`/brands/${p.brand?.slug}`} className="hover:text-blue-500 transition-colors">{p.brand?.name}</Link></li>
+              <li><ChevronRight className="w-3.5 h-3.5" /></li>
+              <li><span className="font-medium text-gray-900">{p.modelName}</span></li>
+            </ol>
+          </nav>
 
           <h1 className="sr-only">{p.brand?.name} {p.modelName}</h1>
 
@@ -501,7 +509,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
               <div className="card-premium overflow-hidden">
                 <div className="bg-[#F8FAFC] aspect-square flex items-center justify-center p-8 relative">
                   {images.length > 0 ? (
-                    <Image src={images[activeImage]?.url || images[0].url} alt={images[activeImage]?.altText || p.modelName} width={300} height={300} className="object-contain" unoptimized />
+                    <Image src={images[activeImage]?.url || images[0].url} alt={images[activeImage]?.altText || p.modelName} width={300} height={300} className="object-contain" priority sizes="(max-width: 1024px) 100vw, 400px" />
                   ) : (
                     <div className="w-32 h-32 rounded-3xl bg-gray-100 flex items-center justify-center">
                       <Smartphone className="w-16 h-16 text-gray-300" />
@@ -516,7 +524,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                 {images.length > 1 && (
                   <div className="flex gap-2 p-3 overflow-x-auto no-scrollbar">
                     {images.map((img, i) => (
-                      <button key={img.id} onClick={() => setActiveImage(i)} className={`w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-colors ${i === activeImage ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}>
+                      <button key={img.id} onClick={() => setActiveImage(i)} aria-label={`View image ${i + 1} of ${images.length}`} aria-pressed={i === activeImage} className={`w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-colors ${i === activeImage ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}>
                         <Image src={img.url} alt={img.altText || phone.modelName} width={64} height={64} className="object-contain w-full h-full p-1" unoptimized />
                       </button>
                     ))}
@@ -758,6 +766,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                           allowFullScreen
                           loading="lazy"
                           title={v.title}
+                          aria-label={`Video review: ${v.title}`}
                         />
                         <p className="text-xs text-muted-foreground px-3 py-2 line-clamp-1">{v.title}</p>
                       </div>

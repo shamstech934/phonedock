@@ -237,8 +237,9 @@ function QuickViewContent({
         <Link
           href={`/compare?p=${phone.slug}`}
           onClick={onClose}
-          className="shrink-0 w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
+          className="shrink-0 w-11 h-11 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
           title="Compare"
+          aria-label={`Compare ${phone.modelName}`}
         >
           <GitCompare className="w-3.5 h-3.5" />
         </Link>
@@ -355,8 +356,9 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             <Link
               href={`/compare?p=${phone.slug}`}
               onClick={(e) => e.stopPropagation()}
-              className="shrink-0 w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
+              className="shrink-0 w-11 h-11 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
               title="Compare"
+              aria-label={`Compare ${phone.modelName}`}
             >
               <GitCompare className="w-3.5 h-3.5" />
             </Link>
@@ -368,7 +370,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               aria-label={`Quick view ${phone.modelName}`}
               aria-expanded={qvOpen}
               aria-haspopup="dialog"
-              className="shrink-0 w-9 h-9 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
+              className="shrink-0 w-11 h-11 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
               title="Quick View"
             >
               <Eye className="w-3.5 h-3.5" />

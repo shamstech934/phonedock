@@ -144,10 +144,10 @@ function PhonesContent() {
     router.push(`/phones?${params.toString()}`);
   }, [router, searchParams]);
 
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
     router.push('/phones');
     setSearch('');
-  };
+  }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
   const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, search ? 'search' : '', priceDropParam ? 'priceDrop' : ''].filter(f => f && f !== 'all').length;

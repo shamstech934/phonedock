@@ -8,19 +8,8 @@ import { Phone, Brand, News, PhoneSpecs, Sponsor } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 
-// ============ BATCH SPECS ATTACHMENT (shared with public.ts) ============
-
-/** Attach specs to an array of phone JSON objects.
- *  Phones must already be run through phoneToJSON (they have `id` as string). */
-async function attachBasicSpecs(phones: any[]): Promise<any[]> {
-  if (phones.length === 0) return phones;
-  // Collect both string ids and original ObjectIds for the lookup
-  const ids = phones.map((p: any) => p.id).filter(Boolean);
-  if (ids.length === 0) return phones;
-  const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
-  const specsMap = buildSpecsMap(specsArr);
-  return attachSpecsToJsonPhones(phones, specsMap);
-}
+// ============ BATCH SPECS ATTACHMENT ============
+// (attachBasicSpecs removed — fetchHomeData now uses a single batch query below)
 
 // ============ HOMEPAGE DATA ============
 
@@ -55,12 +44,52 @@ export async function fetchHomeData() {
     Brand.countDocuments({ active: true }),
   ]);
 
+  // Convert all raw phone arrays to JSON (needed for spec attachment)
+  const featuredJson = featured.map((p: any) => phoneToJSON(p));
+  const trendingJson = trending.map((p: any) => phoneToJSON(p));
+  const latestJson = latest.map((p: any) => phoneToJSON(p));
+  const bestCameraJson = bestCamera.map((p: any) => phoneToJSON(p));
+  const bestGamingJson = bestGaming.map((p: any) => phoneToJSON(p));
+  const bestBatteryJson = bestBattery.map((p: any) => phoneToJSON(p));
+  const upcomingJson = upcoming.map((p: any) => phoneToJSON(p));
+  const pc_above100kJson = pc_above100k.map((p: any) => phoneToJSON(p));
+  const pc_price60to100Json = pc_price60to100.map((p: any) => phoneToJSON(p));
+  const pc_price40to60Json = pc_price40to60.map((p: any) => phoneToJSON(p));
+  const pc_price20to40Json = pc_price20to40.map((p: any) => phoneToJSON(p));
+  const pc_under20kJson = pc_under20k.map((p: any) => phoneToJSON(p));
+
+  // Batch all phone IDs and fetch specs in ONE query
+  const allPhoneIds = [
+    ...featuredJson.map((p: any) => p.id),
+    ...trendingJson.map((p: any) => p.id),
+    ...latestJson.map((p: any) => p.id),
+    ...bestCameraJson.map((p: any) => p.id),
+    ...bestGamingJson.map((p: any) => p.id),
+    ...bestBatteryJson.map((p: any) => p.id),
+    ...upcomingJson.map((p: any) => p.id),
+    ...pc_above100kJson.map((p: any) => p.id),
+    ...pc_price60to100Json.map((p: any) => p.id),
+    ...pc_price40to60Json.map((p: any) => p.id),
+    ...pc_price20to40Json.map((p: any) => p.id),
+    ...pc_under20kJson.map((p: any) => p.id),
+  ].filter(Boolean);
+
+  let globalSpecsMap: Map<string, any> = new Map();
+  if (allPhoneIds.length > 0) {
+    const allSpecs = await PhoneSpecs.find({ phoneId: { $in: allPhoneIds } }).lean();
+    globalSpecsMap = buildSpecsMap(allSpecs);
+  }
+
+  // Helper to attach from pre-built map (synchronous)
+  const attachFromMap = (phones: any[]) =>
+    phones.length > 0 ? attachSpecsToJsonPhones(phones, globalSpecsMap) : phones;
+
   const priceCategories = {
-    above100k: await attachBasicSpecs(pc_above100k.map((p: any) => phoneToJSON(p))),
-    price60to100: await attachBasicSpecs(pc_price60to100.map((p: any) => phoneToJSON(p))),
-    price40to60: await attachBasicSpecs(pc_price40to60.map((p: any) => phoneToJSON(p))),
-    price20to40: await attachBasicSpecs(pc_price20to40.map((p: any) => phoneToJSON(p))),
-    under20k: await attachBasicSpecs(pc_under20k.map((p: any) => phoneToJSON(p))),
+    above100k: attachFromMap(pc_above100kJson),
+    price60to100: attachFromMap(pc_price60to100Json),
+    price40to60: attachFromMap(pc_price40to60Json),
+    price20to40: attachFromMap(pc_price20to40Json),
+    under20k: attachFromMap(pc_under20kJson),
   };
 
   const brands = brandAgg.map((b: any) => ({
@@ -74,13 +103,13 @@ export async function fetchHomeData() {
   }));
 
   return {
-    featured: await attachBasicSpecs(featured.map((p: any) => phoneToJSON(p))),
-    trending: await attachBasicSpecs(trending.map((p: any) => phoneToJSON(p))),
-    latest: await attachBasicSpecs(latest.map((p: any) => phoneToJSON(p))),
-    bestCamera: await attachBasicSpecs(bestCamera.map((p: any) => phoneToJSON(p))),
-    bestGaming: await attachBasicSpecs(bestGaming.map((p: any) => phoneToJSON(p))),
-    bestBattery: await attachBasicSpecs(bestBattery.map((p: any) => phoneToJSON(p))),
-    upcoming: await attachBasicSpecs(upcoming.map((p: any) => phoneToJSON(p))),
+    featured: attachFromMap(featuredJson),
+    trending: attachFromMap(trendingJson),
+    latest: attachFromMap(latestJson),
+    bestCamera: attachFromMap(bestCameraJson),
+    bestGaming: attachFromMap(bestGamingJson),
+    bestBattery: attachFromMap(bestBatteryJson),
+    upcoming: attachFromMap(upcomingJson),
     news: news.map((n: any) => ({
       id: n._id?.toString(),
       title: n.title,

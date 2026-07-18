@@ -260,7 +260,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 
       {/* Change Password Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4" role="dialog" aria-modal="true" aria-label="Change Password" onKeyDown={(e) => { if (e.key === 'Escape') { setShowPasswordModal(false); setPwData({ current: '', newPw: '', confirm: '' }); setPwError(''); setPwSuccess(''); } }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Change Password</h2>
             {pwError && <div className="bg-red-50 text-red-600 text-xs rounded-xl px-4 py-2.5 mb-3">{pwError}</div>}

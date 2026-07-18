@@ -4,6 +4,7 @@ import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, Phone
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages } from '@/lib/revalidate';
+import { escapeRegex } from '@/lib/utils';
 
 // ============ ADMIN CRUD GET ============
 
@@ -84,7 +85,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     // Search
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       const brandMatches = await Brand.find({ name: { $regex: safe, $options: 'i' } }).select('_id').lean();
       const brandIds = brandMatches.map((b: any) => b._id);
       const searchOr: any[] = [
@@ -259,7 +260,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const filter: any = {};
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [{ title: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }, { excerpt: { $regex: safe, $options: 'i' } }];
     }
     const status = url.searchParams.get('status');
@@ -382,7 +383,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     // Search
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [
         { name: { $regex: safe, $options: 'i' } },
         { email: { $regex: safe, $options: 'i' } },
@@ -420,9 +421,9 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     if (search.length >= 2 && (status || tfa || lastLogin)) {
       // Merge $or conditions properly
       const searchOr = [
-        { name: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { email: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { role: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { name: { $regex: escapeRegex(search), $options: 'i' } },
+        { email: { $regex: escapeRegex(search), $options: 'i' } },
+        { role: { $regex: escapeRegex(search), $options: 'i' } },
       ];
       delete filter.$or;
       // Build proper query with $and
@@ -488,14 +489,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const filter: any = {};
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [{ action: { $regex: safe, $options: 'i' } }, { details: { $regex: safe, $options: 'i' } }];
     }
     const moduleName = url.searchParams.get('module');
     if (moduleName) filter.entityType = moduleName;
     const actionType = url.searchParams.get('action');
     if (actionType) {
-      const safeActionType = actionType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeActionType = escapeRegex(actionType);
       filter.action = { $regex: safeActionType, $options: 'i' };
     }
     const sortParam = url.searchParams.get('sort') || 'newest';
@@ -564,7 +565,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     await connectDB();
     const q = new URL(req.url).searchParams.get('q') || '';
     if (q.length < 2) return NextResponse.json({ videos: [] });
-    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const safe = escapeRegex(q);
     const videos = await Video.find({ title: { $regex: safe, $options: 'i' } }).sort({ publishedAt: -1 }).limit(10).populate('phoneId', 'modelName slug').lean();
     return NextResponse.json({ videos: videos.map((v: any) => ({
       id: v._id?.toString(),
@@ -592,7 +593,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     // Search
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [
         { title: { $regex: safe, $options: 'i' } },
         { youtubeId: { $regex: safe, $options: 'i' } },
@@ -1658,7 +1659,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     if (status !== 'all') filter.status = status;
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safe = escapeRegex(search);
       filter.$or = [{ name: { $regex: safe, $options: 'i' } }, { comment: { $regex: safe, $options: 'i' } }, { email: { $regex: safe, $options: 'i' } }];
     }
     const rating = url.searchParams.get('rating');

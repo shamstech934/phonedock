@@ -1,7 +1,7 @@
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import HomeContent from './HomeContent';
-import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
+import { fetchHomeData } from '@/lib/fetch-home-data';
 import type { HomeData } from '@/components/shared/types';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 
@@ -14,13 +14,10 @@ export default async function HomePage() {
   let heroPhones: HeroPhone[];
 
   try {
-    const [raw, heroRaw] = await Promise.all([
-      fetchHomeData(),
-      fetchHeroPhones(),
-    ]);
+    const raw = await fetchHomeData();
     // phoneToJSON returns brand with {id, name, slug, logo} which is a subset of Brand — safe to cast
     homeData = raw as HomeData;
-    heroPhones = heroRaw as HeroPhone[];
+    heroPhones = raw.featured.slice(0, 6) as HeroPhone[];
   } catch {
     // If DB fails, return a minimal page with error
     return (
