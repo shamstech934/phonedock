@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
@@ -11,10 +12,21 @@ export default function AdminPhoneEditPage() {
   useAdmin();
   const router = useRouter();
   const { id } = useParams();
+  const [brands, setBrands] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+
+  const fetchBrands = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/brands?limit=200', { credentials: 'include' });
+      const d = await res.json();
+      setBrands((d.brands || []).map((b: { id: string; name: string; slug: string }) => ({ id: b.id, name: b.name, slug: b.slug })));
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchBrands(); }, [fetchBrands]);
 
   return (
     <div className="animate-fade-in">
-      <PhoneForm phoneId={id as string} brands={[]} onSave={() => router.push('/admin/phones')} onCancel={() => router.push('/admin/phones')} />
+      <PhoneForm phoneId={id as string} brands={brands} onSave={() => router.push('/admin/phones')} onCancel={() => router.push('/admin/phones')} />
     </div>
   );
 }

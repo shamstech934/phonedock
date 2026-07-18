@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { Newspaper, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import type { NewsItem } from '@/components/shared/types';
 const PER_PAGE = 12;
 
 export default function NewsPage() {
+  const router = useRouter();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -90,7 +92,7 @@ export default function NewsPage() {
             <>
               {/* Featured first article */}
               {page === 1 && paginated[0] && (
-                <article className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300 cursor-pointer">
+                <article className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300 cursor-pointer" onClick={() => router.push(`/news/${paginated[0].slug}`)}>
                   <div className="grid grid-cols-1 sm:grid-cols-2">
                     {paginated[0].imageUrl && (
                       <div className="bg-[#F8FAFC] aspect-video sm:aspect-auto flex items-center justify-center p-6">
@@ -113,7 +115,7 @@ export default function NewsPage() {
               {/* Grid of remaining articles */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(page === 1 ? paginated.slice(1) : paginated).map(n => (
-                  <article key={n.id} className="card-premium p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer">
+                  <article key={n.id} className="card-premium p-5 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer" onClick={() => router.push(`/news/${n.slug}`)}>
                     {n.imageUrl && (
                       <div className="bg-[#F8FAFC] rounded-xl mb-4 flex items-center justify-center p-4 aspect-video">
                         <Image src={n.imageUrl} alt={n.title} width={300} height={200} className="object-contain rounded-lg max-h-40" unoptimized />

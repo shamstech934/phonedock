@@ -129,6 +129,10 @@ export interface Phone {
   cons?: string;
   reviewSummary?: string;
   reviewVerdict?: string;
+  priceMode?: string;
+  manualLock?: boolean;
+  manualLockReason?: string;
+  sourceUrl?: string;
   published?: boolean;
   status?: string;
   views?: number;
