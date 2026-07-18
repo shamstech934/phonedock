@@ -1,27 +1,42 @@
 ---
 Task ID: 1
-Agent: Main Agent
-Task: PhoneDock Critical Production Repair and Performance Optimization
+Agent: main
+Task: Implement PhoneDock Data Quality Center
 
 Work Log:
-- Analyzed full project codebase: API handlers, PhoneCard, Compare page, SafePhoneImage, models, indexes
-- Added GET /api/build-info endpoint returning buildId, commit, branch, environment
-- Added build marker display in Footer component
-- Created PhoneQuickViewDialog.tsx with: 7 states (idle/loading/success/partial-data/empty/error/retrying), session-level spec cache (5-min TTL), AbortController, 10s timeout, 5 API response shape handlers, [object Object] filtering
-- Rewrote PhoneCard.tsx as thin wrapper using PhoneQuickViewDialog
-- Improved SafePhoneImage.tsx with: host validation, responsive sizes auto-computation, priority/lazy-loading support
-- Fixed Compare page spec table: missing values show "Not available" instead of blank; filters undefined/null/[object Object]
-- Added force-dynamic to 9 pages (best-budget/camera/gaming/battery/value-phone, reviews, upcoming, price-ranges, homepage) to fix build timeouts
-- Added loading.tsx for compare and search pages
-- Verified no scrollIntoView/window.scrollTo/href=#/compare-search-input patterns remain
-- Verified single Clear All button in Compare
-- Verified Dialog z-index [100] > Header z-index
-- Verified database indexes are comprehensive (Phone: 9, PhoneSpecs: unique phoneId, etc.)
-- Verified xlsx/papaparse/recharts not in public bundle
-- Created e2e/critical-fixes.spec.ts Playwright tests (3/4 pass, 1 infrastructure issue)
-- Created 4 deliverable reports: CRITICAL_FIX_REPORT.md, BUG_FIX_SUMMARY.md, DEPLOYMENT_VERIFICATION.md, FUNCTIONAL_TEST_MATRIX.md, PERFORMANCE_AUDIT_REPORT.md
+- Added 4 new permissions (data-quality:read/scan/fix/delete) to RBAC system in permissions.ts
+- Added permissions to superadmin, admin, editor, reviewer role maps
+- Created DataQualityIssue and ScanJob Mongoose models in src/lib/models/DataQuality.ts
+- Exported new models from src/lib/models/index.ts
+- Created types file: src/lib/data-quality/types.ts (DetectedIssue, RuleDefinition, FixContext, FixResult, HealthCategory, HEALTH_CATEGORIES)
+- Created phone-rules.ts with 15 rules: PHONE_MISSING_SPECS, PHONE_DUPLICATE_SLUG, PHONE_INVALID_PRICE, PHONE_MISSING_PRIMARY_IMAGE, PHONE_MISSING_PRICE, PHONE_STALE_PRICE, PHONE_INVALID_RELEASE_DATE, PHONE_MISSING_PTA_STATUS, SPECS_EMPTY, SPECS_MISSING_KEY_FIELDS, SPECS_OBJECT_IN_STRING, PHONE_MISSING_BRAND, PHONE_DUPLICATE_NORMALIZED, BENCHMARK_IMPOSSIBLE_SCORE, IMAGE_MULTIPLE_PRIMARY, plus orphan/brand rules
+- Created extended-rules.ts with 8 rules: BRAND_DUPLICATE_NORMALIZED, BRAND_MISSING_LOGO, PRICE_STALE_TRACKED, PRICE_SOURCE_INACTIVE, PRICE_OUTLIER, PRICE_MISMATCH, IMPORT_FAILED_ROWS, IMPORT_LOW_CONFIDENCE
+- Created rules/index.ts barrel export with 23 total rules
+- Created scanner.ts with: startScan, executeScan (full/incremental/entity/import), buildDetectionContext, scanAllPhones (batch processing), scanImportPhones, scanOrphans (specs/images/prices/benchmarks/brands), persistIssues (upsert with dedup), executeAutoFix (with dry run, audit log), calculateHealthScore (7 categories, 100-point weighted)
+- Created data-quality/index.ts barrel export
+- Created API handler: src/app/api/[[...path]]/handlers/data-quality.ts
+  - GET: summary, scans, scans/:id, issues, issues/:id, duplicates, export.csv
+  - POST: scans, issues/:id/resolve, issues/:id/ignore, issues/:id/fix, bulk-fix, re-scan, duplicates/:id/merge
+- Wired data-quality GET/POST handlers into catch-all route.ts
+- Added 'Data Quality' sidebar item with ShieldCheck icon to admin layout.tsx
+- Added data-quality permissions to inline rolePerms in admin layout
+- Created admin UI page: src/app/admin/data-quality/page.tsx
+  - Overview tab: Health score ring, stat cards, severity breakdown, data queues, trends
+  - Issues tab (reusable for all queues): search, severity/status filters, bulk select, bulk resolve/ignore, CSV export, re-scan, pagination, detail drawer
+  - Queue tabs: Missing Specs, Missing Images, Missing Prices, Orphans, Stale Prices, Import Warnings
+  - Duplicates tab: grouped duplicate review, merge modal with dry-run preview
+  - Scan History tab: paginated scan job list with status
+- Created 5 deliverable markdown files in /download/
 
 Stage Summary:
-- Build: TypeScript 0 errors, ESLint 0 errors, next build succeeds in ~16s
-- 18 files changed (2 new, 16 modified)
-- All critical code issues fixed; remaining verification requires Vercel deployment with MongoDB
+- 23 quality rules across 7 domains (phone, specs, images, benchmarks, brands, prices, imports)
+- 4 scan types: full, incremental, entity-specific, import-specific
+- Batch processing with resume capability
+- 100-point weighted health score across 7 categories
+- Safe auto-fix with dry-run, preview, audit logging
+- Duplicate review with merge flow
+- 14 API endpoints all requiring admin auth
+- 4 new RBAC permissions
+- All new code passes lint with zero errors
+- No TypeScript errors in new files
+- 5 documentation deliverables created

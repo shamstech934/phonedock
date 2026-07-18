@@ -7,6 +7,7 @@ import {
   BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
   ChevronDown, DollarSign, Database, Zap, Key, Play, TrendingDown,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
@@ -36,6 +37,7 @@ const adminLinks: NavLink[] = [
     { label: 'Jobs', href: '/admin/collector/jobs' },
   ]},
   { label: 'Sync', href: '/admin/sync', icon: RefreshCw, permission: 'phones:edit' },
+  { label: 'Data Quality', href: '/admin/data-quality', icon: ShieldCheck, permission: 'data-quality:read' },
   { label: 'Users', href: '/admin/users', icon: Users, permission: 'users:read' },
   { label: 'Settings', href: '/admin/settings', icon: Settings, permission: 'settings:read' },
 ];
@@ -143,8 +145,8 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const filteredLinks = adminLinks.filter(link => {
     if (!link.permission) return true;
     const rolePerms: Record<string, string[]> = {
-      superadmin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','users:manage','settings:read','settings:manage','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage'],
-      admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage'],
+      superadmin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','users:manage','settings:read','settings:manage','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix'],
+      admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix'],
       editor: ['phones:read','phones:create','phones:edit','brands:read','news:read','news:create','news:edit','activity:read','media:upload'],
       reviewer: ['phones:read','brands:read','news:read','activity:read','collectors:read'],
       viewer: ['phones:read','brands:read','news:read','activity:read'],

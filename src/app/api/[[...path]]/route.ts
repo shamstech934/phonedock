@@ -27,6 +27,7 @@ import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleDownloadSample } from './handlers/download';
 import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
 import { handleCronUpdatePrices } from './handlers/cron-update-prices';
+import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-quality';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
 
@@ -180,6 +181,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Price Tracker GET routes (stats, phones, sources, changes, pending, history, listings)
     const priceTrackerGetResult = await handlePriceTrackerGet(req, segments);
     if (priceTrackerGetResult) return priceTrackerGetResult;
+
+    // Data Quality GET routes
+    const dataQualityGetResult = await handleDataQualityGet(req, segments);
+    if (dataQualityGetResult) return dataQualityGetResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {
@@ -405,6 +410,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)
     const priceTrackerPostResult = await handlePriceTrackerPost(req, segments);
     if (priceTrackerPostResult) return priceTrackerPostResult;
+
+    // Data Quality POST routes
+    const dataQualityPostResult = await handleDataQualityPost(req, segments);
+    if (dataQualityPostResult) return dataQualityPostResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (e: any) {

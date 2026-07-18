@@ -1,0 +1,631 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { Types } from 'mongoose';
+import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand } from '@/lib/models';
+import { getAdminFromRequest, requirePermission } from './helpers';
+import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
+
+// ═══════════════════════════════════════════════════════════════════
+// GET HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+
+export async function handleDataQualityGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // GET /api/admin/data-quality/summary
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'summary') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const includeHealth = searchParams.get('health') !== 'false';
+
+    const [totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands] = await Promise.all([
+      Phone.countDocuments({ deletedAt: null }),
+      Phone.countDocuments({ deletedAt: null, status: 'published' }),
+      Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments({ deletedAt: null, status: 'archived' }),
+      Brand.countDocuments({}),
+    ]);
+
+    // Open issues by severity
+    const [critical, high, medium, low, info] = await Promise.all([
+      DataQualityIssue.countDocuments({ status: 'open', severity: 'critical' }),
+      DataQualityIssue.countDocuments({ status: 'open', severity: 'high' }),
+      DataQualityIssue.countDocuments({ status: 'open', severity: 'medium' }),
+      DataQualityIssue.countDocuments({ status: 'open', severity: 'low' }),
+      DataQualityIssue.countDocuments({ status: 'open', severity: 'info' }),
+    ]);
+
+    const totalOpen = critical + high + medium + low + info;
+
+    // Queue counts
+    const [missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices] = await Promise.all([
+      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_MISSING_SPECS', 'SPECS_EMPTY', 'SPECS_MISSING_KEY_FIELDS'] } }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_MISSING_PRIMARY_IMAGE' }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_MISSING_PRICE', 'PHONE_INVALID_PRICE'] } }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
+    ]);
+
+    // Specs completeness
+    const phonesWithSpecs = await PhoneSpecs.distinct('phoneId');
+    const specsComplete = publishedPhones > 0 ? phonesWithSpecs.length : 0;
+
+    // Phones with complete specs (key fields filled)
+    const keySpecPhones = await PhoneSpecs.find({
+      $or: [
+        { chipset: { $ne: '' } },
+        { ram: { $ne: '' } },
+        { storage: { $ne: '' } },
+      ],
+    }).lean();
+    const completeSpecs = keySpecPhones.filter(s => s.chipset?.trim() && s.ram?.trim() && s.storage?.trim()).length;
+
+    // Trend data
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [discoveredToday, fixedToday, newLast7Days] = await Promise.all([
+      DataQualityIssue.countDocuments({ detectedAt: { $gte: todayStart } }),
+      DataQualityIssue.countDocuments({ resolvedAt: { $gte: todayStart } }),
+      DataQualityIssue.countDocuments({ detectedAt: { $gte: sevenDaysAgo } }),
+    ]);
+
+    // Failed imports needing review
+    const failedImports = await DataQualityIssue.countDocuments({ status: 'open', entityType: 'import' });
+
+    let health = null;
+    if (includeHealth) {
+      try {
+        health = await calculateHealthScore();
+      } catch (e) {
+        console.error('[DataQuality] Health score error:', e);
+      }
+    }
+
+    return NextResponse.json({
+      health,
+      totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
+      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones },
+      queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
+      severity: { critical, high, medium, low, info, total: totalOpen },
+      trends: { discoveredToday, fixedToday, newLast7Days },
+    });
+  }
+
+  // GET /api/admin/data-quality/scans/:id
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const scanId = segments[3];
+    const scan = await ScanJob.findOne({ scanId }).lean();
+    if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
+    return NextResponse.json({ scan });
+  }
+
+  // GET /api/admin/data-quality/scans (list)
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
+    const skip = (page - 1) * limit;
+
+    const [scans, total] = await Promise.all([
+      ScanJob.find({}).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      ScanJob.countDocuments({}),
+    ]);
+
+    return NextResponse.json({ scans, total, page, pages: Math.ceil(total / limit) });
+  }
+
+  // GET /api/admin/data-quality/issues/:id
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'issues') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const issue = await DataQualityIssue.findById(segments[3]).lean();
+    if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+    return NextResponse.json({ issue });
+  }
+
+  // GET /api/admin/data-quality/issues
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'issues') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')));
+    const skip = (page - 1) * limit;
+    const severity = searchParams.get('severity') || '';
+    const issueType = searchParams.get('issueType') || '';
+    const status = searchParams.get('status') || 'open';
+    const entityType = searchParams.get('entityType') || '';
+    const search = searchParams.get('search') || '';
+    const importId = searchParams.get('importId') || '';
+    const sortBy = searchParams.get('sortBy') || 'detectedAt';
+    const sortOrder = searchParams.get('sortOrder') === 'asc' ? 1 : -1;
+
+    const query: any = {};
+    if (severity) query.severity = severity;
+    if (issueType) query.issueType = issueType;
+    if (status && status !== 'all') query.status = status;
+    if (entityType) query.entityType = entityType;
+    if (importId) query.importId = importId;
+
+    // Search by entity ID or field content
+    if (search) {
+      query.$or = [
+        { entityId: { $regex: search, $options: 'i' } },
+        { field: { $regex: search, $options: 'i' } },
+        { issueType: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const sort: any = {};
+    sort[sortBy] = sortOrder;
+
+    const [issues, total] = await Promise.all([
+      DataQualityIssue.find(query).sort(sort).skip(skip).limit(limit).lean(),
+      DataQualityIssue.countDocuments(query),
+    ]);
+
+    // Enrich issues with entity names
+    const phoneIds = [...new Set(issues.filter((i: any) => i.entityType === 'phone').map((i: any) => i.entityId))];
+    const brandIds = [...new Set(issues.filter((i: any) => i.entityType === 'brand').map((i: any) => i.entityId))];
+    const phoneNames = new Map<string, string>();
+    const brandNames = new Map<string, string>();
+
+    if (phoneIds.length > 0) {
+      const phones = await Phone.find({ _id: { $in: phoneIds } }).select('modelName slug thumbnail').lean();
+      for (const p of phones) phoneNames.set(p._id.toString(), p.modelName || '');
+    }
+    if (brandIds.length > 0) {
+      const brands = await Brand.find({ _id: { $in: brandIds } }).select('name').lean();
+      for (const b of brands) brandNames.set(b._id.toString(), b.name || '');
+    }
+
+    const enriched = issues.map((issue: any) => {
+      const entityName = issue.entityType === 'phone'
+        ? phoneNames.get(issue.entityId) || ''
+        : issue.entityType === 'brand'
+          ? brandNames.get(issue.entityId) || ''
+          : '';
+      return { ...issue, entityName, id: issue._id?.toString() };
+    });
+
+    return NextResponse.json({
+      issues: enriched,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    });
+  }
+
+  // GET /api/admin/data-quality/duplicates
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'duplicates') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const dupIssues = await DataQualityIssue.find({
+      status: 'open',
+      issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] },
+    }).lean();
+
+    // Group by candidate group
+    const groups = new Map<string, any[]>();
+    for (const issue of dupIssues) {
+      const key = issue.metadata?.candidateIds?.join(',') || issue.issueKey;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(issue);
+    }
+
+    // For each group, fetch the actual phone/brand data
+    const resultGroups: any[] = [];
+    for (const [, issues] of groups) {
+      const entityIds = [...new Set(issues.map((i: any) => i.entityId))];
+      const entityType = issues[0]?.entityType;
+
+      let entities: any[] = [];
+      if (entityType === 'phone' && entityIds.length > 0) {
+        entities = await Phone.find({ _id: { $in: entityIds } }).select('modelName slug pricePKR status thumbnail brandId').lean();
+        // Attach brand names
+        const bIds = [...new Set(entities.map((e: any) => e.brandId?.toString()).filter(Boolean))];
+        if (bIds.length > 0) {
+          const brands = await Brand.find({ _id: { $in: bIds } }).select('name').lean();
+          const bMap = new Map(brands.map((b: any) => [b._id.toString(), b.name]));
+          entities = entities.map((e: any) => ({ ...e, brandName: bMap.get(e.brandId?.toString()) || '' }));
+        }
+      } else if (entityType === 'brand' && entityIds.length > 0) {
+        entities = await Brand.find({ _id: { $in: entityIds } }).lean();
+      }
+
+      resultGroups.push({
+        type: issues[0]?.issueType || 'unknown',
+        entities: entities.map((e: any) => ({ ...e, id: e._id?.toString() })),
+        issues: issues.map((i: any) => ({ ...i, id: i._id?.toString() })),
+      });
+    }
+
+    return NextResponse.json({ groups: resultGroups, total: resultGroups.length });
+  }
+
+  // GET /api/admin/data-quality/export.csv
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'export.csv') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get('status') || 'open';
+    const issueType = searchParams.get('issueType') || '';
+    const severity = searchParams.get('severity') || '';
+
+    const query: any = {};
+    if (status && status !== 'all') query.status = status;
+    if (issueType) query.issueType = issueType;
+    if (severity) query.severity = severity;
+
+    const issues = await DataQualityIssue.find(query)
+      .sort({ severity: 1, detectedAt: -1 })
+      .limit(10000)
+      .lean();
+
+    const header = 'Issue Key,Entity Type,Entity ID,Issue Type,Severity,Field,Current Value,Suggested Value,Status,Detected At,Confidence,Import ID';
+    const rows = issues.map((i: any) => [
+      csvSafe(i.issueKey),
+      csvSafe(i.entityType),
+      csvSafe(i.entityId),
+      csvSafe(i.issueType),
+      csvSafe(i.severity),
+      csvSafe(i.field),
+      csvSafe(typeof i.currentValue === 'object' ? JSON.stringify(i.currentValue) : String(i.currentValue ?? '')),
+      csvSafe(typeof i.suggestedValue === 'object' ? JSON.stringify(i.suggestedValue) : String(i.suggestedValue ?? '')),
+      csvSafe(i.status),
+      csvSafe(i.detectedAt),
+      csvSafe(String(i.confidence)),
+      csvSafe(i.importId || ''),
+    ].join(','));
+
+    const csv = [header, ...rows].join('\n');
+    return new NextResponse(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="data-quality-issues-${new Date().toISOString().slice(0, 10)}.csv"`,
+      },
+    });
+  }
+
+  return undefined;
+}
+
+function csvSafe(val: string): string {
+  if (!val) return '""';
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return '"' + val.replace(/"/g, '""') + '"';
+  }
+  return `"${val}"`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// POST HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+
+export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // POST /api/admin/data-quality/scans
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:scan');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const { type, entityIds, entityType, importId, dryRun, rules, execute: shouldExecute } = body;
+
+    const scanType = type || 'full';
+    const validTypes = ['full', 'incremental', 'entity', 'import', 'manual'];
+    if (!validTypes.includes(scanType)) {
+      return NextResponse.json({ error: 'Invalid scan type' }, { status: 400 });
+    }
+
+    const { scanId } = await startScan({
+      type: scanType as any,
+      adminId: authResult.admin._id.toString(),
+      entityIds: entityIds || [],
+      entityType: entityType || '',
+      importId: importId || '',
+      dryRun: dryRun || false,
+      rules: rules || [],
+    });
+
+    // Execute scan asynchronously (fire and forget for large scans)
+    if (shouldExecute !== false) {
+      executeScan(scanId).catch(e => {
+        console.error(`[DataQuality] Scan ${scanId} failed:`, e);
+      });
+    }
+
+    return NextResponse.json({ scanId, status: 'queued' });
+  }
+
+  // POST /api/admin/data-quality/issues/:id/resolve
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'issues' && segments[4] === 'resolve') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const issueId = segments[3];
+    const body = await req.json();
+    const resolution = (body.resolution || 'Manually resolved').slice(0, 500);
+
+    const issue = await DataQualityIssue.findById(issueId);
+    if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+
+    await DataQualityIssue.updateOne(
+      { _id: issueId },
+      {
+        $set: {
+          status: 'resolved',
+          resolvedAt: new Date(),
+          resolvedBy: authResult.admin._id,
+          resolution,
+        },
+      },
+    );
+
+    try {
+      await ActivityLog.create({
+        adminId: authResult.admin._id,
+        action: 'data_quality_resolve',
+        details: `Resolved issue ${(issue as any).issueKey}: ${resolution}`,
+        entityType: 'data_quality',
+        entityId: issueId,
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true });
+  }
+
+  // POST /api/admin/data-quality/issues/:id/ignore
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'issues' && segments[4] === 'ignore') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const issueId = segments[3];
+    await DataQualityIssue.updateOne(
+      { _id: issueId },
+      { $set: { status: 'ignored' } },
+    );
+
+    return NextResponse.json({ success: true });
+  }
+
+  // POST /api/admin/data-quality/issues/:id/fix
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'issues' && segments[4] === 'fix') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const issueId = segments[3];
+    const body = await req.json();
+    const dryRun = body.dryRun === true;
+
+    try {
+      const result = await executeAutoFix(issueId, authResult.admin._id.toString(), dryRun);
+      return NextResponse.json({ success: true, ...result, dryRun });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message || 'Auto-fix failed' }, { status: 400 });
+    }
+  }
+
+  // POST /api/admin/data-quality/bulk-fix
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'bulk-fix') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const { issueIds, action, dryRun } = body;
+
+    if (!Array.isArray(issueIds) || issueIds.length === 0) {
+      return NextResponse.json({ error: 'issueIds array is required' }, { status: 400 });
+    }
+
+    if (!['resolve', 'ignore', 'fix'].includes(action)) {
+      return NextResponse.json({ error: 'Invalid action. Use resolve, ignore, or fix' }, { status: 400 });
+    }
+
+    if (issueIds.length > 500) {
+      return NextResponse.json({ error: 'Maximum 500 issues per bulk operation' }, { status: 400 });
+    }
+
+    const results = { total: issueIds.length, succeeded: 0, failed: 0, errors: [] as string[] };
+
+    for (const issueId of issueIds) {
+      try {
+        if (action === 'resolve') {
+          await DataQualityIssue.updateOne(
+            { _id: issueId },
+            { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: authResult.admin._id, resolution: 'Bulk resolved' } },
+          );
+          results.succeeded++;
+        } else if (action === 'ignore') {
+          await DataQualityIssue.updateOne({ _id: issueId }, { $set: { status: 'ignored' } });
+          results.succeeded++;
+        } else if (action === 'fix') {
+          if (dryRun) {
+            results.succeeded++;
+          } else {
+            await executeAutoFix(issueId, authResult.admin._id.toString(), false);
+            results.succeeded++;
+          }
+        }
+      } catch (e: any) {
+        results.failed++;
+        results.errors.push(`${issueId}: ${e.message}`);
+      }
+    }
+
+    try {
+      await ActivityLog.create({
+        adminId: authResult.admin._id,
+        action: 'data_quality_bulk_' + action,
+        details: `Bulk ${action} on ${results.succeeded} issues (${results.failed} failed)${dryRun ? ' (dry run)' : ''}`,
+        entityType: 'data_quality',
+        entityId: '',
+      });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json(results);
+  }
+
+  // POST /api/admin/data-quality/re-scan
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 're-scan') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:scan');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const { entityIds } = body;
+
+    if (!Array.isArray(entityIds) || entityIds.length === 0) {
+      return NextResponse.json({ error: 'entityIds array is required' }, { status: 400 });
+    }
+
+    if (entityIds.length > 100) {
+      return NextResponse.json({ error: 'Maximum 100 entities per re-scan' }, { status: 400 });
+    }
+
+    const { scanId } = await startScan({
+      type: 'entity',
+      adminId: authResult.admin._id.toString(),
+      entityIds,
+      entityType: 'phone',
+    });
+
+    executeScan(scanId).catch(e => console.error('[DataQuality] Re-scan failed:', e));
+
+    return NextResponse.json({ scanId, status: 'queued' });
+  }
+
+  // POST /api/admin/data-quality/duplicates/:id/merge
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'duplicates' && segments[4] === 'merge') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const _groupId = segments[3]; // Used as URL path segment identifier
+    const body = await req.json();
+    const { keepId, mergeIntoId, dryRun } = body;
+
+    if (!keepId || !mergeIntoId) {
+      return NextResponse.json({ error: 'keepId and mergeIntoId are required' }, { status: 400 });
+    }
+
+    if (keepId === mergeIntoId) {
+      return NextResponse.json({ error: 'Cannot merge into itself' }, { status: 400 });
+    }
+
+    if (dryRun) {
+      // Preview what would happen
+      const keepPhone = await Phone.findById(keepId).lean();
+      const mergePhone = await Phone.findById(mergeIntoId).lean();
+      if (!keepPhone || !mergePhone) {
+        return NextResponse.json({ error: 'One or both phones not found' }, { status: 404 });
+      }
+
+      const [keepSpecs, mergeSpecs, , mergeImages, keepBench, mergeBench] = await Promise.all([
+        PhoneSpecs.findOne({ phoneId: keepId }).lean(),
+        PhoneSpecs.findOne({ phoneId: mergeIntoId }).lean(),
+        PhoneImage.find({ phoneId: mergeIntoId }).lean(),
+        PhonePrice.find({ phoneId: mergeIntoId }).lean(),
+        PhoneBenchmark.findOne({ phoneId: keepId }).lean(),
+        PhoneBenchmark.findOne({ phoneId: mergeIntoId }).lean(),
+      ]);
+
+      return NextResponse.json({
+        dryRun: true,
+        keep: { id: keepId, modelName: (keepPhone as any).modelName, hasSpecs: !!keepSpecs, hasBench: !!keepBench },
+        merge: {
+          id: mergeIntoId, modelName: (mergePhone as any).modelName, hasSpecs: !!mergeSpecs,
+          imageCount: mergeImages.length, priceCount: mergeImages.length, hasBench: !!mergeBench,
+          wouldMoveImages: mergeImages.length,
+          wouldMovePrices: mergeImages.length,
+          wouldMoveBench: !!mergeBench,
+          wouldDelete: true,
+        },
+      });
+    }
+
+    // Actual merge — move child records
+    try {
+      const [movedImages, movedPrices] = await Promise.all([
+        PhoneImage.updateMany({ phoneId: mergeIntoId }, { $set: { phoneId: new Types.ObjectId(keepId) } }),
+        PhonePrice.updateMany({ phoneId: mergeIntoId }, { $set: { phoneId: new Types.ObjectId(keepId) } }),
+        PhoneBenchmark.updateOne({ phoneId: mergeIntoId }, { $set: { phoneId: new Types.ObjectId(keepId) } }),
+      ]);
+
+      // Merge specs if keep doesn't have them but merge does
+      const keepSpecs = await PhoneSpecs.findOne({ phoneId: keepId });
+      const mergeSpecs = await PhoneSpecs.findOne({ phoneId: mergeIntoId });
+      if (!keepSpecs && mergeSpecs) {
+        mergeSpecs.phoneId = new Types.ObjectId(keepId);
+        await mergeSpecs.save();
+      } else if (mergeSpecs) {
+        await PhoneSpecs.deleteOne({ phoneId: mergeIntoId });
+      }
+
+      // Soft-delete the merged phone
+      await Phone.updateOne(
+        { _id: mergeIntoId },
+        { $set: { deletedAt: new Date(), status: 'archived' } },
+      );
+
+      // Resolve duplicate issues
+      await DataQualityIssue.updateMany(
+        { entityId: { $in: [keepId, mergeIntoId] }, issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED'] }, status: 'open' },
+        { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: authResult.admin._id, resolution: `Merged ${mergeIntoId} into ${keepId}` } },
+      );
+
+      try {
+        await ActivityLog.create({
+          adminId: authResult.admin._id,
+          action: 'data_quality_merge',
+          details: `Merged phone ${mergeIntoId} into ${keepId}`,
+          entityType: 'phone',
+          entityId: keepId,
+        });
+      } catch (e) { console.error('[ActivityLog]', e); }
+
+      return NextResponse.json({ success: true, movedImages: movedImages.modifiedCount, movedPrices: movedPrices.modifiedCount });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message || 'Merge failed' }, { status: 500 });
+    }
+  }
+
+  return undefined;
+}

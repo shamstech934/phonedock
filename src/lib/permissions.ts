@@ -30,7 +30,9 @@ export type Permission =
   // Videos
   | 'videos:read' | 'videos:edit' | 'videos:manage'
   // Price Tracker
-  | 'prices:read' | 'prices:edit';
+  | 'prices:read' | 'prices:edit'
+  // Data Quality
+  | 'data-quality:read' | 'data-quality:scan' | 'data-quality:fix' | 'data-quality:delete';
 
 // ============ PERMISSION MAPS ============
 
@@ -49,6 +51,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'trash:read', 'trash:restore', 'trash:delete',
   'videos:read', 'videos:edit', 'videos:manage',
   'prices:read', 'prices:edit',
+  'data-quality:read', 'data-quality:scan', 'data-quality:fix', 'data-quality:delete',
 ];
 
 const rolePermissions: Record<AdminRole, Set<Permission>> = {
@@ -68,6 +71,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'trash:read', 'trash:restore', 'trash:delete',
     'videos:read', 'videos:edit', 'videos:manage',
     'prices:read', 'prices:edit',
+    'data-quality:read', 'data-quality:scan', 'data-quality:fix', 'data-quality:delete',
   ]),
   editor: new Set<Permission>([
     'dashboard:read',
@@ -77,6 +81,7 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'activity:read',
     'media:upload',
     'prices:read',
+    'data-quality:read',
   ]),
   reviewer: new Set<Permission>([
     'phones:read',
