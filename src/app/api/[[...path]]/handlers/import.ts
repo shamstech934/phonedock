@@ -19,7 +19,7 @@ export async function handleImportGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const { ImportHistory } = await import('@/lib/models/ImportHistory');
     const history = await ImportHistory.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json(history);
+    return NextResponse.json({ history });
   }
 
   // ---- /api/import/stats ----

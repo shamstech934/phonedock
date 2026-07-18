@@ -294,6 +294,9 @@ export default function AdminNewsPage() {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Link href={`/admin/news/${n.id}/edit`} title="Edit" className="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-colors" aria-label="Edit">
+                    <Edit className="w-3.5 h-3.5" />
+                  </Link>
                   <button onClick={() => window.open(`/news/${n.slug}`, '_blank')} title="Preview" className="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-colors" aria-label="Preview">
                     <Eye className="w-3.5 h-3.5" />
                   </button>

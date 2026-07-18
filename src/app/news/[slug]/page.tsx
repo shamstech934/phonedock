@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronRight, Calendar, User, Newspaper, ArrowLeft } from 'lucide-react';
+import { sanitizeHtml } from '@/lib/sanitize';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { connectDB } from '@/lib/mongodb';
@@ -282,9 +283,11 @@ export default async function NewsArticlePage({
               <div
                 className="text-gray-700 leading-relaxed whitespace-pre-line text-[15px]"
                 dangerouslySetInnerHTML={{
-                  __html: article.content
-                    ? article.content.replace(/\n/g, '<br />')
-                    : '',
+                  __html: sanitizeHtml(
+                    article.content
+                      ? article.content.replace(/\n/g, '<br />')
+                      : ''
+                  ),
                 }}
               />
             </div>

@@ -95,6 +95,18 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       setPwError('New passwords do not match');
       return;
     }
+    // Client-side strength check (mirrors server-side isStrongPassword)
+    const pw = pwData.newPw;
+    const pwErrors: string[] = [];
+    if (pw.length < 12) pwErrors.push('at least 12 characters');
+    if (!/[A-Z]/.test(pw)) pwErrors.push('one uppercase letter');
+    if (!/[a-z]/.test(pw)) pwErrors.push('one lowercase letter');
+    if (!/[0-9]/.test(pw)) pwErrors.push('one number');
+    if (!/[^A-Za-z0-9]/.test(pw)) pwErrors.push('one special character');
+    if (pwErrors.length > 0) {
+      setPwError(`Password needs: ${pwErrors.join(', ')}`);
+      return;
+    }
     try {
       const res = await fetch('/api/admin/change-password', {
         method: 'POST',

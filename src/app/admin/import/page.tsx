@@ -38,7 +38,7 @@ export default function AdminImportPage() {
   }, [result]);
 
   useEffect(() => {
-    fetch('/api/import/history', { credentials: 'include' }).then(r => r.json()).then(setHistory).catch(() => {});
+    fetch('/api/import/history', { credentials: 'include' }).then(r => r.json()).then(d => setHistory(d.history || d)).catch(() => {});
   }, [result]);
 
   const validateFile = (f: File): string | null => {
