@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models';
+import mongoose from 'mongoose';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { escapeRegex } from '@/lib/sanitize';
+import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 
 // ============ ADMIN CRUD GET ============
 
@@ -51,6 +53,61 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
         id: l._id?.toString(),
         admin: l.adminId ? { name: l.adminId.name, email: l.adminId.email } : undefined,
       })),
+    });
+  }
+
+  // ---- /api/admin/specs-audit ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-audit') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const db = mongoose.connection.db!;
+
+    const totalPhones = await Phone.countDocuments({ active: true, status: 'published' });
+    const allPhones = await Phone.find({ active: true, status: 'published' }).select('_id slug modelName').lean();
+    const allPhoneIds = new Set(allPhones.map((p: any) => p._id.toString()));
+    const specsDocs = await PhoneSpecs.find({}).lean();
+    const specPhoneIds = new Set(specsDocs.map((s: any) => s.phoneId?.toString()));
+
+    // Check for duplicates
+    const specCountMap = new Map<string, number>();
+    for (const s of specsDocs) {
+      const key = s.phoneId?.toString();
+      if (key) specCountMap.set(key, (specCountMap.get(key) || 0) + 1);
+    }
+    const duplicates = [...specCountMap.entries()].filter(([, c]) => c > 1);
+    const orphanSpecs = specsDocs.filter((s: any) => !allPhoneIds.has(s.phoneId?.toString()));
+
+    // Backfill candidates
+    const missingPhones = allPhones.filter((p: any) => !specPhoneIds.has(p._id.toString()));
+    let backfillCandidates: any[] = [];
+    if (missingPhones.length > 0) {
+      const missingOids = missingPhones.map((p: any) => p._id);
+      const collected = await CollectedPhone.find({ approvedPhoneId: { $in: missingOids }, status: { $in: ['approved', 'imported'] } }).lean();
+      const specSections = ['display','processor','memory','camera','battery','body','connectivity','software','sensors'];
+      for (const c of collected) {
+        let hasData = false;
+        for (const sec of specSections) {
+          const sub = (c as any)[sec];
+          if (sub && typeof sub === 'object' && Object.values(sub).some((v: any) => v && typeof v === 'string' && v.trim())) {
+            hasData = true; break;
+          }
+        }
+        if (hasData) {
+          const ph = missingPhones.find((p: any) => p._id.equals(c.approvedPhoneId));
+          if (ph) backfillCandidates.push({ slug: ph.slug, model: ph.modelName, collectedSlug: c.slug });
+        }
+      }
+    }
+
+    return NextResponse.json({
+      totalPhones,
+      phonesWithSpecs: totalPhones - missingPhones.length,
+      phonesWithoutSpecs: missingPhones.length,
+      missingSlugs: missingPhones.map((p: any) => p.slug),
+      orphanSpecs: orphanSpecs.map((s: any) => ({ id: s._id?.toString(), phoneId: s.phoneId?.toString() })),
+      duplicateSpecs: duplicates.map(([phoneId, count]) => ({ phoneId, count })),
+      backfillCandidates,
     });
   }
 

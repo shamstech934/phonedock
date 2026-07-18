@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
 import { getEmailTransporter } from '@/lib/email';
+import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 
 // ============ CACHE-CONTROL HELPERS ============
 // Vercel CDN respects these headers — repeat requests are served from edge cache
@@ -205,15 +206,22 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').populate('brand');
     if (!phone) return cachedError('Not found', 404, 60, 300);
-    const [specs, benchmarks, images, prices, related, phoneVideos] = await Promise.all([
+    // Also fetch a lean copy for legacy field access (Mongoose strict mode hides extra fields)
+    const phoneLean = await Phone.findOne({ _id: phone._id }).lean();
+    const [specsDoc, benchmarks, images, prices, related, phoneVideos, collectedDoc] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
       PhonePrice.find({ phoneId: phone._id }).limit(10).lean(),
       Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
       Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
+      // Check CollectedPhone for specs fallback (phones created via collector approval)
+      CollectedPhone.findOne({ approvedPhoneId: phone._id, status: { $in: ['approved', 'imported'] } }).lean(),
     ]);
-    const phoneJSON: any = phoneToJSON(phone, specs, benchmarks, images, prices);
+    // Normalize specs: PhoneSpecs > legacy Phone fields > CollectedPhone nested
+    const normalizedSpecs = normalizePhoneSpecs(specsDoc, phoneLean, collectedDoc);
+    const serializedSpecs = normalizedSpecs ? normalizedToSerialized(normalizedSpecs) : null;
+    const phoneJSON: any = phoneToJSON(phone, serializedSpecs, benchmarks, images, prices);
     phoneJSON.videos = phoneVideos.map((v: any) => ({
       id: v._id?.toString(),
       youtubeId: v.youtubeId,

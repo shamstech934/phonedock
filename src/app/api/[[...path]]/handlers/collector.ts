@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CollectorSource, CollectorJob, CollectedPhone, Brand, Phone, ActivityLog } from '@/lib/models';
+import { CollectorSource, CollectorJob, CollectedPhone, Brand, Phone, PhoneSpecs, ActivityLog } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, escapeRegex } from './helpers';
+import { flattenCollectedPhoneSpecs } from '@/lib/normalize-specs';
 
 // ============ COLLECTOR GET ============
 
@@ -82,10 +83,26 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       if (!brand) return NextResponse.json({ error: `Brand "${item.brandName}" not found` }, { status: 400 });
       const phone = await Phone.create({
         brandId: brand._id, modelName: item.model, slug: item.slug,
-        pricePKR: 0, thumbnail: item.thumbnail || '',
-        description: '', status: 'published', active: true,
-        featured: false, trending: false, upcoming: false,
+        pricePKR: item.pakistanPrice || 0, thumbnail: item.thumbnail || '',
+        description: item.description || '', status: 'published', active: true,
+        featured: false, trending: false, upcoming: item.deviceStatus === 'upcoming' || item.upcoming === true,
+        releaseDate: item.releaseDate || '',
+        ptaApproved: item.ptaApproved === true,
+        ptaStatus: item.ptaStatus || 'Unknown',
       });
+
+      // Flatten nested CollectedPhone specs into PhoneSpecs child document
+      const flatSpecs = flattenCollectedPhoneSpecs(item.toObject ? item.toObject() : item);
+      if (Object.keys(flatSpecs).length > 0) {
+        try {
+          await PhoneSpecs.findOneAndUpdate(
+            { phoneId: phone._id },
+            { $set: flatSpecs, phoneId: phone._id },
+            { upsert: true, new: true, strict: false },
+          );
+        } catch (e) { console.error('[Collector] Failed to create PhoneSpecs:', e); }
+      }
+
       item.status = 'approved';
       item.approvedPhoneId = phone._id;
       await item.save();
