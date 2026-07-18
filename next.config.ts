@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // output: "standalone",
   typescript: {
     ignoreBuildErrors: false,
+    node: { // Allow node:crypto for crypto operations
+      crypto: 'default',
+    },
   },
   reactStrictMode: true,
   images: {

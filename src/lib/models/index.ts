@@ -5,6 +5,8 @@ export { PhoneImage, PhoneBenchmark, Review, PhonePrice, PriceHistory } from './
 export { News, Sponsor, Admin, ActivityLog, RateLimit, UserReview, PriceAlert, NewsletterSubscriber } from './Other';
 export { AdminSession } from './AdminSession';
 export { ImportHistory } from './ImportHistory';
+export { ImportJob } from './ImportJob';
+export { ImportBatch } from './ImportBatch';
 export { CollectorSource } from './CollectorSource';
 export { CollectedPhone } from './CollectedPhone';
 export { CollectorJob } from './CollectorJob';

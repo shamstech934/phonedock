@@ -378,9 +378,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     const authResult = await handleAdminAuthPost(req, segments);
     if (authResult) return authResult;
 
-    // Import routes (file upload, validate, rollback)
-    const importResult = await handleImportPost(req, segments);
-    if (importResult) return importResult;
+    // Import routes (V1 — file upload, validate, rollback)
+    const importV1Result = await handleImportPost(req, segments);
+    if (importV1Result) return importV1Result;
+
+    // Import V2 routes (chunked import engine)
+    const importV2Result = await handleImportV2Upload(req, segments)
+      || await handleImportV2Config(req, segments)
+      || await handleImportV2Start(req, segments)
+      || await handleImportV2Batch(req, segments)
+      || await handleImportV2Retry(req, segments)
+      || await handleImportV2Cancel(req, segments)
+      || await handleImportV2Rollback(req, segments);
+    if (importV2Result) return importV2Result;
+
+    // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
 
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
     const crudResult = await handleAdminCrudPost(req, segments);
