@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import {
   Newspaper, Plus, Edit, Trash2, Check, X, Eye, Star, Archive,
   Search, Filter, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
@@ -144,9 +145,9 @@ export default function AdminNewsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
-            <Plus className="w-3.5 h-3.5" /> New Article
-          </button>
+          <Link href="/admin/news/new" className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+            <Plus className="w-4 h-4 mr-1.5" /> New Article
+          </Link>
         </div>
       </div>
 

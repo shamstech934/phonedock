@@ -31,5 +31,6 @@ const CollectorSourceSchema = new Schema({
 
 CollectorSourceSchema.index({ enabled: 1 });
 CollectorSourceSchema.index({ type: 1 });
+CollectorSourceSchema.index({ name: 1 }, { unique: true });
 
 export const CollectorSource = mongoose.models.CollectorSource || mongoose.model('CollectorSource', CollectorSourceSchema);

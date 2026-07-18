@@ -5,7 +5,7 @@ import {
   Activity, Plus, Edit, Trash2, Search, ChevronLeft, ChevronRight,
   Clock, Shield, AlertTriangle, RefreshCw, BarChart3, Users,
   Monitor, Smartphone, Database, FileText, Video, Star,
-  Radio, Upload, Zap, Key, AlertCircle, ChevronDown
+  Radio, Upload, Zap, Key, AlertCircle
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 

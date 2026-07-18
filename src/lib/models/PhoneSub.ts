@@ -7,6 +7,8 @@ const PhoneImageSchema = new Schema({
   sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 
+PhoneImageSchema.index({ phoneId: 1, sortOrder: 1 });
+
 export const PhoneImage = mongoose.models.PhoneImage || mongoose.model('PhoneImage', PhoneImageSchema);
 
 const PhoneBenchmarkSchema = new Schema({
@@ -36,6 +38,8 @@ const ReviewSchema = new Schema({
   author: { type: String, default: '' },
   published: { type: Boolean, default: false },
 }, { timestamps: true });
+
+ReviewSchema.index({ phoneId: 1, published: 1 });
 
 export const Review = mongoose.models.Review || mongoose.model('Review', ReviewSchema);
 

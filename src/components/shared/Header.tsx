@@ -138,13 +138,14 @@ export function Header() {
                 onClick={() => setMoreOpen(!moreOpen)}
                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200 flex items-center gap-1"
                 aria-label="More navigation"
+                aria-expanded={moreOpen}
               >
                 More <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`} />
               </button>
               {moreOpen && (
-                <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 py-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div role="menu" className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 py-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
                   {moreLinks.map(item => (
-                    <Link key={item.href} href={item.href} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors">
+                    <Link role="menuitem" key={item.href} href={item.href} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors">
                       <item.icon className="w-4 h-4 text-gray-400" />
                       {item.label}
                     </Link>

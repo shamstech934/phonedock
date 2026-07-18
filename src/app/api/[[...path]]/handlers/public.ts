@@ -3,7 +3,7 @@ import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice,
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
-import { escapeRegex } from '@/lib/utils';
+import { escapeRegex } from '@/lib/sanitize';
 import { getEmailTransporter } from '@/lib/email';
 
 // ============ CACHE-CONTROL HELPERS ============
@@ -192,7 +192,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      PhonePrice.find({ phoneId: phone._id }).limit(20).lean(),
+      PhonePrice.find({ phoneId: phone._id }).limit(10).lean(),
       Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
       Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
     ]);

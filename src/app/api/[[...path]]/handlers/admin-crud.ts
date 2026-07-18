@@ -4,7 +4,7 @@ import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, Phone
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages } from '@/lib/revalidate';
-import { escapeRegex } from '@/lib/utils';
+import { escapeRegex } from '@/lib/sanitize';
 
 // ============ ADMIN CRUD GET ============
 
@@ -1095,7 +1095,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
     await connectDB();
     let phone;
-    try { phone = await Phone.findById(segments[2]); } catch (e: any) { return NextResponse.json({ error: 'Failed to find phone', details: e.message }, { status: 500 }); }
+    try { phone = await Phone.findById(segments[2]); } catch (e: any) { return NextResponse.json({ error: 'Failed to find phone' }, { status: 500 }); }
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     let body: any;
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }); }
@@ -1119,7 +1119,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
         if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
       } catch (e: any) {
         console.error('[SavePhone SlugCheck] Failed:', e.message);
-        return NextResponse.json({ error: 'Slug uniqueness check failed', details: e.message }, { status: 500 });
+        return NextResponse.json({ error: 'Slug uniqueness check failed' }, { status: 500 });
       }
       phone.slug = inputSlug;
     }
@@ -1187,7 +1187,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       if (msg.includes('duplicate key') || msg.includes('E11000')) {
         return NextResponse.json({ error: 'Duplicate key conflict. A phone with this slug may already exist.' }, { status: 409 });
       }
-      return NextResponse.json({ error: 'Failed to save phone', details: msg }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to save phone' }, { status: 500 });
     }
 
     // Save specs (independent of phone save)

@@ -441,7 +441,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }
-    return NextResponse.json({ error: 'Internal server error', details: msg }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 

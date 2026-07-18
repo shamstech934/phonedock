@@ -302,8 +302,10 @@ function UserReviewsSection({ slug }: { slug: string }) {
       {showForm && (
         <div className="card-premium p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="Your name" aria-label="Your name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-            <input value={formEmail} onChange={e => setFormEmail(e.target.value)} type="email" placeholder="Your email (private)" aria-label="Your email" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <label htmlFor="review-name" className="sr-only">Your name *</label>
+            <input id="review-name" value={formName} onChange={e => setFormName(e.target.value)} placeholder="Your name" aria-label="Your name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            <label htmlFor="review-email" className="sr-only">Your email (private) *</label>
+            <input id="review-email" value={formEmail} onChange={e => setFormEmail(e.target.value)} type="email" placeholder="Your email (private)" aria-label="Your email" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-muted-foreground mr-2">Rating:</span>
@@ -315,7 +317,8 @@ function UserReviewsSection({ slug }: { slug: string }) {
               ))}
             </div>
           </div>
-          <textarea value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} aria-label="Your review" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+          <label htmlFor="review-comment" className="sr-only">Your review *</label>
+          <textarea id="review-comment" value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Share your experience with this phone..." rows={3} aria-label="Your review" className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           {turnstileSiteKey && (
             <div className="flex justify-center">
               <TurnstileWidget siteKey={turnstileSiteKey} onVerify={setTurnstileToken} />
@@ -344,7 +347,7 @@ function UserReviewsSection({ slug }: { slug: string }) {
                     <div className="flex gap-0.5">{[1,2,3,4,5].map(i => <Star key={i} className={`w-3 h-3 ${i <= r.rating ? 'text-amber-400' : 'text-gray-200'}`} fill={i <= r.rating ? 'currentColor' : 'none'} />)}</div>
                   </div>
                 </div>
-                <span className="text-[10px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                <span className="text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
               </div>
               <p className="text-sm text-gray-700 leading-relaxed">{r.comment}</p>
             </div>
@@ -525,7 +528,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                   <div className="flex gap-2 p-3 overflow-x-auto no-scrollbar">
                     {images.map((img, i) => (
                       <button key={img.id} onClick={() => setActiveImage(i)} aria-label={`View image ${i + 1} of ${images.length}`} aria-pressed={i === activeImage} className={`w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-colors ${i === activeImage ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-gray-50 hover:bg-gray-100'}`}>
-                        <Image src={img.url} alt={img.altText || phone.modelName} width={64} height={64} className="object-contain w-full h-full p-1" unoptimized />
+                        <Image src={img.url} alt={img.altText || phone.modelName} width={64} height={64} className="object-contain w-full h-full p-1" />
                       </button>
                     ))}
                   </div>
@@ -536,7 +539,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
               <div className="card-premium p-4 space-y-3">
                 {p.originalPricePKR > p.pricePKR && p.originalPricePKR > 0 && (
                   <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-2.5 text-center">
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span>
+                    <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span>
                     <p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((p.originalPricePKR - p.pricePKR) / p.originalPricePKR) * 100)}% — was {formatPrice(p.originalPricePKR)}</p>
                   </div>
                 )}
@@ -554,20 +557,20 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                       )}
                       {priceTracker.priceChange !== 0 ? (
                         priceTracker.priceChange < 0 ? (
-                          <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                          <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200/50">
                             Price Dropped ▼ {formatPrice(Math.abs(priceTracker.priceChange))} ({Math.abs(priceTracker.percentageChange)}%)
                           </span>
                         ) : (
-                          <span className="text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full border border-red-200/50">
+                          <span className="text-[11px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full border border-red-200/50">
                             Price Increased ▲ {formatPrice(priceTracker.priceChange)} ({priceTracker.percentageChange}%)
                           </span>
                         )
                       ) : priceTracker.history.length > 0 ? (
-                        <span className="text-[10px] font-medium bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">No Change</span>
+                        <span className="text-[11px] font-medium bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">No Change</span>
                       ) : null}
                     </div>
                     {/* Lowest price + last updated + mode */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                       {priceTracker.lowestPrice > 0 && priceTracker.lowestPrice < priceTracker.currentPrice && (
                         <span className="text-emerald-600 font-medium">Lowest: {formatPrice(priceTracker.lowestPrice)}</span>
                       )}
@@ -576,11 +579,11 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${priceTracker.priceMode === 'manual' ? 'bg-blue-50 text-blue-700 border-blue-200/50' : 'bg-purple-50 text-purple-700 border-purple-200/50'}`}>
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${priceTracker.priceMode === 'manual' ? 'bg-blue-50 text-blue-700 border-blue-200/50' : 'bg-purple-50 text-purple-700 border-purple-200/50'}`}>
                         {priceTracker.priceMode === 'manual' ? 'Manually Verified' : 'Auto Tracked'}
                       </span>
                       {priceTracker.manualLock && (
-                        <span className="text-[10px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200/50">Price Locked</span>
+                        <span className="text-[11px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200/50">Price Locked</span>
                       )}
                     </div>
                   </div>
@@ -630,7 +633,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                   <div className="card-premium p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-gray-900">Compare Prices</h3>
-                      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                      <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
                         {sorted.length} store{sorted.length !== 1 ? 's' : ''}
                       </span>
                     </div>
@@ -642,11 +645,11 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                           <div key={pr.id} className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${isLowest ? 'bg-emerald-50/70 border-emerald-200/60' : 'bg-[#F8FAFC] border-transparent hover:border-gray-200'}`}>
                             <div className="flex items-center gap-3 min-w-0">
                               {isLowest && (
-                                <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md">Best</span>
+                                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md">Best</span>
                               )}
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-gray-900 truncate">{pr.storeName}</p>
-                                <p className="text-[10px] mt-0.5 flex items-center gap-1">
+                                <p className="text-[11px] mt-0.5 flex items-center gap-1">
                                   <span className={`w-1.5 h-1.5 rounded-full ${pr.inStock ? 'bg-emerald-500' : 'bg-red-400'}`} />
                                   <span className={pr.inStock ? 'text-emerald-600' : 'text-red-500'}>{pr.inStock ? 'In Stock' : 'Out of Stock'}</span>
                                   {!pr.inStock && <span className="text-red-400 ml-1">— unavailable</span>}
@@ -662,7 +665,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                                 <span className={`font-bold text-sm ${isLowest ? 'text-emerald-700' : 'text-blue-600'}`}>{formatPrice(pr.price)}</span>
                               )}
                               {priceDiff > 0 && (
-                                <p className="text-[10px] text-red-500 mt-0.5">+{formatPrice(priceDiff)} more</p>
+                                <p className="text-[11px] text-red-500 mt-0.5">+{formatPrice(priceDiff)} more</p>
                               )}
                             </div>
                           </div>
@@ -670,7 +673,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                       })}
                     </div>
                     {sorted.length > 1 && (
-                      <p className="text-[10px] text-muted-foreground mt-2.5 text-center">
+                      <p className="text-[11px] text-muted-foreground mt-2.5 text-center">
                         You save up to <span className="font-semibold text-emerald-600">{formatPrice(sorted[sorted.length - 1].price - lowestPrice)}</span> by choosing the best deal
                       </p>
                     )}
@@ -726,7 +729,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                         <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/25">
                           <div className="text-center">
                             <span className="text-xl font-extrabold">{p.overallRating}</span>
-                            <span className="text-[10px] block opacity-70">/ 10</span>
+                            <span className="text-[11px] block opacity-70">/ 10</span>
                           </div>
                         </div>
                         <div>

@@ -35,6 +35,9 @@ const SponsorSchema = new Schema({
   endDate: { type: String, default: '' },
 }, { timestamps: true });
 
+SponsorSchema.index({ active: 1 });
+SponsorSchema.index({ position: 1 });
+
 export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', SponsorSchema);
 
 const AdminSchema = new Schema({

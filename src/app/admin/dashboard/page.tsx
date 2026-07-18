@@ -13,7 +13,7 @@ import { formatPrice } from '@/components/shared/formatPrice';
 export default function AdminDashboardPage() {
   const { admin } = useAdmin();
   const [stats, setStats] = useState<Record<string, any>>({});
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

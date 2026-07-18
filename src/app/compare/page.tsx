@@ -526,7 +526,7 @@ function CompareContent() {
               <div className="px-4 sm:px-6 py-4 border-b border-gray-100">
                 <h2 className="font-bold text-gray-900">Specifications Comparison</h2>
               </div>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto relative after:absolute after:top-0 after:right-0 after:bottom-0 after:w-8 after:bg-gradient-to-l after:from-white after:to-transparent after:pointer-events-none">
                 <table className="w-full min-w-[500px] text-sm">
                   <thead>
                     <tr className="bg-[#F8FAFC]">
