@@ -1092,47 +1092,61 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
-    const phone = await Phone.findById(segments[2]);
+    await connectDB();
+    let phone;
+    try { phone = await Phone.findById(segments[2]); } catch (e: any) { return NextResponse.json({ error: 'Failed to find phone', details: e.message }, { status: 500 }); }
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const body = await req.json();
+    let body: any;
+    try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }); }
     const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
       thumbnail, description, featured, trending, upcoming, status: phoneStatus, active,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
       specs, benchmarks, images, prices, priceMode, manualLock, manualLockReason, sourceUrl } = body;
+
+    // Update phone fields
     if (modelName) phone.modelName = modelName;
     if (inputSlug !== undefined && inputSlug !== phone.slug) {
       const existing = await Phone.findOne({ slug: inputSlug, _id: { $ne: phone._id } });
       if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
       phone.slug = inputSlug;
     }
-    if (brandId) { const b = await Brand.findById(brandId); if (b) phone.brandId = brandId; }
-    if (pricePKR !== undefined) phone.pricePKR = pricePKR;
-    if (originalPricePKR !== undefined) phone.originalPricePKR = originalPricePKR;
+    // Brand ID — handle both string ID and potential object
+    if (brandId) {
+      const bid = typeof brandId === 'string' ? brandId : brandId?.id || brandId?._id?.toString();
+      if (bid) {
+        try {
+          const b = await Brand.findById(bid);
+          if (b) phone.brandId = bid;
+        } catch { /* ignore brand lookup failure */ }
+      }
+    }
+    if (pricePKR !== undefined) phone.pricePKR = Number(pricePKR) || 0;
+    if (originalPricePKR !== undefined) phone.originalPricePKR = Number(originalPricePKR) || 0;
     if (ptaStatus !== undefined) phone.ptaStatus = ptaStatus;
-    if (ptaApproved !== undefined) phone.ptaApproved = ptaApproved;
+    if (ptaApproved !== undefined) phone.ptaApproved = Boolean(ptaApproved);
     if (releaseDate !== undefined) phone.releaseDate = releaseDate;
     if (thumbnail !== undefined) phone.thumbnail = thumbnail;
     if (description !== undefined) phone.description = description;
-    if (featured !== undefined) phone.featured = featured;
-    if (trending !== undefined) phone.trending = trending;
-    if (upcoming !== undefined) phone.upcoming = upcoming;
+    if (featured !== undefined) phone.featured = Boolean(featured);
+    if (trending !== undefined) phone.trending = Boolean(trending);
+    if (upcoming !== undefined) phone.upcoming = Boolean(upcoming);
     if (phoneStatus !== undefined) {
+      const validStatuses = ['published', 'draft', 'pending', 'archived'];
+      if (!validStatuses.includes(phoneStatus)) return NextResponse.json({ error: `Invalid status: "${phoneStatus}". Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
       const pubCheck = requirePermission(admin, 'phones:publish'); if (pubCheck) return pubCheck;
       phone.status = phoneStatus;
     }
-    if (active !== undefined && active === false) {
-      const delCheck = requirePermission(admin, 'phones:delete'); if (delCheck) return delCheck;
-      phone.active = active;
-    } else if (active !== undefined) {
-      phone.active = active;
+    if (active !== undefined) {
+      if (active === false) { const delCheck = requirePermission(admin, 'phones:delete'); if (delCheck) return delCheck; }
+      phone.active = Boolean(active);
     }
-    if (cameraScore !== undefined) phone.cameraScore = cameraScore;
-    if (performanceScore !== undefined) phone.performanceScore = performanceScore;
-    if (batteryScore !== undefined) phone.batteryScore = batteryScore;
-    if (displayScore !== undefined) phone.displayScore = displayScore;
-    if (valueScore !== undefined) phone.valueScore = valueScore;
-    if (overallRating !== undefined) phone.overallRating = overallRating;
+    if (cameraScore !== undefined) phone.cameraScore = Number(cameraScore) || 0;
+    if (performanceScore !== undefined) phone.performanceScore = Number(performanceScore) || 0;
+    if (batteryScore !== undefined) phone.batteryScore = Number(batteryScore) || 0;
+    if (displayScore !== undefined) phone.displayScore = Number(displayScore) || 0;
+    if (valueScore !== undefined) phone.valueScore = Number(valueScore) || 0;
+    if (overallRating !== undefined) phone.overallRating = Number(overallRating) || 0;
     if (pros !== undefined) phone.pros = pros;
     if (cons !== undefined) phone.cons = cons;
     if (reviewSummary !== undefined) phone.reviewSummary = reviewSummary;
@@ -1144,31 +1158,47 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (manualLock !== undefined) (phone as any).manualLock = Boolean(manualLock);
     if (manualLockReason !== undefined) (phone as any).manualLockReason = String(manualLockReason).slice(0, 500);
     if (sourceUrl !== undefined) { (phone as any).sourceUrl = String(sourceUrl); (phone as any).sourceName = 'Manual Entry'; }
-    await phone.save();
+
+    // Save phone — with clear error on failure
+    try {
+      await phone.save();
+    } catch (e: any) {
+      const msg = e?.message || '';
+      // Extract useful info from Mongoose validation errors
+      if (msg.includes('ValidationError')) {
+        const fieldMatch = msg.match(/Path `(\w+)`/);
+        const field = fieldMatch ? fieldMatch[1] : 'unknown';
+        return NextResponse.json({ error: `Validation failed on field "${field}": ${msg.split(':').pop()?.trim() || msg}` }, { status: 400 });
+      }
+      return NextResponse.json({ error: 'Failed to save phone', details: msg }, { status: 500 });
+    }
+
+    // Save specs (independent of phone save)
     try {
       if (specs && typeof specs === 'object') {
-        // Remove fields that shouldn't be $set (Mongoose-managed or non-schema)
         const { _id: _s, __v: _sv, phoneId: _sp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeSpecs } = specs as any;
         await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true, new: true });
       }
     } catch (e: any) { console.error('[SavePhone Specs]', e.message, e.stack); }
+    // Save benchmarks
     try {
       if (benchmarks && typeof benchmarks === 'object') {
         const { _id: _b, __v: _bv, phoneId: _bp, id: _id2, createdAt: _ca, updatedAt: _ua, ...safeBench } = benchmarks as any;
         await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true });
       }
     } catch (e: any) { console.error('[SavePhone Benchmarks]', e.message); }
+    // Save images
     try {
       if (images !== undefined) {
         await PhoneImage.deleteMany({ phoneId: phone._id });
         if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: any, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
       }
     } catch (e: any) { console.error('[SavePhone Images]', e.message); }
+    // Save prices
     try {
       if (prices !== undefined) {
         await PhonePrice.deleteMany({ phoneId: phone._id });
         if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
-        // Record store price history for changed prices
         if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
       }
     } catch (e: any) { console.error('[SavePhone Prices]', e.message); }
