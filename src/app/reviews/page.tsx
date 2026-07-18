@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic';
-export const revalidate = 300;
+
 import { Star, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import type { Metadata } from 'next';

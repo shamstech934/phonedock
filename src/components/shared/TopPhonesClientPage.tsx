@@ -1,52 +1,79 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
+import { Smartphone } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import type { Phone } from '@/components/shared/types';
-import type { LucideIcon } from 'lucide-react';
 
 interface TopPhonesClientPageProps {
   title: string;
   subtitle: string;
-  sort: string;
-  icon: LucideIcon;
+  sort?: string;
+  /** Pre-rendered icon element for empty state (pass as JSX from server) */
+  icon?: ReactNode;
   description?: string;
   badgeField?: string;
   badgeLabel?: string;
+  /** Custom API endpoint (default: /api/top-phones?sort=...&limit=20) */
+  apiEndpoint?: string;
+  /** Empty state heading when no data */
+  emptyHeading?: string;
+  /** Empty state description */
+  emptyDescription?: string;
 }
 
 export function TopPhonesClientPage({
   title,
   subtitle,
   sort,
-  icon: Icon,
+  icon,
   description,
   badgeField,
   badgeLabel,
+  apiEndpoint,
+  emptyHeading,
+  emptyDescription,
 }: TopPhonesClientPageProps) {
   const [phones, setPhones] = useState<Phone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function fetchPhones() {
       try {
-        const res = await fetch(`/api/top-phones?sort=${encodeURIComponent(sort)}&limit=20`);
+        setLoading(true);
+        setError(false);
+        const url = apiEndpoint
+          || `/api/top-phones?sort=${encodeURIComponent(sort || 'overallRating')}&limit=20`;
+        const res = await fetch(url);
         if (cancelled) return;
-        if (!res.ok) { setPhones([]); return; }
+        if (!res.ok) {
+          setPhones([]);
+          setError(true);
+          return;
+        }
         const data = await res.json();
-        if (!cancelled) setPhones(data.phones || data || []);
+        if (!cancelled) {
+          const list = data.phones || data || [];
+          setPhones(list);
+        }
       } catch {
-        if (!cancelled) setPhones([]);
+        if (!cancelled) {
+          setPhones([]);
+          setError(true);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     fetchPhones();
     return () => { cancelled = true; };
-  }, [sort]);
+  }, [sort, apiEndpoint]);
+
+  const EmptyIcon = icon || <Smartphone className="w-14 h-14" />;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -90,9 +117,13 @@ export function TopPhonesClientPage({
             </div>
           ) : (
             <div className="text-center py-20 text-muted-foreground">
-              <Icon className="w-14 h-14 mx-auto mb-4 opacity-15" />
-              <h3 className="text-lg font-bold text-gray-900 mb-1">No data yet</h3>
-              <p className="text-sm">Check back later for updated rankings</p>
+              <div className="opacity-15 flex justify-center mb-4">{EmptyIcon}</div>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">
+                {error ? 'Failed to load data' : (emptyHeading || 'No data yet')}
+              </h3>
+              <p className="text-sm">
+                {error ? 'Please try refreshing the page' : (emptyDescription || 'Check back later for updated rankings')}
+              </p>
             </div>
           )}
         </div>

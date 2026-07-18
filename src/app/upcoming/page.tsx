@@ -1,11 +1,6 @@
-export const dynamic = 'force-dynamic';
-
 import type { Metadata } from 'next';
 import { Clock } from 'lucide-react';
-import { Header } from '@/components/shared/Header';
-import { Footer } from '@/components/shared/Footer';
-import { PhoneCard } from '@/components/shared/PhoneCard';
-import { getUpcomingPhones } from '@/lib/get-top-phones';
+import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
@@ -21,34 +16,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function UpcomingPage() {
-  const phones = await getUpcomingPhones(20);
-
+export default function UpcomingPage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Upcoming Phones in Pakistan 2025</h1>
-            <p className="text-sm text-muted-foreground mt-1">Discover upcoming smartphones launching in Pakistan</p>
-          </div>
-          {phones.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {phones.map((phone) => (
-                <PhoneCard key={phone.id} phone={phone} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-20 text-muted-foreground">
-              <Clock className="w-14 h-14 mx-auto mb-4 opacity-15" />
-              <h3 className="text-lg font-bold text-gray-900 mb-1">No upcoming phones listed yet</h3>
-              <p className="text-sm">Check back soon for the latest upcoming smartphones</p>
-            </div>
-          )}
-        </div>
-      </main>
-      <Footer />
-    </div>
+    <TopPhonesClientPage
+      title="Upcoming Phones in Pakistan 2025"
+      subtitle="Discover upcoming smartphones launching in Pakistan"
+      icon={<Clock className="w-14 h-14" />}
+      apiEndpoint="/api/upcoming-phones"
+      emptyHeading="No upcoming phones listed yet"
+      emptyDescription="Check back soon for the latest upcoming smartphones"
+    />
   );
 }

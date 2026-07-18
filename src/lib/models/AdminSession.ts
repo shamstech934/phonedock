@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 const AdminSessionSchema = new Schema({
   adminId: { type: Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
-  tokenJti: { type: String, required: true, unique: true, index: true },
+  tokenJti: { type: String, required: true, unique: true },
   ip: { type: String, default: '' },
   userAgent: { type: String, default: '' },
   expiresAt: { type: Date, required: true },

@@ -415,17 +415,39 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const sort = ALLOWED.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'overallRating';
     const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
-    const phones = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
+    const raw = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .sort({ [sort]: order }).limit(limit).populate('brand').lean();
+      .sort({ [sort]: order }).limit(limit).lean();
+    // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
+    const brandIds = [...new Set(raw.map((p: any) => p.brandId?.toString()).filter(Boolean))];
+    let brandMap = new Map<string, any>();
+    if (brandIds.length > 0) {
+      const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo').lean();
+      brandMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+    }
+    const phones = raw.map((p: any) => {
+      const b = brandMap.get(p.brandId?.toString());
+      return { ...p, brand: b ? { id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '' } : null };
+    });
     return cached({ phones: await attachListSpecs(phones), sortBy: sort }, 300, 600);
   }
 
   // ---- /api/upcoming-phones ----
   if (segments.length === 1 && segments[0] === 'upcoming-phones') {
     await connectDB();
-    const phones = await Phone.find({ active: true, upcoming: true })
-      .sort({ createdAt: -1 }).limit(20).populate('brand').lean();
+    const raw = await Phone.find({ active: true, upcoming: true })
+      .sort({ createdAt: -1 }).limit(20).lean();
+    // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
+    const brandIds = [...new Set(raw.map((p: any) => p.brandId?.toString()).filter(Boolean))];
+    let brandMap = new Map<string, any>();
+    if (brandIds.length > 0) {
+      const brands = await Brand.find({ _id: { $in: brandIds } }).select('name slug logo').lean();
+      brandMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+    }
+    const phones = raw.map((p: any) => {
+      const b = brandMap.get(p.brandId?.toString());
+      return { ...p, brand: b ? { id: b._id?.toString(), name: b.name, slug: b.slug, logo: b.logo || '' } : null };
+    });
     return cached({ phones: await attachListSpecs(phones) }, 300, 600);
   }
 

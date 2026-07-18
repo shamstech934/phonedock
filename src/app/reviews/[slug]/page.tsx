@@ -11,6 +11,8 @@ import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
+export const dynamic = 'force-dynamic';
+
 import { connectDB } from '@/lib/mongodb';
 import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models';
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
@@ -143,23 +145,7 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
   }
 }
 
-/* ── generateStaticParams ──────────────────────────────────────────── */
-export async function generateStaticParams(): Promise<{ slug: string }[]> {
-  try {
-    await connectDB();
-    const phones = await PhoneModel.find({
-      active: true,
-      status: 'published',
-    })
-      .select('slug')
-      .lean();
-    return phones.map((p: any) => ({ slug: p.slug }));
-  } catch {
-    return [];
-  }
-}
-
-/* ── generateMetadata ──────────────────────────────────────────────── */
+/* ── generateMetadata (dynamic, no static params) ─────────────────── */
 export async function generateMetadata({
   params,
 }: {

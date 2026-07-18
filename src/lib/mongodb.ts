@@ -32,6 +32,10 @@ async function connectWithRetry(uri: string, retries = 3, delay = 1000): Promise
         heartbeatFrequencyMS: 10000,
         retryWrites: true,
         w: 'majority',
+        // Disable auto-index creation in serverless/Vercel — indexes are
+        // managed via deploy-time migration scripts, not on every cold start.
+        autoIndex: false,
+        autoCreate: false,
       });
     } catch (e) {
       lastError = e as Error;
