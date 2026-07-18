@@ -5,7 +5,7 @@ const AdminSessionSchema = new Schema({
   tokenJti: { type: String, required: true, unique: true, index: true },
   ip: { type: String, default: '' },
   userAgent: { type: String, default: '' },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
   lastUsedAt: { type: Date, default: Date.now },
   revokedAt: { type: Date, default: null },
 }, { timestamps: true });

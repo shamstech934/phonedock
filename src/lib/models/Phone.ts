@@ -151,6 +151,13 @@ PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
 PhoneSchema.index({ modelName: 'text', description: 'text' });
+// Score-based sort indexes for top-phones ranking pages
+PhoneSchema.index({ active: 1, status: 1, overallRating: -1 });
+PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, valueScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, displayScore: -1 });
 
 // Static method to find only non-soft-deleted documents
 PhoneSchema.statics.findActive = function() {

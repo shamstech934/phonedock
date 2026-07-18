@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 // ─── PriceSource ────────────────────────────────────────────────────────
 const PriceSourceSchema = new Schema({
-  name: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
   sourceType: { type: String, enum: ['retailer', 'marketplace', 'official'], default: 'retailer' },
   enabled: { type: Boolean, default: true },
   trusted: { type: Boolean, default: false },

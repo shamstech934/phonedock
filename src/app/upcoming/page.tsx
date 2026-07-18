@@ -1,11 +1,11 @@
 export const dynamic = 'force-dynamic';
-export const revalidate = 300;
-import { Clock } from 'lucide-react';
+
 import type { Metadata } from 'next';
+import { Clock } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
-import type { Phone } from '@/components/shared/types';
+import { getUpcomingPhones } from '@/lib/get-top-phones';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
@@ -21,21 +21,8 @@ export const metadata: Metadata = {
   },
 };
 
-async function getUpcomingPhones(): Promise<Phone[]> {
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/upcoming-phones`, {
-      next: { revalidate: 300 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.phones || data || [];
-  } catch {
-    return [];
-  }
-}
-
 export default async function UpcomingPage() {
-  const phones = await getUpcomingPhones();
+  const phones = await getUpcomingPhones(20);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -46,7 +33,6 @@ export default async function UpcomingPage() {
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Upcoming Phones in Pakistan 2025</h1>
             <p className="text-sm text-muted-foreground mt-1">Discover upcoming smartphones launching in Pakistan</p>
           </div>
-
           {phones.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {phones.map((phone) => (
