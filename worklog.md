@@ -43,3 +43,24 @@ Work Log:
 Stage Summary:
 - 6 files modified: PhoneCard.tsx, compare/page.tsx, HomeContent.tsx, phones/page.tsx, public.ts
 - All 4 user-reported bugs fixed + 1 hidden bug (phones page filters not sent to API) discovered and fixed
+---
+Task ID: 1
+Agent: main
+Task: Fix Quick View specs, Compare Add Phones button, and batch specs on all endpoints
+
+Work Log:
+- Analyzed screenshots via VLM to understand actual UI state
+- Tested deployed API: confirmed ZERO phones have PhoneSpecs documents in DB (root cause of "no specs")
+- Fixed PhoneCard Quick View: now hides empty panel when no specs data (shows nothing instead of useless "No specs available yet")
+- Added 5-second timeout with AbortController to Quick View fetch
+- Added hasSpecsData check to avoid treating empty-specs objects as having data
+- Fixed Compare "Add Phones" button: replaced inline setTimeout scroll with useEffect on showPicker state
+- Created reusable attachListSpecs() helper in public.ts
+- Applied batch specs to ALL listing endpoints: /api/phones, /api/phones/lookup, /api/brands/:slug, /api/search, /api/top-phones, /api/upcoming-phones, /api/phones-under/:price
+- Refactored /api/phones to use shared helper instead of inline batch code
+
+Stage Summary:
+- Quick View no longer shows useless empty panel - clicking eye icon on a phone without specs does nothing (no confusing "loading" or "no specs" message)
+- Compare "Add Phones" button now reliably scrolls to and focuses the search input via useEffect
+- All listing endpoints now consistently attach basic specs when PhoneSpecs documents exist
+- Pushed as commit f759bad
