@@ -21,6 +21,30 @@ function cachedError(msg: string, status: number, sMaxAge: number, swr: number) 
   });
 }
 
+// ============ BATCH SPECS ATTACHMENT (reusable) ============
+
+async function attachListSpecs(phones: any[]): Promise<any[]> {
+  if (phones.length === 0) return phones;
+  const ids = phones.map((p: any) => p._id);
+  const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
+  const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
+  return phones.map((p: any) => {
+    const json = phoneToJSON(p);
+    const sp = specsMap.get(p._id?.toString());
+    if (sp) {
+      json.specs = {
+        ram: sp.ram || '',
+        mainCamera: sp.mainCamera || '',
+        battery: sp.battery || '',
+        chipset: sp.chipset || '',
+        display: sp.display || '',
+        storage: sp.storage || '',
+      };
+    }
+    return json;
+  });
+}
+
 // ============ PUBLIC GET HANDLERS ============
 
 export async function handlePublicGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
@@ -129,27 +153,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       Phone.countDocuments(filter),
     ]);
 
-    // Batch-fetch basic specs for Quick View (same pattern as fetchHeroPhones)
-    const phoneIds = phones.map((p: any) => p._id);
-    const specsArr = phoneIds.length > 0 ? await PhoneSpecs.find({ phoneId: { $in: phoneIds } }).lean() : [];
-    const specsMap = new Map(specsArr.map((s: any) => [s.phoneId.toString(), s]));
-
-    const phonesWithSpecs = phones.map((p: any) => {
-      const json = phoneToJSON(p);
-      const sp = specsMap.get(p._id?.toString());
-      if (sp) {
-        json.specs = {
-          ram: sp.ram || '',
-          mainCamera: sp.mainCamera || '',
-          battery: sp.battery || '',
-          chipset: sp.chipset || '',
-          display: sp.display || '',
-          storage: sp.storage || '',
-        };
-      }
-      return json;
-    });
-
+    const phonesWithSpecs = await attachListSpecs(phones);
     return cached({ phones: phonesWithSpecs, total, page, limit }, 120, 300);
   }
 
@@ -164,7 +168,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (slugs.length > 0) filter.slug = { $in: slugs };
     if (ids.length > 0) filter._id = { $in: ids };
     const phones = await Phone.find(filter).populate('brand').lean();
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)) }, 60, 300);
+    return cached({ phones: await attachListSpecs(phones) }, 60, 300);
   }
 
   // ---- /api/phones/autocomplete?q=... ----
@@ -315,7 +319,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .populate('brand').lean();
-    return cached({ brand, phones: phones.map((p: any) => phoneToJSON(p)) }, 300, 600);
+    return cached({ brand, phones: await attachListSpecs(phones) }, 300, 600);
   }
 
   // ---- /api/news ----
@@ -357,7 +361,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       ]),
     ]);
     const brands = brandAgg.map((b: any) => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } }));
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), brands, query: q }, 60, 180);
+    return cached({ phones: await attachListSpecs(phones), brands, query: q }, 60, 180);
   }
 
   // ---- /api/videos ----
@@ -407,7 +411,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
     const phones = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
       .sort({ [sort]: order }).limit(limit).populate('brand').lean();
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), sortBy: sort }, 300, 600);
+    return cached({ phones: await attachListSpecs(phones), sortBy: sort }, 300, 600);
   }
 
   // ---- /api/upcoming-phones ----
@@ -415,7 +419,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const phones = await Phone.find({ active: true, upcoming: true })
       .sort({ createdAt: -1 }).populate('brand').lean();
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)) }, 300, 600);
+    return cached({ phones: await attachListSpecs(phones) }, 300, 600);
   }
 
   // ---- /api/phones-under/:price (e.g. /api/phones-under/50000) ----
@@ -431,7 +435,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
         .sort({ pricePKR: 1 }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
       Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } }),
     ]);
-    return cached({ phones: phones.map((p: any) => phoneToJSON(p)), total, page, limit, maxPrice, totalPages: Math.ceil(total / limit) }, 120, 300);
+    return cached({ phones: await attachListSpecs(phones), total, page, limit, maxPrice, totalPages: Math.ceil(total / limit) }, 120, 300);
   }
 
   // ---- /api/price-ranges ----

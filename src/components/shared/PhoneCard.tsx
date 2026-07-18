@@ -28,15 +28,21 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
   const [qvFetched, setQvFetched] = useState(false);
   const displaySize = extractDisplaySize(phone.specs?.display);
 
+  // Check if specs have any useful data
+  const hasSpecsData = phone.specs && (
+    phone.specs.chipset || phone.specs.ram || phone.specs.storage ||
+    phone.specs.display || phone.specs.battery || phone.specs.mainCamera
+  );
+
   // Quick specs for Quick View popover (from already-loaded specs or fetched on demand)
-  const quickSpecs = phone.specs
+  const quickSpecs = hasSpecsData
     ? [
-        phone.specs.chipset && { label: 'Chipset', value: phone.specs.chipset },
-        phone.specs.ram && { label: 'RAM', value: phone.specs.ram },
-        phone.specs.storage && { label: 'Storage', value: phone.specs.storage },
-        phone.specs.display && { label: 'Display', value: phone.specs.display },
-        phone.specs.battery && { label: 'Battery', value: phone.specs.battery },
-        phone.specs.mainCamera && { label: 'Camera', value: phone.specs.mainCamera },
+        phone.specs!.chipset && { label: 'Chipset', value: phone.specs!.chipset },
+        phone.specs!.ram && { label: 'RAM', value: phone.specs!.ram },
+        phone.specs!.storage && { label: 'Storage', value: phone.specs!.storage },
+        phone.specs!.display && { label: 'Display', value: phone.specs!.display },
+        phone.specs!.battery && { label: 'Battery', value: phone.specs!.battery },
+        phone.specs!.mainCamera && { label: 'Camera', value: phone.specs!.mainCamera },
       ].filter(Boolean) as { label: string; value: string }[]
     : qvSpecs
       ? Object.entries(qvSpecs)
@@ -50,14 +56,16 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
     e.stopPropagation();
     if (showQuickView) { setShowQuickView(false); return; }
     setShowQuickView(true);
-    if (!phone.specs && !qvSpecs && !qvFetched) {
+    if (!hasSpecsData && !qvSpecs && !qvFetched) {
       setQvLoading(true);
       setQvFetched(true);
-      fetch(`/api/phones/${phone.slug}`)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      fetch(`/api/phones/${phone.slug}`, { signal: controller.signal })
         .then(r => r.json())
         .then(d => {
-          if (d?.phone?.specs) {
-            const s = d.phone.specs;
+          const s = d?.phone?.specs;
+          if (s && (s.chipset || s.ram || s.storage || s.display || s.battery || s.mainCamera)) {
             const mapped: Record<string, string> = {};
             if (s.chipset) mapped.Chipset = s.chipset;
             if (s.ram) mapped.RAM = s.ram;
@@ -68,8 +76,8 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             setQvSpecs(mapped);
           }
         })
-        .catch((err) => { console.error('[QuickView] fetch failed for', phone.slug, err); })
-        .finally(() => setQvLoading(false));
+        .catch((err) => { if (err.name !== 'AbortError') console.error('[QuickView] fetch failed for', phone.slug, err); })
+        .finally(() => { clearTimeout(timeout); setQvLoading(false); });
     }
   };
 
@@ -193,44 +201,33 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
           </button>
         </div>
 
-        {/* Inline Quick View Panel */}
-        {showQuickView && (
+        {/* Inline Quick View Panel — only render when there are specs to show */}
+        {showQuickView && !qvLoading && quickSpecs.length > 0 && (
           <div className="mt-3 pt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-1 duration-200">
-            {qvLoading ? (
-              <div className="flex items-center justify-center py-4">
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : quickSpecs.length > 0 ? (
-              <>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Specs</p>
-                <div className="space-y-1.5">
-                  {quickSpecs.slice(0, 6).map(spec => (
-                    <div key={spec.label} className="flex items-start gap-2">
-                      <span className="text-[10px] font-medium text-gray-500 w-14 shrink-0">{spec.label}</span>
-                      <span className="text-[10px] text-gray-900 leading-tight">{spec.value}</span>
-                    </div>
-                  ))}
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick Specs</p>
+            <div className="space-y-1.5">
+              {quickSpecs.slice(0, 6).map(spec => (
+                <div key={spec.label} className="flex items-start gap-2">
+                  <span className="text-[10px] font-medium text-gray-500 w-14 shrink-0">{spec.label}</span>
+                  <span className="text-[10px] text-gray-900 leading-tight">{spec.value}</span>
                 </div>
-                <Link
-                  href={`/phones/${phone.slug}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="block text-center text-[10px] font-medium text-blue-500 hover:text-blue-600 mt-2.5 pt-2 border-t border-gray-100"
-                >
-                  View Full Specs →
-                </Link>
-              </>
-            ) : (
-              <div className="text-center py-2">
-                <p className="text-[10px] text-gray-400 mb-2">No specs available yet</p>
-                <Link
-                  href={`/phones/${phone.slug}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-1 text-[10px] font-medium text-blue-500 hover:text-blue-600"
-                >
-                  View Full Specs →
-                </Link>
-              </div>
-            )}
+              ))}
+            </div>
+            <Link
+              href={`/phones/${phone.slug}`}
+              onClick={(e) => e.stopPropagation()}
+              className="block text-center text-[10px] font-medium text-blue-500 hover:text-blue-600 mt-2.5 pt-2 border-t border-gray-100"
+            >
+              View Full Specs →
+            </Link>
+          </div>
+        )}
+        {showQuickView && qvLoading && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-center py-4">
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-[10px] text-gray-400 ml-2">Loading specs...</span>
+            </div>
           </div>
         )}
       </div>

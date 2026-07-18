@@ -52,6 +52,19 @@ function CompareContent() {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Scroll to search input when picker becomes visible
+  useEffect(() => {
+    if (!showPicker) return;
+    const timer = setTimeout(() => {
+      const input = document.getElementById('compare-search-input');
+      if (input) {
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.focus();
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [showPicker]);
+
   // Debounced autocomplete search
   useEffect(() => {
     if (!search || search.length < 2) { setAutocompleteResults([]); return; }
@@ -231,12 +244,10 @@ function CompareContent() {
             ))}
             {selected.length < 4 && (
               <button onClick={() => {
-                setShowPicker(true);
-                setCompared(false);
-                setTimeout(() => {
-                  const input = document.getElementById('compare-search-input');
-                  if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
-                }, 100);
+                if (!showPicker || compared) {
+                  setShowPicker(true);
+                  setCompared(false);
+                }
               }} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-500 hover:bg-blue-50 hover:border-blue-400 transition-colors shrink-0">
                 <Plus className="w-4 h-4" /> Add Phones
               </button>
