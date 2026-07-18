@@ -179,7 +179,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       modelName: p.modelName,
       thumbnail: p.thumbnail || '',
       pricePKR: p.pricePKR,
-      brand: p.brandId ? { id: p.brandId._id?.toString(), name: p.brandId.name, slug: p.brandId.slug } : null,
+      brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name, slug: p.brand.slug } : null,
     })) }, 60, 180);
   }
 
