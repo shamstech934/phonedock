@@ -64,3 +64,58 @@ Stage Summary:
 - Compare "Add Phones" button now reliably scrolls to and focuses the search input via useEffect
 - All listing endpoints now consistently attach basic specs when PhoneSpecs documents exist
 - Pushed as commit f759bad
+---
+Task ID: 3
+Agent: admin-500-fix
+Task: Fix Admin Edit Phone HTTP 500 error
+
+Work Log:
+- Read full admin-crud.ts (1665 lines) — verified ALL imports present: ActivityLog, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, Brand, revalidatePricePages
+- Read revalidatePricePages in src/lib/revalidate.ts — function is synchronous with internal try-catch on each revalidatePath call; confirmed safe
+- Read Phone.ts model schema — confirmed priceMode, manualLock, manualLockReason, sourceUrl, sourceName are all proper schema fields (lines 63-65, 104-105)
+- Read PhoneSpecs.ts model schema — all 52 string fields + 5 numeric fields match allowedSpecKeys in handler
+- Read PhoneSub.ts — confirmed PhoneBenchmark schema: pubgFps/codMobileFps/genshinFps/videoPlayback/gamingBattery/browsingBattery are String type (not Number)
+- Read route.ts — identified the PUT handler catch at line 414-421 returns generic {"error":"Internal server error", details: msg} when handleAdminCrudPut throws
+- Identified ROOT CAUSE: The phone update handler (lines 1092-1257) had gaps between individual try-catches. Specifically, Phone.findOne() for slug uniqueness check (line 1109) was NOT in a try-catch — any DB error there would bubble up as a generic 500. Additionally, any other unexpected error between the inner try-catches would escape to route.ts's generic handler.
+
+Fixes applied to src/app/api/[[...path]]/handlers/admin-crud.ts:
+1. **Top-level try-catch** (lines 1111-1289): Wrapped the entire field-update-and-save block in a catch-all that returns `{"error":"Failed to update phone","details":"<message>"}` instead of the generic "Internal server error"
+2. **Slug uniqueness check try-catch** (lines 1116-1122): Wrapped Phone.findOne for slug check in its own try-catch with meaningful error response
+3. **Safe revalidatePricePages call** (lines 1277-1281): Wrapped in try-catch as defense-in-depth even though the function has internal try-catch
+4. **Fixed _previousPricePKR bug** (lines 1102, 1272-1274): Stored original price before updates (`const _previousPricePKR = phone.pricePKR`) and compare against it. Previously used `(phone as any)._previousPricePKR` which was never set, causing a PriceHistory entry to be created on EVERY save regardless of whether price changed
+5. **Removed unnecessary `as any` casts** (lines 1169-1172): Changed `(phone as any).priceMode = priceMode` → `phone.priceMode = priceMode` (and same for manualLock, manualLockReason, sourceUrl, sourceName) since these are proper Phone schema fields
+6. **Fixed benchmark type coercion** (lines 1238-1249): String-type benchmark fields (pubgFps, codMobileFps, genshinFps, videoPlayback, gamingBattery, browsingBattery) are now preserved as strings instead of being coerced to numbers via `Number(val) || 0`
+
+Verification: `npx tsc --noEmit --pretty` — 0 errors
+
+Stage Summary:
+- The 500 error was caused by uncaught exceptions (e.g., from Phone.findOne slug check) bubbling up to route.ts's generic error handler
+- Added comprehensive try-catch coverage ensuring all errors return meaningful JSON responses
+- Also fixed a data quality bug (duplicate PriceHistory entries on every save) and a type coercion bug (benchmark string fields forced to numbers)
+- TypeScript compilation verified clean
+
+---
+Task ID: 2
+Agent: quick-view-fix
+Task: Fix Quick View specs display bug
+
+Work Log:
+- Traced all 14 files that render PhoneCard to identify which data paths provide specs
+- Verified all listing APIs (`/api/phones`, `/api/brands/:slug`, `/api/search`, `/api/top-phones`, `/api/upcoming-phones`, `/api/phones-under/:price`, `/api/home`) properly call `attachListSpecs()` or `attachBasicSpecs()` to pre-attach specs
+- Found Bug 1: `/api/phones/:slug` endpoint (public.ts:206) returned `related` phones with `phoneToJSON(p)` WITHOUT specs — the Quick View fallback fetch was the only way to get specs for these phones
+- Found Bug 2: Reviews page (`/reviews/[slug]/page.tsx`) `getRelatedPhones()` manually constructed Phone objects without specs — same issue, no pre-attached specs
+- Found Bug 3: Quick View `handleRetry` had an incomplete spec check (missing `selfieCamera`, `chargingSpeed`, `os` fields) compared to the main effect
+- Found Bug 4: Quick View used `fetchAttemptedRef` guard that could prevent re-fetching in edge cases (e.g., React strict mode double-mount)
+- Fixed public.ts: Changed `related.map((p: any) => phoneToJSON(p))` to `await attachListSpecs(related)` 
+- Fixed reviews/[slug]/page.tsx: Replaced manual Phone construction with `phoneToJSON()` + `attachSpecsToRawPhones()` using shared helpers
+- Refactored PhoneCard.tsx QuickViewContent:
+  - Extracted `specsHasData()` helper to eliminate duplicated/inconsistent spec-checking logic
+  - Replaced `fetchAttemptedRef` guard with cleaner `fetchSpecs` callback + `specsRef` pattern
+  - Unified the main effect and retry handler to share the same `fetchSpecs` function
+  - Fixed incomplete spec check in retry path
+- Verified TypeScript compilation passes with `npx tsc --noEmit` (0 errors)
+
+Stage Summary:
+- Root causes: (1) Two code paths served PhoneCards without specs attached, forcing reliance on fallback fetch; (2) Quick View had fragile fetch guard and duplicated/inconsistent spec validation logic
+- Three files changed: `public.ts`, `reviews/[slug]/page.tsx`, `PhoneCard.tsx`
+- Build compiles cleanly with zero TypeScript errors

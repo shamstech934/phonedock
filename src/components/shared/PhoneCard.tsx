@@ -40,6 +40,14 @@ const QV_SPEC_ROWS: { key: keyof PhoneSpecs; label: string; icon?: typeof Cpu }[
   { key: 'weight', label: 'Weight' },
 ];
 
+// Shared helper: check if a specs object has at least one useful string field
+function specsHasData(s: any): boolean {
+  return s && (
+    s.chipset || s.ram || s.storage || s.display || s.battery ||
+    s.mainCamera || s.selfieCamera || s.chargingSpeed || s.os
+  );
+}
+
 type QVState = 'idle' | 'loaded' | 'loading' | 'error' | 'empty' | 'not-found';
 
 function QuickViewContent({
@@ -53,124 +61,90 @@ function QuickViewContent({
   const [specs, setSpecs] = useState<PhoneSpecs | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef<AbortController | null>(null);
-  const fetchAttemptedRef = useRef(false);
+
+  // Keep a ref to the latest phone.specs so the fetch callback always sees fresh data
+  const specsRef = useRef(phone.specs);
+  specsRef.current = phone.specs;
 
   // Check if pre-attached specs from listing API have useful data
-  const hasPreAttached = phone.specs && (
-    phone.specs.chipset || phone.specs.ram || phone.specs.storage ||
-    phone.specs.display || phone.specs.battery || phone.specs.mainCamera ||
-    phone.specs.selfieCamera || phone.specs.chargingSpeed || phone.specs.os
-  );
+  const hasPreAttached = specsHasData(phone.specs);
+
+  const fetchSpecs = useCallback(async (controller: AbortController) => {
+    setState('loading');
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const res = await fetch(`/api/phones/${encodeURIComponent(phone.slug)}`, {
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) { setState('not-found'); return; }
+        setState('error');
+        setErrorMsg(`Server error (${res.status})`);
+        return;
+      }
+
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        setState('error');
+        setErrorMsg('Invalid response format');
+        return;
+      }
+
+      const data = await res.json();
+      const phoneData = data?.phone;
+      if (!phoneData) {
+        setState('not-found');
+        return;
+      }
+
+      const s = phoneData.specs;
+      if (specsHasData(s)) {
+        setSpecs(s);
+        setState('loaded');
+      } else {
+        setState('empty');
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setState('error');
+        setErrorMsg('Request timed out');
+      } else {
+        setState('error');
+        setErrorMsg('Network error');
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, [phone.slug]);
 
   useEffect(() => {
-    if (hasPreAttached) {
-      setSpecs(phone.specs!);
+    // If pre-attached specs have data, use them directly (no fetch needed)
+    if (specsHasData(specsRef.current)) {
+      setSpecs(specsRef.current!);
       setState('loaded');
       return;
     }
 
-    // Fetch specs from single phone API
-    if (fetchAttemptedRef.current) return;
-    fetchAttemptedRef.current = true;
-    setState('loading');
-
+    // Otherwise fetch specs from the single phone API
     const controller = new AbortController();
     abortRef.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 8000);
 
-    (async () => {
-      try {
-        const res = await fetch(`/api/phones/${encodeURIComponent(phone.slug)}`, {
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          if (res.status === 404) { setState('not-found'); return; }
-          setState('error');
-          setErrorMsg(`Server error (${res.status})`);
-          return;
-        }
-
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          setState('error');
-          setErrorMsg('Invalid response format');
-          return;
-        }
-
-        const data = await res.json();
-        const phoneData = data?.phone;
-        if (!phoneData) {
-          setState('not-found');
-          return;
-        }
-
-        const s = phoneData.specs;
-        if (s && (s.chipset || s.ram || s.storage || s.display || s.battery || s.mainCamera || s.selfieCamera || s.chargingSpeed || s.os)) {
-          setSpecs(s);
-          setState('loaded');
-        } else {
-          setState('empty');
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          setState('error');
-          setErrorMsg('Request timed out');
-        } else {
-          setState('error');
-          setErrorMsg('Network error');
-        }
-      } finally {
-        clearTimeout(timeout);
-      }
-    })();
+    fetchSpecs(controller);
 
     return () => {
       controller.abort();
-      clearTimeout(timeout);
     };
-  }, [phone.slug, hasPreAttached]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phone.slug, hasPreAttached, fetchSpecs]);
 
-  const handleRetry = useCallback(() => { // eslint-disable-line react-hooks/exhaustive-deps
-    fetchAttemptedRef.current = false;
+  const handleRetry = useCallback(() => {
     setSpecs(null);
     setErrorMsg('');
-    setState('idle');
-    // Re-trigger by toggling state
-    setTimeout(() => {
-      fetchAttemptedRef.current = false;
-      setState('loading');
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const timeout = setTimeout(() => controller.abort(), 8000);
-
-      (async () => {
-        try {
-          const res = await fetch(`/api/phones/${encodeURIComponent(phone.slug)}`, {
-            signal: controller.signal,
-          });
-          if (!res.ok) {
-            setState('error');
-            setErrorMsg(`Server error (${res.status})`);
-            return;
-          }
-          const data = await res.json();
-          const s = data?.phone?.specs;
-          if (s && (s.chipset || s.ram || s.storage || s.display || s.battery || s.mainCamera)) {
-            setSpecs(s);
-            setState('loaded');
-          } else {
-            setState('empty');
-          }
-        } catch (err: any) {
-          setState('error');
-          setErrorMsg(err.name === 'AbortError' ? 'Request timed out' : 'Network error');
-        } finally {
-          clearTimeout(timeout);
-        }
-      })();
-    }, 50);
-  }, [phone.slug]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    fetchSpecs(controller);
+  }, [fetchSpecs]);
 
   const priceStr = formatPrice(phone.pricePKR);
   const displaySize = extractDisplaySize(specs?.display);

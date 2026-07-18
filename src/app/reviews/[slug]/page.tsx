@@ -12,7 +12,8 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
 import { connectDB } from '@/lib/mongodb';
-import { Phone as PhoneModel, UserReview } from '@/lib/models';
+import { Phone as PhoneModel, PhoneSpecs, UserReview } from '@/lib/models';
+import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
@@ -117,7 +118,7 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
     };
 
     const phones = await PhoneModel.find(query)
-      .populate('brand', 'name slug')
+      .populate('brand', 'name slug logo')
       .select(
         'modelName slug thumbnail pricePKR originalPricePKR overallRating cameraScore performanceScore batteryScore displayScore valueScore ptaApproved ptaStatus releaseDate trending featured brand'
       )
@@ -125,30 +126,14 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
       .limit(limit)
       .lean();
 
-    return phones.map((p: any): Phone => ({
-      id: String(p._id),
-      modelName: p.modelName,
-      slug: p.slug,
-      thumbnail: p.thumbnail || '',
-      pricePKR: p.pricePKR || 0,
-      originalPricePKR: p.originalPricePKR || 0,
-      brandId: p.brandId ? String(p.brandId) : '',
-      brand: p.brand ? { id: String(p.brand._id), name: p.brand.name, slug: p.brand.slug, logo: '', country: '', description: '' } : undefined,
-      description: '',
-      overallRating: p.overallRating || 0,
-      cameraScore: p.cameraScore || 0,
-      performanceScore: p.performanceScore || 0,
-      batteryScore: p.batteryScore || 0,
-      displayScore: p.displayScore || 0,
-      valueScore: p.valueScore || 0,
-      ptaStatus: p.ptaStatus || '',
-      ptaApproved: p.ptaApproved || false,
-      releaseDate: p.releaseDate || '',
-      trending: p.trending || false,
-      upcoming: false,
-      featured: p.featured || false,
-      published: true,
-    }));
+    // Attach specs so Quick View works without extra fetches
+    if (phones.length > 0) {
+      const ids = phones.map((p: any) => p._id);
+      const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
+      const specsMap = buildSpecsMap(specsArr);
+      return attachSpecsToRawPhones(phones, specsMap);
+    }
+    return phones.map((p: any) => phoneToJSON(p)) as Phone[];
   } catch {
     return [];
   }

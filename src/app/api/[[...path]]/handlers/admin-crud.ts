@@ -1098,17 +1098,28 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     let body: any;
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }); }
+    // Store original price for price history comparison
+    const _previousPricePKR = phone.pricePKR;
+
     const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
       thumbnail, description, featured, trending, upcoming, status: phoneStatus, active,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
       specs, benchmarks, images, prices, priceMode, manualLock, manualLockReason, sourceUrl } = body;
 
+    // ---- Top-level try-catch: prevent any uncaught error from bubbling up as generic 500 ----
+    try {
+
     // Update phone fields
     if (modelName) phone.modelName = modelName;
     if (inputSlug !== undefined && inputSlug !== phone.slug) {
-      const existing = await Phone.findOne({ slug: inputSlug, _id: { $ne: phone._id } });
-      if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
+      try {
+        const existing = await Phone.findOne({ slug: inputSlug, _id: { $ne: phone._id } });
+        if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
+      } catch (e: any) {
+        console.error('[SavePhone SlugCheck] Failed:', e.message);
+        return NextResponse.json({ error: 'Slug uniqueness check failed', details: e.message }, { status: 500 });
+      }
       phone.slug = inputSlug;
     }
     // Brand ID — handle both string ID and potential object
@@ -1154,10 +1165,11 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (seoTitle !== undefined) phone.seoTitle = seoTitle;
     if (seoDescription !== undefined) phone.seoDescription = seoDescription;
     if (keywords !== undefined) phone.keywords = keywords;
-    if (priceMode !== undefined && ['manual', 'automatic'].includes(priceMode)) (phone as any).priceMode = priceMode;
-    if (manualLock !== undefined) (phone as any).manualLock = Boolean(manualLock);
-    if (manualLockReason !== undefined) (phone as any).manualLockReason = String(manualLockReason).slice(0, 500);
-    if (sourceUrl !== undefined) { (phone as any).sourceUrl = String(sourceUrl); (phone as any).sourceName = 'Manual Entry'; }
+    // priceMode, manualLock, manualLockReason, sourceUrl, sourceName are all proper schema fields
+    if (priceMode !== undefined && ['manual', 'automatic'].includes(priceMode)) phone.priceMode = priceMode;
+    if (manualLock !== undefined) phone.manualLock = Boolean(manualLock);
+    if (manualLockReason !== undefined) phone.manualLockReason = String(manualLockReason).slice(0, 500);
+    if (sourceUrl !== undefined) { phone.sourceUrl = String(sourceUrl); phone.sourceName = 'Manual Entry'; }
 
     // Save phone — with clear error on failure
     try {
@@ -1223,10 +1235,18 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
           'antutu','geekbenchSingle','geekbenchMulti','gamingScore',
           'pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery',
         ]);
+        // String-type fields in the benchmark schema
+        const benchStringKeys = new Set(['pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery']);
         const safeBench: Record<string, any> = {};
         for (const [key, val] of Object.entries(rest)) {
           if (!allowedBenchKeys.has(key)) continue;
-          safeBench[key] = typeof val === 'number' ? val : (Number(val) || 0);
+          if (benchStringKeys.has(key)) {
+            // String fields — preserve string values, don't coerce to number
+            safeBench[key] = val !== null && val !== undefined ? String(val) : '';
+          } else {
+            // Numeric fields
+            safeBench[key] = typeof val === 'number' ? val : (Number(val) || 0);
+          }
         }
         if (Object.keys(safeBench).length > 0) {
           await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench }, { upsert: true, new: true, strict: false });
@@ -1248,12 +1268,25 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
         if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: any) => pr.price > 0).map((pr: any) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
       }
     } catch (e: any) { console.error('[SavePhone Prices]', e.message); }
-    // Record base price history if changed
-    if (pricePKR !== undefined && pricePKR > 0 && pricePKR !== (phone as any)._previousPricePKR) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
+    // Record base price history only if price actually changed
+    const newPricePKR = Number(pricePKR) || 0;
+    if (pricePKR !== undefined && newPricePKR > 0 && newPricePKR !== _previousPricePKR) {
+      try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: newPricePKR }); } catch (e) { console.error('[PriceHistory]', e); }
+    }
     // Targeted cache revalidation when price changes
-    if (pricePKR !== undefined) revalidatePricePages(phone.slug);
+    try {
+      if (pricePKR !== undefined) revalidatePricePages(phone.slug);
+    } catch (e: any) {
+      console.error('[SavePhone revalidatePricePages]', e.message);
+    }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: phone._id?.toString() });
+
+    } catch (e: any) {
+      // Catch-all for any uncaught error in the phone update flow
+      console.error('[SavePhone] Uncaught error during phone update:', e.message, e.stack);
+      return NextResponse.json({ error: 'Failed to update phone', details: e?.message || 'Unknown error' }, { status: 500 });
+    }
   }
 
   // ---- /api/admin/brands/:id (UPDATE) ----

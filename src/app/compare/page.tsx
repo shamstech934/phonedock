@@ -29,7 +29,6 @@ function CompareContent() {
   const [compared, setCompared] = useState(false);
   const [loading, setLoading] = useState(true);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [detailedSelected, setDetailedSelected] = useState<Phone[]>([]);
   const [fetchingDetails, setFetchingDetails] = useState(false);
@@ -56,9 +55,8 @@ function CompareContent() {
       setSelected(phones);
       if (phones.length >= 2) {
         setCompared(true);
-        setShowPicker(false);
       } else if (phones.length > 0) {
-        setShowPicker(true);
+        setPickerOpen(true);
       }
       setLoading(false);
     }).catch(() => { if (!cancelled) setLoading(false); });
@@ -145,7 +143,7 @@ function CompareContent() {
     setSelected(next);
     setCompared(false);
     if (next.length >= 2) {
-      setTimeout(() => { setCompared(true); setShowPicker(false); updateURL(next); }, 100);
+      setTimeout(() => { setCompared(true); setPickerOpen(false); updateURL(next); }, 100);
     } else {
       updateURL(next);
     }

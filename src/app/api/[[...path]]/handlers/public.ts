@@ -203,7 +203,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       publishedAt: v.publishedAt,
     }));
     await Phone.updateOne({ _id: phone._id }, { $inc: { views: 1 } });
-    return cached({ phone: phoneJSON, related: related.map((p: any) => phoneToJSON(p)) }, 300, 600);
+    return cached({ phone: phoneJSON, related: await attachListSpecs(related) }, 300, 600);
   }
 
   // ---- /api/phones/:slug/price-history ----
