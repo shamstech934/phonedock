@@ -274,3 +274,25 @@ Stage Summary:
 - 0 TypeScript errors, 0 ESLint errors, production build passes
 - 6 audit reports generated: API_RESPONSE_AUDIT, ADMIN_PANEL_AUDIT, PUBLIC_WEBSITE_AUDIT, DB_IMAGE_AUDIT, ACCESSIBILITY_AUDIT, PERFORMANCE_AUDIT
 - 3 deliverable reports updated: BUG_FIX_SUMMARY, FUNCTIONAL_AUDIT_REPORT, FUNCTIONAL_TEST_MATRIX
+
+---
+Task ID: 9
+Agent: main
+Task: Fix Quick View clipping, Compare scroll jump, create SafePhoneImage
+
+Work Log:
+- Analyzed root cause: Dialog z-index (z-50) equals sticky header z-index (z-50), causing dialog to render behind header
+- Bumped Dialog overlay and content z-index from z-50 to z-[100] in dialog.tsx
+- Confirmed Quick View already uses Radix DialogPortal (renders to document.body, outside card grid)
+- Confirmed Compare page already had scrollIntoView removed from previous fix
+- Removed autoFocus from Compare picker search input (was causing scroll jumps)
+- Created SafePhoneImage shared component with failed URL caching, Smartphone fallback, object-contain
+- Rewrote PhoneCard.tsx: SafePhoneImage, formatSpecValue (never shows [object Object]), normalizeSpecs, extractSpecsFromResponse (5 shapes), explicit states (idle/loading/success/empty/error), fetchIdRef for stale prevention, eye button ref for focus return
+- Replaced raw Image in Compare page with SafePhoneImage (selected chips + search results)
+- Cleaned unused imports (Smartphone from PhoneCard, Star/Monitor/ useCallback from Compare)
+
+Stage Summary:
+- Files changed: dialog.tsx, PhoneCard.tsx, compare/page.tsx, SafePhoneImage.tsx (new)
+- TypeScript: 0 errors. ESLint: 0 errors
+- Playwright verified: scrollIntoView=False, autoFocus=False, 0px scroll diff on picker open
+- Screenshots: test-results/quick-view-fixed.png, test-results/compare-picker-fixed.png
