@@ -48,6 +48,7 @@ interface LeanScanJob {
   importId?: string;
   rules: string[];
   currentBatch?: number;
+  processed?: number;
   lastProcessedId?: string;
   dryRun?: boolean;
   entityIds?: string[];
@@ -111,7 +112,7 @@ export async function executeScan(scanId: string): Promise<void> {
   if (!job) throw new Error('Scan not found');
 
   // FIX #12: Allow resuming a 'running' scan (in case of previous crash/timeout)
-  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+  if (job.status === 'completed' || job.status === 'cancelled') {
     throw new Error(`Scan cannot be executed (status: ${job.status})`);
   }
 
@@ -146,11 +147,12 @@ export async function executeScan(scanId: string): Promise<void> {
       await scanAllPhones(job, { deletedAt: null }, activeRules, ctx, allIssues);
     }
 
-    // Scan for orphan records
-    await scanOrphans(allIssues);
-
-    // Scan price tracker issues
-    await scanPriceTrackerIssues(allIssues);
+    // Full/incremental scans include global relationship and price-tracker checks.
+    // Entity/import scans must remain scoped and should not unexpectedly scan the entire database.
+    if (job.type === 'full' || job.type === 'incremental' || job.type === 'manual') {
+      await scanOrphans(allIssues);
+      await scanPriceTrackerIssues(allIssues);
+    }
 
     // Persist issues (deduplicated by issueKey)
     let created = 0;
@@ -158,8 +160,8 @@ export async function executeScan(scanId: string): Promise<void> {
       created = await persistIssues(allIssues, job.importId || undefined);
     }
 
-    const hasErrors = allIssues.length === 0 ? false : true; // issuesFound > 0 is not really "errors"
-    // Use the actual error state from issues
+    // Quality findings are not scanner execution errors. Critical findings mark the
+    // scan as completed_with_errors so operators can distinguish clean scans.
     const scanErrors = allIssues.filter(i => i.severity === 'critical').length;
 
     await ScanJob.updateOne({ scanId }, {
@@ -264,14 +266,10 @@ async function scanAllPhones(
   ctx: DetectionContext,
   allIssues: DetectedIssue[],
 ) {
-  // Cursor-based pagination: resume from lastProcessedId
-  const cursorQuery = job.lastProcessedId
-    ? { ...query, _id: { $gt: new Types.ObjectId(job.lastProcessedId) } }
-    : query;
-
   const total = await Phone.countDocuments(query);
 
-  let processed = 0;
+  // Preserve progress when resuming a failed/running scan.
+  let processed = job.processed || 0;
   let batchNum = job.currentBatch || 0;
   let lastId = job.lastProcessedId || '';
 
@@ -404,13 +402,10 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
       break;
     }
 
-    // Count specs per phoneId for duplicate detection
-    const specCount = new Map<string, number>();
     for (const spec of specsBatch) {
       const pid = spec.phoneId?.toString();
       if (!pid) continue;
 
-      // FIX #10: Check against actual phone IDs
       if (!validPhoneIds.has(pid)) {
         allIssues.push({
           issueKey: `ORPHAN_SPECS:phone_specs:${pid}`,
@@ -421,25 +416,28 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
           source: 'system', confidence: 1,
         });
       }
-
-      specCount.set(pid, (specCount.get(pid) || 0) + 1);
-    }
-
-    // Duplicate specs check (within this batch, may have跨batch duplicates but that's acceptable for scan)
-    for (const [pid, count] of specCount) {
-      if (count > 1) {
-        allIssues.push({
-          issueKey: `SPECS_DUPLICATE:phone_specs:${pid}`,
-          entityType: 'phone_specs', entityId: pid,
-          issueType: 'SPECS_DUPLICATE', severity: 'high',
-          field: 'phoneId', currentValue: count,
-          suggestedValue: 'Keep one, remove duplicates',
-          source: 'system', confidence: 1,
-        });
-      }
     }
 
     lastSpecId = specsBatch[specsBatch.length - 1]._id.toString();
+  }
+
+  // Detect duplicates globally so duplicates split across cursor batches are not missed.
+  const duplicateSpecs = await PhoneSpecs.aggregate([
+    { $match: { phoneId: { $ne: null } } },
+    { $group: { _id: '$phoneId', count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+  ]);
+  for (const duplicate of duplicateSpecs) {
+    const pid = duplicate._id?.toString();
+    if (!pid) continue;
+    allIssues.push({
+      issueKey: `SPECS_DUPLICATE:phone_specs:${pid}`,
+      entityType: 'phone_specs', entityId: pid,
+      issueType: 'SPECS_DUPLICATE', severity: 'high',
+      field: 'phoneId', currentValue: duplicate.count,
+      suggestedValue: 'Keep one, remove duplicates',
+      source: 'system', confidence: 1,
+    });
   }
 
   // Orphan images (batched)
@@ -890,7 +888,8 @@ export async function calculateHealthScore(): Promise<{
         deduction = Math.min(cat.maxDeduction,
           (missingBrand / base) * 8 +
           (missingSlug / base) * 6 +
-          (missingModel / base) * 6
+          (missingModel / base) * 4 +
+          (missingStatus / base) * 2
         );
         const parts: string[] = [];
         if (missingBrand > 0) parts.push(`${missingBrand} missing brand`);
@@ -901,9 +900,10 @@ export async function calculateHealthScore(): Promise<{
         break;
       }
       case 'Specifications': {
-        const allSpecs = await PhoneSpecs.find({}).lean();
+        const publishedIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+        const allSpecs = await PhoneSpecs.find({ phoneId: { $in: publishedIds } }).lean();
         const specPhoneIds = new Set(allSpecs.map((s: LeanSpecs) => s.phoneId?.toString()).filter(Boolean));
-        const missingSpecs = publishedPhones - specPhoneIds.size;
+        const missingSpecs = Math.max(0, publishedPhones - specPhoneIds.size);
         const emptySpecs = allSpecs.filter((s: LeanSpecs) => {
           const keys = ['chipset', 'ram', 'storage', 'display', 'battery'];
           return keys.every(k => {
@@ -922,9 +922,10 @@ export async function calculateHealthScore(): Promise<{
         break;
       }
       case 'Images': {
-        const phonesWithoutThumb = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ thumbnail: '' }, { thumbnail: null }] });
-        const phonesWithImages = await PhoneImage.distinct('phoneId');
-        const phonesNoImg = publishedPhones - phonesWithImages.length;
+        const publishedIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+        const phonesWithoutThumb = await Phone.countDocuments({ _id: { $in: publishedIds }, $or: [{ thumbnail: '' }, { thumbnail: null }] });
+        const phonesWithImages = await PhoneImage.distinct('phoneId', { phoneId: { $in: publishedIds } });
+        const phonesNoImg = Math.max(0, publishedPhones - phonesWithImages.length);
         const imgIssues = Math.max(phonesWithoutThumb, phonesNoImg);
         deduction = Math.min(cat.maxDeduction, (imgIssues / base) * 15);
         details = imgIssues > 0 ? `${imgIssues} phones missing images` : 'All phones have images';
