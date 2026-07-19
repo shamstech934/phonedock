@@ -710,8 +710,9 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     result.wouldFail = result.failed;
   }
 
-  result.created = createdIds.length;
-  result.updated = updatedIds.length;
+  // FIX #9: Do NOT overwrite counters here — they were set correctly above
+  // after successful DB writes. For dry-run, createdIds/updatedIds are empty
+  // (no DB ops), and wouldCreate/wouldUpdate etc. are already set.
   result.createdPhoneIds = createdIds;
   result.updatedPhoneIds = updatedIds;
   result.fieldChanges = fieldChanges;
