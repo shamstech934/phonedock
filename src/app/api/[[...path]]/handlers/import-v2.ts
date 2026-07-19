@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
-import { ImportJob, ImportBatch } from '@/lib/models';
+import { ImportJob, ImportBatch, ImportRecord } from '@/lib/models';
 import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
 
@@ -44,9 +44,10 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
   const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 12);
 
   try {
-    const parsed = await parseImportFile(buffer.buffer as ArrayBuffer, file.name, file.type);
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const parsed = await parseImportFile(arrayBuffer, file.name, file.type);
 
-    const job = await ImportJob.create({
+    await ImportJob.create({
       importId,
       fileName: file.name,
       fileType: parsed.fileType,
@@ -65,11 +66,25 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
       previewStats: undefined,
     });
 
+    // Persist every source row server-side. This is the durable source of truth for
+    // processing, retry, resume, and browser-refresh recovery. Rows are stored as
+    // separate documents to avoid MongoDB's 16 MB document limit on large imports.
+    const RECORD_INSERT_CHUNK = 500;
+    for (let offset = 0; offset < parsed.records.length; offset += RECORD_INSERT_CHUNK) {
+      const chunk = parsed.records.slice(offset, offset + RECORD_INSERT_CHUNK).map((payload, index) => ({
+        importId,
+        rowNumber: offset + index + 1,
+        payload,
+        checksum: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+      }));
+      if (chunk.length > 0) await ImportRecord.insertMany(chunk, { ordered: true });
+    }
+
     // Normalize and validate
     const { normalized, validCount, invalidCount, warnings, fieldInfo } = await validateRecords(importId, parsed.records);
 
-    // Count total batches
-    const totalBatches = Math.ceil(validCount / 200);
+    // Every source row must belong to exactly one batch, including invalid rows.
+    const totalBatches = Math.ceil(normalized.length / 200);
     await ImportJob.findOneAndUpdate(
       { importId },
       { $set: { status: 'ready', totalRecords: normalized.length, totalBatches, previewStats: { ...fieldInfo, totalRecords: normalized.length, validRecords: validCount, invalidRecords: invalidCount, warnings: warnings.length, duplicateEstimate: 0, estimateType: 'pending' } } },
@@ -85,6 +100,7 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
       success: true,
       data: {
         importId,
+        jobId: importId,
         fileType: parsed.fileType,
         fileName: file.name,
         fileSize: file.size,
@@ -113,6 +129,12 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
       },
     });
   } catch (err: unknown) {
+    // Avoid leaving a half-created job/source payload after parse or persistence failure.
+    await Promise.allSettled([
+      ImportRecord.deleteMany({ importId }),
+      ImportBatch.deleteMany({ importId }),
+      ImportJob.deleteOne({ importId }),
+    ]);
     return NextResponse.json({ success: false, error: { code: 'PARSE_ERROR', message: err instanceof Error ? err.message : String(err) } }, { status: 400 });
   }
 }
@@ -170,7 +192,7 @@ export async function handleImportV2Config(req: NextRequest, segments: string[])
 
   const importId = segments[3];
   const body = await req.json();
-  const { duplicateMode, batchSize, publishMode, dryRun } = body;
+  const { duplicateMode, batchSize, publishMode, dryRun, createMissingBrands } = body;
 
   if (duplicateMode && !['skip', 'update', 'replace', 'create_variant', 'review'].includes(duplicateMode)) {
     return NextResponse.json({ success: false, error: { code: 'INVALID_MODE', message: `Invalid duplicate mode: ${duplicateMode}` } }, { status: 400 });
@@ -204,6 +226,7 @@ export async function handleImportV2Config(req: NextRequest, segments: string[])
   }
 
   if (publishMode && ['immediate', 'review'].includes(publishMode)) update.publishMode = publishMode;
+  if (typeof createMissingBrands === 'boolean') update.createMissingBrands = createMissingBrands;
   if (typeof dryRun === 'boolean') update.dryRun = dryRun;
 
   // FIX #5: Do NOT use upsert: true — never create a fake job through config
@@ -245,16 +268,9 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
   const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
 
   const importId = segments[3];
-  const batchNumber = parseInt(segments[5]);
-  const body = await req.json();
-
-  if (!body.records || !Array.isArray(body.records)) {
-    return NextResponse.json({ success: false, error: { code: 'NO_RECORDS', message: 'No records array in request body' } }, { status: 400 });
-  }
-
-  if (body.records.length === 0) {
-    return NextResponse.json({ success: false, error: { code: 'EMPTY_BATCH', message: 'Empty batch — no records to process' } }, { status: 400 });
-  }
+  const batchNumber = Number.parseInt(segments[5], 10);
+  let body: Record<string, unknown> = {};
+  try { body = await req.json(); } catch { /* body is optional; source rows live in MongoDB */ }
 
   // FIX #6: Load job and use its saved configuration
   const job = await ImportJob.findOne({ importId }).select(
@@ -276,9 +292,33 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
     return NextResponse.json({ success: false, error: { code: 'INVALID_BATCH', message: `batchNumber must be 1..${job.totalBatches} (got ${batchNumber})` } }, { status: 400 });
   }
 
-  // FIX #6: Reject records exceeding configured batch size
-  if (body.records.length > job.batchSize) {
-    return NextResponse.json({ success: false, error: { code: 'BATCH_TOO_LARGE', message: `Batch has ${body.records.length} records, max is ${job.batchSize}` } }, { status: 400 });
+  // Load the durable server-side source rows for this range. The browser never
+  // needs to retain or re-send the original file, so retry/resume works after refresh.
+  const recordStart = (batchNumber - 1) * job.batchSize + 1;
+  const recordEnd = Math.min(recordStart + job.batchSize - 1, job.totalRecords);
+  const sourceRows = await ImportRecord.find({
+    importId,
+    rowNumber: { $gte: recordStart, $lte: recordEnd },
+  }).sort({ rowNumber: 1 }).select('rowNumber payload checksum -_id').lean();
+
+  const expectedCount = recordEnd - recordStart + 1;
+  if (sourceRows.length !== expectedCount) {
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'SOURCE_ROWS_MISSING',
+        message: `Expected ${expectedCount} persisted rows for batch ${batchNumber}, found ${sourceRows.length}`,
+      },
+    }, { status: 409 });
+  }
+
+  const records = sourceRows.map(row => row.payload as Record<string, unknown>);
+  const checksum = crypto.createHash('sha256')
+    .update(sourceRows.map(row => `${row.rowNumber}:${row.checksum}`).join('|'))
+    .digest('hex');
+
+  if (typeof body.checksum === 'string' && body.checksum !== checksum) {
+    return NextResponse.json({ success: false, error: { code: 'CHECKSUM_MISMATCH', message: 'Batch checksum mismatch' } }, { status: 409 });
   }
 
   // FIX #6: Use saved job config, NOT request body
@@ -287,23 +327,9 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
   const publishMode = job.publishMode || 'immediate';
   const createMissingBrands = job.createMissingBrands !== false;
 
-  // Calculate checksum from records
-  const checksum = body.records.map((r: Record<string, unknown>) => {
-    const key = `${r.brand || ''}|${r.model || ''}|${r.slug || ''}`;
-    let h = 0;
-    for (let i = 0; i < key.length; i++) {
-      h = ((h << 5) - h + key.charCodeAt(i)) | 0;
-    }
-    return (h >>> 0).toString(16).padStart(8, '0');
-  }).join(',');
-
-  // FIX #1: Calculate recordStart and recordEnd
-  const recordStart = (batchNumber - 1) * job.batchSize + 1;
-  const recordEnd = recordStart + body.records.length - 1;
-
   try {
     const result = await processBatch({
-      records: body.records,
+      records,
       importId,
       batchNumber,
       duplicateMode,
@@ -319,7 +345,7 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
     // FIX #9: Reconcile counters before potentially completing
     await reconcileJobCounters(importId);
 
-    return NextResponse.json({ success: true, data: result });
+    return NextResponse.json({ success: true, data: { ...result, total: records.length } });
   } catch (err: unknown) {
     // FIX #7: Return actual HTTP 500, not 200 with status in body
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -385,67 +411,82 @@ export async function handleImportV2Retry(req: NextRequest, segments: string[]):
     return NextResponse.json({ success: false, error: { code: 'NOT_RETRYABLE', message: 'Only failed or partially completed jobs can be retried' } }, { status: 400 });
   }
 
-  // FIX #2: Find failed batches
   const failedBatches = await ImportBatch.find({ importId, status: 'failed' }).sort({ batchNumber: 1 }).lean();
   if (failedBatches.length === 0) {
-    return NextResponse.json({ success: true, data: { message: 'No failed batches to retry' } });
+    return NextResponse.json({ success: true, data: { message: 'No failed batches to retry', retried: 0 } });
   }
 
-  let totalCreated = 0, totalUpdated = 0, totalSkipped = 0, totalFailed = 0;
-  const errors: Record<string, unknown>[] = [];
+  await ImportJob.updateOne({ importId }, { $set: { status: 'processing', completedAt: null } });
 
+  const retryResults: Array<Record<string, unknown>> = [];
   for (const batch of failedBatches) {
-    // FIX #2: Use persisted payload field if available (for batches after row 50)
-    // If payload was stored during batch processing, use it.
-    // Otherwise, this is a legacy batch that can't be retried.
-    if (!batch.recordStart || !batch.recordEnd) {
-      errors.push({
-        errorCode: 'NO_PAYLOAD',
-        errorMessage: `Batch ${batch.batchNumber} has no persisted payload (legacy batch). Re-upload required.`,
-        batchNumber: batch.batchNumber,
-      });
-      totalFailed++;
+    const recordStart = (batch.batchNumber - 1) * job.batchSize + 1;
+    const recordEnd = Math.min(recordStart + job.batchSize - 1, job.totalRecords);
+    const sourceRows = await ImportRecord.find({
+      importId,
+      rowNumber: { $gte: recordStart, $lte: recordEnd },
+    }).sort({ rowNumber: 1 }).select('rowNumber payload checksum -_id').lean();
+
+    const expectedCount = recordEnd - recordStart + 1;
+    if (sourceRows.length !== expectedCount) {
+      const message = `Persisted source rows missing for batch ${batch.batchNumber}: expected ${expectedCount}, found ${sourceRows.length}`;
+      await markBatchFailed(importId, batch.batchNumber, message);
+      retryResults.push({ batchNumber: batch.batchNumber, success: false, error: message });
       continue;
     }
 
-    // FIX #2: For retry, the client must re-send the records.
-    // We return the batch metadata so the client knows which records to re-send.
-    // The retry endpoint returns instructions; the actual retry happens via the batch endpoint.
-    errors.push({
-      errorCode: 'RETRY_INSTRUCTION',
-      errorMessage: `Batch ${batch.batchNumber} (rows ${batch.recordStart}-${batch.recordEnd}): Re-send these records via POST batches/${batch.batchNumber}`,
-      batchNumber: batch.batchNumber,
-      recordStart: batch.recordStart,
-      recordEnd: batch.recordEnd,
-      recordCount: batch.recordCount,
-    });
+    const checksum = crypto.createHash('sha256')
+      .update(sourceRows.map(row => `${row.rowNumber}:${row.checksum}`).join('|'))
+      .digest('hex');
+
+    await ImportBatch.updateOne(
+      { importId, batchNumber: batch.batchNumber },
+      { $set: { status: 'retrying', completedAt: null } },
+    );
+
+    try {
+      const result = await processBatch({
+        records: sourceRows.map(row => row.payload as Record<string, unknown>),
+        importId,
+        batchNumber: batch.batchNumber,
+        duplicateMode: job.duplicateMode,
+        dryRun: job.dryRun,
+        publishMode: job.publishMode,
+        createMissingBrands: job.createMissingBrands,
+        batchSize: job.batchSize,
+        checksum,
+        recordStart,
+        recordEnd,
+      });
+      retryResults.push({ batchNumber: batch.batchNumber, success: true, ...result });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      await markBatchFailed(importId, batch.batchNumber, message);
+      retryResults.push({ batchNumber: batch.batchNumber, success: false, error: message });
+    }
   }
 
-  // FIX #2: Mark failed batches as retrying
-  await ImportBatch.updateMany(
-    { importId, status: 'failed' },
-    { $set: { status: 'retrying' } },
-  );
+  await reconcileJobCounters(importId);
 
-  // Reset job status to processing so it can accept new batch submissions
-  await ImportJob.findOneAndUpdate(
-    { importId },
-    { $set: { status: 'processing' } },
-  );
-
-  return NextResponse.json({
-    success: true,
-    data: {
-      message: `${failedBatches.length} batches ready for retry. Re-submit records via the batch endpoint.`,
-      retryBatches: failedBatches.map(b => ({
-        batchNumber: b.batchNumber,
-        recordStart: b.recordStart,
-        recordEnd: b.recordEnd,
-        recordCount: b.recordCount,
-      })),
-      errors: errors.slice(0, 50),
+  const remainingFailed = await ImportBatch.countDocuments({ importId, status: 'failed' });
+  const completed = await ImportBatch.countDocuments({ importId, status: 'completed', executionMode: job.dryRun ? 'dry_run' : 'real' });
+  const allDone = completed >= job.totalBatches && remainingFailed === 0;
+  await ImportJob.updateOne({ importId }, {
+    $set: {
+      status: allDone ? 'completed' : 'completed_with_errors',
+      completedAt: new Date(),
+      errorSummary: remainingFailed > 0 ? `${remainingFailed} batch(es) still failed after retry` : '',
     },
   });
+
+  return NextResponse.json({
+    success: remainingFailed === 0,
+    data: {
+      retried: failedBatches.length,
+      remainingFailed,
+      results: retryResults,
+    },
+  }, { status: remainingFailed === 0 ? 200 : 207 });
 }
 
 // ============ POST /api/admin/import-v2/jobs/:id/cancel ============

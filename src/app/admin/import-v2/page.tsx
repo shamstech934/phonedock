@@ -44,7 +44,7 @@ const STORAGE_KEY = 'import-v2-active-job';
 
 type TabValue = 'upload' | 'preview' | 'settings' | 'progress' | 'history';
 type DuplicateMode = 'skip' | 'update' | 'replace' | 'review';
-type PublishMode = 'immediate' | 'review_queue';
+type PublishMode = 'immediate' | 'review';
 type JobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type BatchStatus = 'pending' | 'running' | 'completed' | 'failed';
 
@@ -430,7 +430,7 @@ export default function ImportV2Page() {
         currentBatch: 0,
         totalBatches,
         batches: Array.from({ length: totalBatches }, (_, i) => ({
-          batchNumber: i,
+          batchNumber: i + 1,
           status: 'pending' as BatchStatus,
           total: 0,
           created: 0,
@@ -443,7 +443,7 @@ export default function ImportV2Page() {
       setIsRunning(true);
       setIsPaused(false);
       setIsCompleted(false);
-      nextBatchRef.current = 0;
+      nextBatchRef.current = 1;
       startTimeRef.current = Date.now();
       saveJobToStorage(progress!);
     } finally {
@@ -459,7 +459,7 @@ export default function ImportV2Page() {
     const sendNextBatch = async () => {
       if (isPaused || runningBatchesRef.current.size >= MAX_CONCURRENCY) return;
       const batchNum = nextBatchRef.current;
-      if (batchNum >= progress.totalBatches) return;
+      if (batchNum > progress.totalBatches) return;
 
       nextBatchRef.current++;
       runningBatchesRef.current.add(batchNum);
@@ -468,8 +468,9 @@ export default function ImportV2Page() {
       setProgress(prev => {
         if (!prev) return prev;
         const batches = [...prev.batches];
-        if (batches[batchNum]) {
-          batches[batchNum] = { ...batches[batchNum], status: 'running', startedAt: new Date().toISOString() };
+        const batchIndex = batchNum - 1;
+        if (batches[batchIndex]) {
+          batches[batchIndex] = { ...batches[batchIndex], status: 'running', startedAt: new Date().toISOString() };
         }
         return { ...prev, currentBatch: batchNum, batches };
       });
@@ -482,9 +483,10 @@ export default function ImportV2Page() {
           setProgress(prev => {
             if (!prev) return prev;
             const batches = [...prev.batches];
-            if (batches[batchNum]) {
-              batches[batchNum] = {
-                ...batches[batchNum],
+            const batchIndex = batchNum - 1;
+            if (batches[batchIndex]) {
+              batches[batchIndex] = {
+                ...batches[batchIndex],
                 status: 'completed',
                 total: batchResult.total || 0,
                 created: batchResult.created || 0,
@@ -496,7 +498,7 @@ export default function ImportV2Page() {
               };
             }
             const newProcessed = prev.processedRecords + (batchResult.total || 0);
-            const allDone = batchNum + 1 >= prev.totalBatches && runningBatchesRef.current.size <= 1;
+            const allDone = batchNum >= prev.totalBatches && runningBatchesRef.current.size <= 1;
             return {
               ...prev,
               processedRecords: newProcessed,
@@ -513,8 +515,9 @@ export default function ImportV2Page() {
           setProgress(prev => {
             if (!prev) return prev;
             const batches = [...prev.batches];
-            if (batches[batchNum]) {
-              batches[batchNum] = { ...batches[batchNum], status: 'failed', completedAt: new Date().toISOString() };
+            const batchIndex = batchNum - 1;
+            if (batches[batchIndex]) {
+              batches[batchIndex] = { ...batches[batchIndex], status: 'failed', completedAt: new Date().toISOString() };
             }
             return { ...prev, batches };
           });
@@ -523,8 +526,9 @@ export default function ImportV2Page() {
         setProgress(prev => {
           if (!prev) return prev;
           const batches = [...prev.batches];
-          if (batches[batchNum]) {
-            batches[batchNum] = { ...batches[batchNum], status: 'failed', completedAt: new Date().toISOString() };
+          const batchIndex = batchNum - 1;
+          if (batches[batchIndex]) {
+            batches[batchIndex] = { ...batches[batchIndex], status: 'failed', completedAt: new Date().toISOString() };
           }
           return { ...prev, batches };
         });
@@ -534,7 +538,7 @@ export default function ImportV2Page() {
     };
 
     const interval = setInterval(() => {
-      if (!isPaused && runningBatchesRef.current.size < MAX_CONCURRENCY && nextBatchRef.current < (progress?.totalBatches || 0)) {
+      if (!isPaused && runningBatchesRef.current.size < MAX_CONCURRENCY && nextBatchRef.current <= (progress?.totalBatches || 0)) {
         sendNextBatch();
       }
     }, 300);
@@ -592,21 +596,39 @@ export default function ImportV2Page() {
   };
 
   // ── Retry failed batches ──────────────────────────────────────────────
-  const handleRetryFailed = () => {
-    if (!progress) return;
-    const failedBatches = progress.batches.filter(b => b.status === 'failed');
-    if (failedBatches.length === 0) return;
-    // Reset failed batches to pending and restart
-    setProgress(prev => {
-      if (!prev) return prev;
-      const batches = prev.batches.map(b =>
-        b.status === 'failed' ? { ...b, status: 'pending' as BatchStatus, created: 0, updated: 0, skipped: 0, failed: 0 } : b
-      );
-      nextBatchRef.current = Math.min(...failedBatches.map(b => b.batchNumber));
-      return { ...prev, batches, status: 'running' as JobStatus };
-    });
-    setIsRunning(true);
-    setIsPaused(false);
+  const handleRetryFailed = async () => {
+    if (!jobId || actionLockRef.current) return;
+    actionLockRef.current = true;
+    setActionLoading(true);
+    try {
+      const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/retry`, {});
+      if (!res.ok && res.status !== 207) return;
+      const refreshed = await safeFetch<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}`);
+      if (refreshed.ok && refreshed.data) {
+        const data = refreshed.data;
+        setProgress(prev => prev ? {
+          ...prev,
+          status: data.status === 'completed' ? 'completed' : 'failed',
+          processedRecords: data.processedRecords || 0,
+          createdCount: data.createdRecords || 0,
+          updatedCount: data.updatedRecords || 0,
+          skippedCount: data.skippedRecords || 0,
+          failedCount: data.failedRecords || 0,
+          batches: (data.batches || []).map((b: any) => ({
+            batchNumber: b.batchNumber,
+            status: b.status === 'completed' ? 'completed' : b.status === 'failed' ? 'failed' : 'pending',
+            total: (b.created || 0) + (b.updated || 0) + (b.skipped || 0) + (b.failed || 0),
+            created: b.created || 0,
+            updated: b.updated || 0,
+            skipped: b.skipped || 0,
+            failed: b.failed || 0,
+          })),
+        } : prev);
+      }
+    } finally {
+      setActionLoading(false);
+      actionLockRef.current = false;
+    }
   };
 
   // ── Rollback ──────────────────────────────────────────────────────────
@@ -669,7 +691,7 @@ export default function ImportV2Page() {
     setIsPaused(false);
     setIsRunning(false);
     setIsCompleted(false);
-    nextBatchRef.current = 0;
+    nextBatchRef.current = 1;
     runningBatchesRef.current.clear();
     clearJobStorage();
     if (pollRef.current) clearInterval(pollRef.current);
@@ -1081,10 +1103,10 @@ export default function ImportV2Page() {
                   <Label
                     htmlFor="pub-review"
                     className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-                      publishMode === 'review_queue' ? 'border-blue-300 bg-blue-50/60' : 'border-gray-200 hover:bg-gray-50'
+                      publishMode === 'review' ? 'border-blue-300 bg-blue-50/60' : 'border-gray-200 hover:bg-gray-50'
                     }`}
                   >
-                    <RadioGroupItem value="review_queue" id="pub-review" className="mt-0.5" />
+                    <RadioGroupItem value="review" id="pub-review" className="mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-gray-900">Review Queue</p>
                       <p className="text-xs text-gray-500 mt-0.5">Phones are held for manual approval</p>
@@ -1238,7 +1260,7 @@ export default function ImportV2Page() {
                         <TableBody>
                           {progress?.batches.map(b => (
                             <TableRow key={b.batchNumber}>
-                              <TableCell className="font-mono text-xs">#{b.batchNumber + 1}</TableCell>
+                              <TableCell className="font-mono text-xs">#{b.batchNumber}</TableCell>
                               <TableCell>
                                 <Badge className={`text-xs ${batchStatusColor(b.status)}`}>
                                   {b.status}
@@ -1447,7 +1469,7 @@ export default function ImportV2Page() {
                                       <TableBody>
                                         {h.batches.map(b => (
                                           <TableRow key={b.batchNumber}>
-                                            <TableCell className="text-xs font-mono">#{b.batchNumber + 1}</TableCell>
+                                            <TableCell className="text-xs font-mono">#{b.batchNumber}</TableCell>
                                             <TableCell>
                                               <Badge className={`text-xs ${batchStatusColor(b.status)}`}>{b.status}</Badge>
                                             </TableCell>

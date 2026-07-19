@@ -339,26 +339,28 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     errors: [], fieldChanges: [], specsChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
   };
 
-  // FIX #3: Check idempotency INCLUDING execution mode
-  const existing = await ImportBatch.findOne({
-    importId, batchNumber, status: 'completed', executionMode: 'real',
-  });
-  if (existing) {
+  // Idempotency is scoped to the persisted source checksum and execution mode.
+  // A completed batch may be safely replayed, but never with different source rows.
+  const existingBatch = await ImportBatch.findOne({ importId, batchNumber });
+  if (existingBatch?.status === 'completed' && existingBatch.executionMode === executionMode) {
+    if (existingBatch.checksum !== batchChecksum) {
+      throw new Error(`Checksum mismatch for completed batch ${batchNumber}`);
+    }
     return {
-      created: existing.created || 0,
-      updated: existing.updated || 0,
-      skipped: existing.skipped || 0,
-      failed: existing.failed || 0,
-      replaced: existing.replaced || 0,
-      errors: existing.errors || [],
-      fieldChanges: existing.fieldChanges || [],
-      specsChanges: existing.specsChanges || [],
-      createdPhoneIds: existing.createdPhoneIds || [],
-      updatedPhoneIds: existing.updatedPhoneIds || [],
+      created: existingBatch.created || 0,
+      updated: existingBatch.updated || 0,
+      skipped: existingBatch.skipped || 0,
+      failed: existingBatch.failed || 0,
+      replaced: existingBatch.replaced || 0,
+      errors: existingBatch.errors || [],
+      fieldChanges: existingBatch.fieldChanges || [],
+      specsChanges: existingBatch.specsChanges || [],
+      createdPhoneIds: existingBatch.createdPhoneIds || [],
+      updatedPhoneIds: existingBatch.updatedPhoneIds || [],
     };
   }
 
-  // FIX #1: Create the ImportBatch with ALL metadata upfront
+  // Create/update the ImportBatch with all durable metadata before doing writes.
   await ImportBatch.findOneAndUpdate(
     { importId, batchNumber },
     {
@@ -370,7 +372,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         recordEnd: calcRecordEnd,
         recordCount,
         checksum: batchChecksum,
-        attemptCount: (existing?.attemptCount || 0) + 1,
+        attemptCount: (existingBatch?.attemptCount || 0) + 1,
       },
     },
     { upsert: true, new: true, runValidators: false },
