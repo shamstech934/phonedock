@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Battery Phones in Pakistan 2025 | PhoneDock',
+  title: 'Best Battery Phones in Pakistan 2025',
   description: 'Find smartphones with the longest battery life in Pakistan',
   alternates: { canonical: `${BASE_URL}/best-battery-phone` },
   openGraph: {
-    title: 'Best Battery Phones in Pakistan 2025 | PhoneDock',
+    title: 'Best Battery Phones in Pakistan 2025',
     description: 'Find smartphones with the longest battery life in Pakistan',
     url: `${BASE_URL}/best-battery-phone`,
     type: 'website',

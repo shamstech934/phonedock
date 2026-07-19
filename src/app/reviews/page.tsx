@@ -9,11 +9,11 @@ import { Footer } from '@/components/shared/Footer';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'User Reviews | PhoneDock Pakistan',
+  title: 'User Reviews',
   description: 'Read real user reviews for smartphones in Pakistan',
   alternates: { canonical: `${BASE_URL}/reviews` },
   openGraph: {
-    title: 'User Reviews | PhoneDock Pakistan',
+    title: 'User Reviews',
     description: 'Read real user reviews for smartphones in Pakistan',
     url: `${BASE_URL}/reviews`,
     type: 'website',

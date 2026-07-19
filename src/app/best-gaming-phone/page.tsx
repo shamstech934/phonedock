@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Gaming Phones in Pakistan 2025 | PhoneDock',
+  title: 'Best Gaming Phones in Pakistan 2025',
   description: 'Top smartphones for gaming in Pakistan with powerful processors and displays',
   alternates: { canonical: `${BASE_URL}/best-gaming-phone` },
   openGraph: {
-    title: 'Best Gaming Phones in Pakistan 2025 | PhoneDock',
+    title: 'Best Gaming Phones in Pakistan 2025',
     description: 'Top smartphones for gaming in Pakistan with powerful processors and displays',
     url: `${BASE_URL}/best-gaming-phone`,
     type: 'website',

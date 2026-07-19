@@ -155,10 +155,10 @@ export async function generateMetadata({
   const { phone, reviews } = await getPhoneWithReviews(slug);
 
   if (!phone) {
-    return { title: 'Reviews Not Found | PhoneDock Pakistan' };
+    return { title: 'Reviews Not Found' };
   }
 
-  const title = `${phone.modelName} User Reviews & Ratings | PhoneDock Pakistan`;
+  const title = `${phone.modelName} User Reviews & Ratings`;
   const reviewCount = reviews.length;
   const avgRating =
     reviewCount > 0
@@ -265,45 +265,42 @@ export default async function PhoneReviewPage({
   /* JSON-LD structured data */
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@type': 'Review',
-    name: `${phone.modelName} User Reviews`,
-    itemReviewed: {
-      '@type': 'Product',
-      name: phone.modelName,
-      image: phone.thumbnail || undefined,
-      brand: phone.brand ? { '@type': 'Brand', name: phone.brand.name } : undefined,
-      offers: {
-        '@type': 'Offer',
-        price: phone.pricePKR,
-        priceCurrency: 'PKR',
-        availability: 'https://schema.org/InStock',
-      },
-    },
-    reviewRating: {
+    '@type': 'Product',
+    name: phone.modelName,
+    image: phone.thumbnail || undefined,
+    brand: phone.brand ? { '@type': 'Brand', name: phone.brand.name } : undefined,
+    url: `${BASE_URL}/reviews/${phone.slug}`,
+    offers: phone.pricePKR > 0 ? {
+      '@type': 'Offer',
+      price: phone.pricePKR,
+      priceCurrency: 'PKR',
+      availability: 'https://schema.org/InStock',
+      url: `${BASE_URL}/phones/${phone.slug}`,
+    } : undefined,
+    aggregateRating: reviews.length > 0 ? {
       '@type': 'AggregateRating',
-      ratingValue: avgUserRating > 0 ? avgUserRating.toFixed(1) : phone.overallRating?.toFixed(1) || '0',
+      ratingValue: avgUserRating.toFixed(1),
       bestRating: 5,
       worstRating: 1,
       reviewCount: reviews.length,
-    },
-    author: {
-      '@type': 'Organization',
-      name: 'PhoneDock',
-      url: BASE_URL,
-    },
-    publisher: {
-      '@type': 'Organization',
-      name: 'PhoneDock',
-      url: BASE_URL,
-      logo: {
-        '@type': 'ImageObject',
-        url: `${BASE_URL}/logo.svg`,
-      },
-    },
-    mainEntityOfPage: {
-      '@type': 'WebPage',
-      '@id': `${BASE_URL}/reviews/${phone.slug}`,
-    },
+    } : undefined,
+    review: reviews.slice(0, 20).map((review) => ({
+      '@type': 'Review',
+      author: { '@type': 'Person', name: review.name },
+      datePublished: review.createdAt || undefined,
+      reviewBody: review.comment,
+      reviewRating: { '@type': 'Rating', ratingValue: review.rating, bestRating: 5, worstRating: 1 },
+    })),
+  };
+
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
+      { '@type': 'ListItem', position: 2, name: 'Reviews', item: `${BASE_URL}/reviews` },
+      { '@type': 'ListItem', position: 3, name: phone.modelName, item: `${BASE_URL}/reviews/${phone.slug}` },
+    ],
   };
 
   return (
@@ -311,10 +308,8 @@ export default async function PhoneReviewPage({
       <Header />
       <main className="flex-1">
         {/* JSON-LD */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
 
         <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}

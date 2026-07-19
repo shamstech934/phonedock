@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Budget Phones in Pakistan 2025 | PhoneDock',
+  title: 'Best Budget Phones in Pakistan 2025',
   description: 'Best value smartphones under budget in Pakistan',
   alternates: { canonical: `${BASE_URL}/best-budget-phone` },
   openGraph: {
-    title: 'Best Budget Phones in Pakistan 2025 | PhoneDock',
+    title: 'Best Budget Phones in Pakistan 2025',
     description: 'Best value smartphones under budget in Pakistan',
     url: `${BASE_URL}/best-budget-phone`,
     type: 'website',

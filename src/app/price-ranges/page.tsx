@@ -8,11 +8,11 @@ import { Footer } from '@/components/shared/Footer';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Phones by Price Range in Pakistan | PhoneDock',
+  title: 'Phones by Price Range in Pakistan',
   description: 'Browse smartphones by price range in Pakistan',
   alternates: { canonical: `${BASE_URL}/price-ranges` },
   openGraph: {
-    title: 'Phones by Price Range in Pakistan | PhoneDock',
+    title: 'Phones by Price Range in Pakistan',
     description: 'Browse smartphones by price range in Pakistan',
     url: `${BASE_URL}/price-ranges`,
     type: 'website',

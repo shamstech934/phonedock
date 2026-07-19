@@ -17,11 +17,11 @@ export async function generateMetadata({ params }: { params: Promise<{ price: st
   const displayPrice = isNaN(numericPrice) ? price : formatPrice(numericPrice);
 
   return {
-    title: `Phones Under ${displayPrice} in Pakistan | PhoneDock`,
+    title: `Phones Under ${displayPrice} in Pakistan`,
     description: `Best smartphones under ${displayPrice} in Pakistan with specs and prices`,
     alternates: { canonical: `${BASE_URL}/phones-under/${price}` },
     openGraph: {
-      title: `Phones Under ${displayPrice} in Pakistan | PhoneDock`,
+      title: `Phones Under ${displayPrice} in Pakistan`,
       description: `Best smartphones under ${displayPrice} in Pakistan with specs and prices`,
       url: `${BASE_URL}/phones-under/${price}`,
       type: 'website',

@@ -10,8 +10,8 @@ export async function fetchPhoneDetailForMetadata(slug: string) {
   await connectDB();
 
   const phone = await Phone.findOne({ slug, active: true, status: 'published' })
-    .select('modelName pricePKR thumbnail description brandId')
-    .populate('brand', 'name')
+    .select('modelName slug pricePKR thumbnail description brandId overallRating releaseDate ptaApproved updatedAt')
+    .populate('brand', 'name slug')
     .lean();
 
   return phone;

@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Upcoming Phones in Pakistan 2025 | PhoneDock',
+  title: 'Upcoming Phones in Pakistan 2025',
   description: 'Discover upcoming smartphones launching in Pakistan',
   alternates: { canonical: `${BASE_URL}/upcoming` },
   openGraph: {
-    title: 'Upcoming Phones in Pakistan 2025 | PhoneDock',
+    title: 'Upcoming Phones in Pakistan 2025',
     description: 'Discover upcoming smartphones launching in Pakistan',
     url: `${BASE_URL}/upcoming`,
     type: 'website',

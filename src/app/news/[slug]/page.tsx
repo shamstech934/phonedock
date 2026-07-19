@@ -26,6 +26,7 @@ interface NewsArticle {
   seoTitle: string;
   seoDescription: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 /* ── Data fetchers ─────────────────────────────────────────────────── */
@@ -37,7 +38,7 @@ async function getNewsArticle(slug: string): Promise<NewsArticle | null> {
       published: true,
       status: 'published',
     })
-      .select('title slug content excerpt category image author published status seoTitle seoDescription createdAt')
+      .select('title slug content excerpt category image author published status seoTitle seoDescription createdAt updatedAt')
       .lean();
 
     if (!article) return null;
@@ -56,6 +57,7 @@ async function getNewsArticle(slug: string): Promise<NewsArticle | null> {
       seoTitle: article.seoTitle,
       seoDescription: article.seoDescription,
       createdAt: article.createdAt ? new Date(article.createdAt).toISOString() : '',
+      updatedAt: article.updatedAt ? new Date(article.updatedAt).toISOString() : '',
     };
   } catch {
     return null;
@@ -72,7 +74,7 @@ async function getRelatedNews(currentSlug: string, category: string, limit = 4):
       ...(category && category !== 'General' ? { category } : {}),
     })
       .sort({ createdAt: -1 })
-      .select('title slug excerpt category image author createdAt')
+      .select('title slug excerpt category image author createdAt updatedAt')
       .limit(limit)
       .lean();
 
@@ -90,6 +92,7 @@ async function getRelatedNews(currentSlug: string, category: string, limit = 4):
       seoTitle: '',
       seoDescription: '',
       createdAt: a.createdAt ? new Date(a.createdAt).toISOString() : '',
+      updatedAt: a.updatedAt ? new Date(a.updatedAt).toISOString() : '',
     }));
   } catch {
     return [];
@@ -119,10 +122,10 @@ export async function generateMetadata({
   const article = await getNewsArticle(slug);
 
   if (!article) {
-    return { title: 'News Not Found | PhoneDock Pakistan' };
+    return { title: 'News Not Found' };
   }
 
-  const title = article.seoTitle || `${article.title} | PhoneDock Pakistan`;
+  const title = article.seoTitle || article.title;
   const description =
     article.seoDescription ||
     article.excerpt ||
@@ -182,7 +185,7 @@ export default async function NewsArticlePage({
     description: article.excerpt || article.content?.substring(0, 200),
     image: article.image || undefined,
     datePublished: article.createdAt,
-    dateModified: article.createdAt,
+    dateModified: article.updatedAt || article.createdAt,
     author: article.author
       ? {
           '@type': 'Person',
@@ -204,15 +207,23 @@ export default async function NewsArticlePage({
     },
   };
 
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
+      { '@type': 'ListItem', position: 2, name: 'News', item: `${BASE_URL}/news` },
+      { '@type': 'ListItem', position: 3, name: article.title, item: `${BASE_URL}/news/${article.slug}` },
+    ],
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
         {/* JSON-LD */}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
 
         <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}

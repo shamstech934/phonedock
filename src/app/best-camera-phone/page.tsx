@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Camera Phones in Pakistan 2025 | PhoneDock',
+  title: 'Best Camera Phones in Pakistan 2025',
   description: 'Ranking the best camera smartphones available in Pakistan based on expert scores',
   alternates: { canonical: `${BASE_URL}/best-camera-phone` },
   openGraph: {
-    title: 'Best Camera Phones in Pakistan 2025 | PhoneDock',
+    title: 'Best Camera Phones in Pakistan 2025',
     description: 'Ranking the best camera smartphones available in Pakistan based on expert scores',
     url: `${BASE_URL}/best-camera-phone`,
     type: 'website',
