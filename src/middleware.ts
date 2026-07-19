@@ -4,8 +4,11 @@
  * Responsibilities:
  *  1. Block unauthenticated /admin/* requests (redirect to /admin/login)
  *  2. Block unauthenticated /api/admin/* requests (401)
- *  3. Rate-limit login attempts (in-memory, per IP)
- *  4. Redirect /admin to /admin/login when no session
+ *  3. Redirect /admin to /admin/login when no session
+ *
+ * Request rate limiting is enforced in the API handler with MongoDB-backed
+ * counters. Middleware must remain stateless because Edge/serverless instances
+ * do not share memory and can be recycled at any time.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,10 +18,6 @@ import { NextRequest, NextResponse } from 'next/server';
 const LOGIN_PATH = '/admin/login';
 const SESSION_COOKIE = 'pd_session';
 
-// Rate limiter: max 15 login-related requests per minute per IP
-const loginRateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const LOGIN_RATE_MAX = 15;
-const LOGIN_RATE_WINDOW_MS = 60_000;
 
 // ============ HELPERS ============
 
@@ -40,46 +39,14 @@ function isStaticAsset(pathname: string): boolean {
   );
 }
 
-function checkLoginRateLimit(ip: string): boolean {
-  const now = Date.now();
-  evictExpiredRateLimitEntries(now);
-  let entry = loginRateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + LOGIN_RATE_WINDOW_MS };
-    loginRateLimitMap.set(ip, entry);
-  }
-  entry.count++;
-  return entry.count <= LOGIN_RATE_MAX;
-}
-
-// Opportunistic cleanup avoids long-lived timers in serverless/edge runtimes.
-function evictExpiredRateLimitEntries(now: number): void {
-  if (loginRateLimitMap.size < 100) return;
-  for (const [ip, entry] of loginRateLimitMap) {
-    if (now > entry.resetAt) loginRateLimitMap.delete(ip);
-  }
-}
-
 // ============ MIDDLEWARE ============
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-
   // Skip static assets & public pages
   if (isStaticAsset(pathname)) return NextResponse.next();
   if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
     return NextResponse.next();
-  }
-
-  // === LOGIN RATE LIMITING ===
-  if (isLoginPath(pathname) || pathname === '/api/admin/login' || pathname === '/api/admin/forgot-password' || pathname === '/api/admin/reset-password' || pathname === '/api/admin/auth/login' || pathname === '/api/admin/auth/forgot-password') {
-    if (!checkLoginRateLimit(ip)) {
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.' },
-        { status: 429, headers: { 'Retry-After': '60' } }
-      );
-    }
   }
 
   // === LOGIN PAGE: allow through (no session needed) ===
@@ -124,7 +91,7 @@ export const config = {
     // Match all admin routes and API admin routes
     '/admin/:path*',
     '/api/admin/:path*',
-    // Also match login-related paths for rate limiting
+    // Login path is included so public-route handling stays explicit
     '/admin/login',
   ],
 };

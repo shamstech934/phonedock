@@ -143,7 +143,9 @@ const PriceAlertSchema = new Schema({
   unsubscribedAt: { type: Date, default: null },
 }, { timestamps: true });
 
-PriceAlertSchema.index({ phoneId: 1, email: 1 });
+// One logical subscription per phone/email. This also closes the race where
+// concurrent requests could create multiple pending/confirmed documents.
+PriceAlertSchema.index({ phoneId: 1, email: 1 }, { unique: true });
 PriceAlertSchema.index({ notified: 1, createdAt: -1 });
 PriceAlertSchema.index({ confirmTokenHash: 1 }, { sparse: true });
 

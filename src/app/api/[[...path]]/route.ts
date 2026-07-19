@@ -280,14 +280,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
       const body = await req.json();
       const { name, email, rating, comment, turnstileToken } = body;
-      if (!name || !email || !rating || !comment) return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+      if (!name || !email || rating === undefined || rating === null || !comment) {
+        return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+      }
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const normalizedRating = Number(rating);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 });
+      }
+      if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+        return NextResponse.json({ error: 'Rating must be an integer from 1 to 5' }, { status: 400 });
+      }
       // Turnstile verification (skip if not configured — graceful degradation)
       if (process.env.TURNSTILE_SECRET_KEY) {
         if (!turnstileToken) return NextResponse.json({ error: 'Bot verification required' }, { status: 403 });
         const tsValid = await verifyTurnstile(turnstileToken, ip);
         if (!tsValid) return NextResponse.json({ error: 'Bot verification failed' }, { status: 403 });
       }
-      if (rating < 1 || rating > 5) return NextResponse.json({ error: 'Rating must be 1-5' }, { status: 400 });
       if (comment.length < 10 || comment.length > 1000) return NextResponse.json({ error: 'Comment must be 10-1000 characters' }, { status: 400 });
       if (name.length > 100) return NextResponse.json({ error: 'Name too long' }, { status: 400 });
       // Spam detection
@@ -296,10 +305,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (/(buy now|click here|free money|lottery|winner|crypto|investment)/i.test(comment)) spamFlags.push('suspected_spam');
       if (/^[A-Z\s.!?]+$/.test(comment)) spamFlags.push('all_caps');
       if (spamFlags.length > 0) {
-        await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: email.trim().toLowerCase().slice(0, 200), rating, comment: comment.trim().slice(0, 1000), status: 'flagged', spamFlags });
+        await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: normalizedEmail.slice(0, 200), rating: normalizedRating, comment: comment.trim().slice(0, 1000), status: 'flagged', spamFlags });
         return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
       }
-      await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: email.trim().toLowerCase().slice(0, 200), rating, comment: comment.trim().slice(0, 1000), status: 'pending', spamFlags: [] });
+      await UserReview.create({ phoneId: phone._id, name: name.trim().slice(0, 100), email: normalizedEmail.slice(0, 200), rating: normalizedRating, comment: comment.trim().slice(0, 1000), status: 'pending', spamFlags: [] });
       return NextResponse.json({ success: true, message: 'Review submitted for moderation' });
     }
 

@@ -130,17 +130,15 @@ const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
 
 /** Persist an AdminSession record — call after createSignedSession */
 export async function persistSessionRecord(adminId: string, jti: string, ip?: string, userAgent?: string): Promise<void> {
-  try {
-    await AdminSession.create({
-      adminId,
-      tokenJti: jti,
-      ip: ip || '',
-      userAgent: (userAgent || '').slice(0, 500),
-      expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000),
-    });
-  } catch (e) {
-    console.error('[AdminSession] Failed to create session record:', e);
-  }
+  // Fail closed: callers must not issue a cookie whose backing session record
+  // was not persisted, otherwise the next request is immediately rejected.
+  await AdminSession.create({
+    adminId,
+    tokenJti: jti,
+    ip: ip || '',
+    userAgent: (userAgent || '').slice(0, 500),
+    expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000),
+  });
 }
 
 /** Validate an AdminSession record by jti — FAIL CLOSED */
