@@ -11,7 +11,7 @@ const AdminSessionSchema = new Schema({
 }, { timestamps: true });
 
 // TTL index: auto-delete expired sessions after 1 hour
-AdminSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 3600, background: true });
+AdminSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
 AdminSessionSchema.index({ adminId: 1, revokedAt: 1 });
 AdminSessionSchema.index({ revokedAt: 1, expiresAt: 1 });
 

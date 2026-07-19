@@ -187,7 +187,12 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     else if (status === 'featured') filter.featured = true;
     // Brand filter
     const brandId = url.searchParams.get('brandId');
-    if (brandId) filter.brandId = brandId;
+    if (brandId) {
+      if (!mongoose.isValidObjectId(brandId)) {
+        return NextResponse.json({ error: 'Invalid brandId' }, { status: 400 });
+      }
+      filter.brandId = brandId;
+    }
     // PTA filter
     const ptaFilter = url.searchParams.get('pta');
     if (ptaFilter === 'approved') filter.ptaApproved = true;
@@ -197,8 +202,19 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const maxPrice = url.searchParams.get('maxPrice');
     if (minPrice || maxPrice) {
       const priceFilter: Record<string, number> = {};
-      if (minPrice) priceFilter.$gte = parseInt(minPrice, 10);
-      if (maxPrice) priceFilter.$lte = parseInt(maxPrice, 10);
+      if (minPrice) {
+        const parsedMin = Number(minPrice);
+        if (!Number.isFinite(parsedMin) || parsedMin < 0) return NextResponse.json({ error: 'Invalid minPrice' }, { status: 400 });
+        priceFilter.$gte = parsedMin;
+      }
+      if (maxPrice) {
+        const parsedMax = Number(maxPrice);
+        if (!Number.isFinite(parsedMax) || parsedMax < 0) return NextResponse.json({ error: 'Invalid maxPrice' }, { status: 400 });
+        priceFilter.$lte = parsedMax;
+      }
+      if (priceFilter.$gte !== undefined && priceFilter.$lte !== undefined && priceFilter.$gte > priceFilter.$lte) {
+        return NextResponse.json({ error: 'minPrice cannot exceed maxPrice' }, { status: 400 });
+      }
       filter.pricePKR = priceFilter;
     }
     // Featured/Trending toggles
@@ -700,7 +716,12 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     if (url.searchParams.get('featured') === 'true') filter.featured = true;
     // Brand filter
     const brandId = url.searchParams.get('brandId');
-    if (brandId) filter.brandId = brandId;
+    if (brandId) {
+      if (!mongoose.isValidObjectId(brandId)) {
+        return NextResponse.json({ error: 'Invalid brandId' }, { status: 400 });
+      }
+      filter.brandId = brandId;
+    }
     // Phone filter
     const phoneId = url.searchParams.get('phoneId');
     if (phoneId) filter.phoneId = phoneId;

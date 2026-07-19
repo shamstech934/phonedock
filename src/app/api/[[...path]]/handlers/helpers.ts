@@ -13,7 +13,7 @@ export { Admin } from '@/lib/models';
 // ============ CONSTANTS ============
 
 export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
-export const MAX_UPLOAD_RECORDS = 5000;
+export const MAX_UPLOAD_RECORDS = 20000;
 export const ALLOWED_EXTENSIONS = ['json', 'csv', 'xlsx', 'xls'];
 export const ALLOWED_MIME_TYPES = new Set([
   'application/json',

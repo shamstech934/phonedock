@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
+import { connectDB, getAdminFromRequest, requirePermission, MAX_UPLOAD_RECORDS, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES } from './helpers';
 import { ImportJob, ImportBatch, ImportRecord } from '@/lib/models';
 import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
@@ -33,8 +33,15 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
     return NextResponse.json({ success: false, error: { code: 'NO_FILE', message: 'No file uploaded' } }, { status: 400 });
   }
 
-  // Size check
+  // Size and file-type checks
   const MAX_SIZE = 10 * 1024 * 1024;
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+  if (!ALLOWED_EXTENSIONS.includes(extension)) {
+    return NextResponse.json({ success: false, error: { code: 'UNSUPPORTED_FILE_TYPE', message: `Unsupported file extension: .${extension || 'unknown'}` } }, { status: 415 });
+  }
+  if (file.type && !ALLOWED_MIME_TYPES.has(file.type)) {
+    return NextResponse.json({ success: false, error: { code: 'UNSUPPORTED_MIME_TYPE', message: `Unsupported file type: ${file.type}` } }, { status: 415 });
+  }
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ success: false, error: { code: 'FILE_TOO_LARGE', message: `File too large (${(file.size / 1024 / 1024).toFixed(2)} MB, max 10 MB)` } }, { status: 413 });
   }
@@ -46,6 +53,9 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
   try {
     const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
     const parsed = await parseImportFile(arrayBuffer, file.name, file.type);
+    if (parsed.totalRecords > MAX_UPLOAD_RECORDS) {
+      return NextResponse.json({ success: false, error: { code: 'TOO_MANY_RECORDS', message: `Too many records (${parsed.totalRecords}); maximum is ${MAX_UPLOAD_RECORDS}` } }, { status: 413 });
+    }
 
     await ImportJob.create({
       importId,
