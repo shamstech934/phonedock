@@ -93,7 +93,7 @@ export function middleware(req: NextRequest) {
   }
 
   // === LOGIN RATE LIMITING ===
-  if (isLoginPath(pathname) || pathname === '/api/admin/auth/login' || pathname === '/api/admin/auth/forgot-password') {
+  if (isLoginPath(pathname) || pathname === '/api/admin/login' || pathname === '/api/admin/forgot-password' || pathname === '/api/admin/reset-password' || pathname === '/api/admin/auth/login' || pathname === '/api/admin/auth/forgot-password') {
     if (!checkLoginRateLimit(ip)) {
       return NextResponse.json(
         { error: 'Too many login attempts. Please try again later.' },
@@ -111,8 +111,13 @@ export function middleware(req: NextRequest) {
     // Allow first-setup endpoint
     if (pathname === '/api/admin/first-setup') return NextResponse.next();
 
-    // Public admin endpoints (no session needed for specific actions)
-    if (pathname.startsWith('/api/admin/auth/')) return NextResponse.next();
+    // Public admin authentication endpoints (no existing session required)
+    if (
+      pathname === '/api/admin/login' ||
+      pathname === '/api/admin/forgot-password' ||
+      pathname === '/api/admin/reset-password' ||
+      pathname.startsWith('/api/admin/auth/')
+    ) return NextResponse.next();
 
     // All other /api/admin/* need session cookie
     if (!hasSessionCookie(req)) {
