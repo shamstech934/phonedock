@@ -1425,7 +1425,7 @@ export async function seedPhones(): Promise<{
   const brandMap = new Map<string, Types.ObjectId>();
 
   for (const b of BRANDS) {
-    const doc = await (Brand as unknown as { findOneAndUpdate: Function }).findOneAndUpdate(
+    const doc = await Brand.findOneAndUpdate(
       { slug: b.slug },
       {
         name: b.name,
@@ -1452,7 +1452,7 @@ export async function seedPhones(): Promise<{
     }
 
     // Upsert phone
-    const phoneDoc = await (Phone as unknown as { findOneAndUpdate: Function }).findOneAndUpdate(
+    const phoneDoc = await Phone.findOneAndUpdate(
       { slug: p.slug },
       {
         brandId,
@@ -1491,7 +1491,7 @@ export async function seedPhones(): Promise<{
     for (const [key, val] of Object.entries(p.specs)) {
       specsData[key] = (val as string) ?? '';
     }
-    await (PhoneSpecs as unknown as { findOneAndUpdate: Function }).findOneAndUpdate(
+    await PhoneSpecs.findOneAndUpdate(
       { phoneId },
       { phoneId, ...specsData },
       { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -1500,7 +1500,7 @@ export async function seedPhones(): Promise<{
 
     // Upsert benchmark
     if (p.benchmarks) {
-      await (PhoneBenchmark as unknown as { findOneAndUpdate: Function }).findOneAndUpdate(
+      await PhoneBenchmark.findOneAndUpdate(
         { phoneId },
         {
           phoneId,

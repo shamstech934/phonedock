@@ -30,27 +30,6 @@ function isLoginPath(pathname: string): boolean {
   return pathname === LOGIN_PATH || pathname === '/admin/auth/login';
 }
 
-function isPublicApiPath(pathname: string): boolean {
-  // Public API routes that don't need auth
-  const publicPrefixes = [
-    '/api/phones',
-    '/api/brands',
-    '/api/news',
-    '/api/reviews',
-    '/api/videos',
-    '/api/sitemap',
-    '/api/compare',
-    '/api/price-alerts',
-    '/api/contact',
-    '/api/search',
-    '/api/cron/',       // cron uses CRON_SECRET, not session
-    '/api/first-setup', // setup uses FIRST_ADMIN_SETUP_KEY
-    '/api/health',
-    '/api/_meta',       // OpenAPI / metadata endpoints
-  ];
-  return publicPrefixes.some(p => pathname.startsWith(p));
-}
-
 function isStaticAsset(pathname: string): boolean {
   return (
     pathname.startsWith('/_next/') ||
@@ -63,6 +42,7 @@ function isStaticAsset(pathname: string): boolean {
 
 function checkLoginRateLimit(ip: string): boolean {
   const now = Date.now();
+  evictExpiredRateLimitEntries(now);
   let entry = loginRateLimitMap.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + LOGIN_RATE_WINDOW_MS };
@@ -72,13 +52,13 @@ function checkLoginRateLimit(ip: string): boolean {
   return entry.count <= LOGIN_RATE_MAX;
 }
 
-// Evict stale entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
+// Opportunistic cleanup avoids long-lived timers in serverless/edge runtimes.
+function evictExpiredRateLimitEntries(now: number): void {
+  if (loginRateLimitMap.size < 100) return;
   for (const [ip, entry] of loginRateLimitMap) {
     if (now > entry.resetAt) loginRateLimitMap.delete(ip);
   }
-}, 5 * 60_000);
+}
 
 // ============ MIDDLEWARE ============
 
