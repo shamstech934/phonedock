@@ -7,6 +7,8 @@ export interface IImportBatch {
   recordEnd: number;
   recordCount: number;
   checksum: string;
+  // FIX #3: Track whether this was a dry-run or real execution
+  executionMode: 'dry_run' | 'real';
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
   attemptCount: number;
   created: number;
@@ -22,15 +24,27 @@ export interface IImportBatch {
     originalValue?: string;
     errorCode: string;
     errorMessage: string;
+    phoneId?: string;
   }[];
   // For rollback: track created phone IDs and field changes
   createdPhoneIds: mongoose.Types.ObjectId[];
   updatedPhoneIds: mongoose.Types.ObjectId[];
+  // FIX #8: Track which collection the change applies to
   fieldChanges: {
     phoneId: mongoose.Types.ObjectId;
+    collection: string;
     field: string;
     oldValue: unknown;
     newValue: unknown;
+  }[];
+  // FIX #8: Track PhoneSpecs changes for rollback
+  specsChanges: {
+    phoneId: mongoose.Types.ObjectId;
+    collection: string;
+    changeType: 'created' | 'updated';
+    beforeFields?: Record<string, string>;
+    afterFields?: Record<string, string>;
+    fields?: Record<string, string>;
   }[];
   startedAt: Date | null;
   completedAt: Date | null;
@@ -45,6 +59,8 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   recordEnd: { type: Number, required: true },
   recordCount: { type: Number, required: true },
   checksum: { type: String, required: true },
+  // FIX #3: executionMode distinguishes dry-run from real batches
+  executionMode: { type: String, enum: ['dry_run', 'real'], default: 'real' },
   status: { type: String, enum: ['pending', 'processing', 'completed', 'failed', 'retrying'], default: 'pending', index: true },
   attemptCount: { type: Number, default: 0 },
   created: { type: Number, default: 0 },
@@ -60,14 +76,25 @@ const ImportBatchSchema = new Schema<IImportBatch>({
     originalValue: String,
     errorCode: String,
     errorMessage: String,
+    phoneId: String,
   }],
   createdPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   updatedPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   fieldChanges: [{
     phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+    collection: { type: String, default: 'Phone' },
     field: String,
     oldValue: Schema.Types.Mixed,
     newValue: Schema.Types.Mixed,
+  }],
+  // FIX #8: Track PhoneSpecs changes for complete rollback
+  specsChanges: [{
+    phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+    collection: { type: String, default: 'PhoneSpecs' },
+    changeType: { type: String, enum: ['created', 'updated'] },
+    beforeFields: { type: Schema.Types.Mixed, default: {} },
+    afterFields: { type: Schema.Types.Mixed, default: {} },
+    fields: { type: Schema.Types.Mixed, default: {} },
   }],
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
@@ -76,5 +103,7 @@ const ImportBatchSchema = new Schema<IImportBatch>({
 // Compound unique: same batch for same import must not duplicate
 ImportBatchSchema.index({ importId: 1, batchNumber: 1 }, { unique: true });
 ImportBatchSchema.index({ status: 1, createdAt: -1 });
+// FIX #10: Index for completion queries
+ImportBatchSchema.index({ importId: 1, status: 1 });
 
 export const ImportBatch = mongoose.models.ImportBatch || mongoose.model<IImportBatch>('ImportBatch', ImportBatchSchema);

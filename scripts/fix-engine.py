@@ -1,4 +1,16 @@
-/**
+#!/usr/bin/env python3
+"""
+Critical Fix Round 2 - Engine file rewriter.
+Reads the current engine file and produces the fixed version.
+"""
+import re
+
+# Read the current file
+with open('/home/z/my-project/src/lib/import/import-v2-engine.ts', 'r') as f:
+    content = f.read()
+
+# We'll produce the complete new file
+new_content = '''/**
  * Import Engine V2 — Batch-based, persistent, resumable.
  * Uses bulkWrite, per-batch transactions, and ImportJob/ImportBatch tracking.
  *
@@ -1068,3 +1080,10 @@ export async function reconcileJobCounters(importId: string): Promise<void> {
     },
   );
 }
+'''
+
+with open('/home/z/my-project/src/lib/import/import-v2-engine.ts', 'w') as f:
+    f.write(new_content)
+
+print("Engine file written successfully")
+print(f"Length: {len(new_content)} chars")
