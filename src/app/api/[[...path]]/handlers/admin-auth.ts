@@ -56,7 +56,7 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
         });
         response.cookies.set('pd_session', newSession.token, newSession.cookieOptions);
         // Persist the rotated session record
-        persistSessionRecord(admin._id.toString(), newSession.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
+        await persistSessionRecord(admin._id.toString(), newSession.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
       }
     }
 
@@ -172,8 +172,9 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       sessionVersion: (admin as unknown as { sessionVersion?: number }).sessionVersion ?? 0,
     });
 
-    // Persist session record
-    persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
+    // Persist before returning the cookie so the first session check cannot race
+    // against AdminSession creation and incorrectly reject a valid login.
+    await persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
 
     // Single cookie — no token in response body
     const response = NextResponse.json({
@@ -182,8 +183,6 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     });
     response.cookies.set('pd_session', session.token, session.cookieOptions);
 
-    // Persist AdminSession record (fire-and-forget — login already succeeded)
-    persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent') || undefined);
 
     try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
     return response;
@@ -202,7 +201,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
   }
 
   // ---- /api/admin/change-password ----
-  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'change-password') {
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'change-password') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const body = await req.json();
     const { currentPassword, newPassword } = body;
@@ -234,7 +233,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
   }
 
   // ---- /api/admin/forgot-password ----
-  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'forgot-password') {
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'forgot-password') {
     // If email is not configured, return a generic message
     if (!isEmailConfigured()) {
       return NextResponse.json({ success: true, message: 'If an account exists, a reset link will be sent.' });
@@ -278,7 +277,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
   }
 
   // ---- /api/admin/reset-password (token-based) ----
-  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reset-password') {
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'reset-password') {
     const body = await req.json();
     const { token, newPassword } = body;
     if (!token || !newPassword) {

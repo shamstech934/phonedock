@@ -14,6 +14,13 @@ function timingSafeEqual(a: string, b: string): boolean {
     return false;
   }
 }
+
+function isValidCronSecret(provided: string | null | undefined): boolean {
+  const configured = process.env.CRON_SECRET;
+  // Fail closed when CRON_SECRET is absent. Empty-vs-empty must never authorize.
+  if (!configured || !provided) return false;
+  return timingSafeEqual(provided, configured);
+}
 import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory, NewsletterSubscriber } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
 import { getEmailTransporter } from '@/lib/email';
@@ -55,7 +62,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'sync-youtube') {
       const secret = req.headers.get('authorization')?.replace('Bearer ', '');
-      if (!timingSafeEqual(secret || '', process.env.CRON_SECRET || '')) {
+      if (!isValidCronSecret(secret)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       const result = await syncYouTubeVideos();
@@ -65,7 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Cron: /api/cron/check-price-drops — protected by CRON_SECRET
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'check-price-drops') {
       const secret = req.headers.get('authorization')?.replace('Bearer ', '');
-      if (!timingSafeEqual(secret || '', process.env.CRON_SECRET || '')) {
+      if (!isValidCronSecret(secret)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       await connectDB();
@@ -221,8 +228,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
   const isLogin = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'login';
-  const isForgotPassword = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'forgot-password';
-  const isResetPassword = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reset-password';
+  const isForgotPassword = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'forgot-password';
+  const isResetPassword = segments.length === 2 && segments[0] === 'admin' && segments[1] === 'reset-password';
   const isContact = segments.length === 1 && segments[0] === 'contact';
   const isCollector = segments.length >= 2 && segments[0] === 'collector';
   const isImport = segments.length >= 1 && segments[0] === 'import';

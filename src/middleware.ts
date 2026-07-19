@@ -84,7 +84,7 @@ export function middleware(req: NextRequest) {
 
   // === LOGIN PAGE: allow through (no session needed) ===
   if (isLoginPath(pathname)) return NextResponse.next();
-  if (pathname === '/admin/auth/forgot-password') return NextResponse.next();
+  if (pathname === '/admin/forgot-password' || pathname === '/admin/reset-password' || pathname === '/admin/auth/forgot-password') return NextResponse.next();
 
   // === ADMIN API ROUTES: check session cookie existence ===
   if (pathname.startsWith('/api/admin')) {
