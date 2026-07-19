@@ -115,8 +115,8 @@ export default function AdminBrandsPage() {
       logo: brand.logo || '',
       country: brand.country || '',
       description: brand.description || '',
-      sortOrder: (brand as any).sortOrder || 0,
-      active: (brand as any).active !== false,
+      sortOrder: (brand as unknown as { sortOrder?: number }).sortOrder || 0,
+      active: (brand as unknown as { active?: boolean }).active !== false,
     });
     setModalOpen(true);
   };
@@ -286,9 +286,9 @@ export default function AdminBrandsPage() {
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   {brand.country ? <span className="text-muted-foreground">{brand.country}</span> : <span className="text-gray-300">No country</span>}
-                  {(brand as any).active === false && <Badge className="bg-red-50 text-red-600 text-[10px] border-red-200/50">Inactive</Badge>}
+                  {(brand as unknown as { active?: boolean }).active === false && <Badge className="bg-red-50 text-red-600 text-[10px] border-red-200/50">Inactive</Badge>}
                 </div>
-                <Badge variant="secondary" className="text-[10px]">{(brand as any).phonesCount || brand._count?.phones || 0} phones</Badge>
+                <Badge variant="secondary" className="text-[10px]">{(brand as unknown as { phonesCount?: number }).phonesCount || brand._count?.phones || 0} phones</Badge>
               </div>
               {brand.description && <p className="text-[11px] text-muted-foreground mt-2 line-clamp-2">{brand.description}</p>}
             </div>

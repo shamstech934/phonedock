@@ -112,8 +112,8 @@ export async function handleImportV2Upload(req: NextRequest, segments: string[])
         })),
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: { code: 'PARSE_ERROR', message: err.message } }, { status: 400 });
+  } catch (err: unknown) {
+    return NextResponse.json({ success: false, error: { code: 'PARSE_ERROR', message: err instanceof Error ? err.message : String(err) } }, { status: 400 });
   }
 }
 
@@ -147,9 +147,9 @@ export async function handleImportV2Validate(req: NextRequest, segments: string[
       invalidRecords: job.previewStats?.invalidRecords || 0,
       warnings: job.previewStats?.warnings || 0,
       duplicateEstimate: job.previewStats?.duplicateEstimate || 0,
-      estimateType: (job.previewStats as any)?.estimateType || 'unknown',
+      estimateType: (job.previewStats as Record<string, unknown> | null)?.estimateType || 'unknown',
       fields: { recognizedFields, ignoredFields, missingFields },
-      preview: (job.previewData || []).map((r: any) => ({
+      preview: (job.previewData || []).map((r: Record<string, unknown>) => ({
         rowNumber: r.rowNumber,
         normalized: r.normalizedData,
         errors: r.errors,
@@ -189,7 +189,7 @@ export async function handleImportV2Config(req: NextRequest, segments: string[])
     return NextResponse.json({ success: false, error: { code: 'INVALID_STATUS', message: `Cannot configure job in status: ${job.status}` } }, { status: 400 });
   }
 
-  const update: any = { updatedAt: new Date() };
+  const update: Record<string, unknown> = { updatedAt: new Date() };
   if (duplicateMode) update.duplicateMode = duplicateMode;
 
   // FIX #5: Validate and clamp batchSize
@@ -288,7 +288,7 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
   const createMissingBrands = job.createMissingBrands !== false;
 
   // Calculate checksum from records
-  const checksum = body.records.map((r: any) => {
+  const checksum = body.records.map((r: Record<string, unknown>) => {
     const key = `${r.brand || ''}|${r.model || ''}|${r.slug || ''}`;
     let h = 0;
     for (let i = 0; i < key.length; i++) {
@@ -320,12 +320,13 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
     await reconcileJobCounters(importId);
 
     return NextResponse.json({ success: true, data: result });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // FIX #7: Return actual HTTP 500, not 200 with status in body
-    try { await markBatchFailed(importId, batchNumber, err.message || 'Unknown error'); } catch { /* best effort */ }
+    const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    try { await markBatchFailed(importId, batchNumber, errMsg); } catch { /* best effort */ }
     return NextResponse.json({
       success: false,
-      error: { code: 'BATCH_FAILED', message: err.message || 'Batch processing failed' },
+      error: { code: 'BATCH_FAILED', message: errMsg },
     }, { status: 500 });
   }
 }
@@ -355,7 +356,7 @@ export async function handleImportV2GetJob(req: NextRequest, segments: string[])
       totalBatches: job.totalBatches,
       batches: batches.map(b => ({
         batchNumber: b.batchNumber,
-        executionMode: (b as any).executionMode || 'real',
+        executionMode: (b as unknown as { executionMode?: string }).executionMode || 'real',
         status: b.status,
         attemptCount: b.attemptCount,
         created: b.created,
@@ -391,7 +392,7 @@ export async function handleImportV2Retry(req: NextRequest, segments: string[]):
   }
 
   let totalCreated = 0, totalUpdated = 0, totalSkipped = 0, totalFailed = 0;
-  const errors: any[] = [];
+  const errors: Record<string, unknown>[] = [];
 
   for (const batch of failedBatches) {
     // FIX #2: Use persisted payload field if available (for batches after row 50)
@@ -491,7 +492,7 @@ export async function handleImportV2Rollback(req: NextRequest, segments: string[
     const batches = await ImportBatch.find({ importId, status: 'completed', executionMode: 'real' }).select('createdPhoneIds updatedPhoneIds fieldChanges specsChanges').lean();
     const wouldDelete = batches.reduce((sum, b) => sum + (b.createdPhoneIds?.length || 0), 0);
     const wouldRestore = batches.reduce((sum, b) => sum + (b.fieldChanges?.length || 0), 0);
-    const wouldRestoreSpecs = batches.reduce((sum, b) => sum + ((b as any).specsChanges?.length || 0), 0);
+    const wouldRestoreSpecs = batches.reduce((sum, b) => sum + ((b as unknown as { specsChanges?: unknown[] }).specsChanges?.length || 0), 0);
     return NextResponse.json({
       success: true,
       data: { dryRun: true, importId, fileName: job.fileName, wouldDelete, wouldRestore, wouldRestoreSpecs, totalBatches: job.totalBatches },

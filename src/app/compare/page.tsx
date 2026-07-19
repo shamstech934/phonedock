@@ -176,7 +176,7 @@ function CompareContent() {
     let max = 0;
     let allZero = true;
     for (const p of comparePhones) {
-      const val = (p as any)[key] || 0;
+      const val = (p as unknown as Record<string, unknown>)[key] as number || 0;
       if (val > 0) allZero = false;
       if (val > max) { max = val; best = p; }
     }

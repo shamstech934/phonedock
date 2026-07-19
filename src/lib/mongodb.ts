@@ -47,7 +47,7 @@ async function connectWithRetry(uri: string, retries = 3, delay = 1000): Promise
         console.error(`MongoDB attempt ${i + 1}/${retries}: DNS resolution failed. Check hostname in MONGODB_URI.`);
       } else if (msg.includes('Authentication failed')) {
         console.error(`MongoDB attempt ${i + 1}/${retries}: Authentication failed. Check username/password in MONGODB_URI.`);
-      } else if (msg.includes('IP is not allowed') || (e as any).code === 8000) {
+      } else if (msg.includes('IP is not allowed') || ((e as unknown as Record<string, unknown>).code as string) === '8000') {
         console.error(`MongoDB attempt ${i + 1}/${retries}: IP not allowed. Add your IP to Atlas Network Access.`);
       } else {
         console.warn(`MongoDB attempt ${i + 1}/${retries} failed:`, lastError.message);

@@ -52,7 +52,7 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
           sub: admin._id.toString(),
           email: admin.email,
           role: admin.role,
-          sessionVersion: (admin as any).sessionVersion ?? 0,
+          sessionVersion: (admin as unknown as { sessionVersion?: number }).sessionVersion ?? 0,
         });
         response.cookies.set('pd_session', newSession.token, newSession.cookieOptions);
         // Persist the rotated session record
@@ -74,7 +74,7 @@ export async function handleAdminAuthGet(req: NextRequest, segments: string[]): 
     const sessions = await getActiveSessions(admin._id.toString());
 
     return NextResponse.json({
-      sessions: sessions.map((s: any) => ({
+      sessions: sessions.map((s) => ({
         id: s._id?.toString(),
         jti: s.tokenJti,
         ip: s.ip || '',
@@ -169,7 +169,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
       sub: admin._id.toString(),
       email: admin.email,
       role: admin.role,
-      sessionVersion: (admin as any).sessionVersion ?? 0,
+      sessionVersion: (admin as unknown as { sessionVersion?: number }).sessionVersion ?? 0,
     });
 
     // Persist session record
@@ -269,8 +269,8 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
           subject: 'PhoneDock — Password Reset',
           html: `<p>You requested a password reset.</p><p>Click <a href="${resetLink}">here</a> to reset your password. This link expires in 30 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
         });
-      } catch (emailErr: any) {
-        console.error('[ForgotPassword] Email send failed:', emailErr?.message);
+      } catch (emailErr: unknown) {
+        console.error('[ForgotPassword] Email send failed:', emailErr instanceof Error ? emailErr.message : String(emailErr));
         // Don't expose email failure to user — prevents revealing which emails exist
       }
     }

@@ -27,8 +27,8 @@ export class ManufacturerProvider extends BaseProvider {
         message: response.ok ? 'Endpoint reachable' : `HTTP ${response.status}`,
         latencyMs: Date.now() - start,
       };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'Connection failed', latencyMs: Date.now() - start };
+    } catch (e: unknown) {
+      return { success: false, message: e instanceof Error ? e.message : 'Connection failed', latencyMs: Date.now() - start };
     }
   }
 }

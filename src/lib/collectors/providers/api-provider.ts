@@ -16,7 +16,7 @@ export class ApiProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
     }
 
-    let root: any;
+    let root: unknown;
     try {
       root = await response.json();
     } catch {
@@ -25,23 +25,25 @@ export class ApiProvider extends BaseProvider {
 
     // Extract total from root BEFORE data-path extraction
     let totalAvailable = 0;
-    if (typeof root?.total === 'number') totalAvailable = root.total;
-    else if (typeof root?.count === 'number') totalAvailable = root.count;
+    const rootObj = root as Record<string, unknown> | null | undefined;
+    if (typeof rootObj?.total === 'number') totalAvailable = rootObj.total;
+    else if (typeof rootObj?.count === 'number') totalAvailable = rootObj.count;
 
-    let data = root;
+    let data: unknown = root;
     if (this.config.dataPath) {
-      for (const key of this.config.dataPath.split('.')) { data = data?.[key]; }
+      for (const key of this.config.dataPath.split('.')) { data = (data as Record<string, unknown>)?.[key]; }
     }
     if (!Array.isArray(data)) {
+      const dataObj = data as Record<string, unknown> | null | undefined;
       for (const w of ['phones', 'data', 'results', 'items']) {
-        if (Array.isArray(data?.[w])) { data = data[w]; break; }
+        if (Array.isArray(dataObj?.[w])) { data = dataObj[w]; break; }
       }
     }
 
     // Apply mapping rules
     const mapping = this.config.mappingRules || {};
 
-    const phones: NormalizedPhone[] = (Array.isArray(data) ? data : []).map((raw: any) => {
+    const phones: NormalizedPhone[] = (Array.isArray(data) ? data : []).map((raw: Record<string, unknown>) => {
       const get = (field: string) => {
         const mapped = mapping[field] || field;
         return raw[mapped] ?? raw[field];
@@ -54,7 +56,7 @@ export class ApiProvider extends BaseProvider {
         releaseDate: String(get('releaseDate') || ''),
         announcedDate: String(get('announcedDate') || ''),
         thumbnail: String(get('thumbnail') || get('image') || ''),
-        images: typeof get('images') === 'string' ? get('images').split(',').map((s: string) => s.trim()).filter(Boolean) : Array.isArray(get('images')) ? get('images') : [],
+        images: typeof get('images') === 'string' ? (get('images') as string).split(',').map((s: string) => s.trim()).filter(Boolean) : Array.isArray(get('images')) ? get('images') as string[] : [],
         display: { size: String(get('display') || get('displaySize') || ''), resolution: String(get('resolution') || ''), type: String(get('displayType') || ''), refreshRate: String(get('refreshRate') || ''), brightness: String(get('brightness') || ''), protection: String(get('protection') || '') },
         processor: { chipset: String(get('chipset') || ''), cpu: String(get('cpu') || ''), gpu: String(get('gpu') || ''), process: String(get('process') || get('fabrication') || '') },
         memory: { ram: String(get('ram') || ''), ramType: String(get('ramType') || ''), storage: String(get('storage') || ''), storageType: String(get('storageType') || ''), cardSlot: String(get('cardSlot') || '') },

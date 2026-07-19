@@ -41,8 +41,8 @@ export async function handleImportGet(req: NextRequest, segments: string[]): Pro
     return NextResponse.json({
       totalImports, successfulImports, failedImports, todayImports,
       totalImported: t.total || 0, totalUpdated: t.updated || 0, totalFailed: t.failed || 0,
-      lastImportTime: (lastImport as any)?.createdAt || null,
-      lastImportDuration: (lastImport as any)?.duration || 0,
+      lastImportTime: (lastImport as Record<string, unknown> | null)?.createdAt || null,
+      lastImportDuration: (lastImport as Record<string, unknown> | null)?.duration || 0,
     });
   }
 
@@ -72,13 +72,13 @@ export async function handleImportPost(req: NextRequest, segments: string[]): Pr
       return NextResponse.json({ error: 'File too large (max 10MB)' }, { status: 400 });
     }
     const buffer = Buffer.from(await file.arrayBuffer());
-    let records: any[] = [];
+    let records: Record<string, unknown>[] = [];
     try {
       if (ext === 'json') {
         records = JSON.parse(buffer.toString('utf-8'));
         if (!Array.isArray(records)) records = [records];
       } else if (ext === 'csv') {
-        const result = await new Promise<{ data: any[] }>((resolve) => {
+        const result = await new Promise<{ data: Record<string, unknown>[] }>((resolve) => {
           Papa.parse(buffer.toString('utf-8'), { header: true, skipEmptyLines: true, complete: resolve });
         });
         records = result.data;
@@ -89,8 +89,8 @@ export async function handleImportPost(req: NextRequest, segments: string[]): Pr
           records = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
         }
       }
-    } catch (e: any) {
-      return NextResponse.json({ error: `Parse error: ${e.message}` }, { status: 400 });
+    } catch (e: unknown) {
+      return NextResponse.json({ error: `Parse error: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 });
     }
     return NextResponse.json({ valid: true, totalRecords: records.length, sample: records.slice(0, 3) });
   }
@@ -137,7 +137,7 @@ async function handleFileUpload(req: NextRequest): Promise<NextResponse> {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    let records: any[] = [];
+    let records: Record<string, unknown>[] = [];
 
     // Parse based on file type
     try {
@@ -148,8 +148,8 @@ async function handleFileUpload(req: NextRequest): Promise<NextResponse> {
       } else if (fileType === 'xlsx') {
         records = await parseFile(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength), 'xlsx');
       }
-    } catch (e: any) {
-      return NextResponse.json({ error: `Parse error: ${e.message}` }, { status: 400 });
+    } catch (e: unknown) {
+      return NextResponse.json({ error: `Parse error: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 });
     }
 
     if (!Array.isArray(records) || records.length === 0) {
@@ -194,7 +194,7 @@ async function handleFileUpload(req: NextRequest): Promise<NextResponse> {
       duration: result.duration,
       historyId: result.historyId,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json({ error: 'Import failed. Check file format and try again.' }, { status: 500 });
   }
 }

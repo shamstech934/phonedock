@@ -26,7 +26,7 @@ interface SummaryData {
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
 
-const TABS: { id: TabId; label: string; icon: any; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
+const TABS: { id: TabId; label: string; icon: React.ElementType; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'issues', label: 'All Issues', icon: AlertTriangle },
   { id: 'missing-specs', label: 'Missing Specs', icon: Smartphone, issueTypeFilter: 'PHONE_MISSING_SPECS' },
@@ -42,7 +42,7 @@ const TABS: { id: TabId; label: string; icon: any; queueFilter?: string; issueTy
   { id: 'scan-history', label: 'Scan History', icon: History },
 ];
 
-const SEVERITY_CONFIG: Record<string, { color: string; bg: string; icon: any; label: string }> = {
+const SEVERITY_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType; label: string }> = {
   critical: { color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: XCircle, label: 'Critical' },
   high: { color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200', icon: AlertTriangle, label: 'High' },
   medium: { color: 'text-yellow-600', bg: 'bg-yellow-50 border-yellow-200', icon: AlertCircle, label: 'Medium' },
@@ -67,7 +67,7 @@ export default function DataQualityPage() {
 
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
-  const [scanStatus, setScanStatus] = useState<{ running: boolean; scanId?: string; progress?: any }>({ running: false });
+  const [scanStatus, setScanStatus] = useState<{ running: boolean; scanId?: string; progress?: { status: string; processed: number; total: number; issuesFound: number } }>({ running: false });
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -414,7 +414,7 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
   );
 }
 
-function StatCard({ label, value, icon: Icon, color = 'text-gray-600', sub }: { label: string; value: number; icon: any; color?: string; sub?: string }) {
+function StatCard({ label, value, icon: Icon, color = 'text-gray-600', sub }: { label: string; value: number; icon: React.ElementType; color?: string; sub?: string }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4">
       <div className="flex items-center gap-2 mb-2">
@@ -765,12 +765,23 @@ function DetailField({ label, value, mono }: { label: string; value: string; mon
 // DUPLICATES TAB
 // ═══════════════════════════════════════════════════════════════════
 
+interface DupEntity {
+  id: string;
+  modelName?: string;
+  name?: string;
+  brandName?: string;
+  slug?: string;
+  pricePKR?: number;
+  status?: string;
+  thumbnail?: string;
+}
+
 function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [merging, setMerging] = useState<string | null>(null);
   const isMerging = merging !== null;
-  const [mergeModal, setMergeModal] = useState<{ groupId: string; entities: any[] } | null>(null);
+  const [mergeModal, setMergeModal] = useState<{ groupId: string; entities: DupEntity[] } | null>(null);
 
   const fetchDuplicates = useCallback(async () => {
     setLoading(true);
@@ -819,7 +830,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
             <span className="text-xs font-medium text-gray-500">{group.type} · {group.entities.length} records</span>
           </div>
           <div className="divide-y divide-gray-50">
-            {group.entities.map((entity: any) => (
+            {group.entities.map((entity: DupEntity) => (
               <div key={entity.id} className="px-5 py-3 flex items-center gap-4">
                 {entity.thumbnail && <img src={entity.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100" />}
                 <div className="flex-1 min-w-0">
@@ -862,7 +873,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
               <p className="text-xs text-gray-500 mt-0.5">Choose which phone to keep. The other will be archived and its child records moved.</p>
             </div>
             <div className="p-5 space-y-3">
-              {mergeModal.entities.map((entity: any) => (
+              {mergeModal.entities.map((entity) => (
                 <div key={entity.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
                   <input type="radio" name="keep" id={`keep-${entity.id}`} className="mt-1" />
                   <label htmlFor={`keep-${entity.id}`} className="flex-1 cursor-pointer">

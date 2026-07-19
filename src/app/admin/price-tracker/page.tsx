@@ -268,8 +268,8 @@ export default function AdminPriceTrackerPage() {
       if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
       setPhones(d.phones || d.data || []);
       setPhonesTotal(d.total || 0);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load phones');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load phones');
     } finally { setLoading(false); }
   }, [phonesPage, phonesSort, phonesDebouncedSearch, phonesModeFilter]);
 
@@ -405,8 +405,8 @@ export default function AdminPriceTrackerPage() {
       setEditingPhone(null);
       if (activeTab === 'phones') fetchPhones();
       else fetchOverview();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Action failed');
     } finally { setActionLoading(''); }
   };
 
@@ -438,8 +438,8 @@ export default function AdminPriceTrackerPage() {
       setAddListingModal(false);
       setListingForm({ source: '', url: '', ram: '', storage: '', ptaStatus: '', warrantyType: '' });
       setListingPhoneId('');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Action failed');
     } finally { setActionLoading(''); }
   };
 
@@ -461,8 +461,8 @@ export default function AdminPriceTrackerPage() {
       setShowAddSource(false);
       setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
       fetchSources();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Action failed');
     } finally { setActionLoading(''); }
   };
 

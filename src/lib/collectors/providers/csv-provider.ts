@@ -1,5 +1,6 @@
 import { BaseProvider, ProviderFetchResult } from './base';
 import Papa from 'papaparse';
+import type { NormalizedPhone } from '../types';
 
 export class CsvUrlProvider extends BaseProvider {
   async fetch(): Promise<ProviderFetchResult> {
@@ -20,7 +21,7 @@ export class CsvUrlProvider extends BaseProvider {
         skipEmptyLines: true,
         transformHeader: (h: string) => h.trim(),
         complete: (results) => {
-          const phones = (results.data as any[]).map(raw => {
+          const phones = (results.data as Record<string, unknown>[]).map(raw => {
             const get = (f: string) => raw[mapping[f] || f] ?? '';
             const brandName = String(get('brand') || get('brandName') || '').trim();
             const model = String(get('model') || get('modelName') || get('name') || '').trim();
@@ -37,7 +38,7 @@ export class CsvUrlProvider extends BaseProvider {
               body: { weight: String(get('weight') || ''), colors: String(get('colors') || '') },
               software: { os: String(get('os') || '') },
             };
-          }).filter((p: any) => p.brandName && p.model);
+          }).filter((p: NormalizedPhone) => p.brandName && p.model);
 
           const providerErrors = results.errors.map(e => `Row ${e.row}: ${e.message}`).slice(0, 50);
           resolve({ phones: this.applyBrandFilter(phones), hasNextPage: false, providerErrors });

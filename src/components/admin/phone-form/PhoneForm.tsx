@@ -243,12 +243,12 @@ export default function PhoneForm({
     fetch(`/api/admin/videos?limit=50`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => {
-        const linked = (d.videos || []).filter((v: any) => v.phoneId === phoneId);
-        setLinkedVideos(linked.map((v: any) => ({
-          id: v.id,
-          youtubeId: v.youtubeId,
-          title: v.title,
-          thumbnailUrl: v.thumbnailUrl,
+        const linked = (d.videos || []).filter((v: Record<string, unknown>) => v.phoneId === phoneId);
+        setLinkedVideos(linked.map((v: Record<string, unknown>) => ({
+          id: String(v.id),
+          youtubeId: String(v.youtubeId),
+          title: String(v.title),
+          thumbnailUrl: String(v.thumbnailUrl),
         })));
       })
       .catch(() => {});
@@ -271,9 +271,9 @@ export default function PhoneForm({
       // Refresh linked videos
       const res = await fetch(`/api/admin/videos?limit=50`, { credentials: 'include' });
       const d = await res.json();
-      const linked = (d.videos || []).filter((v: any) => v.phoneId === phoneId);
-      setLinkedVideos(linked.map((v: any) => ({
-        id: v.id, youtubeId: v.youtubeId, title: v.title, thumbnailUrl: v.thumbnailUrl,
+      const linked = (d.videos || []).filter((v: Record<string, unknown>) => v.phoneId === phoneId);
+      setLinkedVideos(linked.map((v: Record<string, unknown>) => ({
+        id: String(v.id), youtubeId: String(v.youtubeId), title: String(v.title), thumbnailUrl: String(v.thumbnailUrl),
       })));
     } catch {}
   }, [phoneId]);

@@ -97,14 +97,14 @@ export interface RawPhoneRecord {
   videoPlayback?: string;
   gamingBattery?: string;
   browsingBattery?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ValidationError {
   row: number;
   field: string;
   message: string;
-  value: any;
+  value: unknown;
 }
 
 export interface ValidationResult {
@@ -123,6 +123,7 @@ export interface ImportResult {
   errors: Array<{ row: number; model: string; error: string }>;
   warnings: string[];
   duration: number;
+  historyId?: string;
 }
 
 export interface ImportHistoryEntry {

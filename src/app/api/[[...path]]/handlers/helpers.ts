@@ -48,7 +48,7 @@ interface LeanAdminSession {
 }
 
 /** Plain-object representation of a phone (output of phoneToJSON) */
-interface PhoneJson {
+export interface PhoneJson {
   id?: string;
   modelName?: string;
   slug?: string;

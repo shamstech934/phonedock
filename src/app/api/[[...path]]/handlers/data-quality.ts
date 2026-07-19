@@ -160,7 +160,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const sortBy = searchParams.get('sortBy') || 'detectedAt';
     const sortOrder = searchParams.get('sortOrder') === 'asc' ? 1 : -1;
 
-    const query: any = {};
+    const query: Record<string, unknown> = {};
     if (severity) query.severity = severity;
     if (issueType) {
       // Support comma-separated issue types for $in queries
@@ -180,7 +180,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       ];
     }
 
-    const sort: any = {};
+    const sort: Record<string, 1 | -1> = {};
     sort[sortBy] = sortOrder;
 
     const [issues, total] = await Promise.all([
@@ -189,8 +189,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     ]);
 
     // Enrich issues with entity names
-    const phoneIds = [...new Set(issues.filter((i: any) => i.entityType === 'phone').map((i: any) => i.entityId))];
-    const brandIds = [...new Set(issues.filter((i: any) => i.entityType === 'brand').map((i: any) => i.entityId))];
+    const phoneIds = [...new Set(issues.filter((i: Record<string, unknown>) => i.entityType === 'phone').map((i: Record<string, unknown>) => i.entityId as string))];
+    const brandIds = [...new Set(issues.filter((i: Record<string, unknown>) => i.entityType === 'brand').map((i: Record<string, unknown>) => i.entityId as string))];
     const phoneNames = new Map<string, string>();
     const brandNames = new Map<string, string>();
 
@@ -203,13 +203,13 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       for (const b of brands) brandNames.set(b._id.toString(), b.name || '');
     }
 
-    const enriched = issues.map((issue: any) => {
+    const enriched = issues.map((issue: Record<string, unknown>) => {
       const entityName = issue.entityType === 'phone'
-        ? phoneNames.get(issue.entityId) || ''
+        ? phoneNames.get(issue.entityId as string) || ''
         : issue.entityType === 'brand'
-          ? brandNames.get(issue.entityId) || ''
+          ? brandNames.get(issue.entityId as string) || ''
           : '';
-      return { ...issue, entityName, id: issue._id?.toString() };
+      return { ...issue, entityName, id: (issue._id as { toString(): string } | undefined)?.toString() };
     });
 
     return NextResponse.json({
@@ -233,7 +233,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     }).lean();
 
     // Group by candidate group
-    const groups = new Map<string, any[]>();
+    const groups = new Map<string, Record<string, unknown>[]>();
     for (const issue of dupIssues) {
       const key = issue.metadata?.candidateIds?.join(',') || issue.issueKey;
       if (!groups.has(key)) groups.set(key, []);
@@ -241,29 +241,30 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     }
 
     // For each group, fetch the actual phone/brand data
-    const resultGroups: any[] = [];
+    const resultGroups: Record<string, unknown>[] = [];
     for (const [, issues] of groups) {
-      const entityIds = [...new Set(issues.map((i: any) => i.entityId))];
+      const entityIds = [...new Set(issues.map((i: Record<string, unknown>) => i.entityId as string))];
       const entityType = issues[0]?.entityType;
 
-      let entities: any[] = [];
+      let entities: Record<string, unknown>[] = [];
       if (entityType === 'phone' && entityIds.length > 0) {
-        entities = await Phone.find({ _id: { $in: entityIds } }).select('modelName slug pricePKR status thumbnail brandId').lean();
+        entities = (await Phone.find({ _id: { $in: entityIds } }).select('modelName slug pricePKR status thumbnail brandId').lean()) as unknown as Record<string, unknown>[];
         // Attach brand names
-        const bIds = [...new Set(entities.map((e: any) => e.brandId?.toString()).filter(Boolean))];
+        const bIds = [...new Set(entities.map((e) => (e.brandId as { toString(): string } | undefined)?.toString()).filter(Boolean))];
         if (bIds.length > 0) {
-          const brands = await Brand.find({ _id: { $in: bIds } }).select('name').lean();
-          const bMap = new Map(brands.map((b: any) => [b._id.toString(), b.name]));
-          entities = entities.map((e: any) => ({ ...e, brandName: bMap.get(e.brandId?.toString()) || '' }));
+          const brands = (await Brand.find({ _id: { $in: bIds } }).select('name').lean()) as unknown as Record<string, unknown>[];
+          const bMap = new Map(brands.map((b) => [(b._id as { toString(): string }).toString(), b.name as string]));
+          const bMapGet = (k: string | undefined) => (k !== undefined ? bMap.get(k) : undefined);
+          entities = entities.map((e) => ({ ...e, brandName: bMapGet((e.brandId as { toString(): string } | undefined)?.toString()) || '' }));
         }
       } else if (entityType === 'brand' && entityIds.length > 0) {
-        entities = await Brand.find({ _id: { $in: entityIds } }).lean();
+        entities = (await Brand.find({ _id: { $in: entityIds } }).lean()) as unknown as Record<string, unknown>[];
       }
 
       resultGroups.push({
         type: issues[0]?.issueType || 'unknown',
-        entities: entities.map((e: any) => ({ ...e, id: e._id?.toString() })),
-        issues: issues.map((i: any) => ({ ...i, id: i._id?.toString() })),
+        entities: entities.map((e: Record<string, unknown>) => ({ ...e, id: (e._id as { toString(): string } | undefined)?.toString() })),
+        issues: issues.map((i: Record<string, unknown>) => ({ ...i, id: (i._id as { toString(): string } | undefined)?.toString() })),
       });
     }
 
@@ -312,7 +313,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     return NextResponse.json({
       totalIssues, openIssues, resolvedToday, autoFixed,
-      byType: byType.map((b: any) => ({ issueType: b._id, count: b.count })),
+      byType: byType.map((b: { _id: string; count: number }) => ({ issueType: b._id, count: b.count })),
     });
   }
 
@@ -330,7 +331,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const issueType = searchParams.get('issueType') || '';
     const severity = searchParams.get('severity') || '';
 
-    const query: any = {};
+    const query: Record<string, unknown> = {};
     if (status && status !== 'all') query.status = status;
     if (issueType) query.issueType = issueType;
     if (severity) query.severity = severity;
@@ -341,19 +342,19 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       .lean();
 
     const header = 'Issue Key,Entity Type,Entity ID,Issue Type,Severity,Field,Current Value,Suggested Value,Status,Detected At,Confidence,Import ID';
-    const rows = issues.map((i: any) => [
-      csvSafe(i.issueKey),
-      csvSafe(i.entityType),
-      csvSafe(i.entityId),
-      csvSafe(i.issueType),
-      csvSafe(i.severity),
-      csvSafe(i.field),
+    const rows = issues.map((i: Record<string, unknown>) => [
+      csvSafe(i.issueKey as string),
+      csvSafe(i.entityType as string),
+      csvSafe(i.entityId as string),
+      csvSafe(i.issueType as string),
+      csvSafe(i.severity as string),
+      csvSafe(i.field as string),
       csvSafe(typeof i.currentValue === 'object' ? JSON.stringify(i.currentValue) : String(i.currentValue ?? '')),
       csvSafe(typeof i.suggestedValue === 'object' ? JSON.stringify(i.suggestedValue) : String(i.suggestedValue ?? '')),
-      csvSafe(i.status),
-      csvSafe(i.detectedAt),
+      csvSafe(i.status as string),
+      csvSafe(String(i.detectedAt)),
       csvSafe(String(i.confidence)),
-      csvSafe(i.importId || ''),
+      csvSafe((i.importId as string) || ''),
     ].join(','));
 
     const csv = [header, ...rows].join('\n');
@@ -398,7 +399,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
 
     const { scanId } = await startScan({
-      type: scanType as any,
+      type: scanType as 'full' | 'incremental' | 'entity' | 'import' | 'manual',
       adminId: authResult.admin._id.toString(),
       entityIds: entityIds || [],
       entityType: entityType || '',
@@ -447,7 +448,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       await ActivityLog.create({
         adminId: authResult.admin._id,
         action: 'data_quality_resolve',
-        details: `Resolved issue ${(issue as any).issueKey}: ${resolution}`,
+        details: `Resolved issue ${(issue as unknown as { issueKey: string }).issueKey}: ${resolution}`,
         entityType: 'data_quality',
         entityId: issueId,
       });
@@ -486,8 +487,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     try {
       const result = await executeAutoFix(issueId, authResult.admin._id.toString(), dryRun);
       return NextResponse.json({ ...result, dryRun });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message || 'Auto-fix failed' }, { status: 400 });
+    } catch (e: unknown) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Auto-fix failed' }, { status: 400 });
     }
   }
 
@@ -534,9 +535,9 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
             results.succeeded++;
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         results.failed++;
-        results.errors.push(`${issueId}: ${e.message}`);
+        results.errors.push(`${issueId}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
@@ -621,9 +622,9 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
 
       return NextResponse.json({
         dryRun: true,
-        keep: { id: keepId, modelName: (keepPhone as any).modelName, hasSpecs: !!keepSpecs, hasBench: !!keepBench },
+        keep: { id: keepId, modelName: keepPhone.modelName, hasSpecs: !!keepSpecs, hasBench: !!keepBench },
         merge: {
-          id: mergeIntoId, modelName: (mergePhone as any).modelName, hasSpecs: !!mergeSpecs,
+          id: mergeIntoId, modelName: mergePhone.modelName, hasSpecs: !!mergeSpecs,
           imageCount: mergeImages.length, priceCount: mergeImages.length, hasBench: !!mergeBench,
           wouldMoveImages: mergeImages.length,
           wouldMovePrices: (await PhonePrice.find({ phoneId: mergeIntoId }).lean()).length,
@@ -674,8 +675,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       } catch (e) { console.error('[ActivityLog]', e); }
 
       return NextResponse.json({ success: true, movedImages: movedImages.modifiedCount, movedPrices: movedPrices.modifiedCount });
-    } catch (e: any) {
-      return NextResponse.json({ error: e.message || 'Merge failed' }, { status: 500 });
+    } catch (e: unknown) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Merge failed' }, { status: 500 });
     }
   }
 

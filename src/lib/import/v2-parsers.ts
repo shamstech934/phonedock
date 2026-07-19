@@ -56,12 +56,12 @@ function isSafeObject(val: unknown, depth = 0): boolean {
  */
 export function parseJSON(content: string, fileName: string): ParsedFile {
   const warnings: string[] = [];
-  let data: any;
+  let data: unknown;
 
   try {
     data = JSON.parse(content);
-  } catch (err: any) {
-    return { records: [], fileType: 'json', fileName, totalRecords: 0, warnings: [`JSON parse error: ${err.message}`] };
+  } catch (err: unknown) {
+    return { records: [], fileType: 'json', fileName, totalRecords: 0, warnings: [`JSON parse error: ${err instanceof Error ? err.message : String(err)}`] };
   }
 
   // Array of objects
@@ -75,17 +75,18 @@ export function parseJSON(content: string, fileName: string): ParsedFile {
 
   // Wrapper: { phones: [...], data: [...], etc }
   if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const obj = data as Record<string, unknown>;
     const wrapperKeys = ['phones', 'data', 'records', 'results', 'items', 'phone_data', 'phones_data'];
     for (const key of wrapperKeys) {
-      if (Array.isArray(data[key])) {
-        const arr = data[key];
+      if (Array.isArray(obj[key])) {
+        const arr = obj[key] as unknown[];
         if (arr.length > MAX_RECORDS) warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${arr.length})`);
-        return { records: arr.slice(0, MAX_RECORDS), fileType: 'json', fileName, totalRecords: arr.length, warnings };
+        return { records: (arr as Record<string, unknown>[]).slice(0, MAX_RECORDS), fileType: 'json', fileName, totalRecords: arr.length, warnings };
       }
     }
     // Single object
-    if (data.brand || data.model || data.modelName || data.pricePKR) {
-      return { records: [data], fileType: 'json', fileName, totalRecords: 1, warnings };
+    if (obj.brand || obj.model || obj.modelName || obj.pricePKR) {
+      return { records: [obj as Record<string, unknown>], fileType: 'json', fileName, totalRecords: 1, warnings };
     }
   }
 
@@ -156,8 +157,8 @@ export function parseXLSX(buffer: ArrayBuffer, fileName: string): ParsedFile {
     const safeRecords = records.filter(r => isSafeObject(r));
 
     return { records: safeRecords, fileType: 'xlsx', fileName, totalRecords: records.length, warnings };
-  } catch (err: any) {
-    return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: [`XLSX parse error: ${err.message}`] };
+  } catch (err: unknown) {
+    return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: [`XLSX parse error: ${err instanceof Error ? err.message : String(err)}`] };
   }
 }
 
@@ -247,8 +248,8 @@ export async function parseZIP(buffer: ArrayBuffer, fileName: string): Promise<P
     }
 
     return { records: allRecords, fileType: 'zip', fileName, totalRecords: allRecords.length, warnings };
-  } catch (err: any) {
-    let message = err.message || 'Unknown ZIP error';
+  } catch (err: unknown) {
+    let message = err instanceof Error ? err.message : 'Unknown ZIP error';
     if (message.includes('password')) message = 'ZIP file is password-protected (not supported)';
     return { records: [], fileType: 'zip', fileName, totalRecords: 0, warnings: [`ZIP error: ${message}`] };
   }
@@ -264,9 +265,9 @@ export async function parseImportFile(
 ): Promise<ParsedFile> {
   const detected = detectFileType(fileName, mimeType);
 
-  if (detected === 'zip' as string) {
-    return parseZIP(buffer, fileName);
-  }
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (ext === 'zip') return parseZIP(buffer, fileName);
+
   if (detected === 'xlsx') {
     return parseXLSX(buffer, fileName);
   }

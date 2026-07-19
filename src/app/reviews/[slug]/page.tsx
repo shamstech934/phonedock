@@ -82,7 +82,7 @@ async function getPhoneWithReviews(slug: string): Promise<{ phone: PhoneData | n
       pricePKR: phoneDoc.pricePKR || 0,
       originalPricePKR: phoneDoc.originalPricePKR || 0,
       brand: phoneDoc.brand
-        ? { name: (phoneDoc.brand as any).name, slug: (phoneDoc.brand as any).slug }
+        ? { name: String((phoneDoc.brand as { name?: string; slug?: string }).name), slug: String((phoneDoc.brand as { name?: string; slug?: string }).slug) }
         : undefined,
       overallRating: phoneDoc.overallRating || 0,
       cameraScore: phoneDoc.cameraScore || 0,
@@ -96,11 +96,11 @@ async function getPhoneWithReviews(slug: string): Promise<{ phone: PhoneData | n
       cons: phoneDoc.cons || '',
     };
 
-    const reviewList: ReviewData[] = reviews.map((r: any) => ({
+    const reviewList: ReviewData[] = reviews.map((r) => ({
       _id: String(r._id),
-      name: r.name,
-      rating: r.rating,
-      comment: r.comment,
+      name: String(r.name),
+      rating: Number(r.rating),
+      comment: String(r.comment),
       createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : '',
     }));
 
@@ -113,7 +113,7 @@ async function getPhoneWithReviews(slug: string): Promise<{ phone: PhoneData | n
 async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit = 4): Promise<Phone[]> {
   try {
     await connectDB();
-    const query: any = {
+    const query: Record<string, unknown> = {
       slug: { $ne: currentSlug },
       active: true,
       status: 'published',
@@ -134,12 +134,12 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
 
     // Attach specs so Quick View works without extra fetches
     if (phones.length > 0) {
-      const ids = phones.map((p: any) => p._id);
+      const ids = phones.map((p) => p._id);
       const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
       const specsMap = buildSpecsMap(specsArr);
       return attachSpecsToRawPhones(phones, specsMap) as unknown as Phone[];
     }
-    return phones.map((p: any) => phoneToJSON(p)) as Phone[];
+    return phones.map((p) => phoneToJSON(p)) as Phone[];
   } catch {
     return [];
   }

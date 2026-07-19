@@ -11,7 +11,7 @@ export class JsonUrlProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}: ${response.statusText}`] };
     }
 
-    let data: any;
+    let data: unknown;
     try {
       data = await response.json();
     } catch {
@@ -20,14 +20,15 @@ export class JsonUrlProvider extends BaseProvider {
     // Navigate data path if configured (e.g. "data.phones")
     if (this.config.dataPath) {
       for (const key of this.config.dataPath.split('.')) {
-        data = data?.[key];
+        data = (data as Record<string, unknown>)?.[key];
       }
     }
 
     if (!Array.isArray(data)) {
       // Try common wrapper keys
+      const dataObj = data as Record<string, unknown> | null | undefined;
       for (const wrapper of ['phones', 'data', 'records', 'results', 'items']) {
-        if (Array.isArray(data?.[wrapper])) { data = data[wrapper]; break; }
+        if (Array.isArray(dataObj?.[wrapper])) { data = dataObj[wrapper]; break; }
       }
     }
 
@@ -118,8 +119,8 @@ export class JsonUrlProvider extends BaseProvider {
             updatePolicy: String(get('updatePolicy') || ''),
           },
         });
-      } catch (e: any) {
-        providerErrors.push(`Row ${i}: ${e.message}`);
+      } catch (e: unknown) {
+        providerErrors.push(`Row ${i}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 

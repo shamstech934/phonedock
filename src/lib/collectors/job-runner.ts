@@ -2,7 +2,7 @@ import { CollectorSource, CollectedPhone, CollectorJob, Phone, Brand, PhoneSpecs
 import connectDB from '@/lib/mongodb';
 import { Types } from 'mongoose';
 import { createProvider, ProviderFetchResult } from './providers';
-import { NormalizedPhone } from './types';
+import { NormalizedPhone, ProviderConfig, ProviderType, ConflictInfo } from './types';
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from './services';
 import { generateSlug } from '@/lib/import/validators';
 
@@ -27,17 +27,17 @@ export async function startJob(jobId: string): Promise<void> {
       if (!source.enabled) throw new Error('Source is disabled');
 
       const config = buildProviderConfig(source);
-      const provider = createProvider(config, (source._id as any).toString(), source.name);
+      const provider = createProvider(config, source._id.toString(), source.name);
 
       let page = 1;
       let hasNext = true;
       let totalFetched = 0;
 
       const existingPhones = await Phone.find({ active: true }, { modelName: 1, slug: 1, brandId: 1 }).populate({ path: 'brand', select: 'name' }).lean();
-      const existingWithBrand = existingPhones.map((p: any) => ({
-        _id: p._id, modelName: p.modelName, slug: p.slug,
-        brand: p.brand ? { name: p.brand.name } : undefined,
-        weight: '', battery: '', display: '', chipset: '', os: '', pricePKR: 0,
+      const existingWithBrand: Array<{ _id: string; modelName: string; slug: string; brandId?: string; brand?: { name: string } }> = existingPhones.map((p) => ({
+        _id: p._id.toString(), modelName: p.modelName, slug: p.slug,
+        brandId: p.brandId?.toString(),
+        brand: p.brand ? { name: (p.brand as { name?: string }).name || '' } : undefined,
       }));
 
       while (hasNext && totalFetched < MAX_COLLECT_PER_JOB) {
@@ -66,14 +66,14 @@ export async function startJob(jobId: string): Promise<void> {
         const result: ProviderFetchResult = await provider.fetch(page);
 
         for (const phone of result.phones) {
-          await processCollectedPhone(phone, config, (source._id as any).toString(), source.name, source.endpoint || '', existingWithBrand, (job._id as any).toString(), source.reliabilityScore);
+          await processCollectedPhone(phone, config, source._id.toString(), source.name, source.endpoint || '', existingWithBrand, job._id.toString(), source.reliabilityScore);
         }
 
         totalFetched += result.phones.length;
         const fetchedCount = result.phones.length;
         let actualNewCount = 0;
         for (const phone of result.phones) {
-          const isDuplicate = existingWithBrand.some((ep: any) => ep.slug === phone.slug);
+          const isDuplicate = existingWithBrand.some((ep) => ep.slug === phone.slug);
           if (!isDuplicate) actualNewCount++;
         }
 
@@ -119,13 +119,14 @@ export async function startJob(jobId: string): Promise<void> {
       entityType: 'collector',
       entityId: jobId,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const errMsg = e instanceof Error ? e.message : String(e);
     await CollectorJob.updateOne({ _id: jobId }, {
-      $set: { status: 'failed', lastError: e.message, completedAt: new Date() },
+      $set: { status: 'failed', lastError: errMsg, completedAt: new Date() },
     });
     await ActivityLog.create({
       action: 'collector_sync_failed',
-      details: `Job ${jobId} failed: ${e.message}`,
+      details: `Job ${jobId} failed: ${errMsg}`,
       entityType: 'collector',
       entityId: jobId,
     });
@@ -135,11 +136,11 @@ export async function startJob(jobId: string): Promise<void> {
 // ============ PROCESS SINGLE PHONE ============
 async function processCollectedPhone(
   phone: NormalizedPhone,
-  config: any,
+  config: ProviderConfig,
   sourceId: string,
   sourceName: string,
   sourceUrl: string,
-  existingPhones: any[],
+  existingPhones: Array<{ _id: string; modelName: string; slug: string; brandId?: string; brand?: { name: string } }>,
   jobId: string,
   reliability: number,
 ): Promise<void> {
@@ -151,12 +152,12 @@ async function processCollectedPhone(
   const dupResult = detectDuplicates(phone, existingPhones);
 
   // Detect conflicts with best match
-  const conflicts: any[] = [];
+  const conflicts: ConflictInfo[] = [];
   if (dupResult.matches.length > 0) {
     const bestMatch = dupResult.matches[0];
-    const existingPhone = existingPhones.find((p: any) => p._id.toString() === bestMatch.phoneId);
+    const existingPhone = existingPhones.find((p) => p._id?.toString() === bestMatch.phoneId);
     if (existingPhone) {
-      const conflictList = detectConflicts(phone, existingPhone, sourceName);
+      const conflictList = detectConflicts(phone, existingPhone as unknown as { modelName: string; slug: string; pricePKR: number; [key: string]: unknown }, sourceName);
       conflicts.push(...conflictList);
     }
   }
@@ -225,7 +226,7 @@ async function processCollectedPhone(
 }
 
 // ============ APPROVE AND IMPORT ============
-export async function approveAndImport(draftId: string, adminEdits?: any): Promise<{ success: boolean; phoneId?: string; error?: string }> {
+export async function approveAndImport(draftId: string, adminEdits?: Record<string, unknown>): Promise<{ success: boolean; phoneId?: string; error?: string }> {
   const draft = await CollectedPhone.findById(draftId);
   if (!draft) return { success: false, error: 'Draft not found' };
 
@@ -233,7 +234,7 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
   if (adminEdits) {
     for (const [key, value] of Object.entries(adminEdits)) {
       if (key === 'brandName' || key === 'model' || key === 'slug' || key === 'releaseDate' || key === 'thumbnail' || key === 'description') {
-        (draft as any)[key] = value;
+        (draft as unknown as Record<string, unknown>)[key] = value;
       }
     }
   }
@@ -256,7 +257,7 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
   const isUpdate = draft.duplicatePhoneId && Types.ObjectId.isValid(draft.duplicatePhoneId);
   let phoneId: string;
 
-  const phoneData: Record<string, any> = {
+  const phoneData: Record<string, unknown> = {
     modelName: draft.model,
     slug: draft.slug,
     brandId,
@@ -278,11 +279,11 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
     phoneId = draft.duplicatePhoneId;
   } else {
     const newPhone = await Phone.create(phoneData);
-    phoneId = (newPhone._id as any).toString();
+    phoneId = newPhone._id.toString();
   }
 
   // Specs
-  const specsData: Record<string, any> = {};
+  const specsData: Record<string, unknown> = {};
   if (draft.display?.size) specsData.display = `${draft.display.type ? draft.display.type + ' ' : ''}${draft.display.size}`;
   if (draft.display?.type) specsData.displayType = draft.display.type;
   if (draft.display?.resolution) specsData.resolution = draft.display.resolution;
@@ -333,7 +334,7 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
 
   // Benchmarks
   if (draft.benchmarks) {
-    const benchData: Record<string, any> = {};
+    const benchData: Record<string, unknown> = {};
     if (draft.benchmarks.antutu) benchData.antutu = draft.benchmarks.antutu;
     if (draft.benchmarks.geekbenchSingle) benchData.geekbenchSingle = draft.benchmarks.geekbenchSingle;
     if (draft.benchmarks.geekbenchMulti) benchData.geekbenchMulti = draft.benchmarks.geekbenchMulti;
@@ -370,31 +371,31 @@ export async function approveAndImport(draftId: string, adminEdits?: any): Promi
 }
 
 // ============ HELPER ============
-function buildProviderConfig(source: any): any {
+function buildProviderConfig(source: Record<string, unknown>): ProviderConfig {
   const headers: Record<string, string> = {};
   if (source.headers) {
-    for (const [k, v] of Object.entries(source.headers)) headers[k] = v as string;
+    for (const [k, v] of Object.entries(source.headers as Record<string, unknown>)) headers[k] = v as string;
   }
   const mappingRules: Record<string, string> = {};
   if (source.mappingRules) {
-    for (const [k, v] of Object.entries(source.mappingRules)) mappingRules[k] = v as string;
+    for (const [k, v] of Object.entries(source.mappingRules as Record<string, unknown>)) mappingRules[k] = v as string;
   }
   return {
-    type: source.type,
-    endpoint: source.endpoint || '',
-    apiKeyEnvVar: source.apiKeyEnvVar || '',
-    apiKeyHeader: (source as any).apiKeyHeader || '',
+    type: source.type as ProviderType,
+    endpoint: (source.endpoint as string) || '',
+    apiKeyEnvVar: (source.apiKeyEnvVar as string) || '',
+    apiKeyHeader: (source.apiKeyHeader as string) || '',
     headers,
-    brandFilter: source.brandFilter || [],
-    countryFilter: source.countryFilter || '',
-    region: source.region || '',
-    dataPath: source.dataPath || '',
+    brandFilter: (source.brandFilter as string[]) || [],
+    countryFilter: (source.countryFilter as string) || '',
+    region: (source.region as string) || '',
+    dataPath: (source.dataPath as string) || '',
     mappingRules,
     pagination: {
-      pageSize: source.paginationPageSize || 50,
-      maxPages: source.paginationMaxPages || 10,
-      pageParam: source.paginationPageParam || 'page',
+      pageSize: (source.paginationPageSize as number) || 50,
+      maxPages: (source.paginationMaxPages as number) || 10,
+      pageParam: (source.paginationPageParam as string) || 'page',
     },
-    enabled: source.enabled,
+    enabled: source.enabled as boolean,
   };
 }

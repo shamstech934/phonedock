@@ -16,6 +16,14 @@ import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import type { Model } from 'mongoose';
+
+interface AdminWithLocks {
+  sessionVersion?: number;
+  active?: boolean;
+  failedAttempts?: number;
+  lockedUntil?: Date | string | null;
+}
 
 // ============ CONFIGURATION ============
 
@@ -151,7 +159,7 @@ export async function getSessionFromRequest(req: NextRequest): Promise<TokenPayl
 export async function validateSessionVersion(
   adminId: string,
   tokenSessionVersion: number,
-  AdminModel: any,
+  AdminModel: Model<AdminWithLocks>,
 ): Promise<{ valid: boolean; currentVersion?: number; error?: string }> {
   try {
     const admin = await AdminModel.findById(adminId)
@@ -166,13 +174,13 @@ export async function validateSessionVersion(
       return { valid: false, error: 'Account disabled' };
     }
 
-    const currentVersion = (admin as any).sessionVersion ?? 0;
+    const currentVersion = admin.sessionVersion ?? 0;
     if (tokenSessionVersion < currentVersion) {
       return { valid: false, currentVersion, error: 'Session version mismatch (password changed or sessions revoked)' };
     }
 
     return { valid: true, currentVersion };
-  } catch (err: any) {
+  } catch {
     // FAIL CLOSED: on any DB error, reject the session
     return { valid: false, error: 'Session validation failed' };
   }
@@ -187,7 +195,7 @@ export interface RateLimitCheck {
 }
 
 /** Check login rate limit from DB-stored admin record */
-export function checkLoginRateLimitFromDB(admin: any): RateLimitCheck {
+export function checkLoginRateLimitFromDB(admin: AdminWithLocks): RateLimitCheck {
   const MAX_ATTEMPTS = 5;
   const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -201,16 +209,16 @@ export function checkLoginRateLimitFromDB(admin: any): RateLimitCheck {
     return { allowed: false, lockedUntil: new Date(admin.lockedUntil), attemptsRemaining: 0 };
   }
 
-  const remaining = MAX_ATTEMPTS - (admin.failedAttempts || 0);
+  const remaining = MAX_ATTEMPTS - (admin.failedAttempts ?? 0);
   return { allowed: remaining > 0, attemptsRemaining: Math.max(0, remaining) };
 }
 
 /** Record failed login attempt — returns true if account is now locked */
-export function recordFailedLoginDB(admin: any): boolean {
+export function recordFailedLoginDB(admin: AdminWithLocks): boolean {
   const MAX_ATTEMPTS = 5;
   const LOCKOUT_MS = 15 * 60 * 1000;
 
-  admin.failedAttempts = (admin.failedAttempts || 0) + 1;
+  admin.failedAttempts = (admin.failedAttempts ?? 0) + 1;
 
   if (admin.lockedUntil && new Date(admin.lockedUntil) <= new Date()) {
     admin.failedAttempts = 1;
@@ -226,7 +234,7 @@ export function recordFailedLoginDB(admin: any): boolean {
 }
 
 /** Reset failed attempts on successful login */
-export function resetFailedAttempts(admin: any): void {
+export function resetFailedAttempts(admin: AdminWithLocks): void {
   admin.failedAttempts = 0;
   admin.lockedUntil = null;
 }
@@ -238,7 +246,7 @@ export async function checkIpRateLimit(
   key: string,
   limit: number,
   windowMs: number,
-  RateLimitModel: any,
+  RateLimitModel: Model<{ count?: number }>,
 ): Promise<boolean> {
   try {
     const now = new Date();
@@ -252,7 +260,7 @@ export async function checkIpRateLimit(
 
     if (existing) {
       // Found a valid window entry — check count
-      return (existing as any).count <= limit;
+      return (existing.count ?? 0) <= limit;
     }
 
     // Step 2: No valid window doc. Upsert by KEY ALONE so the unique index
@@ -263,7 +271,7 @@ export async function checkIpRateLimit(
       { upsert: true, new: true, lean: true },
     );
 
-    return (result as any).count <= limit;
+    return (result?.count ?? 0) <= limit;
   } catch {
     // FAIL CLOSED: on DB error, reject the request
     return false;

@@ -17,28 +17,71 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.ms-excel',
 ]);
 
+interface ImportResult {
+  error?: string;
+  total?: number;
+  processed?: number;
+  imported?: number;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+  failed?: number;
+  issues?: string[];
+  errors?: string[];
+  duration?: number;
+}
+
+interface ImportValidation {
+  total: number | null;
+  validCount: number | null;
+  errorCount: number;
+  errors: string[];
+  preview: Record<string, unknown>[];
+  excelFile?: boolean;
+  fileName?: string;
+  fileSize?: number;
+}
+
+interface ImportStats {
+  totalImports?: number;
+  successfulImports?: number;
+  failedImports?: number;
+  todayImports?: number;
+  lastImportTime?: string;
+}
+
+interface ImportHistory {
+  _id: string;
+  createdAt: string;
+  filename?: string;
+  imported?: number;
+  updated?: number;
+  failed?: number;
+  duration?: number;
+}
+
 export default function AdminImportPage() {
   useAdmin();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [validation, setValidation] = useState<any>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [validation, setValidation] = useState<ImportValidation | null>(null);
   const [activeTab, setActiveTab] = useState('upload');
   const [importMode, setImportMode] = useState<'skip_duplicates' | 'update_existing' | 'new_only'>('skip_duplicates');
-  const [previewRecords, setPreviewRecords] = useState<any[]>([]);
+  const [previewRecords, setPreviewRecords] = useState<Record<string, unknown>[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [parseError, setParseError] = useState('');
-  const [importStats, setImportStats] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [importStats, setImportStats] = useState<ImportStats | null>(null);
+  const [history, setHistory] = useState<ImportHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    fetch('/api/import/stats', { credentials: 'include' }).then(r => r.json()).then(setImportStats).catch(() => {});
+    fetch('/api/import/stats', { credentials: 'include' }).then(r => r.json()).then((d: ImportStats) => setImportStats(d)).catch(() => {});
   }, [result]);
 
   useEffect(() => {
-    fetch('/api/import/history', { credentials: 'include' }).then(r => r.json()).then(d => setHistory(d.history || d)).catch(() => {});
+    fetch('/api/import/history', { credentials: 'include' }).then(r => r.json()).then((d: ImportHistory[] | { history?: ImportHistory[] }) => setHistory(Array.isArray(d) ? d : (d.history || []))).catch(() => {});
   }, [result]);
 
   const validateFile = (f: File): string | null => {
@@ -74,19 +117,19 @@ export default function AdminImportPage() {
       if (ext === 'json' || ext === 'csv') {
         // Parse JSON/CSV client-side for preview
         const text = await f.text();
-        let records: any[] = [];
+        let records: Record<string, unknown>[] = [];
         if (ext === 'json') {
           const parsed = JSON.parse(text);
           records = Array.isArray(parsed) ? parsed : (parsed.phones || parsed.data || parsed.records || [parsed]);
         } else if (ext === 'csv') {
           const Papa = await import('papaparse');
           const res = Papa.default.parse(text, { header: true, skipEmptyLines: true });
-          records = res.data;
+          records = res.data as Record<string, unknown>[];
         }
         setPreviewRecords(records);
         const errors: string[] = [];
-        const valid: any[] = [];
-        records.forEach((r: any, i: number) => {
+        const valid: Record<string, unknown>[] = [];
+        records.forEach((r: Record<string, unknown>, i: number) => {
           const brand = String(r.brand || r.brandName || '').trim();
           const model = String(r.model || r.modelName || r.name || '').trim();
           if (!brand || !model) errors.push(`Row ${i + 1}: Missing brand or model`);
@@ -107,8 +150,8 @@ export default function AdminImportPage() {
           fileSize: f.size,
         });
       }
-    } catch (e: any) {
-      setParseError('Failed to parse file: ' + e.message);
+    } catch (e: unknown) {
+      setParseError('Failed to parse file: ' + (e instanceof Error ? e.message : String(e)));
       setPreviewRecords([]);
     }
   };
@@ -149,8 +192,8 @@ export default function AdminImportPage() {
         data.duration = Date.now() - startTime;
         setResult(data);
       }
-    } catch (e: any) {
-      setResult({ error: e.message, duration: Date.now() - startTime });
+    } catch (e: unknown) {
+      setResult({ error: e instanceof Error ? e.message : String(e), duration: Date.now() - startTime });
     }
     setUploading(false);
   };
@@ -225,7 +268,7 @@ export default function AdminImportPage() {
                 <th className="text-center py-2 px-2 font-semibold text-gray-700">Duration</th>
               </tr></thead>
               <tbody>
-                {history.slice(0, 10).map((h: any, i: number) => (
+                {history.slice(0, 10).map((h, i) => (
                   <tr key={h._id || i} className="border-b border-gray-50 hover:bg-gray-50/50">
                     <td className="py-2 px-2 text-gray-500">{new Date(h.createdAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="py-2 px-2 text-gray-900 font-medium">{h.filename || '-'}</td>
@@ -278,7 +321,7 @@ export default function AdminImportPage() {
                     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
                       <p className="text-xs font-semibold text-blue-800 mb-2">Excel File Ready</p>
                       <p className="text-[10px] text-blue-600 mb-3">
-                        <strong>{validation.fileName}</strong> ({(validation.fileSize / 1024).toFixed(1)} KB) — records will be parsed server-side. Max 5000 records.
+                        <strong>{validation.fileName}</strong> ({((validation.fileSize ?? 0) / 1024).toFixed(1)} KB) — records will be parsed server-side. Max 5000 records.
                       </p>
                       <Button onClick={handleImport} disabled={uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
                         {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
@@ -301,7 +344,7 @@ export default function AdminImportPage() {
                             { value: 'new_only', label: 'New Only', desc: 'Only import brand new phones' },
                           ] as const).map(m => (
                             <label key={m.value} className={`block cursor-pointer rounded-xl border-2 p-3 transition-all ${importMode === m.value ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                              <input type="radio" name="importMode" value={m.value} checked={importMode === m.value} onChange={e => setImportMode(e.target.value as any)} className="sr-only" />
+                              <input type="radio" name="importMode" value={m.value} checked={importMode === m.value} onChange={e => setImportMode(e.target.value as 'skip_duplicates' | 'update_existing' | 'new_only')} className="sr-only" />
                               <div className="text-sm font-semibold text-gray-900">{m.label}</div>
                               <p className="text-[10px] text-muted-foreground mt-0.5">{m.desc}</p>
                             </label>
@@ -323,11 +366,11 @@ export default function AdminImportPage() {
                                   <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Status</th>
                                 </tr></thead>
                                 <tbody>
-                                  {validation.preview.map((r: any, i: number) => (
+                                  {validation.preview.map((r, i) => (
                                     <tr key={i} className="border-b border-gray-50">
-                                      <td className="py-1.5 px-2 text-gray-400">{r._row || i + 1}</td>
-                                      <td className="py-1.5 px-2 text-gray-900">{r._brand || r.brand || '-'}</td>
-                                      <td className="py-1.5 px-2 font-medium text-gray-900">{r._model || r.modelName || r.model || '-'}</td>
+                                      <td className="py-1.5 px-2 text-gray-400">{String(r._row || i + 1)}</td>
+                                      <td className="py-1.5 px-2 text-gray-900">{String(r._brand || r.brand || '-')}</td>
+                                      <td className="py-1.5 px-2 font-medium text-gray-900">{String(r._model || r.modelName || r.model || '-')}</td>
                                       <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
                                       <td className="py-1.5 px-2"><Badge className="bg-emerald-50 text-emerald-700 text-[10px]">Valid</Badge></td>
                                     </tr>
@@ -369,9 +412,9 @@ export default function AdminImportPage() {
           {validation && !validation.excelFile && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount}</p><p className="text-[10px] text-emerald-600">Valid</p></div>
+                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-emerald-700">{validation.validCount ?? 0}</p><p className="text-[10px] text-emerald-600">Valid</p></div>
                 <div className="bg-red-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-red-700">{validation.errorCount}</p><p className="text-[10px] text-red-600">Errors</p></div>
-                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total}</p><p className="text-[10px] text-blue-600">Total</p></div>
+                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-lg font-bold text-blue-700">{validation.total ?? 0}</p><p className="text-[10px] text-blue-600">Total</p></div>
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -390,13 +433,13 @@ export default function AdminImportPage() {
                         <th className="text-left py-1.5 px-2 font-semibold text-gray-700">Chipset</th>
                       </tr></thead>
                       <tbody>
-                        {validation.preview.map((r: any, i: number) => (
+                        {validation.preview.map((r, i) => (
                           <tr key={i} className="border-b border-gray-50">
-                            <td className="py-1.5 px-2 text-gray-400">{r._row || i + 1}</td>
-                            <td className="py-1.5 px-2 text-gray-900">{r._brand || '-'}</td>
-                            <td className="py-1.5 px-2 font-medium">{r._model || '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-400">{String(r._row || i + 1)}</td>
+                            <td className="py-1.5 px-2 text-gray-900">{String(r._brand || '-')}</td>
+                            <td className="py-1.5 px-2 font-medium">{String(r._model || '-')}</td>
                             <td className="py-1.5 px-2">{r.pricePKR || r.price ? `PKR ${Number(r.pricePKR || r.price).toLocaleString()}` : '-'}</td>
-                            <td className="py-1.5 px-2 text-gray-600">{r.chipset || '-'}</td>
+                            <td className="py-1.5 px-2 text-gray-600">{String(r.chipset || '-')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -416,7 +459,7 @@ export default function AdminImportPage() {
           {validation?.excelFile && (
             <Card className="border-blue-100">
               <CardContent className="p-6 text-center">
-                <p className="text-sm text-gray-700 mb-3">Excel files are parsed server-side during import. Preview is not available for .xlsx/.xls files.</p>
+                <p className="text-sm text-gray-700 mb-3">Excel file ({validation.fileName}{validation.fileSize ? ` · ${(validation.fileSize / 1024).toFixed(1)} KB` : ''}). Preview is not available for .xlsx/.xls files.</p>
                 <Button onClick={handleImport} disabled={uploading} className="gap-1.5 bg-blue-500 hover:bg-blue-600">
                   {uploading ? <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
                   Import Excel File
@@ -453,8 +496,8 @@ export default function AdminImportPage() {
                       </div>
                     ))}
                   </div>
-                  {result.duration && <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>}
-                  {(result.errors?.length || result.issues?.length) > 0 && (
+                  {result && result.duration && <p className="text-xs text-muted-foreground">Completed in {(result.duration / 1000).toFixed(1)}s</p>}
+                  {result && ((result.errors?.length || 0) + (result.issues?.length || 0)) > 0 && (
                     <Card className="border-red-100">
                       <CardHeader className="pb-2"><CardTitle className="text-sm text-red-700">Errors ({(result.errors || result.issues || []).length})</CardTitle></CardHeader>
                       <CardContent className="p-4 pt-0 max-h-60 overflow-y-auto">

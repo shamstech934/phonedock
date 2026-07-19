@@ -34,28 +34,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
     ]);
 
-    const phonePages: MetadataRoute.Sitemap = phones.map((p: any) => ({
+    const phonePages: MetadataRoute.Sitemap = phones.map((p) => ({
       url: `${BASE_URL}/phones/${p.slug}`,
       lastModified: p.updatedAt ? new Date(p.updatedAt) : new Date(),
       changeFrequency: 'weekly' as const,
       priority: 0.8,
     }));
 
-    const brandPages: MetadataRoute.Sitemap = brands.map((b: any) => ({
+    const brandPages: MetadataRoute.Sitemap = brands.map((b) => ({
       url: `${BASE_URL}/brands/${b.slug}`,
       lastModified: b.updatedAt ? new Date(b.updatedAt) : new Date(),
       changeFrequency: 'weekly' as const,
       priority: 0.7,
     }));
 
-    const newsPages: MetadataRoute.Sitemap = newsArticles.map((n: any) => ({
+    const newsPages: MetadataRoute.Sitemap = newsArticles.map((n) => ({
       url: `${BASE_URL}/news/${n.slug}`,
       lastModified: n.updatedAt ? new Date(n.updatedAt) : new Date(),
       changeFrequency: 'monthly' as const,
       priority: 0.6,
     }));
 
-    const reviewPages: MetadataRoute.Sitemap = phones.map((p: any) => ({
+    const reviewPages: MetadataRoute.Sitemap = phones.map((p) => ({
       url: `${BASE_URL}/reviews/${p.slug}`,
       lastModified: p.updatedAt ? new Date(p.updatedAt) : new Date(),
       changeFrequency: 'weekly' as const,

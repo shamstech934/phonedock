@@ -4,14 +4,14 @@
  * Handles HTML error pages, non-JSON responses, timeouts, AbortError.
  */
 
-interface SafeFetchResult<T = any> {
+interface SafeFetchResult<T = unknown> {
   ok: boolean;
   data: T | null;
   error: string;
   status: number;
 }
 
-export async function safeFetch<T = any>(
+export async function safeFetch<T = unknown>(
   url: string,
   options: RequestInit = {},
   timeoutMs = 120000,
@@ -30,7 +30,7 @@ export async function safeFetch<T = any>(
     if (!res.ok) {
       let body = '';
       try { body = ct.includes('json') ? await res.json() : await res.text(); } catch { body = ''; }
-      const msg = typeof body === 'object' && (body as any)?.error ? (body as any).error
+      const msg = typeof body === 'object' && (body as Record<string, unknown>)?.error ? String((body as Record<string, unknown>).error)
         : typeof body === 'string' && body.length < 200 ? body
         : `HTTP ${res.status}`;
       return { ok: false, data: null, error: msg, status: res.status };
@@ -47,11 +47,11 @@ export async function safeFetch<T = any>(
     } catch {
       return { ok: false, data: null, error: `Expected JSON, got ${ct}: ${text.substring(0, 100)}`, status: res.status };
     }
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
       return { ok: false, data: null, error: 'Request timed out', status: 0 };
     }
-    return { ok: false, data: null, error: err.message || 'Network error', status: 0 };
+    return { ok: false, data: null, error: err instanceof Error ? err.message : 'Network error', status: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -60,9 +60,9 @@ export async function safeFetch<T = any>(
 /**
  * Post JSON with safe response handling.
  */
-export async function safePost<T = any>(
+export async function safePost<T = unknown>(
   url: string,
-  body: any,
+  body: unknown,
   options: RequestInit = {},
   timeoutMs = 120000,
 ): Promise<SafeFetchResult<T>> {

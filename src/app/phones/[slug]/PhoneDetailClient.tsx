@@ -757,7 +757,7 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
                     Video Review{p.videos.length > 1 ? 's' : ''}
                   </h3>
                   <div className="space-y-3">
-                    {p.videos.map((v: any) => (
+                    {p.videos.map((v) => (
                       <div key={v.id || v.youtubeId} className="rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
                         <iframe
                           src={`https://www.youtube-nocookie.com/embed/${v.youtubeId}`}

@@ -1,8 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Types } from 'mongoose';
+import type { IPhone } from '@/lib/models/Phone';
 import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
+
+// ── Lean document types for price-tracker ──
+interface LeanBrand { _id: Types.ObjectId; name: string }
+
+interface LeanPhoneDoc {
+  _id: Types.ObjectId; modelName: string; slug: string; thumbnail: string;
+  currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
+  priceChange: number; percentageChange: number;
+  lastPriceCheckedAt: Date | null; lastPriceChangedAt: Date | null;
+  priceMode: string; manualLock: boolean; manualLockReason: string;
+  brand?: LeanBrand | null;
+}
+
+interface LeanSourceDoc {
+  _id: Types.ObjectId; name: string; sourceType: string;
+  enabled: boolean; trusted: boolean; baseUrl: string; allowedDomains: string[];
+  priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
+  failureCount: number; status: string; notes: string;
+}
+
+interface LeanPopulatedPhone {
+  _id: Types.ObjectId; modelName: string; slug: string; thumbnail: string;
+  currentPrice?: number; brand?: { _id: Types.ObjectId; name: string } | null;
+}
+
+interface LeanPopulatedSource { _id: Types.ObjectId; name: string; sourceType: string }
+interface LeanPopulatedAdmin { _id: Types.ObjectId; name: string; email: string }
+
+interface LeanHistoryDoc {
+  _id: Types.ObjectId;
+  phoneId?: LeanPopulatedPhone | null;
+  sourceId?: LeanPopulatedSource | null;
+  changedByAdminId?: LeanPopulatedAdmin | null;
+  oldPrice: number; newPrice: number; difference: number; percentageChange: number;
+  changeType: string; sourceType: string; sourceUrl: string;
+  verificationStatus: string; capturedAt: Date | null; createdAt?: Date;
+}
+
+interface LeanListingDoc {
+  _id: Types.ObjectId;
+  sourceId?: { _id: Types.ObjectId; name: string; sourceType: string; baseUrl: string; allowedDomains: string[] } | null;
+  productUrl: string; ram: string; storage: string; ptaStatus: string; warrantyType: string;
+  currentSourcePrice: number; previousSourcePrice: number; availability: string;
+  lastCheckedAt: Date | null; lastChangedAt: Date | null; enabled: boolean; verificationStatus: string;
+}
+
+interface LeanPhoneMini { currentPrice?: number; previousPrice?: number; modelName?: string; slug?: string }
 
 // ── Price Tracker Settings (stored in SystemState) ──
 const PT_SETTINGS_KEY = 'price_tracker_settings';
@@ -85,7 +134,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const status = url.searchParams.get('status');
     const sort = url.searchParams.get('sort') || 'lastPriceChangedAt';
 
-    const filter: any = { active: true, currentPrice: { $gt: 0 } };
+    const filter: Record<string, unknown> = { active: true, currentPrice: { $gt: 0 } };
 
     // Mode filter
     if (mode === 'manual') filter.priceMode = 'manual';
@@ -101,14 +150,14 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     if (search.length >= 2) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const brandMatches = await Brand.find({ name: { $regex: safe, $options: 'i' } }).select('_id').lean();
-      const brandIds = brandMatches.map((b: any) => b._id);
-      const searchOr: any[] = [{ modelName: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }];
+      const brandIds = brandMatches.map((b: { _id: Types.ObjectId }) => b._id);
+      const searchOr: Record<string, unknown>[] = [{ modelName: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }];
       if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
       filter.$or = searchOr;
     }
 
     // Sort
-    let sortObj: any = { lastPriceChangedAt: -1 };
+    let sortObj: Record<string, 1 | -1> = { lastPriceChangedAt: -1 };
     if (sort === 'currentPrice') sortObj = { currentPrice: 1 };
     else if (sort === 'currentPrice-desc') sortObj = { currentPrice: -1 };
     else if (sort === 'lastPriceChangedAt') sortObj = { lastPriceChangedAt: -1 };
@@ -121,7 +170,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     ]);
 
     return NextResponse.json({
-      phones: phones.map((p: any) => ({
+      phones: phones.map((p: LeanPhoneDoc) => ({
         id: p._id?.toString(),
         modelName: p.modelName,
         slug: p.slug,
@@ -151,7 +200,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 
     const sources = await PriceSource.find().sort({ priority: -1, createdAt: 1 }).lean();
     return NextResponse.json({
-      sources: sources.map((s: any) => ({
+      sources: sources.map((s: LeanSourceDoc) => ({
         id: s._id?.toString(),
         name: s.name,
         sourceType: s.sourceType,
@@ -182,7 +231,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const changeType = url.searchParams.get('changeType');
     const sourceType = url.searchParams.get('sourceType');
 
-    const filter: any = {};
+    const filter: { changeType?: string; sourceType?: string } = {};
     if (changeType && ['increase', 'decrease', 'unchanged', 'correction'].includes(changeType)) {
       filter.changeType = changeType;
     }
@@ -196,24 +245,24 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     ]);
 
     return NextResponse.json({
-      changes: changes.map((c: any) => ({
+      changes: changes.map((c: LeanHistoryDoc) => ({
         id: c._id?.toString(),
         phoneId: c.phoneId?._id?.toString(),
-        phoneName: (c.phoneId as any)?.modelName || '',
-        phoneSlug: (c.phoneId as any)?.slug || '',
-        phoneThumbnail: (c.phoneId as any)?.thumbnail || '',
-        brandName: (c.phoneId as any)?.brand?.name || '',
+        phoneName: c.phoneId?.modelName || '',
+        phoneSlug: c.phoneId?.slug || '',
+        phoneThumbnail: c.phoneId?.thumbnail || '',
+        brandName: c.phoneId?.brand?.name || '',
         oldPrice: c.oldPrice || 0,
         newPrice: c.newPrice || 0,
         difference: c.difference || 0,
         percentageChange: c.percentageChange || 0,
         changeType: c.changeType || 'unchanged',
         sourceType: c.sourceType || 'manual',
-        sourceName: (c.sourceId as any)?.name || '',
+        sourceName: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         verificationStatus: c.verificationStatus || 'confirmed',
         capturedAt: c.capturedAt || c.createdAt || null,
-        changedBy: c.changedByAdminId ? { name: (c.changedByAdminId as any).name, email: (c.changedByAdminId as any).email } : undefined,
+        changedBy: c.changedByAdminId ? { name: c.changedByAdminId?.name, email: c.changedByAdminId?.email } : undefined,
       })),
       total, page, limit, totalPages: Math.ceil(total / limit),
     });
@@ -232,21 +281,21 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       .lean();
 
     return NextResponse.json({
-      pending: pending.map((c: any) => ({
+      pending: pending.map((c: LeanHistoryDoc) => ({
         id: c._id?.toString(),
         phoneId: c.phoneId?._id?.toString(),
-        phoneName: (c.phoneId as any)?.modelName || '',
-        phoneSlug: (c.phoneId as any)?.slug || '',
-        phoneThumbnail: (c.phoneId as any)?.thumbnail || '',
-        phoneCurrentPrice: (c.phoneId as any)?.currentPrice || 0,
-        brandName: (c.phoneId as any)?.brand?.name || '',
+        phoneName: c.phoneId?.modelName || '',
+        phoneSlug: c.phoneId?.slug || '',
+        phoneThumbnail: c.phoneId?.thumbnail || '',
+        phoneCurrentPrice: c.phoneId?.currentPrice || 0,
+        brandName: c.phoneId?.brand?.name || '',
         oldPrice: c.oldPrice || 0,
         newPrice: c.newPrice || 0,
         difference: c.difference || 0,
         percentageChange: c.percentageChange || 0,
         changeType: c.changeType || 'unchanged',
         sourceType: c.sourceType || 'manual',
-        sourceName: (c.sourceId as any)?.name || '',
+        sourceName: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         capturedAt: c.capturedAt || c.createdAt || null,
       })),
@@ -269,7 +318,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       .lean();
 
     return NextResponse.json({
-      history: history.map((h: any) => ({
+      history: history.map((h: LeanHistoryDoc) => ({
         id: h._id?.toString(),
         oldPrice: h.oldPrice || 0,
         newPrice: h.newPrice || 0,
@@ -277,11 +326,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         percentageChange: h.percentageChange || 0,
         changeType: h.changeType || 'unchanged',
         sourceType: h.sourceType || 'manual',
-        sourceName: (h.sourceId as any)?.name || '',
+        sourceName: h.sourceId?.name || '',
         sourceUrl: h.sourceUrl || '',
         verificationStatus: h.verificationStatus || 'confirmed',
         capturedAt: h.capturedAt || h.createdAt || null,
-        changedBy: h.changedByAdminId ? { name: (h.changedByAdminId as any).name, email: (h.changedByAdminId as any).email } : undefined,
+        changedBy: h.changedByAdminId ? { name: h.changedByAdminId?.name, email: h.changedByAdminId?.email } : undefined,
       })),
     });
   }
@@ -301,11 +350,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       .lean();
 
     return NextResponse.json({
-      listings: listings.map((l: any) => ({
+      listings: listings.map((l: LeanListingDoc) => ({
         id: l._id?.toString(),
         sourceId: l.sourceId?._id?.toString(),
-        sourceName: (l.sourceId as any)?.name || '',
-        sourceType: (l.sourceId as any)?.sourceType || '',
+        sourceName: l.sourceId?.name || '',
+        sourceType: l.sourceId?.sourceType || '',
         productUrl: l.productUrl || '',
         ram: l.ram || '',
         storage: l.storage || '',
@@ -354,7 +403,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phone = await Phone.findById(phoneId);
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
-    const oldPrice = (phone as any).currentPrice || 0;
+    const oldPrice = phone.currentPrice || 0;
     const difference = newPrice - oldPrice;
     const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
 
@@ -364,7 +413,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     else if (oldPrice === 0 && newPrice > 0) changeType = 'correction';
 
     // Update Phone document
-    const updates: any = {
+    const updates: Record<string, unknown> = {
       currentPrice: newPrice,
       previousPrice: oldPrice,
       priceChange: difference,
@@ -375,8 +424,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     };
 
     // Track lowest/highest
-    const lowest = (phone as any).lowestPrice || 0;
-    const highest = (phone as any).highestPrice || 0;
+    const lowest = phone.lowestPrice || 0;
+    const highest = phone.highestPrice || 0;
     if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
     if (newPrice > highest) updates.highestPrice = newPrice;
 
@@ -423,12 +472,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     // Targeted cache revalidation
     revalidatePricePages(phone.slug);
 
-    const updated = await Phone.findById(phoneId).lean();
+    const updated = await Phone.findById(phoneId).lean() as LeanPhoneMini | null;
     return NextResponse.json({
       success: true,
       id: phone._id?.toString(),
-      currentPrice: (updated as any)?.currentPrice || newPrice,
-      previousPrice: (updated as any)?.previousPrice || oldPrice,
+      currentPrice: updated?.currentPrice || newPrice,
+      previousPrice: updated?.previousPrice || oldPrice,
       difference,
       percentageChange,
       changeType,
@@ -699,18 +748,18 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     if (action === 'approve') {
       const phone = await Phone.findById(history.phoneId);
       if (phone && history.newPrice > 0) {
-        const oldPrice = (phone as any).currentPrice || 0;
+        const oldPrice = phone.currentPrice || 0;
         if (oldPrice !== history.newPrice) {
           const difference = history.newPrice - oldPrice;
           const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
-          const updates: any = {
+          const updates: Record<string, unknown> = {
             currentPrice: history.newPrice, previousPrice: oldPrice,
             priceChange: difference, percentageChange,
             lastPriceChangedAt: new Date(), lastPriceCheckedAt: new Date(),
             pricePKR: history.newPrice,
           };
-          const lowest = (phone as any).lowestPrice || 0;
-          const highest = (phone as any).highestPrice || 0;
+          const lowest = phone.lowestPrice || 0;
+          const highest = phone.highestPrice || 0;
           if (history.newPrice < lowest || lowest === 0) updates.lowestPrice = history.newPrice;
           if (history.newPrice > highest) updates.highestPrice = history.newPrice;
           await Phone.findByIdAndUpdate(history.phoneId, { $set: updates });
@@ -720,19 +769,19 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     }
 
     try {
-      const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean();
+      const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean() as LeanPhoneMini | null;
       await ActivityLog.create({
         adminId: admin._id,
         action: action === 'approve' ? 'approve_price_change' : 'reject_price_change',
-        details: `${action === 'approve' ? 'Approved' : 'Rejected'} price change for ${(phoneDoc as any)?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
+        details: `${action === 'approve' ? 'Approved' : 'Rejected'} price change for ${phoneDoc?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
         entityType: 'phone', entityId: history.phoneId?.toString(),
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
     // Targeted cache revalidation on approve
     if (action === 'approve') {
-      const phoneForReval = await Phone.findById(history.phoneId).select('slug').lean();
-      revalidatePricePages((phoneForReval as any)?.slug);
+      const phoneForReval = await Phone.findById(history.phoneId).select('slug').lean() as { slug?: string } | null;
+      revalidatePricePages(phoneForReval?.slug);
     }
 
     return NextResponse.json({ success: true, id: history._id?.toString(), verificationStatus: history.verificationStatus });
@@ -760,13 +809,13 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     // Apply the price change to the Phone if not already applied
     const phone = await Phone.findById(history.phoneId);
     if (phone && history.newPrice > 0) {
-      const oldPrice = (phone as any).currentPrice || 0;
+      const oldPrice = phone.currentPrice || 0;
       // Only apply if the price hasn't already been updated to this value
       if (oldPrice !== history.newPrice) {
         const difference = history.newPrice - oldPrice;
         const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
 
-        const updates: any = {
+        const updates: Record<string, unknown> = {
           currentPrice: history.newPrice,
           previousPrice: oldPrice,
           priceChange: difference,
@@ -776,8 +825,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
           pricePKR: history.newPrice,
         };
 
-        const lowest = (phone as any).lowestPrice || 0;
-        const highest = (phone as any).highestPrice || 0;
+        const lowest = phone.lowestPrice || 0;
+        const highest = phone.highestPrice || 0;
         if (history.newPrice < lowest || lowest === 0) updates.lowestPrice = history.newPrice;
         if (history.newPrice > highest) updates.highestPrice = history.newPrice;
 
@@ -791,18 +840,18 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     }
 
     try {
-      const phoneDoc = phone || await Phone.findById(history.phoneId).select('modelName').lean();
+      const phoneDoc = (phone || await Phone.findById(history.phoneId).select('modelName').lean()) as { modelName?: string } | null;
       await ActivityLog.create({
         adminId: admin._id,
         action: 'approve_price_change',
-        details: `Approved price change for ${(phoneDoc as any)?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
+        details: `Approved price change for ${phoneDoc?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
         entityType: 'phone',
         entityId: history.phoneId?.toString(),
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
     // Targeted cache revalidation
-    revalidatePricePages((phone as any)?.slug);
+    revalidatePricePages(phone?.slug);
 
     return NextResponse.json({ success: true, id: history._id?.toString(), verificationStatus: 'confirmed' });
   }
@@ -827,11 +876,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await history.save();
 
     try {
-      const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean();
+      const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean() as LeanPhoneMini | null;
       await ActivityLog.create({
         adminId: admin._id,
         action: 'reject_price_change',
-        details: `Rejected price change for ${(phoneDoc as any)?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
+        details: `Rejected price change for ${phoneDoc?.modelName || 'unknown'}: PKR ${history.oldPrice} → PKR ${history.newPrice}`,
         entityType: 'phone',
         entityId: history.phoneId?.toString(),
       });
@@ -921,7 +970,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phone = await Phone.findById(phoneId);
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
-    const newLock = !((phone as any).manualLock || false);
+    const newLock = !(phone.manualLock || false);
     await Phone.findByIdAndUpdate(phoneId, {
       $set: { manualLock: newLock, manualLockReason: newLock ? 'Toggled from phones list' : '' },
     });
@@ -960,7 +1009,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     const body = await req.json();
     const { name, sourceType, baseUrl, allowedDomains, priority, enabled, trusted, status, notes } = body;
 
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
 
     if (name !== undefined) {
       if (!name.trim()) return NextResponse.json({ error: 'Source name cannot be empty' }, { status: 400 });
@@ -1019,7 +1068,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     const body = await req.json();
     const { productUrl, ram, storage, ptaStatus, warrantyType, enabled, verificationStatus } = body;
 
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
 
     if (productUrl !== undefined) {
       if (!productUrl.startsWith('https://')) {
@@ -1070,7 +1119,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     const body = await req.json();
     const { autoApproveThreshold, reviewThreshold, batchSize, checkFrequency } = body;
 
-    const updates: Record<string, any> = {};
+    const updates: Record<string, unknown> = {};
 
     if (autoApproveThreshold !== undefined) {
       const v = Number(autoApproveThreshold);

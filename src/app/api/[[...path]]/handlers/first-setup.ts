@@ -249,7 +249,7 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
 
       // Use MongoDB session/transaction if supported
       const session = await Admin.startSession();
-      let createdAdmin: any = null;
+      const ctx = { createdAdmin: null as { _id: { toString(): string }; email: string; name: string; role: string } | null };
 
       try {
         await session.withTransaction(async () => {
@@ -266,7 +266,7 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
           }
 
           // Create the superadmin
-          createdAdmin = await Admin.create([{
+          const result = (await Admin.create([{
             email,
             name,
             password: hashedPassword as string,
@@ -276,22 +276,23 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
             failedAttempts: 0,
             sessionVersion: 0,
             passwordChangedAt: new Date(),
-          }], { session });
-
-          createdAdmin = createdAdmin[0];
+          }], { session }))[0];
+          ctx.createdAdmin = result as unknown as NonNullable<typeof ctx.createdAdmin>;
 
           // Create bootstrap lock
           await SystemState.create([{
             key: 'first_superadmin_created',
             completed: true,
             completedAt: new Date(),
-            completedByAdminId: createdAdmin._id,
-            metadata: { email: createdAdmin.email },
+            completedByAdminId: result._id,
+            metadata: { email: result.email },
           }], { session });
         });
       } finally {
         await session.endSession();
       }
+
+      const createdAdmin = ctx.createdAdmin;
 
       if (!createdAdmin) {
         return NextResponse.json({ error: 'Setup failed. Please try again.' }, { status: 500 });
@@ -323,14 +324,14 @@ export async function handleFirstSetupPost(req: NextRequest, segments: string[])
       response.cookies.set('pd_session', signedSession.token, signedSession.cookieOptions);
 
       return response;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Handle transaction abort (duplicate superadmin race condition)
-      if (err.message === 'SETUP_ALREADY_DONE') {
+      if (err instanceof Error && err.message === 'SETUP_ALREADY_DONE') {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
       }
 
       // Handle MongoDB duplicate key error
-      if (err.code === 11000) {
+      if ((err as Record<string, unknown>).code === 11000) {
         return NextResponse.json({ error: 'Unable to create account. Please try different details.' }, { status: 400 });
       }
 

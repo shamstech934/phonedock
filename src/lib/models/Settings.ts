@@ -44,10 +44,10 @@ export const Settings = (mongoose.models.Settings as mongoose.Model<ISettings>) 
 
 // Helper: get settings, create defaults if not exist
 export async function getSettings(): Promise<ISettings> {
-  let settings = await Settings.findOne().lean();
+  let settings: ISettings | null = await Settings.findOne().lean() as ISettings | null;
   if (!settings) {
-    settings = await Settings.create({});
-    settings = await Settings.findById(settings._id).lean() as any;
+    const created = await Settings.create({});
+    settings = await Settings.findById(created._id).lean() as unknown as ISettings;
   }
-  return settings as any;
+  return settings as ISettings;
 }

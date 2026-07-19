@@ -40,12 +40,12 @@ export abstract class BaseProvider {
         sampleCount: result.phones.length,
         latencyMs: Date.now() - start,
       };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'Connection failed' };
+    } catch (e: unknown) {
+      return { success: false, message: e instanceof Error ? e.message : 'Connection failed' };
     }
   }
 
-  protected buildProvenance(field: string, value: any, confidence: number = 0.8): FieldProvenance {
+  protected buildProvenance(field: string, value: unknown, confidence: number = 0.8): FieldProvenance {
     return {
       field,
       value,

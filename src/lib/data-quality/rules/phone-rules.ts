@@ -433,8 +433,8 @@ export const SPECS_OBJECT_IN_STRING: RuleDefinition = {
         };
       }
       return { success: false, changes: [], error: 'Value is no longer an object (may have been fixed already)' };
-    } catch (e: any) {
-      return { success: false, changes: [], error: e.message || 'Fix failed' };
+    } catch (e: unknown) {
+      return { success: false, changes: [], error: e instanceof Error ? e.message : 'Fix failed' };
     }
   },
 };
@@ -619,7 +619,7 @@ export const IMAGE_MULTIPLE_PRIMARY: RuleDefinition = {
       const id = phone._id?.toString();
       if (!id) continue;
       const images = ctx.lookups.images.get(id) || [];
-      const withOrder0 = images.filter((img: any) => img.sortOrder === 0);
+      const withOrder0 = images.filter((img: Record<string, unknown>) => img.sortOrder === 0);
       if (withOrder0.length > 1) {
         issues.push({
           issueKey: issueKey(this.ruleId, 'phone', id, 'images'),
@@ -643,7 +643,7 @@ export const IMAGE_MULTIPLE_PRIMARY: RuleDefinition = {
     try {
       const images = await PhoneImage.find({ phoneId: issue.entityId }).sort({ sortOrder: 1 }).lean();
       if (images.length <= 1) return { success: false, changes: [], error: 'No duplicate primaries found' };
-      const changes: Array<{ field: string; oldValue: any; newValue: any }> = [];
+      const changes: Array<{ field: string; oldValue: unknown; newValue: unknown }> = [];
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         if (img.sortOrder !== i) {
@@ -653,8 +653,8 @@ export const IMAGE_MULTIPLE_PRIMARY: RuleDefinition = {
       }
       if (changes.length === 0) return { success: false, changes: [], error: 'Already sequential' };
       return { success: true, changes };
-    } catch (e: any) {
-      return { success: false, changes: [], error: e.message || 'Fix failed' };
+    } catch (e: unknown) {
+      return { success: false, changes: [], error: e instanceof Error ? e.message : 'Fix failed' };
     }
   },
 };

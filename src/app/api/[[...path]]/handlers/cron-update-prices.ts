@@ -70,7 +70,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' })
       .select('_id')
       .lean()
-      .then((docs) => docs.map((d: any) => d._id));
+      .then((docs) => docs.map((d) => d._id));
 
     if (trustedSourceIds.length === 0) {
       return NextResponse.json({ ...summary, message: 'No trusted sources enabled' });
@@ -90,7 +90,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       return NextResponse.json({ ...summary, message: 'No eligible listings to process' });
     }
 
-    const batches: any[][] = [];
+    const batches: (typeof listings)[number][][] = [];
     for (let i = 0; i < listings.length; i += BATCH_SIZE) {
       batches.push(listings.slice(i, i + BATCH_SIZE));
     }
@@ -100,8 +100,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const listing of batch) {
         summary.processed++;
         const listingId = listing._id;
-        const phone = listing.phoneId as any;
-        const source = listing.sourceId as any;
+        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean } | null;
+        const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string } | null;
 
         if (!phone || !source) {
           summary.failed++;
@@ -118,7 +118,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         let fetchError = false;
 
         // ── SSRF protection ──
-        const sourceAllowedDomains = (source as any).allowedDomains || [];
+        const sourceAllowedDomains = source?.allowedDomains || [];
         const ssrfCheck = await validateUrlForFetch(listing.productUrl, sourceAllowedDomains);
         if (!ssrfCheck.safe) {
           console.warn(`[cron:prices] SSRF blocked: ${listing.productUrl} — ${ssrfCheck.reason}`);
@@ -194,7 +194,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         // ── Handle successful price extraction ──
         if (detectedPrice !== null && detectedPrice > 0) {
-          const previousSourcePrice = (listing as any).currentSourcePrice || (listing as any).previousSourcePrice || 0;
+          const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
 
           if (previousSourcePrice <= 0) {
             // First detection — just record the price, no change to compute
@@ -223,7 +223,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               previousSourcePrice: previousSourcePrice,
               currentSourcePrice: detectedPrice,
               availability: availability === 'unknown' ? 'available' : availability,
-              lastChangedAt: difference !== 0 ? new Date() : (listing as any).lastChangedAt,
+              lastChangedAt: difference !== 0 ? new Date() : (listing as unknown as { lastChangedAt?: Date | null }).lastChangedAt,
             },
           });
 
@@ -237,12 +237,12 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           }
 
           // Determine action based on change percentage
-          const isManualLock = (phone as any).manualLock === true;
+          const isManualLock = phone?.manualLock === true;
 
           if (pctChange < AUTO_APPROVE_THRESHOLD) {
             // Auto-approve: change < 2%
             if (!isManualLock) {
-              const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, previousSourcePrice, source, changeType);
               if (slug) updatedSlugs.push(slug);
             }
             // Always record history
@@ -263,7 +263,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           } else if (pctChange <= REVIEW_THRESHOLD) {
             // Auto-approve but log: change 2-15%
             if (!isManualLock) {
-              const slug = await applyPriceToPhone(phone._id, detectedPrice, previousSourcePrice, source, changeType);
+              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, previousSourcePrice, source, changeType);
               if (slug) updatedSlugs.push(slug);
             }
             await PriceTrackerHistory.create({
@@ -334,20 +334,20 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
 // ── Helper: apply detected price to Phone document ──
 async function applyPriceToPhone(
-  phoneId: any,
+  phoneId: string,
   newPrice: number,
   _oldPrice: number,
-  source: any,
+  source: { _id: { toString(): string }; name?: string },
   _changeType: string,
 ): Promise<string | null> {
   const phone = await Phone.findById(phoneId);
   if (!phone) return null;
 
-  const currentPhonePrice = (phone as any).currentPrice || 0;
+  const currentPhonePrice = (phone as unknown as { currentPrice?: number }).currentPrice || 0;
   const difference = newPrice - currentPhonePrice;
   const pctChange = currentPhonePrice > 0 ? Math.round((difference / currentPhonePrice) * 10000) / 100 : 0;
 
-  const updates: any = {
+  const updates: Record<string, unknown> = {
     currentPrice: newPrice,
     previousPrice: currentPhonePrice,
     priceChange: difference,
@@ -358,8 +358,8 @@ async function applyPriceToPhone(
     pricePKR: newPrice,
   };
 
-  const lowest = (phone as any).lowestPrice || 0;
-  const highest = (phone as any).highestPrice || 0;
+  const lowest = (phone as unknown as { lowestPrice?: number }).lowestPrice || 0;
+  const highest = (phone as unknown as { highestPrice?: number }).highestPrice || 0;
   if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
   if (newPrice > highest) updates.highestPrice = newPrice;
 
@@ -367,9 +367,9 @@ async function applyPriceToPhone(
 
   // Legacy PriceHistory
   try {
-    await PriceHistory.create({ phoneId, storeName: (source as any).name || null, price: newPrice });
+    await PriceHistory.create({ phoneId, storeName: source.name || null, price: newPrice });
   } catch (e) { console.error('[PriceHistory]', e); }
 
   // Return slug for cache revalidation
-  return (phone as any).slug || null;
+  return (phone as unknown as { slug?: string }).slug || null;
 }

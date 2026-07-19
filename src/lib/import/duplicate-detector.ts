@@ -21,7 +21,7 @@ function normalizeForCompare(str: string): string {
  * Build a duplicate check map from existing phones.
  * Returns a Map<string, { slug, phoneId }> keyed by normalized brand+model.
  */
-export function buildDuplicateIndex(phones: Array<{ _id: any; slug: string; brandId?: any; brandName?: string; modelName: string }>): Map<string, { slug: string; phoneId: string }> {
+export function buildDuplicateIndex(phones: Array<{ _id: { toString(): string }; slug: string; brandId?: { toString(): string }; brandName?: string; modelName: string }>): Map<string, { slug: string; phoneId: string }> {
   const map = new Map<string, { slug: string; phoneId: string }>();
   for (const p of phones) {
     const key = normalizeForCompare(`${p.brandName || ''} ${p.modelName}`);

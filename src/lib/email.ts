@@ -2,7 +2,9 @@
 // This file must ONLY be imported from server-side code (API routes, server components).
 // Do NOT import from client components or shared UI libraries.
 
-let _transporter: any = null;
+import type { Transporter } from 'nodemailer';
+
+let _transporter: Transporter | null = null;
 
 /** Get or create a singleton nodemailer transporter */
 export async function getEmailTransporter() {

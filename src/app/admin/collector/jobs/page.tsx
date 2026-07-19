@@ -39,7 +39,7 @@ export default function AdminCollectorJobsPage() {
     } catch {}
   };
 
-  const statusConfig: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
     pending: { icon: Clock, color: 'text-gray-600', bg: 'bg-gray-50', label: 'Pending' },
     running: { icon: Loader, color: 'text-blue-500', bg: 'bg-blue-50', label: 'Running' },
     completed: { icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Completed' },

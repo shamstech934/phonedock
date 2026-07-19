@@ -129,7 +129,7 @@ export default function AdminVideosPage() {
       setVideos(d.videos || []);
       setTotal(d.total || 0);
       setTotalPages(d.totalPages || 1);
-    } catch (e: any) { setError(e.message || 'Failed to load videos'); } finally { setLoading(false); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load videos'); } finally { setLoading(false); }
   }, [page, rowsPerPage, sort, statusFilter, syncFilter, debouncedSearch, dateFilter]);
 
   // Fetch stats
@@ -139,7 +139,7 @@ export default function AdminVideosPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setStats(d);
-    } catch (e: any) { console.error('Failed to load video stats:', e); }
+    } catch (e: unknown) { console.error('Failed to load video stats:', e); }
   }, []);
 
   useEffect(() => { fetchVideos(); fetchStats(); }, [fetchVideos, fetchStats]);
@@ -152,7 +152,7 @@ export default function AdminVideosPage() {
       const data = await res.json();
       setSyncResult(data);
       fetchVideos(); fetchStats();
-    } catch (e: any) { console.error('Sync failed:', e); } finally { setSyncing(false); }
+    } catch (e: unknown) { console.error('Sync failed:', e); } finally { setSyncing(false); }
   };
 
   // Single actions
@@ -164,7 +164,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ active: !v.active, status: !v.active ? 'live' : 'pending', autoLinked: false }),
       });
       fetchVideos(); fetchStats();
-    } catch (e: any) { console.error('Toggle active failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Toggle active failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleToggleFeatured = async (v: VideoItem) => {
@@ -175,7 +175,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ featured: !v.featured }),
       });
       fetchVideos(); fetchStats();
-    } catch (e: any) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleToggleHidden = async (v: VideoItem) => {
@@ -186,7 +186,7 @@ export default function AdminVideosPage() {
         body: JSON.stringify({ hidden: !v.hidden, status: !v.hidden ? 'hidden' : 'live', active: v.hidden }),
       });
       fetchVideos(); fetchStats();
-    } catch (e: any) { console.error('Toggle hidden failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Toggle hidden failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleDelete = async () => {
@@ -196,7 +196,7 @@ export default function AdminVideosPage() {
       await fetch(`/api/admin/videos/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
       setDeleteModal(null);
       fetchVideos(); fetchStats();
-    } catch (e: any) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleCopyUrl = (v: VideoItem) => {
@@ -214,7 +214,7 @@ export default function AdminVideosPage() {
       });
       const d = await res.json();
       if (d.success) { setSelected(new Set()); fetchVideos(); fetchStats(); }
-    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setBulkLoading(false); }
+    } catch (e: unknown) { console.error('Bulk action failed:', e); } finally { setBulkLoading(false); }
   };
 
   // Import video
@@ -228,7 +228,7 @@ export default function AdminVideosPage() {
       const d = await res.json();
       if (d.error) { setImportError(d.error); }
       else { setAddVideoModal(false); setImportUrl(''); fetchVideos(); fetchStats(); }
-    } catch (e: any) { setImportError(e.message || 'Failed to import video'); }
+    } catch (e: unknown) { setImportError(e instanceof Error ? e.message : 'Failed to import video'); }
     finally { setImportLoading(false); }
   };
 

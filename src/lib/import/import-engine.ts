@@ -67,7 +67,7 @@ export async function importPhones(
   const existingSlugs = new Set<string>();
   const existingPhones = await Phone.find({}, { slug: 1 }).lean();
   for (const p of existingPhones) {
-    existingSlugs.add((p as any).slug);
+    existingSlugs.add(p.slug as string);
   }
 
   // Validate all records first
@@ -126,7 +126,7 @@ export async function importPhones(
         }
 
         // Check if phone exists (by slug)
-        const existingPhone = await Phone.findOne({ slug: phoneData.slug }).lean();
+        const existingPhone = await Phone.findOne({ slug: phoneData.slug as string }).lean();
 
         if (existingPhone) {
           if (options.skipExisting) {
@@ -136,11 +136,11 @@ export async function importPhones(
 
           // Update existing phone
           await Phone.updateOne(
-            { slug: phoneData.slug },
+            { slug: phoneData.slug as string },
             { $set: phoneData, $setOnInsert: { createdAt: new Date() } },
             { upsert: true }
           );
-          const phoneId = (existingPhone as any)._id;
+          const phoneId = existingPhone._id;
 
           // Update specs
           if (Object.keys(specsData).length > 0) {
@@ -203,12 +203,12 @@ export async function importPhones(
         }
 
         // Add slug to tracking set
-        existingSlugs.add(phoneData.slug);
-      } catch (e: any) {
+        existingSlugs.add(phoneData.slug as string);
+      } catch (e: unknown) {
         result.errors.push({
           row,
           model: validation.phone.modelName || `Row ${row}`,
-          error: e.message || 'Unknown error during import',
+          error: e instanceof Error ? e.message : 'Unknown error during import',
         });
         result.failed++;
       }
@@ -233,7 +233,7 @@ export async function importPhones(
       batchSize: BATCH_SIZE,
       createdPhoneIds,
     });
-    (result as any).historyId = (historyEntry as any)._id?.toString();
+    result.historyId = historyEntry._id?.toString();
   } catch {
     // History save failure is non-critical
   }
@@ -251,7 +251,7 @@ export async function rollbackImport(historyId: string): Promise<{ success: bool
   }
 
   // Delete phones by tracked IDs instead of time window
-  const phoneIds = (history as any).createdPhoneIds || [];
+  const phoneIds = (history.createdPhoneIds || []) as Types.ObjectId[];
   if (phoneIds.length > 0) {
     await Phone.deleteMany({ _id: { $in: phoneIds } });
     await Promise.all([
@@ -269,7 +269,7 @@ export async function rollbackImport(historyId: string): Promise<{ success: bool
 
   return {
     success: true,
-    message: `Rolled back ${phoneIds.length} phones created during import`,
+    message: `Rolled back ${(phoneIds as Types.ObjectId[]).length} phones created during import`,
   };
 }
 

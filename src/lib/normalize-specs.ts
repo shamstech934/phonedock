@@ -128,10 +128,10 @@ const COLLECTED_TO_SPECS: Record<string, Record<string, string>> = {
  * Flatten a CollectedPhone document's nested spec sections into the flat
  * PhoneSpecs shape. Returns an object with only valid, non-empty values.
  */
-export function flattenCollectedPhoneSpecs(collected: Record<string, any>): Record<string, string> {
+export function flattenCollectedPhoneSpecs(collected: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [section, fieldMap] of Object.entries(COLLECTED_TO_SPECS)) {
-    const sub = collected[section];
+    const sub = collected[section] as Record<string, unknown> | undefined;
     if (!sub || typeof sub !== 'object') continue;
     for (const [srcField, dstField] of Object.entries(fieldMap)) {
       const val = sub[srcField];
@@ -141,7 +141,7 @@ export function flattenCollectedPhoneSpecs(collected: Record<string, any>): Reco
     }
   }
   // Also map selfieSensor from camera section if present
-  if (collected.camera?.frontCamera) {
+  if ((collected.camera as Record<string, unknown> | undefined)?.frontCamera) {
     // Already mapped above
   }
   return out;
@@ -157,9 +157,9 @@ export function flattenCollectedPhoneSpecs(collected: Record<string, any>): Reco
  * @returns A flat Record<string, string> with the normalized specs, or null if no data.
  */
 export function normalizePhoneSpecs(
-  phoneSpecsDoc: Record<string, any> | null | undefined,
-  phoneDoc?: Record<string, any> | null,
-  collectedDoc?: Record<string, any> | null,
+  phoneSpecsDoc: Record<string, unknown> | null | undefined,
+  phoneDoc?: Record<string, unknown> | null,
+  collectedDoc?: Record<string, unknown> | null,
 ): Record<string, string> | null {
   // Build a priority-merged map
   const merged: Record<string, string> = {};
@@ -191,7 +191,7 @@ export function normalizePhoneSpecs(
     // Also include numeric fields if valid
     for (const f of NUMERIC_FIELDS) {
       if (phoneSpecsDoc[f] != null && phoneSpecsDoc[f] !== '') {
-        (merged as any)[f] = phoneSpecsDoc[f];
+        (merged as Record<string, unknown>)[f] = phoneSpecsDoc[f];
       }
     }
   }
@@ -214,8 +214,8 @@ export function normalizedToSerialized(normalized: Record<string, string>): Reco
     result[f] = isValid(val) ? val : '';
   }
   for (const f of NUMERIC_FIELDS) {
-    const val = (normalized as any)[f];
-    result[f] = (val !== undefined && val !== null) ? val : null;
+    const val = (normalized as Record<string, unknown>)[f];
+    result[f] = (val !== undefined && val !== null && (typeof val === 'string' || typeof val === 'number')) ? val : null;
   }
   return result;
 }

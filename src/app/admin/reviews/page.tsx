@@ -77,7 +77,7 @@ export default function AdminReviewsPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setReviews(d.reviews || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch (e: any) { setError(e.message || 'Failed to load reviews'); } finally { setLoading(false); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load reviews'); } finally { setLoading(false); }
   }, [page, rowsPerPage, statusFilter, sort, debouncedSearch, ratingFilter]);
 
   const fetchStats = useCallback(async () => {
@@ -85,7 +85,7 @@ export default function AdminReviewsPage() {
       const res = await fetch('/api/admin/reviews/stats', { credentials: 'include' });
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       setStats(await res.json());
-    } catch (e: any) { console.error('Failed to load review stats:', e); }
+    } catch (e: unknown) { console.error('Failed to load review stats:', e); }
   }, []);
 
   useEffect(() => { fetchReviews(); fetchStats(); }, [fetchReviews, fetchStats]);
@@ -97,7 +97,7 @@ export default function AdminReviewsPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       fetchReviews(); fetchStats();
       if (detailReview?.id === id) setDetailReview(null);
-    } catch (e: any) { console.error('Update status failed:', e); }
+    } catch (e: unknown) { console.error('Update status failed:', e); }
     setActionLoading(null);
   };
 
@@ -108,7 +108,7 @@ export default function AdminReviewsPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       setDeleteModal(null); setDetailReview(null);
       fetchReviews(); fetchStats();
-    } catch (e: any) { console.error('Delete review failed:', e); }
+    } catch (e: unknown) { console.error('Delete review failed:', e); }
     setActionLoading(null);
   };
 
@@ -120,7 +120,7 @@ export default function AdminReviewsPage() {
         fetch(`/api/admin/reviews/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ status: action }) })
       ));
       setSelected(new Set()); fetchReviews(); fetchStats();
-    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleSelect = (id: string) => {

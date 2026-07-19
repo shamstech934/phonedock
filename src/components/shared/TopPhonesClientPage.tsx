@@ -107,9 +107,9 @@ export function TopPhonesClientPage({
               {phones.map((phone) => (
                 <div key={phone.id} className="relative">
                   <PhoneCard phone={phone} />
-                  {badgeField && badgeLabel && (phone as any)[badgeField] > 0 && (
+                  {badgeField && badgeLabel && (phone as unknown as Record<string, unknown>)[badgeField] as number > 0 && (
                     <span className="absolute top-3 right-3 z-10 bg-emerald-600 text-white text-[10px] font-semibold shadow-sm px-2 py-0.5 rounded">
-                      {badgeLabel}: {(phone as any)[badgeField]}
+                      {badgeLabel}: {(phone as unknown as Record<string, unknown>)[badgeField] as number}
                     </span>
                   )}
                 </div>

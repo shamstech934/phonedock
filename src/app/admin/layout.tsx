@@ -15,7 +15,7 @@ import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
 interface NavLink {
   label: string;
   href: string;
-  icon: any;
+  icon: React.ElementType;
   permission?: string;
   children?: { label: string; href: string }[];
 }

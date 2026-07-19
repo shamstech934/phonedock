@@ -23,37 +23,37 @@ export function parseJSON(content: string): RawPhoneRecord[] {
       throw new Error('JSON must be an array or object containing a phone array');
     }
     return parsed;
-  } catch (e: any) {
-    throw new Error(`Invalid JSON: ${e.message}`);
+  } catch (e: unknown) {
+    throw new Error(`Invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
 // ============ CSV PARSER ============
 export async function parseCSV(content: string): Promise<RawPhoneRecord[]> {
-  const results = await new Promise<Papa.ParseResult<any>>((resolve, reject) => {
+  const results = await new Promise<Papa.ParseResult<Record<string, unknown>>>((resolve, reject) => {
     Papa.parse(content, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header: string) => header.trim(),
-      complete: (results) => resolve(results),
+      complete: (results: Papa.ParseResult<Record<string, unknown>>) => resolve(results),
       error: (error: Error) => reject(new Error(`CSV parsing error: ${error.message}`)),
     });
   });
 
   if (results.errors.length > 0) {
     const criticalErrors = results.errors.filter(
-      (e: any) => e.type === 'FieldMismatch' && e.code !== 'TooManyFields'
+      (e: { type: string; code?: string; message: string }) => e.type === 'FieldMismatch' && e.code !== 'TooManyFields'
     );
     if (criticalErrors.length > results.data.length * 0.5) {
-      throw new Error(`CSV parsing errors: ${criticalErrors.map((e: any) => e.message).join(', ')}`);
+      throw new Error(`CSV parsing errors: ${criticalErrors.map((e) => e.message).join(', ')}`);
     }
   }
   if (!results.data || results.data.length === 0) {
     throw new Error('CSV file is empty or has no valid rows');
   }
   // Apply CSV formula injection protection to all string values
-  const sanitized = results.data.map((row: any) => {
-    const clean: any = {};
+  const sanitized = results.data.map((row) => {
+    const clean: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
       clean[key] = typeof value === 'string' ? sanitizeCsvValue(value) : value;
     }
@@ -79,8 +79,8 @@ export function parseXLSX(buffer: ArrayBuffer): RawPhoneRecord[] {
       throw new Error('Excel sheet is empty or has no valid rows');
     }
     return data;
-  } catch (e: any) {
-    throw new Error(`Excel parsing error: ${e.message}`);
+  } catch (e: unknown) {
+    throw new Error(`Excel parsing error: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

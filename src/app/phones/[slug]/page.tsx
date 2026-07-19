@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: 'Phone Not Found | PhoneDock' };
   }
 
-  const brand = (phone.brand as any)?.name || '';
+  const brand = (phone.brand as { name?: string } | null)?.name || '';
   const model = phone.modelName || '';
   const price = phone.pricePKR || 0;
   const description = phone.description || `Buy ${brand} ${model} in Pakistan. Latest price, specs, and reviews.`;

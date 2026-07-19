@@ -31,10 +31,37 @@ function SpecRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
+interface PhoneViewData {
+  id: string;
+  brand?: { name: string };
+  modelName: string;
+  slug: string;
+  releaseDate?: string;
+  ptaStatus?: string;
+  ptaApproved?: boolean;
+  featured?: boolean;
+  trending?: boolean;
+  upcoming?: boolean;
+  pricePKR?: number;
+  description?: string;
+  cameraScore?: number;
+  performanceScore?: number;
+  batteryScore?: number;
+  displayScore?: number;
+  valueScore?: number;
+  overallRating?: number;
+  pros?: string;
+  cons?: string;
+  reviewSummary?: string;
+  specs?: Record<string, string>;
+  benchmarks?: { antutu?: number; geekbenchSingle?: number; geekbenchMulti?: number };
+  prices?: Array<{ storeName: string; price: number; inStock: boolean }>;
+}
+
 export default function AdminPhoneViewPage() {
   useAdmin();
   const { id } = useParams();
-  const [phone, setPhone] = useState<any>(null);
+  const [phone, setPhone] = useState<PhoneViewData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -64,7 +91,7 @@ export default function AdminPhoneViewPage() {
         <div className="space-y-4">
           <div className="card-premium p-5 space-y-3">
             <h3 className="text-sm font-bold text-gray-900">Scores & Rating</h3>
-            {[['Camera', phone.cameraScore], ['Performance', phone.performanceScore], ['Battery', phone.batteryScore], ['Display', phone.displayScore], ['Value', phone.valueScore]].map(([l, v]) => <ScoreBar key={l as string} score={v || 0} label={l as string} />)}
+            {[['Camera', phone.cameraScore], ['Performance', phone.performanceScore], ['Battery', phone.batteryScore], ['Display', phone.displayScore], ['Value', phone.valueScore]].map(([l, v]) => <ScoreBar key={l as string} score={(v as number) ?? 0} label={l as string} />)}
             <div className="pt-2 border-t border-gray-100"><ScoreBar score={phone.overallRating || 0} label="Overall" /></div>
           </div>
           <div className="card-premium p-5 space-y-3">
@@ -74,7 +101,7 @@ export default function AdminPhoneViewPage() {
               <div className="flex justify-between"><span className="text-muted-foreground">Featured</span><span className={phone.featured ? 'text-emerald-600 font-medium' : 'text-gray-400'}>{phone.featured ? 'Yes' : 'No'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Trending</span><span className={phone.trending ? 'text-blue-600 font-medium' : 'text-gray-400'}>{phone.trending ? 'Yes' : 'No'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Upcoming</span><span className={phone.upcoming ? 'text-purple-600 font-medium' : 'text-gray-400'}>{phone.upcoming ? 'Yes' : 'No'}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span className="font-bold text-blue-600">{phone.pricePKR > 0 ? formatPrice(phone.pricePKR) : 'Not set'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span className="font-bold text-blue-600">{(phone.pricePKR ?? 0) > 0 ? formatPrice(phone.pricePKR ?? 0) : 'Not set'}</span></div>
             </div>
           </div>
         </div>
@@ -115,14 +142,14 @@ export default function AdminPhoneViewPage() {
           {phone.benchmarks && (phone.benchmarks.antutu || phone.benchmarks.geekbenchSingle) && <div className="card-premium p-5">
             <h3 className="text-sm font-bold text-gray-900 mb-3">Benchmarks</h3>
             <div className="grid grid-cols-3 gap-4">
-              {phone.benchmarks.antutu > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.antutu.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">AnTuTu</p></div>}
-              {phone.benchmarks.geekbenchSingle > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchSingle.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Single</p></div>}
-              {phone.benchmarks.geekbenchMulti > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{phone.benchmarks.geekbenchMulti.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Multi</p></div>}
+              {(phone.benchmarks?.antutu ?? 0) > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{(phone.benchmarks?.antutu ?? 0).toLocaleString()}</p><p className="text-[10px] text-muted-foreground">AnTuTu</p></div>}
+              {(phone.benchmarks?.geekbenchSingle ?? 0) > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{(phone.benchmarks?.geekbenchSingle ?? 0).toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Single</p></div>}
+              {(phone.benchmarks?.geekbenchMulti ?? 0) > 0 && <div className="text-center p-3 bg-gray-50 rounded-xl"><p className="text-lg font-bold text-gray-900">{(phone.benchmarks?.geekbenchMulti ?? 0).toLocaleString()}</p><p className="text-[10px] text-muted-foreground">Geekbench Multi</p></div>}
             </div>
           </div>}
           {phone.prices && phone.prices.length > 0 && <div className="card-premium p-5">
             <h3 className="text-sm font-bold text-gray-900 mb-3">Store Prices</h3>
-            <div className="space-y-2">{phone.prices.map((pr: any, i: number) => (
+            <div className="space-y-2">{phone.prices.map((pr, i: number) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <span className="text-sm font-medium text-gray-900">{pr.storeName}</span>
                 <div className="flex items-center gap-3">

@@ -13,7 +13,7 @@ export function generateSlug(text: string): string {
 }
 
 // ============ FIELD NORMALIZER ============
-function toBool(val: any): boolean {
+function toBool(val: unknown): boolean {
   if (typeof val === 'boolean') return val;
   if (typeof val === 'string') {
     const lower = val.toLowerCase().trim();
@@ -22,7 +22,7 @@ function toBool(val: any): boolean {
   return false;
 }
 
-function toNum(val: any, fallback = 0): number {
+function toNum(val: unknown, fallback = 0): number {
   if (typeof val === 'number') return isNaN(val) ? fallback : val;
   if (typeof val === 'string') {
     const cleaned = val.replace(/[^0-9.\-]/g, '');
@@ -32,7 +32,7 @@ function toNum(val: any, fallback = 0): number {
   return fallback;
 }
 
-function toStr(val: any): string {
+function toStr(val: unknown): string {
   if (val === null || val === undefined) return '';
   return String(val).trim();
 }
@@ -165,8 +165,9 @@ export function validatePhoneRecord(
       if (['pubgFps', 'codMobileFps', 'genshinFps', 'videoPlayback', 'gamingBattery', 'browsingBattery'].includes(key)) {
         phone[key] = toStr(phone[key]);
       } else {
-        phone[key] = toNum(phone[key], 0);
-        if (phone[key] < 0) {
+        const numVal = toNum(phone[key], 0);
+        phone[key] = numVal;
+        if (numVal < 0) {
           errors.push({ row: rowIndex, field: key, message: `${key} cannot be negative`, value: phone[key] });
         }
       }
@@ -183,7 +184,7 @@ export function validatePhoneRecord(
 
 // ============ EXTRACT PHONE DATA FROM VALIDATED RECORD ============
 export function extractPhoneData(phone: RawPhoneRecord) {
-  const phoneData: Record<string, any> = {
+  const phoneData: Record<string, unknown> = {
     modelName: phone.modelName,
     slug: phone.slug,
     pricePKR: phone.pricePKR || 0,
@@ -216,7 +217,7 @@ export function extractPhoneData(phone: RawPhoneRecord) {
   }
 
   // Extract specs
-  const specsData: Record<string, any> = {};
+  const specsData: Record<string, unknown> = {};
   for (const key of SPEC_KEYS) {
     if (phone[key] !== undefined && phone[key] !== null && String(phone[key]).trim() !== '') {
       specsData[key] = String(phone[key]).trim();
@@ -224,7 +225,7 @@ export function extractPhoneData(phone: RawPhoneRecord) {
   }
 
   // Extract benchmarks
-  const benchData: Record<string, any> = {};
+  const benchData: Record<string, unknown> = {};
   for (const key of BENCHMARK_KEYS) {
     if (phone[key] !== undefined && phone[key] !== null && String(phone[key]).trim() !== '') {
       benchData[key] = key === 'antutu' || key === 'geekbenchSingle' || key === 'geekbenchMulti' || key === 'gamingScore'

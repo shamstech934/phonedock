@@ -75,8 +75,8 @@ export async function syncYouTubeVideos(): Promise<SyncResult> {
   let ytVideos: YouTubeVideoItem[];
   try {
     ytVideos = await fetchRecentVideos(apiKey, channelId);
-  } catch (e: any) {
-    return { total: 0, inserted: 0, skipped: 0, autoLinked: 0, error: e.message };
+  } catch (e: unknown) {
+    return { total: 0, inserted: 0, skipped: 0, autoLinked: 0, error: e instanceof Error ? e.message : String(e) };
   }
 
   if (ytVideos.length === 0) {
@@ -86,7 +86,7 @@ export async function syncYouTubeVideos(): Promise<SyncResult> {
   // Get existing youtubeIds in one query
   const existingIds = new Set(
     (await Video.find({ youtubeId: { $in: ytVideos.map(v => v.youtubeId) } }).select('youtubeId').lean())
-      .map((v: any) => v.youtubeId)
+      .map((v) => v.youtubeId)
   );
 
   let inserted = 0;

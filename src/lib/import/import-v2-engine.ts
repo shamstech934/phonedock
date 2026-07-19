@@ -13,11 +13,12 @@
  * - Fix #11: Cancel/rollback validate job existence and state transitions
  */
 
-import { ObjectId } from 'mongoose';
+import { Types, type QueryFilter, type UpdateQuery } from 'mongoose';
+import type { IPhone } from '@/lib/models/Phone';
 import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark } from '@/lib/models';
 import { ImportJob, ImportBatch } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
-import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo } from './normalize-phone-record';
+import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo, type NormalizedPhoneImportRecord } from './normalize-phone-record';
 import { buildDuplicateIndex, checkDuplicate, getDuplicateKey } from './duplicate-detector';
 
 const SPEC_FIELDS = new Set([
@@ -54,12 +55,54 @@ const ALL_SPEC_FIELD_NAMES = new Set([
   'os','osVersion','osUI','updatePolicy','specialFeatures',
 ]);
 
+// ── Local types for batch processing ──────────────────────────────
+
+interface BatchErrorItem {
+  rowNumber: number;
+  brand?: string;
+  model?: string;
+  field?: string;
+  originalValue?: string;
+  errorCode: string;
+  errorMessage: string;
+  phoneId?: string;
+  batchNumber?: number;
+}
+
+interface FieldChangeItem {
+  phoneId: Types.ObjectId;
+  collection: string;
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+interface SpecsChangeItem {
+  phoneId: Types.ObjectId;
+  collection: string;
+  changeType: 'created' | 'updated';
+  beforeFields?: Record<string, string>;
+  afterFields?: Record<string, string>;
+  fields?: Record<string, string>;
+}
+
+interface PhoneUpdateOp {
+  filter: QueryFilter<IPhone>;
+  update: UpdateQuery<IPhone>;
+  phoneId: Types.ObjectId;
+}
+
+/** Safely extract an error message from an unknown thrown value. */
+function getErrorMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 // FIX #11: Valid state transitions for jobs
 const CANCEL_ALLOWED_FROM = new Set(['ready', 'queued', 'processing', 'paused', 'completed_with_errors', 'failed']);
 const ROLLBACK_ALLOWED_FROM = new Set(['completed', 'completed_with_errors']);
 
 interface BatchProcessInput {
-  records: any[];
+  records: Record<string, unknown>[];
   importId: string;
   batchNumber: number;
   duplicateMode: string;
@@ -79,11 +122,11 @@ interface BatchResult {
   skipped: number;
   failed: number;
   replaced: number;
-  errors: any[];
-  fieldChanges: any[];
-  specsChanges: any[];
-  createdPhoneIds: ObjectId[];
-  updatedPhoneIds: ObjectId[];
+  errors: BatchErrorItem[];
+  fieldChanges: FieldChangeItem[];
+  specsChanges: SpecsChangeItem[];
+  createdPhoneIds: Types.ObjectId[];
+  updatedPhoneIds: Types.ObjectId[];
   // Dry-run simulation counts (not persisted to ImportJob)
   wouldCreate?: number;
   wouldUpdate?: number;
@@ -98,9 +141,9 @@ interface BatchResult {
  */
 export async function validateRecords(
   importId: string,
-  records: any[],
+  records: Record<string, unknown>[],
 ): Promise<{
-    normalized: any[];
+    normalized: NormalizedPhoneImportRecord[];
     validCount: number;
     invalidCount: number;
     warnings: string[];
@@ -169,7 +212,7 @@ export async function validateRecords(
  */
 export async function estimateDuplicates(
   importId: string,
-  records: any[],
+  records: Record<string, unknown>[],
 ): Promise<{ estimate: number; sampled: boolean; sampleSize: number; totalKeys: number }> {
   await connectDB();
 
@@ -281,7 +324,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const calcRecordEnd = recordEnd ?? (calcRecordStart + recordCount - 1);
 
   // FIX #1: Calculate checksum if not provided
-  const batchChecksum = checksum || records.map((r: any) => {
+  const batchChecksum = checksum || records.map((r) => {
     const key = `${r.brand || ''}|${r.model || ''}|${r.slug || ''}`;
     // Simple deterministic hash
     let h = 0;
@@ -309,7 +352,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       replaced: existing.replaced || 0,
       errors: existing.errors || [],
       fieldChanges: existing.fieldChanges || [],
-      specsChanges: (existing as any).specsChanges || [],
+      specsChanges: existing.specsChanges || [],
       createdPhoneIds: existing.createdPhoneIds || [],
       updatedPhoneIds: existing.updatedPhoneIds || [],
     };
@@ -358,7 +401,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     .select('_id name slug')
     .lean();
 
-  const brandMap = new Map<string, any>();
+  const brandMap = new Map<string, { _id: Types.ObjectId; name: string; slug: string }>();
   for (const b of existingBrands) {
     brandMap.set(b.name.toLowerCase(), b);
   }
@@ -373,7 +416,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
   }
 
-  let createdBrandIds: any[] = [];
+  let createdBrandIds: Types.ObjectId[] = [];
   if (brandsToCreate.length > 0) {
     if (!dryRun) {
       const docs = brandsToCreate.map(name => ({
@@ -383,7 +426,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         sortOrder: 0,
       }));
       const res = await Brand.insertMany(docs, { ordered: false });
-      createdBrandIds = res.map((d: any) => d._id);
+      createdBrandIds = res.map((d) => d._id);
       for (let i = 0; i < brandsToCreate.length; i++) {
         brandMap.set(brandsToCreate[i].toLowerCase(), { _id: createdBrandIds[i], name: brandsToCreate[i], slug: docs[i].slug });
       }
@@ -399,14 +442,14 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const duplicateIndex = buildDuplicateIndex(existingPhones);
 
   // Build batch write operations
-  const phonesToCreate: any[] = [];
-  const phonesToUpdate: any[] = [];
-  const specsForNewPhones: any[] = [];
-  const specsForUpdatedPhones: any[] = [];
-  const createdIds: any[] = [];
-  const updatedIds: any[] = [];
-  const fieldChanges: any[] = [];
-  const specsChanges: any[] = []; // FIX #8: Track PhoneSpecs before-state
+  const phonesToCreate: Record<string, unknown>[] = [];
+  const phonesToUpdate: PhoneUpdateOp[] = [];
+  const specsForNewPhones: (Record<string, string> | null)[] = [];
+  const specsForUpdatedPhones: { phoneId: Types.ObjectId; specFields: Record<string, string> }[] = [];
+  const createdIds: Types.ObjectId[] = [];
+  const updatedIds: Types.ObjectId[] = [];
+  const fieldChanges: FieldChangeItem[] = [];
+  const specsChanges: SpecsChangeItem[] = []; // FIX #8: Track PhoneSpecs before-state
 
   for (const rec of validRecords) {
     const d = rec.normalizedData;
@@ -432,7 +475,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           continue;
         }
         const existingPhone = phoneBySlug.get(d.slug)!;
-        const updateFields: Record<string, any> = {
+        const updateFields: Record<string, unknown> = {
           updatedAt: new Date(),
           lastImportId: importId,
           lastImportAt: new Date(),
@@ -449,7 +492,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         // Capture before-state for each field being changed
         for (const [field, newVal] of Object.entries(updateFields)) {
           if (field === 'updatedAt' || field === 'lastImportId' || field === 'lastImportAt' || field === 'lastImportMode') continue;
-          const oldVal = (existingPhone as any)[field];
+          const oldVal = (existingPhone as unknown as Record<string, unknown>)[field];
           if (oldVal !== newVal) {
             fieldChanges.push({
               phoneId: existingPhone._id,
@@ -489,7 +532,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           continue;
         }
         const existingPhone = phoneBySlug.get(d.slug)!;
-        const replaceFields: any = {
+        const replaceFields: Record<string, unknown> = {
           modelName: d.model,
           pricePKR: d.pricePKR || 0,
           releaseDate: d.releaseDate,
@@ -507,7 +550,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
         // Capture before-state for rollback
         for (const field of PHONE_REPLACEABLE_FIELDS) {
-          const oldVal = (existingPhone as any)[field];
+          const oldVal = (existingPhone as unknown as Record<string, unknown>)[field];
           const newVal = replaceFields[field];
           if (oldVal !== newVal && newVal !== undefined) {
             fieldChanges.push({
@@ -547,7 +590,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
 
     // Create new phone
-    const phoneData: any = {
+    const phoneData: Record<string, unknown> = {
       brandId: brand._id,
       modelName: d.model,
       slug: d.slug,
@@ -588,18 +631,18 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         // FIX #9: Only count as created after successful write
         for (const doc of phoneDocs) createdIds.push(doc._id);
 
-        const createdSlugMap = new Map<string, any>();
+        const createdSlugMap = new Map<string, Types.ObjectId>();
         for (const doc of phoneDocs) {
           const matching = phonesToCreate.find(p => p.slug === doc.slug);
           if (matching) createdSlugMap.set(doc.slug, doc._id);
         }
 
-        const specOps: any[] = [];
-        const specUpsertChanges: any[] = [];
+        const specOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }> = [];
+        const specUpsertChanges: SpecsChangeItem[] = [];
         for (let i = 0; i < phonesToCreate.length; i++) {
           const specData = specsForNewPhones[i];
           if (!specData) continue;
-          const phoneId = createdSlugMap.get(phonesToCreate[i].slug);
+          const phoneId = createdSlugMap.get(phonesToCreate[i].slug as string);
           if (!phoneId) continue;
 
           // FIX #8: Track specs upserts for rollback
@@ -621,12 +664,12 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           await PhoneSpecs.bulkWrite(specOps);
           specsChanges.push(...specUpsertChanges);
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         // FIX #9: Log insert failures properly
         result.errors.push({
           rowNumber: -1,
           errorCode: 'INSERT_FAILED',
-          errorMessage: `Phone insert failed: ${e.message?.slice(0, 200)}`,
+          errorMessage: `Phone insert failed: ${getErrorMsg(e).slice(0, 200)}`,
           batchNumber,
         });
         // Recount created from actual results
@@ -641,11 +684,11 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         if (res.modifiedCount > 0) {
           updateSuccessCount++;
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         result.errors.push({
           rowNumber: -1,
           errorCode: 'UPDATE_FAILED',
-          errorMessage: `Failed to update phone ${op.phoneId}: ${e.message?.slice(0, 200)}`,
+          errorMessage: `Failed to update phone ${op.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
           batchNumber,
           phoneId: op.phoneId?.toString(),
         });
@@ -671,7 +714,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           const beforeFields: Record<string, string> = {};
           if (beforeSpecs) {
             for (const [k, v] of Object.entries(specEntry.specFields)) {
-              beforeFields[k] = (beforeSpecs as any)[k] || '';
+              beforeFields[k] = String((beforeSpecs as Record<string, unknown>)[k] ?? '');
             }
           }
 
@@ -689,12 +732,12 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
             beforeFields,
             afterFields: specEntry.specFields,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           // FIX #9: Record specs failures in batch errors (not just console)
           result.errors.push({
             rowNumber: -1,
             errorCode: 'SPECS_UPDATE_FAILED',
-            errorMessage: `Failed to update specs for phone ${specEntry.phoneId}: ${e.message?.slice(0, 200)}`,
+            errorMessage: `Failed to update specs for phone ${specEntry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
             batchNumber,
             phoneId: specEntry.phoneId?.toString(),
           });
@@ -785,7 +828,7 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
       count: { $sum: 1 },
     } },
   ]);
-  const statusCounts = new Map(batchStats.map((b: any) => [b._id, b.count]));
+  const statusCounts = new Map(batchStats.map((b: { _id: string; count: number }) => [b._id, b.count]));
   const completed = statusCounts.get('completed') || 0;
   const failed = statusCounts.get('failed') || 0;
   const pending = statusCounts.get('pending') || 0;
@@ -941,7 +984,7 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
         await PhoneImage.deleteMany({ phoneId: { $in: batch.createdPhoneIds } });
         const delRes = await Phone.deleteMany({ _id: { $in: batch.createdPhoneIds } });
         deleted += delRes.deletedCount;
-      } catch (err: any) {
+      } catch {
         conflicts++;
       }
     }
@@ -955,7 +998,7 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
             const current = await Phone.findById(change.phoneId).select(change.field).lean();
             if (!current) { conflicts++; continue; }
 
-            const currentVal = (current as any)?.[change.field];
+            const currentVal = (current as unknown as Record<string, unknown>)?.[change.field];
             const originalVal = change.oldValue;
             const newValue = change.newValue;
 
@@ -978,7 +1021,7 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
     }
 
     // FIX #8: Restore PhoneSpecs changes
-    const specsChangesArr = (batch as any).specsChanges || [];
+    const specsChangesArr = batch.specsChanges || [];
     for (const sc of specsChangesArr) {
       try {
         if (sc.changeType === 'created') {
@@ -993,7 +1036,7 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
           // Check if fields were manually changed after import
           let hasConflict = false;
           for (const [field, afterVal] of Object.entries(sc.afterFields)) {
-            const currentVal = (currentSpecs as any)[field];
+            const currentVal = (currentSpecs as Record<string, unknown>)[field];
             const afterStr = String(afterVal ?? '');
             const currentStr = String(currentVal ?? '');
             if (currentStr !== afterStr) {

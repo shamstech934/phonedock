@@ -1,9 +1,76 @@
 import { Types } from 'mongoose';
 import { Phone, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, Brand, DataQualityIssue, ScanJob, ActivityLog, PriceSource, PhoneRetailListing, ImportJob, ImportBatch } from '@/lib/models';
 import { ALL_QUALITY_RULES, getRuleById } from './rules';
-import { DetectedIssue, DetectionContext, FixContext, FixResult, HealthCategory, HEALTH_CATEGORIES } from './types';
+import { DetectedIssue, DetectionContext, FixContext, FixResult, HealthCategory, HEALTH_CATEGORIES, RuleDefinition, EntityType, Severity } from './types';
 
 const BATCH_SIZE = 100;
+
+// ─── Lean Document Types ──────────────────────────────────────────
+
+interface LeanPhone {
+  _id: Types.ObjectId;
+  [key: string]: unknown;
+}
+
+interface LeanBrand {
+  _id: Types.ObjectId;
+  name: string;
+  slug: string;
+  logo: string;
+  country: string;
+  description: string;
+  sortOrder: number;
+  active: boolean;
+  website: string;
+  seoTitle: string;
+  seoDescription: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface LeanSpecs {
+  _id: Types.ObjectId;
+  phoneId?: Types.ObjectId;
+  [key: string]: unknown;
+}
+
+interface LeanPrice {
+  _id: Types.ObjectId;
+  phoneId?: Types.ObjectId;
+  storeName: string;
+  [key: string]: unknown;
+}
+
+interface LeanScanJob {
+  scanId: string;
+  type: string;
+  status: string;
+  importId?: string;
+  rules: string[];
+  currentBatch?: number;
+  lastProcessedId?: string;
+  dryRun?: boolean;
+  entityIds?: string[];
+  [key: string]: unknown;
+}
+
+interface LeanDataQualityIssue {
+  _id: Types.ObjectId;
+  issueKey: string;
+  entityType: string;
+  entityId: string;
+  issueType: string;
+  severity: string;
+  field: string;
+  currentValue: unknown;
+  suggestedValue: unknown;
+  source: string;
+  confidence: number;
+  status: string;
+  importId?: string | null;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}
 
 // ─── SCAN ORCHESTRATOR ────────────────────────────────────────────
 
@@ -67,7 +134,7 @@ export async function executeScan(scanId: string): Promise<void> {
       const phones = await Phone.find({ _id: { $in: job.entityIds.map((id: string) => new Types.ObjectId(id)) }, deletedAt: null }).lean();
       ctx.entities = phones;
       // Load lookups for just these phones
-      await loadLookupsForPhoneIds(ctx, phones.map((p: any) => p._id.toString()));
+      await loadLookupsForPhoneIds(ctx, phones.map((p: { _id: Types.ObjectId }) => p._id.toString()));
       await runRulesOnBatch(activeRules, ctx, allIssues);
     } else if (job.type === 'incremental') {
       const lastScan = await ScanJob.findOne({ status: { $in: ['completed', 'completed_with_errors'] } }).sort({ completedAt: -1 }).lean();
@@ -106,13 +173,13 @@ export async function executeScan(scanId: string): Promise<void> {
         lastProcessedId: '',
       },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // FIX #12: Don't clear lastProcessedId on failure — allows resume
     await ScanJob.updateOne({ scanId }, {
       $set: {
         status: 'failed',
         completedAt: new Date(),
-        errorSummary: (e?.message || 'Unknown error').slice(0, 500),
+        errorSummary: (e instanceof Error ? e.message : String(e)).slice(0, 500),
       },
     });
     throw e;
@@ -122,9 +189,9 @@ export async function executeScan(scanId: string): Promise<void> {
 // ─── CONTEXT BUILDER ──────────────────────────────────────────────
 // FIX #9: Only loads brands (small set). Other lookups loaded per-phone-batch.
 
-async function buildDetectionContext(job: any): Promise<DetectionContext> {
+async function buildDetectionContext(job: LeanScanJob): Promise<DetectionContext> {
   const brands = await Brand.find({}).lean();
-  const brandsMap = new Map(brands.map((b: any) => [b._id.toString(), b]));
+  const brandsMap = new Map(brands.map((b: LeanBrand) => [b._id.toString(), b]));
 
   return {
     entities: [],
@@ -154,8 +221,12 @@ async function loadLookupsForPhoneIds(ctx: DetectionContext, phoneIds: string[])
     PhoneBenchmark.find({ phoneId: { $in: objectIds } }).lean(),
   ]);
 
-  const specsMap = new Map(specs.map((s: any) => [s.phoneId?.toString(), s]));
-  const imagesMap = new Map<string, any[]>();
+  const specsMap = new Map<string, LeanSpecs>();
+  for (const s of specs) {
+    const key = s.phoneId?.toString();
+    if (key) specsMap.set(key, s);
+  }
+  const imagesMap = new Map<string, Record<string, unknown>[]>();
   for (const img of images) {
     const pid = img.phoneId?.toString();
     if (pid) {
@@ -163,7 +234,7 @@ async function loadLookupsForPhoneIds(ctx: DetectionContext, phoneIds: string[])
       imagesMap.get(pid)!.push(img);
     }
   }
-  const pricesMap = new Map<string, any[]>();
+  const pricesMap = new Map<string, Record<string, unknown>[]>();
   for (const pr of prices) {
     const pid = pr.phoneId?.toString();
     if (pid) {
@@ -171,7 +242,11 @@ async function loadLookupsForPhoneIds(ctx: DetectionContext, phoneIds: string[])
       pricesMap.get(pid)!.push(pr);
     }
   }
-  const benchmarksMap = new Map(benchmarks.map((b: any) => [b.phoneId?.toString(), b]));
+  const benchmarksMap = new Map<string, LeanSpecs>();
+  for (const b of benchmarks) {
+    const key = b.phoneId?.toString();
+    if (key) benchmarksMap.set(key, b);
+  }
 
   ctx.lookups.specs = specsMap;
   ctx.lookups.images = imagesMap;
@@ -183,9 +258,9 @@ async function loadLookupsForPhoneIds(ctx: DetectionContext, phoneIds: string[])
 // FIX #9: Uses cursor-based batch loading + per-batch lookup loading.
 
 async function scanAllPhones(
-  job: any,
-  query: any,
-  rules: any[],
+  job: LeanScanJob,
+  query: Record<string, unknown>,
+  rules: RuleDefinition[],
   ctx: DetectionContext,
   allIssues: DetectedIssue[],
 ) {
@@ -218,7 +293,7 @@ async function scanAllPhones(
       break;
     }
 
-    const batchPhoneIds = batch.map((d: any) => d._id.toString());
+    const batchPhoneIds = batch.map((d: { _id: Types.ObjectId }) => d._id.toString());
 
     // FIX #9: Load lookups for this batch only
     await loadLookupsForPhoneIds(ctx, batchPhoneIds);
@@ -245,8 +320,8 @@ async function scanAllPhones(
 // ─── IMPORT-SPECIFIC SCAN ────────────────────────────────────────
 
 async function scanImportPhones(
-  job: any,
-  rules: any[],
+  job: LeanScanJob,
+  rules: RuleDefinition[],
   ctx: DetectionContext,
   allIssues: DetectedIssue[],
 ) {
@@ -268,7 +343,7 @@ async function scanImportPhones(
   }).lean();
 
   // FIX #9: Load lookups for just these phones
-  await loadLookupsForPhoneIds(ctx, phones.map((p: any) => p._id.toString()));
+  await loadLookupsForPhoneIds(ctx, phones.map((p: { _id: Types.ObjectId }) => p._id.toString()));
 
   ctx.entities = phones;
   await runRulesOnBatch(rules, ctx, allIssues);
@@ -281,7 +356,7 @@ async function scanImportPhones(
   if (totalFailed > 0) {
     allIssues.push({
       issueKey: `IMPORT_FAILED_ROWS:import:${job.importId}`,
-      entityType: 'import', entityId: job.importId,
+      entityType: 'import', entityId: job.importId || '',
       issueType: 'IMPORT_FAILED_ROWS', severity: 'medium',
       field: 'errors', currentValue: totalFailed,
       suggestedValue: 'Review and retry failed rows',
@@ -296,7 +371,7 @@ async function scanImportPhones(
 
 // ─── RUN RULES ON BATCH ───────────────────────────────────────────
 
-async function runRulesOnBatch(rules: any[], ctx: DetectionContext, allIssues: DetectedIssue[]) {
+async function runRulesOnBatch(rules: RuleDefinition[], ctx: DetectionContext, allIssues: DetectedIssue[]) {
   for (const rule of rules) {
     try {
       const issues = await rule.detect(ctx);
@@ -315,14 +390,14 @@ async function runRulesOnBatch(rules: any[], ctx: DetectionContext, allIssues: D
 async function scanOrphans(allIssues: DetectedIssue[]) {
   // FIX #10: Build validPhoneIds from actual phones, NOT from specs keys
   const allPhoneIds = await Phone.find({ deletedAt: null }).select('_id').lean();
-  const validPhoneIds = new Set(allPhoneIds.map((p: any) => p._id.toString()));
+  const validPhoneIds = new Set(allPhoneIds.map((p: { _id: Types.ObjectId }) => p._id.toString()));
 
   // Orphan specs — check each PhoneSpecs document references a valid phone
   let lastSpecId: string | null = null;
   let hasMoreSpecs = true;
   while (hasMoreSpecs) {
-    const specFilter: Record<string, any> = lastSpecId ? { _id: { $gt: new Types.ObjectId(lastSpecId) } } : {};
-    const specsBatch: any[] = await PhoneSpecs.find(specFilter).sort({ _id: 1 }).select('phoneId').lean().limit(500);
+    const specFilter: Record<string, unknown> = lastSpecId ? { _id: { $gt: new Types.ObjectId(lastSpecId) } } : {};
+    const specsBatch: LeanSpecs[] = await PhoneSpecs.find(specFilter).sort({ _id: 1 }).select('phoneId').lean().limit(500);
 
     if (specsBatch.length === 0) {
       hasMoreSpecs = false;
@@ -371,8 +446,8 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
   let lastImgId: string | null = null;
   let hasMoreImgs = true;
   while (hasMoreImgs) {
-    const imgFilter: Record<string, any> = lastImgId ? { _id: { $gt: new Types.ObjectId(lastImgId) } } : {};
-    const imgBatch: any[] = await PhoneImage.find(imgFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
+    const imgFilter: Record<string, unknown> = lastImgId ? { _id: { $gt: new Types.ObjectId(lastImgId) } } : {};
+    const imgBatch: LeanSpecs[] = await PhoneImage.find(imgFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
 
     if (imgBatch.length === 0) { hasMoreImgs = false; break; }
 
@@ -396,8 +471,8 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
   let lastPriceId: string | null = null;
   let hasMorePrices = true;
   while (hasMorePrices) {
-    const priceFilter: Record<string, any> = lastPriceId ? { _id: { $gt: new Types.ObjectId(lastPriceId) } } : {};
-    const priceBatch: any[] = await PhonePrice.find(priceFilter).sort({ _id: 1 }).select('phoneId storeName').lean().limit(1000);
+    const priceFilter: Record<string, unknown> = lastPriceId ? { _id: { $gt: new Types.ObjectId(lastPriceId) } } : {};
+    const priceBatch: LeanPrice[] = await PhonePrice.find(priceFilter).sort({ _id: 1 }).select('phoneId storeName').lean().limit(1000);
 
     if (priceBatch.length === 0) { hasMorePrices = false; break; }
 
@@ -421,8 +496,8 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
   let lastBmId: string | null = null;
   let hasMoreBms = true;
   while (hasMoreBms) {
-    const bmFilter: Record<string, any> = lastBmId ? { _id: { $gt: new Types.ObjectId(lastBmId) } } : {};
-    const bmBatch: any[] = await PhoneBenchmark.find(bmFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
+    const bmFilter: Record<string, unknown> = lastBmId ? { _id: { $gt: new Types.ObjectId(lastBmId) } } : {};
+    const bmBatch: LeanSpecs[] = await PhoneBenchmark.find(bmFilter).sort({ _id: 1 }).select('phoneId').lean().limit(1000);
 
     if (bmBatch.length === 0) { hasMoreBms = false; break; }
 
@@ -444,7 +519,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
 
   // Brand duplicates
   const brands = await Brand.find({}).lean();
-  const normBrandMap = new Map<string, any[]>();
+  const normBrandMap = new Map<string, LeanBrand[]>();
   for (const brand of brands) {
     const norm = brand.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
     if (!norm) continue;
@@ -454,7 +529,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
   for (const [, entries] of normBrandMap) {
     if (entries.length > 1) {
       for (const brand of entries) {
-        const id = (brand as any)._id?.toString();
+        const id = brand._id?.toString();
         if (!id) continue;
         allIssues.push({
           issueKey: `BRAND_DUPLICATE_NORMALIZED:brand:${id}`,
@@ -463,7 +538,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
           field: 'name', currentValue: brand.name,
           suggestedValue: 'Review and merge duplicate brands',
           source: 'system', confidence: 0.7,
-          metadata: { candidateIds: entries.map((b: any) => b._id?.toString()) },
+          metadata: { candidateIds: entries.map((b: LeanBrand) => b._id?.toString()) },
         });
       }
     }
@@ -471,7 +546,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
 
   // Brand missing logo
   for (const brand of brands) {
-    const id = (brand as any)._id?.toString();
+    const id = brand._id?.toString();
     if (!id || brand.logo) continue;
     allIssues.push({
       issueKey: `BRAND_MISSING_LOGO:brand:${id}`,
@@ -485,7 +560,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
 
   // FIX: Brand missing slug — was using wrong issueType (BRAND_DUPLICATE_NORMALIZED), now correct
   for (const brand of brands) {
-    const id = (brand as any)._id?.toString();
+    const id = brand._id?.toString();
     if (!id || brand.slug) continue;
     allIssues.push({
       issueKey: `BRAND_MISSING_SLUG:brand:${id}`,
@@ -504,7 +579,7 @@ async function scanOrphans(allIssues: DetectedIssue[]) {
 async function persistIssues(issues: DetectedIssue[], importId?: string): Promise<number> {
   if (issues.length === 0) return 0;
 
-  const bulkOps: any[] = [];
+  const bulkOps: Array<{ insertOne: { document: Record<string, unknown> } }> = [];
   const issueKeys = issues.map(i => i.issueKey);
 
   // Find existing unresolved issues with the same keys
@@ -512,7 +587,7 @@ async function persistIssues(issues: DetectedIssue[], importId?: string): Promis
     issueKey: { $in: issueKeys },
     status: { $in: ['open', 'ignored', 'needs_review'] },
   }).select('issueKey').lean();
-  const existingKeys = new Set(existing.map((e: any) => e.issueKey));
+  const existingKeys = new Set(existing.map((e: { issueKey: string }) => e.issueKey));
 
   for (const issue of issues) {
     if (existingKeys.has(issue.issueKey)) continue; // Skip duplicate
@@ -544,17 +619,17 @@ async function persistIssues(issues: DetectedIssue[], importId?: string): Promis
   try {
     const result = await DataQualityIssue.bulkWrite(bulkOps, { ordered: false });
     return result.insertedCount;
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Duplicate key errors are expected — some issues may have been created between check and insert
-    if (e.code === 11000) {
+    if (typeof e === 'object' && e !== null && 'code' in e && (e as { code: number }).code === 11000) {
       // Retry one by one to get the actual count
       let inserted = 0;
       for (const op of bulkOps) {
         try {
           await DataQualityIssue.create(op.insertOne.document);
           inserted++;
-        } catch (dupErr: any) {
-          if (dupErr.code !== 11000) console.error('[DataQuality] persist error:', dupErr);
+        } catch (dupErr: unknown) {
+          if (typeof dupErr === 'object' && dupErr !== null && 'code' in dupErr && (dupErr as { code: number }).code !== 11000) console.error('[DataQuality] persist error:', dupErr);
         }
       }
       return inserted;
@@ -570,26 +645,26 @@ export async function executeAutoFix(
   adminId: string,
   dryRun: boolean,
 ): Promise<FixResult> {
-  const issue = await DataQualityIssue.findById(issueId).lean();
+  const issue = await DataQualityIssue.findById(issueId).lean() as LeanDataQualityIssue | null;
   if (!issue) throw new Error('Issue not found');
 
-  const rule = getRuleById((issue as any).issueType);
+  const rule = getRuleById(issue.issueType);
   if (!rule || !rule.canAutoFix || !rule.autoFix) {
     throw new Error('This issue type does not support auto-fix');
   }
 
   const fixCtx: FixContext = { adminId, dryRun };
   const detectedIssue: DetectedIssue = {
-    issueKey: (issue as any).issueKey,
-    entityType: (issue as any).entityType,
-    entityId: (issue as any).entityId,
-    issueType: (issue as any).issueType,
-    severity: (issue as any).severity,
-    field: (issue as any).field,
-    currentValue: (issue as any).currentValue,
-    suggestedValue: (issue as any).suggestedValue,
-    source: (issue as any).source || 'system',
-    confidence: (issue as any).confidence || 0,
+    issueKey: issue.issueKey,
+    entityType: issue.entityType as EntityType,
+    entityId: issue.entityId,
+    issueType: issue.issueType,
+    severity: issue.severity as Severity,
+    field: issue.field,
+    currentValue: issue.currentValue,
+    suggestedValue: issue.suggestedValue,
+    source: issue.source || 'system',
+    confidence: issue.confidence || 0,
   };
 
   const result = await rule.autoFix(detectedIssue, fixCtx);
@@ -602,7 +677,7 @@ export async function executeAutoFix(
           status: 'auto_fixed',
           resolvedAt: new Date(),
           resolvedBy: new Types.ObjectId(adminId),
-          resolution: `Auto-fixed: ${result.changes.map((c: any) => `${c.field}`).join(', ')}`,
+          resolution: `Auto-fixed: ${result.changes.map((c: { field: string; oldValue: unknown; newValue: unknown }) => `${c.field}`).join(', ')}`,
         },
       },
     );
@@ -610,7 +685,7 @@ export async function executeAutoFix(
       await ActivityLog.create({
         adminId: new Types.ObjectId(adminId),
         action: 'data_quality_auto_fix',
-        details: `Auto-fixed issue ${(issue as any).issueKey}: ${result.changes.map((c: any) => `${c.field}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join('; ')}`,
+        details: `Auto-fixed issue ${issue.issueKey}: ${result.changes.map((c: { field: string; oldValue: unknown; newValue: unknown }) => `${c.field}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`).join('; ')}`,
         entityType: 'data_quality',
         entityId: issueId,
       });
@@ -699,7 +774,7 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
     const phoneIds = [...byPhone.keys()];
     if (phoneIds.length > 0) {
       const phones = await Phone.find({ _id: { $in: phoneIds } }).select('_id pricePKR modelName').lean();
-      const phoneMap = new Map(phones.map((p: any) => [p._id.toString(), p]));
+      const phoneMap = new Map(phones.map((p: { _id: Types.ObjectId; pricePKR: number; modelName: string }) => [p._id.toString(), p]));
 
       for (const [pid, listings] of byPhone) {
         const phone = phoneMap.get(pid);
@@ -755,7 +830,7 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
           { lastPriceChangedAt: { $lt: thirtyDaysAgo } },
         ],
       }).select('_id pricePKR lastPriceChangedAt').lean();
-      const phoneMap = new Map(phones.map((p: any) => [p._id.toString(), p]));
+      const phoneMap = new Map(phones.map((p: { _id: Types.ObjectId; pricePKR: number; lastPriceChangedAt: Date | null }) => [p._id.toString(), p]));
 
       for (const [pid, prices] of byPhone) {
         const phone = phoneMap.get(pid);
@@ -827,11 +902,14 @@ export async function calculateHealthScore(): Promise<{
       }
       case 'Specifications': {
         const allSpecs = await PhoneSpecs.find({}).lean();
-        const specPhoneIds = new Set(allSpecs.map((s: any) => s.phoneId?.toString()).filter(Boolean));
+        const specPhoneIds = new Set(allSpecs.map((s: LeanSpecs) => s.phoneId?.toString()).filter(Boolean));
         const missingSpecs = publishedPhones - specPhoneIds.size;
-        const emptySpecs = allSpecs.filter((s: any) => {
+        const emptySpecs = allSpecs.filter((s: LeanSpecs) => {
           const keys = ['chipset', 'ram', 'storage', 'display', 'battery'];
-          return keys.every(k => !s[k] || !s[k].trim());
+          return keys.every(k => {
+            const val = s[k];
+            return !val || (typeof val === 'string' && !val.trim());
+          });
         }).length;
         deduction = Math.min(cat.maxDeduction,
           (missingSpecs / base) * 15 +

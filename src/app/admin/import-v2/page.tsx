@@ -253,9 +253,9 @@ export default function ImportV2Page() {
   useEffect(() => {
     if (activeTab !== 'history') return;
     setHistoryLoading(true);
-    safeFetch('/api/admin/import-v2/history')
+    safeFetch<{ jobs?: HistoryEntry[] } | HistoryEntry[]>('/api/admin/import-v2/history')
       .then(res => {
-        if (res.ok) setHistory(res.data?.jobs || res.data || []);
+        if (res.ok) setHistory((res.data as { jobs?: HistoryEntry[] })?.jobs || (res.data as HistoryEntry[]) || []);
       })
       .finally(() => setHistoryLoading(false));
   }, [activeTab]);
@@ -264,7 +264,7 @@ export default function ImportV2Page() {
   useEffect(() => {
     if (activeTab !== 'progress' || !jobId) return;
     pollRef.current = setInterval(async () => {
-      const res = await safeFetch(`/api/admin/import-v2/jobs/${jobId}`);
+      const res = await safeFetch<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}`);
       if (res.ok && res.data) {
         const jobData = res.data;
         setProgress(prev => {
@@ -334,7 +334,7 @@ export default function ImportV2Page() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await safeFetch(`/api/admin/import-v2/upload`, {
+      const res = await safeFetch<Record<string, any>>(`/api/admin/import-v2/upload`, {
         method: 'POST',
         body: formData,
         // No Content-Type header -- browser sets multipart boundary
@@ -365,7 +365,7 @@ export default function ImportV2Page() {
     actionLockRef.current = true;
     setPreviewLoading(true);
     try {
-      const res = await safePost(`/api/admin/import-v2/jobs/${jobId}/validate`, {});
+      const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/validate`, {});
       if (res.ok && res.data) {
         if (res.data.fields) setFields(res.data.fields);
         if (res.data.preview) setPreviewRecords(res.data.preview.slice(0, 20));
@@ -413,7 +413,7 @@ export default function ImportV2Page() {
         dryRun,
       });
       // Start the job
-      const res = await safePost(`/api/admin/import-v2/jobs/${jobId}/start`, {});
+      const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/start`, {});
       if (!res.ok) return;
 
       const jobData = res.data;
@@ -476,7 +476,7 @@ export default function ImportV2Page() {
 
       try {
         const records: unknown[] = []; // Server will slice from job data
-        const res = await safePost(`/api/admin/import-v2/jobs/${jobId}/batches/${batchNum}`, { records });
+        const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/batches/${batchNum}`, { records });
         if (res.ok && res.data) {
           const batchResult = res.data;
           setProgress(prev => {
@@ -643,7 +643,7 @@ export default function ImportV2Page() {
   // ── Download full errors from API ─────────────────────────────────────
   const handleDownloadErrorsFromServer = async () => {
     if (!jobId) return;
-    const res = await safeFetch(`/api/admin/import-v2/jobs/${jobId}/errors`);
+    const res = await safeFetch<{ errors?: string[] }>(`/api/admin/import-v2/jobs/${jobId}/errors`);
     if (res.ok && res.data) {
       const errors: string[] = res.data.errors || [];
       if (errors.length === 0) return;
@@ -1353,7 +1353,7 @@ export default function ImportV2Page() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">Import History</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => safeFetch('/api/admin/import-v2/history').then(res => { if (res.ok) setHistory(res.data?.jobs || []); })}>
+                  <Button variant="outline" size="sm" onClick={() => { safeFetch<{ jobs?: HistoryEntry[] }>('/api/admin/import-v2/history').then((res) => { if (res.ok) setHistory(res.data?.jobs || []); }); }}>
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                     Refresh
                   </Button>

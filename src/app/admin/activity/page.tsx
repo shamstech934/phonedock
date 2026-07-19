@@ -29,7 +29,7 @@ const MODULE_FILTERS = [
   { value: 'import', label: 'Import' }, { value: 'collector', label: 'Collector' },
 ];
 
-const ACTION_ICONS: Record<string, any> = {
+const ACTION_ICONS: Record<string, React.ElementType> = {
   delete: Trash2, update: Edit, create: Plus, sync: RefreshCw,
   bulk_delete: Trash2, bulk_import: Upload, login: Key,
   password: Key, approve: Plus, reject: AlertTriangle,
@@ -42,7 +42,7 @@ const ACTION_COLORS: Record<string, string> = {
   login: 'text-indigo-500 bg-indigo-50', password: 'text-orange-500 bg-orange-50',
 };
 
-const MODULE_ICONS: Record<string, any> = {
+const MODULE_ICONS: Record<string, React.ElementType> = {
   phone: Smartphone, brand: Database, news: FileText, video: Video,
   review: Star, admin: Users, settings: Monitor, import: Upload,
   collector: Radio, sponsor: BarChart3,
@@ -88,7 +88,7 @@ export default function AdminActivityPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setLogs(d.logs || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch (e: any) { setError(e.message || 'Failed to load activity logs'); } finally { setLoading(false); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load activity logs'); } finally { setLoading(false); }
   }, [page, rowsPerPage, debouncedSearch, moduleFilter, sort]);
 
   const fetchStats = useCallback(async () => {
@@ -96,7 +96,7 @@ export default function AdminActivityPage() {
       const res = await fetch('/api/admin/activity/stats', { credentials: 'include' });
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       setStats(await res.json());
-    } catch (e: any) { console.error('Failed to load activity stats:', e); }
+    } catch (e: unknown) { console.error('Failed to load activity stats:', e); }
   }, []);
 
   useEffect(() => { fetchLogs(); fetchStats(); }, [fetchLogs, fetchStats]);

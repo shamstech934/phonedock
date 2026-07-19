@@ -1,4 +1,5 @@
 import { BaseProvider, ProviderFetchResult } from './base';
+import type { NormalizedPhone } from '../types';
 
 export class ManualUrlProvider extends BaseProvider {
   async fetch(): Promise<ProviderFetchResult> {
@@ -10,7 +11,7 @@ export class ManualUrlProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
     }
 
-    let data: any;
+    let data: unknown;
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('json')) {
       try {
@@ -23,16 +24,16 @@ export class ManualUrlProvider extends BaseProvider {
     }
 
     // Try to extract phone-like data from any JSON structure
-    const phones: any[] = [];
-    const tryExtract = (obj: any, depth = 0): void => {
-      if (depth > 5) return;
+    const phones: Record<string, unknown>[] = [];
+    const tryExtract = (obj: unknown, depth = 0): void => {
+      if (depth > 5 || obj == null || typeof obj !== 'object') return;
       if (Array.isArray(obj)) { obj.forEach(item => tryExtract(item, depth + 1)); return; }
-      if (typeof obj !== 'object' || !obj) return;
+      const record = obj as Record<string, unknown>;
       // Heuristic: if it has brand + model/name, treat as phone
-      const brand = obj.brand || obj.brandName || obj.manufacturer;
-      const model = obj.model || obj.modelName || obj.name || obj.title;
-      if (brand && model) { phones.push(obj); return; }
-      for (const val of Object.values(obj)) { tryExtract(val, depth + 1); }
+      const brand = record.brand || record.brandName || record.manufacturer;
+      const model = record.model || record.modelName || record.name || record.title;
+      if (brand && model) { phones.push(record); return; }
+      for (const val of Object.values(record)) { tryExtract(val, depth + 1); }
     };
     tryExtract(data);
 
@@ -54,7 +55,7 @@ export class ManualUrlProvider extends BaseProvider {
         body: { weight: String(raw.weight || '') },
         software: { os: String(raw.os || '') },
       };
-    }).filter((p: any) => p.brandName && p.model);
+    }).filter((p: NormalizedPhone) => p.brandName && p.model);
 
     return { phones: this.applyBrandFilter(normalized), hasNextPage: false, providerErrors: [] };
   }

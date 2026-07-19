@@ -10,9 +10,29 @@ import {
 import { useAdmin } from '@/lib/useAdmin';
 import { formatPrice } from '@/components/shared/formatPrice';
 
+interface DashboardStats {
+  totalPhones: number;
+  totalBrands: number;
+  trendingCount: number;
+  featuredCount: number;
+  avgPrice: number;
+  newsCount: number;
+  totalVideos: number;
+  totalReviews: number;
+  totalSponsors: number;
+  totalAdmins: number;
+  priceDistribution: Array<{ range: string; count: number }>;
+  recentActivity: Array<{
+    action?: string;
+    details?: string;
+    admin?: { name: string };
+    createdAt?: string;
+  }>;
+}
+
 export default function AdminDashboardPage() {
   const { admin } = useAdmin();
-  const [stats, setStats] = useState<Record<string, any>>({});
+  const [stats, setStats] = useState<DashboardStats>({} as DashboardStats);
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,11 +67,11 @@ export default function AdminDashboardPage() {
     { label: 'Settings', icon: Cog, href: '/admin/settings' },
   ];
 
-  const priceDist = stats.priceDistribution || [
+  const priceDist: Array<{ range: string; count: number }> = stats.priceDistribution || [
     { range: 'Under 20K', count: 0 }, { range: '20K - 40K', count: 0 }, { range: '40K - 60K', count: 0 },
     { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
   ];
-  const maxPriceCount = Math.max(...priceDist.map((d: any) => d.count || 0), 1);
+  const maxPriceCount = Math.max(...priceDist.map(d => d.count || 0), 1);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -115,7 +135,7 @@ export default function AdminDashboardPage() {
         <div className="card-premium p-5">
           <h3 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-500 shrink-0" /> Price Distribution</h3>
           <div className="space-y-3">
-            {priceDist.map((d: any, i: number) => (
+            {priceDist.map((d, i: number) => (
               <div key={i}>
                 <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">{d.range}</span><span className="font-semibold text-gray-900">{d.count || 0}</span></div>
                 <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
@@ -132,7 +152,7 @@ export default function AdminDashboardPage() {
             <Link href="/admin/activity" className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 shrink-0">View All <ArrowRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-3">
-            {(stats.recentActivity || []).slice(0, 6).map((log: any, i: number) => (
+            {(stats.recentActivity || []).slice(0, 6).map((log, i: number) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
                 {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}

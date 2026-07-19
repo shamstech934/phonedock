@@ -136,7 +136,7 @@ PhoneSchema.virtual('brand', {
   justOne: true,
 });
 
-PhoneSchema.pre('save', async function(this: any) {
+PhoneSchema.pre('save', async function(this: IPhone) {
   if (!this.slug && this.modelName) {
     this.slug = this.modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }
@@ -150,7 +150,8 @@ PhoneSchema.index({ active: 1, status: 1, pricePKR: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
-PhoneSchema.index({ modelName: 'text', description: 'text' });
+PhoneSchema.index({ active: 1, upcoming: 1 });
+PhoneSchema.index({ modelName: 'text', description: 'text', keywords: 'text' });
 // Score-based sort indexes for top-phones ranking pages
 PhoneSchema.index({ active: 1, status: 1, overallRating: -1 });
 PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });

@@ -27,7 +27,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
     const sources = await CollectorSource.find().sort({ createdAt: -1 }).lean();
-    return NextResponse.json({ sources: sources.map((s: any) => ({ ...s, id: s._id?.toString() })) });
+    return NextResponse.json({ sources: sources.map((s: Record<string, unknown>) => ({ ...s, id: (s._id as { toString(): string } | undefined)?.toString() })) });
   }
 
   // ---- /api/collector/jobs ----
@@ -36,7 +36,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({ jobs: jobs.map((j: any) => ({ ...j, id: j._id?.toString(), sourceId: j.sourceId?.toString() })) });
+    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({ ...j, id: (j._id as { toString(): string } | undefined)?.toString(), sourceId: (j.sourceId as { toString(): string } | undefined)?.toString() })) });
   }
 
   return undefined;

@@ -28,7 +28,7 @@ const BrandSchema = new Schema<IBrand>({
   seoDescription: { type: String, default: '' },
 }, { timestamps: true });
 
-BrandSchema.pre('save', async function(this: any) {
+BrandSchema.pre('save', async function(this: IBrand) {
   if (!this.slug) {
     this.slug = this.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   }

@@ -76,9 +76,9 @@ async function getRelatedNews(currentSlug: string, category: string, limit = 4):
       .limit(limit)
       .lean();
 
-    return articles.map((a: any) => ({
+    return articles.map((a) => ({
       _id: String(a._id),
-      title: a.title,
+      title: String(a.title),
       slug: a.slug,
       content: '',
       excerpt: a.excerpt || '',
@@ -103,7 +103,7 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
     const articles = await News.find({ published: true, status: 'published' })
       .select('slug')
       .lean();
-    return articles.map((a: any) => ({ slug: a.slug }));
+    return articles.map((a) => ({ slug: a.slug as string }));
   } catch {
     return [];
   }

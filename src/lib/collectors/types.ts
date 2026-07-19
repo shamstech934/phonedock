@@ -160,7 +160,7 @@ export interface NormalizedPhone {
 // ---- Data Provenance ----
 export interface FieldProvenance {
   field: string;
-  value: any;
+  value: unknown;
   sourceName: string;
   sourceUrl: string;
   collectedAt: string;
@@ -172,8 +172,8 @@ export interface FieldProvenance {
 
 export interface ConflictInfo {
   field: string;
-  existingValue: any;
-  newValue: any;
+  existingValue: unknown;
+  newValue: unknown;
   existingSource: string;
   newSource: string;
   confidence: number;

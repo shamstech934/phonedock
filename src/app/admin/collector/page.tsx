@@ -9,12 +9,25 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
+interface CollectorStats {
+  totalJobs?: number;
+  completedJobs?: number;
+  activeSources?: number;
+  totalSources?: number;
+  pendingReview?: number;
+}
+
+interface CollectorJob {
+  id: string;
+  status: string;
+}
+
 export default function AdminCollectorPage() {
   useAdmin();
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<CollectorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const [recentJobs, setRecentJobs] = useState<CollectorJob[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [runningCollection, setRunningCollection] = useState(false);
 
@@ -26,7 +39,7 @@ export default function AdminCollectorPage() {
       fetch('/api/collector/jobs', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Jobs fetch failed'); return r.json(); }),
     ]).then(([d, j]) => {
       setStats(d);
-      setRecentJobs((j.jobs || []).slice(0, 5));
+      setRecentJobs(((j.jobs || []) as CollectorJob[]).slice(0, 5));
       setLastSync(new Date().toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
       setLoading(false);
     }).catch((e) => {
@@ -66,7 +79,7 @@ export default function AdminCollectorPage() {
 
   if (loading) return <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{Array(4).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-28 rounded-2xl" />)}</div>;
 
-  const successRate = stats?.totalJobs > 0 ? `${Math.round(((stats.completedJobs || 0) / stats.totalJobs) * 100)}%` : 'N/A';
+  const successRate = (stats?.totalJobs ?? 0) > 0 ? `${Math.round((((stats?.completedJobs ?? 0)) / (stats?.totalJobs ?? 0)) * 100)}%` : 'N/A';
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -76,9 +89,9 @@ export default function AdminCollectorPage() {
           <p className="text-xs text-muted-foreground mt-0.5">Data collection system and automation</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {stats?.activeSources > 0 ? (
+          {(stats?.activeSources ?? 0) > 0 ? (
             <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50">
-              <CheckCircle className="w-3 h-3 mr-1" /> {stats.activeSources} Active
+              <CheckCircle className="w-3 h-3 mr-1" /> {stats?.activeSources ?? 0} Active
             </Badge>
           ) : (
             <Badge variant="secondary" className="text-[10px]">No Active Sources</Badge>
@@ -174,16 +187,16 @@ export default function AdminCollectorPage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Source Coverage</span>
-              <span className="font-semibold text-gray-900">{stats?.totalSources > 0 ? `${Math.round(((stats.activeSources || 0) / stats.totalSources) * 100)}%` : 'N/A'}</span>
+              <span className="font-semibold text-gray-900">{(stats?.totalSources ?? 0) > 0 ? `${Math.round((((stats?.activeSources ?? 0)) / (stats?.totalSources ?? 1)) * 100)}%` : 'N/A'}</span>
             </div>
           </div>
           <div className="space-y-2.5">
             <h4 className="text-xs font-semibold text-gray-700 mb-1">Recent Jobs</h4>
-            {recentJobs.length > 0 ? recentJobs.map((job: any) => {
+            {recentJobs.length > 0 ? recentJobs.map((job) => {
               const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700', failed: 'bg-red-50 text-red-700', running: 'bg-blue-50 text-blue-700', pending: 'bg-gray-100 text-gray-600' };
               return (
                 <div key={job.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-gray-500">#{job.id?.slice(-6)}</span>
+                  <span className="text-xs text-gray-500">#{job.id.slice(-6)}</span>
                   <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${statusColors[job.status] || statusColors.pending}`}>{job.status}</span>
                 </div>
               );

@@ -112,8 +112,8 @@ export default function AdminPhonesPage() {
       setPhones(d.phones || []);
       setTotal(d.total || 0);
       setTotalPages(d.totalPages || 1);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load phones');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load phones');
     } finally { setLoading(false); }
   }, [buildParams]);
 

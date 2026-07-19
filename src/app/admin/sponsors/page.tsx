@@ -71,7 +71,7 @@ export default function AdminSponsorsPage() {
       }
       setShowForm(false);
       fetchSponsors();
-    } catch (e: any) { setError(e.message || 'Failed to save sponsor'); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to save sponsor'); }
     setSaving(false);
   };
 

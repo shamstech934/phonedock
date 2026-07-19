@@ -45,8 +45,8 @@ function formatSpecValue(val: unknown): string {
 }
 
 // Normalize various API response shapes to a flat PhoneSpecs object
-function normalizeSpecs(rawSpecs: any): PhoneSpecs | null {
-  if (!rawSpecs) return null;
+function normalizeSpecs(rawSpecs: unknown): PhoneSpecs | null {
+  if (!rawSpecs || typeof rawSpecs !== 'object' || Array.isArray(rawSpecs)) return null;
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(rawSpecs)) {
     if (value == null) continue;
@@ -93,29 +93,30 @@ function getSpecValue(specs: Record<string, any>, row: typeof QV_SPEC_ROWS[numbe
   return '';
 }
 
-function specsHasData(s: any): boolean {
-  if (!s || typeof s !== 'object') return false;
-  for (const row of QV_SPEC_ROWS) {
-    if (getSpecValue(s, row)) return true;
-  }
-  return false;
+function specsHasData(s: unknown): boolean {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return false;
+  return getSpecValue(s, QV_SPEC_ROWS[0]) !== '';
 }
 
 type QVState = 'idle' | 'loading' | 'success' | 'partial-data' | 'empty' | 'error' | 'retrying';
 
 // Extract specs from various API response shapes
-function extractSpecsFromResponse(data: any): { specs: PhoneSpecs | null; hasPartial: boolean } {
-  let raw: any = null;
+function extractSpecsFromResponse(data: unknown): { specs: PhoneSpecs | null; hasPartial: boolean } {
+  let raw: unknown = null;
+  const d = data as Record<string, unknown> | null;
   // Shape 1: { phone: { specs: ... } }
-  if (data?.phone?.specs) raw = data.phone.specs;
+  if (d?.phone && typeof d.phone === 'object') raw = (d.phone as Record<string, unknown>)?.specs;
   // Shape 2: { data: { phone: { specs: ... } } }
-  else if (data?.data?.phone?.specs) raw = data.data.phone.specs;
-  // Shape 3: { data: { specs: ... } }
-  else if (data?.data?.specs) raw = data.data.specs;
+  else if (d?.data && typeof d.data === 'object') {
+    const inner = d.data as Record<string, unknown>;
+    if (inner.phone && typeof inner.phone === 'object') raw = (inner.phone as Record<string, unknown>)?.specs;
+    // Shape 3: { data: { specs: ... } }
+    else raw = inner.specs;
+  }
   // Shape 4: { specs: ... }
-  else if (data?.specs) raw = data.specs;
+  else if (d?.specs) raw = d.specs;
   // Shape 5: top-level keys look like specs
-  else if (data?.chipset || data?.ram || data?.battery || data?.display) raw = data;
+  else if (d?.chipset || d?.ram || d?.battery || d?.display) raw = d;
 
   if (!raw) return { specs: null, hasPartial: false };
   const specs = normalizeSpecs(raw);
@@ -163,7 +164,7 @@ export function PhoneQuickViewDialog({ phone, open, onClose }: PhoneQuickViewDia
         }
 
         const ct = res.headers.get('content-type') || '';
-        let data: any;
+        let data: unknown;
         if (ct.includes('application/json')) {
           data = await res.json();
         } else {
@@ -189,9 +190,9 @@ export function PhoneQuickViewDialog({ phone, open, onClose }: PhoneQuickViewDia
         } else {
           setState('empty');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (fetchId !== fetchIdRef.current) return;
-        if (err.name === 'AbortError') {
+        if (err instanceof Error && err.name === 'AbortError') {
           setState('error');
           setErrorMsg('Request timed out');
         } else {

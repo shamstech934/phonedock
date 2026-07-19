@@ -76,7 +76,7 @@ export default function AdminNewsPage() {
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       const d = await res.json();
       setNews(d.news || []); setTotal(d.total || 0); setTotalPages(d.totalPages || 1);
-    } catch (e: any) { setError(e.message || 'Failed to load news articles'); } finally { setLoading(false); }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to load news articles'); } finally { setLoading(false); }
   }, [page, rowsPerPage, sort, statusFilter, categoryFilter, debouncedSearch]);
 
   const fetchStats = useCallback(async () => {
@@ -84,7 +84,7 @@ export default function AdminNewsPage() {
       const res = await fetch('/api/admin/news/stats', { credentials: 'include' });
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       setStats(await res.json());
-    } catch (e: any) { console.error('Failed to load news stats:', e); }
+    } catch (e: unknown) { console.error('Failed to load news stats:', e); }
   }, []);
 
   useEffect(() => { fetchNews(); fetchStats(); }, [fetchNews, fetchStats]);
@@ -94,7 +94,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${n.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ published: !n.published, status: !n.published ? 'published' : 'draft' }) });
       fetchNews(); fetchStats();
-    } catch (e: any) { console.error('Toggle publish failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Toggle publish failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleFeatured = async (n: NewsItem) => {
@@ -102,7 +102,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${n.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ featured: !n.featured }) });
       fetchNews(); fetchStats();
-    } catch (e: any) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Toggle featured failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleDelete = async () => {
@@ -111,7 +111,7 @@ export default function AdminNewsPage() {
     try {
       await fetch(`/api/admin/news/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
       setDeleteModal(null); fetchNews(); fetchStats();
-    } catch (e: any) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Delete failed:', e); } finally { setActionLoading(null); }
   };
 
   const handleBulkAction = async (action: string) => {
@@ -124,7 +124,7 @@ export default function AdminNewsPage() {
       });
       const d = await res.json();
       if (d.success) { setSelected(new Set()); fetchNews(); fetchStats(); }
-    } catch (e: any) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
+    } catch (e: unknown) { console.error('Bulk action failed:', e); } finally { setActionLoading(null); }
   };
 
   const toggleSelect = (id: string) => {

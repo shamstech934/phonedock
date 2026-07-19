@@ -181,7 +181,7 @@ interface ExistingPhoneData {
   modelName: string;
   slug: string;
   pricePKR: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export function detectConflicts(
@@ -193,7 +193,7 @@ export function detectConflicts(
   const conflicts: ConflictInfo[] = [];
 
   // Map normalized fields to flat existing fields for comparison
-  const comparisons: Array<{ field: string; newValue: any; existingValue: any }> = [
+  const comparisons: Array<{ field: string; newValue: unknown; existingValue: unknown }> = [
     { field: 'modelName', newValue: phone.model, existingValue: existing.modelName },
   ];
 
@@ -301,7 +301,7 @@ export function buildFieldProvenance(
   const provenance: FieldProvenance[] = [];
   const now = new Date().toISOString();
 
-  const add = (field: string, value: any, conf = confidence) => {
+  const add = (field: string, value: unknown, conf = confidence) => {
     if (value !== undefined && value !== null && value !== '') {
       provenance.push({ field, value, sourceName, sourceUrl, collectedAt: now, providerId: sourceId, confidence: conf });
     }

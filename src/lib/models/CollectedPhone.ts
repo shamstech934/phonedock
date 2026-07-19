@@ -163,5 +163,6 @@ CollectedPhoneSchema.index({ sourceId: 1 });
 CollectedPhoneSchema.index({ jobId: 1 });
 CollectedPhoneSchema.index({ createdAt: -1 });
 CollectedPhoneSchema.index({ 'duplicateMatches.confidence': -1 });
+CollectedPhoneSchema.index({ approvedPhoneId: 1, status: 1 });
 
 export const CollectedPhone = mongoose.models.CollectedPhone || mongoose.model('CollectedPhone', CollectedPhoneSchema);

@@ -12,12 +12,12 @@ export interface DetectedIssue {
   issueType: string;
   severity: Severity;
   field: string;
-  currentValue: any;
-  suggestedValue: any;
+  currentValue: unknown;
+  suggestedValue: unknown;
   source: string;
   confidence: number;
   importId?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RuleDefinition {
@@ -29,23 +29,26 @@ export interface RuleDefinition {
   /** Run detection on a batch of entities. Returns array of detected issues. */
   detect: (ctx: DetectionContext) => Promise<DetectedIssue[]>;
   /** Generate a suggested fix value for an issue */
-  suggest?: (issue: DetectedIssue, ctx: DetectionContext) => Promise<any>;
+  suggest?: (issue: DetectedIssue, ctx: DetectionContext) => Promise<unknown>;
   /** Whether this rule supports safe auto-fix */
   canAutoFix: boolean;
   /** Execute a safe auto-fix. Must be deterministic and idempotent. Returns changes made. */
   autoFix?: (issue: DetectedIssue, ctx: FixContext) => Promise<FixResult>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyRecord = Record<string, any>;
+
 export interface DetectionContext {
   /** Batch of raw Mongoose documents (already .lean()) */
-  entities: any[];
+  entities: AnyRecord[];
   /** Pre-fetched lookup maps for cross-referencing */
   lookups: {
-    brands: Map<string, any>;
-    specs: Map<string, any>;
-    images: Map<string, any[]>;
-    prices: Map<string, any[]>;
-    benchmarks: Map<string, any>;
+    brands: Map<string, AnyRecord>;
+    specs: Map<string, AnyRecord>;
+    images: Map<string, AnyRecord[]>;
+    prices: Map<string, AnyRecord[]>;
+    benchmarks: Map<string, AnyRecord>;
   };
   /** Import ID if this is an import-specific scan */
   importId?: string;
@@ -58,7 +61,7 @@ export interface FixContext {
 
 export interface FixResult {
   success: boolean;
-  changes: Array<{ field: string; oldValue: any; newValue: any }>;
+  changes: Array<{ field: string; oldValue: unknown; newValue: unknown }>;
   error?: string;
 }
 

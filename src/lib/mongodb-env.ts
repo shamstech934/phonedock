@@ -176,7 +176,7 @@ export interface ClassifiedError {
 
 export function classifyMongoError(error: Error, uriInfo: UriValidationResult): ClassifiedError {
   const msg = error.message || '';
-  const code = (error as any).code;
+  const code = (error as unknown as Record<string, unknown>).code;
 
   // querySrv ECONNREFUSED
   if (msg.includes('querySrv') && msg.includes('ECONNREFUSED')) {
@@ -317,10 +317,10 @@ export async function checkDns(hostname: string, isSrv: boolean): Promise<DnsRes
         message: `SRV resolved to ${result.length} host(s): ${targets}`,
         windowsCommand: `nslookup -type=SRV ${srvRecord}`,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         success: false,
-        message: `SRV lookup for "${srvRecord}" failed: ${e.code || e.message}`,
+        message: `SRV lookup for "${srvRecord}" failed: ${(e instanceof Error ? (e as unknown as Record<string, unknown>).code : undefined) || (e instanceof Error ? e.message : String(e))}`,
         windowsCommand: `nslookup -type=SRV ${srvRecord}`,
       };
     }
@@ -332,10 +332,10 @@ export async function checkDns(hostname: string, isSrv: boolean): Promise<DnsRes
         message: `Hostname "${hostname}" resolved to: ${result.join(', ')}`,
         windowsCommand: `nslookup ${hostname.split(':')[0]}`,
       };
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         success: false,
-        message: `DNS lookup for "${hostname}" failed: ${e.code || e.message}`,
+        message: `DNS lookup for "${hostname}" failed: ${(e instanceof Error ? (e as unknown as Record<string, unknown>).code : undefined) || (e instanceof Error ? e.message : String(e))}`,
         windowsCommand: `nslookup ${hostname.split(':')[0]}`,
       };
     }
@@ -362,8 +362,8 @@ export async function testConnection(uri: string): Promise<{ success: boolean; m
     }
     await mongoose.disconnect();
     return { success: false, message: 'Ping returned unexpected result.', database: dbName };
-  } catch (e: any) {
+  } catch (e: unknown) {
     try { await mongoose.disconnect(); } catch (disconnectErr) { /* cleanup failure — non-critical during error path */ console.error('[mongoose.disconnect]', disconnectErr); }
-    return { success: false, message: e.message || String(e), database: '' };
+    return { success: false, message: e instanceof Error ? e.message : String(e), database: '' };
   }
 }

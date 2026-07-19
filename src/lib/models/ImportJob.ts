@@ -39,7 +39,7 @@ export interface IImportJob {
   rollbackStatus?: string;
   buildVersion?: string;
   // Preview data stored temporarily
-  previewData?: any[];
+  previewData?: Record<string, unknown>[];
   previewStats?: {
     totalRecords: number;
     validRecords: number;
