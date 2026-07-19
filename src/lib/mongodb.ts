@@ -72,7 +72,6 @@ export async function connectDB(): Promise<typeof mongoose> {
 
   if (!cached.promise) {
     cached.promise = connectWithRetry(MONGODB_URI).then((m) => {
-      console.log('MongoDB connected successfully');
       return m;
     });
   }

@@ -32,8 +32,16 @@ import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-qua
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
 
+type HandlerResult = Promise<NextResponse | undefined>;
+
+interface PopulatedPhoneDoc {
+  _id: { toString(): string };
+  modelName: string;
+  pricePKR: number;
+}
+
 // ============ GET HANDLER ============
-export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
 
@@ -65,7 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       let sent = 0;
       // Batch-fetch latest prices for all alerted phones
       const phoneIds = alerts.map(a => {
-        const p = a.phoneId as any;
+        const p = a.phoneId as PopulatedPhoneDoc;
         return p._id;
       }).filter(Boolean);
 
@@ -74,10 +82,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         { $sort: { recordedAt: -1 } },
         { $group: { _id: '$phoneId', price: { $first: '$price' } } },
       ]);
-      const priceMap = new Map(latestPricesArr.map((p: any) => [p._id.toString(), p.price]));
+      const priceMap = new Map(latestPricesArr.map((p: { _id: { toString(): string }; price: number }) => [p._id.toString(), p.price]));
 
       for (const alert of alerts) {
-        const phone = alert.phoneId as any;
+        const phone = alert.phoneId as PopulatedPhoneDoc;
         if (!phone || !phone.pricePKR) continue;
         const lastPriceVal = priceMap.get(phone._id.toString());
         if (lastPriceVal && lastPriceVal > phone.pricePKR) {
@@ -194,9 +202,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (dataQualityGetResult) return dataQualityGetResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (e: any) {
-    console.error('API GET error:', e.message);
-    const msg = e?.message || '';
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error('API GET error:', err.message);
+    const msg = err.message;
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }
@@ -205,7 +214,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 }
 
 // ============ POST HANDLER ============
-export async function POST(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
 
@@ -301,8 +310,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       try {
         await NewsletterSubscriber.create({ email });
         return NextResponse.json({ success: true, message: 'Subscribed successfully!' });
-      } catch (e: any) {
-        if (e.code === 11000) {
+      } catch (e: unknown) {
+        if (e && typeof e === 'object' && 'code' in e && (e as { code: number }).code === 11000) {
           return NextResponse.json({ success: true, message: 'You are already subscribed!' });
         }
         throw e;
@@ -423,9 +432,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     if (dataQualityPostResult) return dataQualityPostResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (e: any) {
-    console.error('API POST error:', e.message);
-    const msg = e?.message || '';
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error('API POST error:', err.message);
+    const msg = err.message;
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }
@@ -434,7 +444,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 }
 
 // ============ PUT HANDLER ============
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
 
@@ -463,9 +473,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     if (priceTrackerPutResult) return priceTrackerPutResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (e: any) {
-    console.error('API PUT error:', e.message, e.stack);
-    const msg = e?.message || '';
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error('API PUT error:', err.message, err.stack);
+    const msg = err.message;
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }
@@ -474,7 +485,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 }
 
 // ============ DELETE HANDLER ============
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
 
@@ -507,9 +518,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     if (priceTrackerDeleteResult) return priceTrackerDeleteResult;
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (e: any) {
-    console.error('API DELETE error:', e.message);
-    const msg = e?.message || '';
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    console.error('API DELETE error:', err.message);
+    const msg = err.message;
     if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
       return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
     }

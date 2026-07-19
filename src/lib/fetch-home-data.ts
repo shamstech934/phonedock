@@ -4,9 +4,51 @@
  * This avoids duplicating query logic between /api/home and the homepage server component.
  */
 
+import { Types } from 'mongoose';
 import { Phone, Brand, News, PhoneSpecs, Sponsor } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
-import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
+import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones, type PhoneDocOrJson } from '@/app/api/[[...path]]/handlers/helpers';
+
+// ============ LOCAL TYPES ============
+
+/** Brand aggregation pipeline result (homepage sidebar). */
+interface BrandAggResult {
+  _id: Types.ObjectId;
+  name: string;
+  slug: string;
+  logo?: string;
+  country?: string;
+  description?: string;
+  _count: number;
+}
+
+/** Lean News document fields used on the homepage. */
+interface NewsLeanDoc {
+  _id: Types.ObjectId;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content?: string;
+  category?: string;
+  author?: string;
+  image?: string;
+  published?: boolean;
+  createdAt: Date;
+}
+
+/** Lean Sponsor document fields. */
+interface SponsorLeanDoc {
+  _id: Types.ObjectId;
+  name: string;
+  image?: string;
+  url?: string;
+  position?: string;
+  active?: boolean;
+}
+
+/** Bridge Mongoose lean phone types to phoneToJSON's PhoneDocOrJson parameter. */
+const toPhoneRecord = (doc: unknown): Record<string, unknown> =>
+  phoneToJSON(doc as PhoneDocOrJson) as Record<string, unknown>;
 
 // ============ BATCH SPECS ATTACHMENT ============
 // (attachBasicSpecs removed — fetchHomeData now uses a single batch query below)
@@ -45,43 +87,44 @@ export async function fetchHomeData() {
   ]);
 
   // Convert all raw phone arrays to JSON (needed for spec attachment)
-  const featuredJson = featured.map((p: any) => phoneToJSON(p));
-  const trendingJson = trending.map((p: any) => phoneToJSON(p));
-  const latestJson = latest.map((p: any) => phoneToJSON(p));
-  const bestCameraJson = bestCamera.map((p: any) => phoneToJSON(p));
-  const bestGamingJson = bestGaming.map((p: any) => phoneToJSON(p));
-  const bestBatteryJson = bestBattery.map((p: any) => phoneToJSON(p));
-  const upcomingJson = upcoming.map((p: any) => phoneToJSON(p));
-  const pc_above100kJson = pc_above100k.map((p: any) => phoneToJSON(p));
-  const pc_price60to100Json = pc_price60to100.map((p: any) => phoneToJSON(p));
-  const pc_price40to60Json = pc_price40to60.map((p: any) => phoneToJSON(p));
-  const pc_price20to40Json = pc_price20to40.map((p: any) => phoneToJSON(p));
-  const pc_under20kJson = pc_under20k.map((p: any) => phoneToJSON(p));
+  const featuredJson = featured.map(toPhoneRecord);
+  const trendingJson = trending.map(toPhoneRecord);
+  const latestJson = latest.map(toPhoneRecord);
+  const bestCameraJson = bestCamera.map(toPhoneRecord);
+  const bestGamingJson = bestGaming.map(toPhoneRecord);
+  const bestBatteryJson = bestBattery.map(toPhoneRecord);
+  const upcomingJson = upcoming.map(toPhoneRecord);
+  const pc_above100kJson = pc_above100k.map(toPhoneRecord);
+  const pc_price60to100Json = pc_price60to100.map(toPhoneRecord);
+  const pc_price40to60Json = pc_price40to60.map(toPhoneRecord);
+  const pc_price20to40Json = pc_price20to40.map(toPhoneRecord);
+  const pc_under20kJson = pc_under20k.map(toPhoneRecord);
 
   // Batch all phone IDs and fetch specs in ONE query
   const allPhoneIds = [
-    ...featuredJson.map((p: any) => p.id),
-    ...trendingJson.map((p: any) => p.id),
-    ...latestJson.map((p: any) => p.id),
-    ...bestCameraJson.map((p: any) => p.id),
-    ...bestGamingJson.map((p: any) => p.id),
-    ...bestBatteryJson.map((p: any) => p.id),
-    ...upcomingJson.map((p: any) => p.id),
-    ...pc_above100kJson.map((p: any) => p.id),
-    ...pc_price60to100Json.map((p: any) => p.id),
-    ...pc_price40to60Json.map((p: any) => p.id),
-    ...pc_price20to40Json.map((p: any) => p.id),
-    ...pc_under20kJson.map((p: any) => p.id),
-  ].filter(Boolean);
+    ...featuredJson.map(p => p.id),
+    ...trendingJson.map(p => p.id),
+    ...latestJson.map(p => p.id),
+    ...bestCameraJson.map(p => p.id),
+    ...bestGamingJson.map(p => p.id),
+    ...bestBatteryJson.map(p => p.id),
+    ...upcomingJson.map(p => p.id),
+    ...pc_above100kJson.map(p => p.id),
+    ...pc_price60to100Json.map(p => p.id),
+    ...pc_price40to60Json.map(p => p.id),
+    ...pc_price20to40Json.map(p => p.id),
+    ...pc_under20kJson.map(p => p.id),
+  ].filter((v): v is string => typeof v === 'string');
 
-  let globalSpecsMap: Map<string, any> = new Map();
+  let globalSpecsMap: Map<string, Record<string, unknown>> = new Map();
   if (allPhoneIds.length > 0) {
     const allSpecs = await PhoneSpecs.find({ phoneId: { $in: allPhoneIds } }).lean();
     globalSpecsMap = buildSpecsMap(allSpecs);
   }
 
   // Helper to attach from pre-built map (synchronous)
-  const attachFromMap = (phones: any[]) =>
+  // Cast needed: phoneToJSON produces Record<string,unknown> but consumers expect Phone
+  const attachFromMap = (phones: Record<string, unknown>[]) =>
     phones.length > 0 ? attachSpecsToJsonPhones(phones, globalSpecsMap) : phones;
 
   const priceCategories = {
@@ -92,7 +135,7 @@ export async function fetchHomeData() {
     under20k: attachFromMap(pc_under20kJson),
   };
 
-  const brands = brandAgg.map((b: any) => ({
+  const brands = brandAgg.map((b: BrandAggResult) => ({
     id: b._id?.toString(),
     name: b.name,
     slug: b.slug,
@@ -110,7 +153,7 @@ export async function fetchHomeData() {
     bestGaming: attachFromMap(bestGamingJson),
     bestBattery: attachFromMap(bestBatteryJson),
     upcoming: attachFromMap(upcomingJson),
-    news: news.map((n: any) => ({
+    news: news.map((n: NewsLeanDoc) => ({
       id: n._id?.toString(),
       title: n.title,
       slug: n.slug,
@@ -124,7 +167,7 @@ export async function fetchHomeData() {
     })),
     priceCategories,
     brands,
-    sponsors: (sponsors as any[]).map((s: any) => ({
+    sponsors: sponsors.map((s: SponsorLeanDoc) => ({
       id: s._id?.toString(),
       name: s.name,
       image: s.image || '',
@@ -150,9 +193,9 @@ export async function fetchHeroPhones() {
       .sort({ createdAt: -1 }).limit(6).populate('brand').lean();
   }
 
-  const ids = phones.map((p: any) => p._id);
+  const ids = phones.map(p => p._id);
   const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
   const specsMap = buildSpecsMap(specsArr);
 
-  return attachSpecsToRawPhones(phones, specsMap);
+  return attachSpecsToRawPhones(phones as unknown as PhoneDocOrJson[], specsMap);
 }

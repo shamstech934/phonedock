@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { Phone, PriceHistory } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { SystemState } from '@/lib/models';
@@ -10,11 +11,20 @@ import { getPriceTrackerSettings } from './price-tracker';
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
 export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResponse | undefined> {
   // Validate CRON_SECRET via x-cron-secret header (fallback to Authorization Bearer)
   const cronSecret = req.headers.get('x-cron-secret') || req.headers.get('authorization')?.replace('Bearer ', '') || '';
   const envSecret = process.env.CRON_SECRET || '';
-  if (!cronSecret || !envSecret || cronSecret !== envSecret) {
+  if (!cronSecret || !envSecret || !safeCompare(cronSecret, envSecret)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -310,7 +320,6 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const slug of uniqueSlugs) {
         revalidatePricePages(slug);
       }
-      console.log(`[cron:prices] Revalidated cache for ${uniqueSlugs.length} phone(s)`);
     }
   } finally {
     // Always release the lock

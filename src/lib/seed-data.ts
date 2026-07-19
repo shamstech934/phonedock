@@ -1536,6 +1536,5 @@ export async function seedPhones(): Promise<{
   }
 
   const summary = { brands, phones, specs, benchmarks, prices, skipped };
-  console.log('[seedPhones] Done:', JSON.stringify(summary, null, 2));
   return summary;
 }

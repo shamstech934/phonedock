@@ -137,7 +137,7 @@ async function getRelatedPhones(currentSlug: string, brandSlug?: string, limit =
       const ids = phones.map((p: any) => p._id);
       const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
       const specsMap = buildSpecsMap(specsArr);
-      return attachSpecsToRawPhones(phones, specsMap);
+      return attachSpecsToRawPhones(phones, specsMap) as unknown as Phone[];
     }
     return phones.map((p: any) => phoneToJSON(p)) as Phone[];
   } catch {

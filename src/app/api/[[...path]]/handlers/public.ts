@@ -204,10 +204,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   // ---- /api/phones/:slug ----
   if (segments.length === 2 && segments[0] === 'phones') {
     await connectDB();
-    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').populate('brand');
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').populate('brand').lean();
     if (!phone) return cachedError('Not found', 404, 60, 300);
-    // Also fetch a lean copy for legacy field access (Mongoose strict mode hides extra fields)
-    const phoneLean = await Phone.findOne({ _id: phone._id }).lean();
+    const phoneLean = phone;
     const [specsDoc, benchmarks, images, prices, related, phoneVideos, collectedDoc] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
@@ -221,8 +220,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     // Normalize specs: PhoneSpecs > legacy Phone fields > CollectedPhone nested
     const normalizedSpecs = normalizePhoneSpecs(specsDoc, phoneLean, collectedDoc);
     const serializedSpecs = normalizedSpecs ? normalizedToSerialized(normalizedSpecs) : null;
-    const phoneJSON: any = phoneToJSON(phone, serializedSpecs, benchmarks, images, prices);
-    phoneJSON.videos = phoneVideos.map((v: any) => ({
+    const phoneJSON = phoneToJSON(phone, serializedSpecs ?? undefined, benchmarks, images, prices);
+    (phoneJSON as Record<string, unknown>).videos = phoneVideos.map((v) => ({
       id: v._id?.toString(),
       youtubeId: v.youtubeId,
       title: v.title,
@@ -565,13 +564,11 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
             <p style="color:#999;font-size:12px;margin-top:16px">Sent from PhoneDock contact form</p>
           </div>`,
         });
-        console.log('[Contact] Email sent successfully');
       } catch (emailErr: any) {
         console.error('[Contact] Email send failed:', emailErr?.message);
         // Still return success — don't expose email failure
       }
     } else {
-      console.log('[Contact] Email not configured — logging contact form submission:', { name: cleanName, email: cleanEmail, subject: cleanSubject, message: cleanMessage.slice(0, 100) + '...' });
     }
 
     // Always return generic success (never reveal if email was actually sent)

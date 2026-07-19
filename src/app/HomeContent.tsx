@@ -4,6 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   Search, Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
@@ -16,8 +17,12 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
-import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
+// Dynamic import: framer-motion is ~120KB, only load on client when needed
+const HeroPhoneShowcase = dynamic(
+  () => import('@/components/shared/HeroPhoneShowcase').then(mod => ({ default: mod.HeroPhoneShowcase })),
+  { ssr: false, loading: () => <div className="h-[400px] bg-gray-100 animate-pulse rounded-xl" /> }
+);
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 

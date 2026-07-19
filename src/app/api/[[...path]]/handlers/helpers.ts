@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Admin, AdminSession } from '@/lib/models';
 import { getSessionFromRequest, validateSessionVersion, createSignedSession } from '@/lib/auth';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, type AdminRole, type Permission } from '@/lib/permissions';
 import { connectDB } from '@/lib/mongodb';
 
 // Re-export for convenience — handler files import from here
@@ -21,6 +21,108 @@ export const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ]);
+
+// ============ LOCAL INTERFACES ============
+
+/** Admin document with sensitive fields excluded (via .select('-password -resetTokenHash -resetTokenExpires')) */
+interface AdminPublicDoc {
+  _id: { toString(): string };
+  role: string;
+  active: boolean;
+  customPermissions?: string[];
+  [key: string]: unknown;
+}
+
+/** Lean plain-object shape of an AdminSession (from .lean()) */
+interface LeanAdminSession {
+  _id?: { toString(): string };
+  adminId?: { toString(): string };
+  tokenJti: string;
+  ip: string;
+  userAgent: string;
+  expiresAt: Date | string;
+  lastUsedAt: Date | string;
+  revokedAt: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+/** Plain-object representation of a phone (output of phoneToJSON) */
+interface PhoneJson {
+  id?: string;
+  modelName?: string;
+  slug?: string;
+  brandId?: string;
+  brand?: { id?: string; name?: string; slug?: string; logo?: string };
+  thumbnail?: string;
+  pricePKR?: number;
+  originalPricePKR?: number;
+  description?: string;
+  overallRating?: number;
+  cameraScore?: number;
+  performanceScore?: number;
+  batteryScore?: number;
+  displayScore?: number;
+  valueScore?: number;
+  ptaStatus?: string;
+  ptaApproved?: boolean;
+  releaseDate?: string;
+  trending?: boolean;
+  upcoming?: boolean;
+  featured?: boolean;
+  pros?: string;
+  cons?: string;
+  reviewSummary?: string;
+  reviewVerdict?: string;
+  published?: boolean;
+  specs?: Record<string, string | number | null> | null;
+  benchmarks?: Record<string, unknown>;
+  images?: Array<{ id?: string; url?: string; altText?: string; sortOrder?: number }>;
+  prices?: Array<{ id?: string; storeName?: string; price?: number; url?: string; inStock?: boolean }>;
+  priceMode?: string;
+  manualLock?: boolean;
+  manualLockReason?: string;
+  sourceUrl?: string;
+}
+
+/** Shape of a raw phone Mongoose doc / .toObject() output */
+interface RawPhoneObject {
+  _id?: { toString(): string };
+  brandId?: { toString(): string };
+  modelName?: string;
+  slug?: string;
+  brand?: { _id?: { toString(): string }; name?: string; slug?: string; logo?: string };
+  thumbnail?: string;
+  pricePKR?: number;
+  originalPricePKR?: number;
+  description?: string;
+  overallRating?: number;
+  cameraScore?: number;
+  performanceScore?: number;
+  batteryScore?: number;
+  displayScore?: number;
+  valueScore?: number;
+  ptaStatus?: string;
+  ptaApproved?: boolean;
+  releaseDate?: string;
+  trending?: boolean;
+  upcoming?: boolean;
+  featured?: boolean;
+  pros?: string;
+  cons?: string;
+  reviewSummary?: string;
+  reviewVerdict?: string;
+  status?: string;
+  priceMode?: string;
+  manualLock?: boolean;
+  manualLockReason?: string;
+  sourceUrl?: string;
+}
+
+/** A Mongoose document or a plain object — supports both raw docs and already-serialized JSON */
+export interface PhoneDocOrJson extends RawPhoneObject {
+  toObject?(...args: unknown[]): unknown;
+}
 
 // ============ ADMIN SESSION RECORD MANAGEMENT (server-only) ============
 
@@ -105,7 +207,7 @@ export async function revokeOtherSessions(adminId: string, keepJti: string): Pro
 }
 
 /** Get all active (non-revoked, non-expired) sessions for an admin */
-export async function getActiveSessions(adminId: string): Promise<any[]> {
+export async function getActiveSessions(adminId: string): Promise<LeanAdminSession[]> {
   try {
     return await AdminSession.find({
       adminId,
@@ -132,7 +234,12 @@ export function getClientIp(req: NextRequest): string {
 
 // ============ AUTH HELPERS ============
 
-export async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: any; error?: NextResponse }> {
+/** Discriminated union: success has `admin`, failure has `error`. After checking `.error`, TS narrows `.admin` to non-undefined. */
+export type AuthResult =
+  | { admin: AdminPublicDoc; error?: undefined }
+  | { admin?: undefined; error: NextResponse };
+
+export async function getAdminFromRequest(req: NextRequest): Promise<AuthResult> {
   const session = await getSessionFromRequest(req);
   if (!session) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
@@ -156,7 +263,7 @@ export async function getAdminFromRequest(req: NextRequest): Promise<{ admin?: a
   if (!admin || !admin.active) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
-  return { admin };
+  return { admin: admin as unknown as AdminPublicDoc };
 }
 
 /** Check if email is configured — used to gate forgot-password */
@@ -164,8 +271,8 @@ export function isEmailConfigured(): boolean {
   return !!(process.env.EMAIL_HOST && process.env.EMAIL_PORT && process.env.EMAIL_USER && process.env.EMAIL_PASS);
 }
 
-export function requirePermission(admin: any, permission: string): NextResponse | null {
-  if (!hasPermission(admin.role as any, permission as any)) {
+export function requirePermission(admin: AdminPublicDoc, permission: string): NextResponse | null {
+  if (!hasPermission(admin.role as AdminRole, permission as Permission)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   return null;
@@ -191,7 +298,7 @@ const NUMERIC_SPECS_FIELDS = ['ramGB','storageGB','screenSizeInch','mainCameraMP
 /** Serialize a raw PhoneSpecs document into the normalized frontend shape.
  *  Returns null when rawSpecs is falsy (no specs document exists).
  *  Strips MongoDB metadata (_id, __v, phoneId, createdAt, updatedAt). */
-export function serializePhoneSpecs(rawSpecs: any): Record<string, string | number | null> | null {
+export function serializePhoneSpecs(rawSpecs: Record<string, unknown>): Record<string, string | number | null> | null {
   if (!rawSpecs) return null;
   const result: Record<string, string | number | null> = {};
   for (const f of SPECS_FIELDS) {
@@ -200,28 +307,30 @@ export function serializePhoneSpecs(rawSpecs: any): Record<string, string | numb
   }
   for (const f of NUMERIC_SPECS_FIELDS) {
     const val = rawSpecs[f];
-    result[f] = (val !== undefined && val !== null) ? val : null;
+    result[f] = (val !== undefined && val !== null) ? (val as string | number) : null;
   }
   return result;
 }
 
 /** Create a phoneId-to-specs Map from an array of PhoneSpecs lean docs. */
-export function buildSpecsMap(specsArr: any[]): Map<string, any> {
-  const map = new Map<string, any>();
+export function buildSpecsMap(specsArr: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>();
   for (const s of specsArr) {
-    const key = s.phoneId?.toString?.() || s.phoneId;
+    const pid = s.phoneId as { toString(): string } | undefined;
+    const key = pid?.toString?.() || String(s.phoneId);
     if (key) map.set(key, s);
   }
   return map;
 }
 
 /** Attach serialized specs to an array of phone JSON objects (already run through phoneToJSON).
+ *  Generic over T so callers preserve their own phone JSON type.
  *  Used by listing endpoints and fetch-home-data. */
-export function attachSpecsToJsonPhones(phones: any[], specsMap: Map<string, any>): any[] {
+export function attachSpecsToJsonPhones<T extends Record<string, unknown>>(phones: T[], specsMap: Map<string, Record<string, unknown>>): T[] {
   return phones.map(p => {
-    const rawSpec = specsMap.get(p.id || p._id?.toString());
+    const rawSpec = specsMap.get((p.id as string | undefined) || (p._id as { toString(): string } | undefined)?.toString() || '');
     if (rawSpec) {
-      return { ...p, specs: serializePhoneSpecs(rawSpec) };
+      return { ...p, specs: serializePhoneSpecs(rawSpec) } as T;
     }
     return p;
   });
@@ -229,10 +338,10 @@ export function attachSpecsToJsonPhones(phones: any[], specsMap: Map<string, any
 
 /** Attach serialized specs to raw Mongoose phone docs (before phoneToJSON).
  *  Used by API listing handlers that call phoneToJSON inside. */
-export function attachSpecsToRawPhones(phones: any[], specsMap: Map<string, any>): any[] {
+export function attachSpecsToRawPhones(phones: PhoneDocOrJson[], specsMap: Map<string, Record<string, unknown>>): PhoneJson[] {
   return phones.map(p => {
     const json = phoneToJSON(p);
-    const rawSpec = specsMap.get(p._id?.toString());
+    const rawSpec = specsMap.get((p._id as { toString(): string } | undefined)?.toString() || '');
     if (rawSpec) {
       json.specs = serializePhoneSpecs(rawSpec);
     }
@@ -240,44 +349,45 @@ export function attachSpecsToRawPhones(phones: any[], specsMap: Map<string, any>
   });
 }
 
-export function phoneToJSON(p: any, specs?: any, benchmarks?: any, images?: any[], prices?: any[]) {
+export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, benchmarks?: Record<string, unknown>, images?: Record<string, unknown>[], prices?: Record<string, unknown>[]): PhoneJson {
   const obj = p.toObject ? p.toObject() : p;
+  const r = obj as RawPhoneObject;
   return {
-    id: obj._id?.toString(),
-    modelName: obj.modelName,
-    slug: obj.slug,
-    brandId: obj.brandId?.toString(),
-    brand: obj.brand ? { id: obj.brand._id?.toString(), name: obj.brand.name, slug: obj.brand.slug, logo: obj.brand.logo || '' } : undefined,
-    thumbnail: obj.thumbnail || '',
-    pricePKR: obj.pricePKR || 0,
-    originalPricePKR: obj.originalPricePKR || 0,
-    description: obj.description || '',
-    overallRating: obj.overallRating || 0,
-    cameraScore: obj.cameraScore || 0,
-    performanceScore: obj.performanceScore || 0,
-    batteryScore: obj.batteryScore || 0,
-    displayScore: obj.displayScore || 0,
-    valueScore: obj.valueScore || 0,
-    ptaStatus: obj.ptaStatus || 'Unknown',
-    ptaApproved: obj.ptaApproved || false,
-    releaseDate: obj.releaseDate || '',
-    trending: obj.trending || false,
-    upcoming: obj.upcoming || false,
-    featured: obj.featured || false,
-    pros: obj.pros || '',
-    cons: obj.cons || '',
-    reviewSummary: obj.reviewSummary || '',
-    reviewVerdict: obj.reviewVerdict || '',
-    published: obj.status === 'published',
+    id: r._id?.toString(),
+    modelName: r.modelName,
+    slug: r.slug,
+    brandId: r.brandId?.toString(),
+    brand: r.brand ? { id: r.brand._id?.toString(), name: r.brand.name, slug: r.brand.slug, logo: r.brand.logo || '' } : undefined,
+    thumbnail: r.thumbnail || '',
+    pricePKR: r.pricePKR || 0,
+    originalPricePKR: r.originalPricePKR || 0,
+    description: r.description || '',
+    overallRating: r.overallRating || 0,
+    cameraScore: r.cameraScore || 0,
+    performanceScore: r.performanceScore || 0,
+    batteryScore: r.batteryScore || 0,
+    displayScore: r.displayScore || 0,
+    valueScore: r.valueScore || 0,
+    ptaStatus: r.ptaStatus || 'Unknown',
+    ptaApproved: r.ptaApproved || false,
+    releaseDate: r.releaseDate || '',
+    trending: r.trending || false,
+    upcoming: r.upcoming || false,
+    featured: r.featured || false,
+    pros: r.pros || '',
+    cons: r.cons || '',
+    reviewSummary: r.reviewSummary || '',
+    reviewVerdict: r.reviewVerdict || '',
+    published: r.status === 'published',
     // Use the shared serializer for full specs (detail page path)
     specs: specs ? serializePhoneSpecs(specs) : undefined,
     benchmarks: benchmarks || undefined,
-    images: images?.map((img: any) => ({ id: img._id?.toString(), url: img.url, altText: img.altText, sortOrder: img.sortOrder })) || [],
-    prices: prices?.map((pr: any) => ({ id: pr._id?.toString(), storeName: pr.storeName, price: pr.price, url: pr.url, inStock: pr.inStock })) || [],
+    images: images?.map((img: Record<string, unknown>) => ({ id: (img._id as { toString(): string } | undefined)?.toString(), url: img.url as string, altText: img.altText as string, sortOrder: img.sortOrder as number })) || [],
+    prices: prices?.map((pr: Record<string, unknown>) => ({ id: (pr._id as { toString(): string } | undefined)?.toString(), storeName: pr.storeName as string, price: pr.price as number, url: pr.url as string, inStock: pr.inStock as boolean })) || [],
     // Price tracking
-    priceMode: obj.priceMode || 'manual',
-    manualLock: obj.manualLock || false,
-    manualLockReason: obj.manualLockReason || '',
-    sourceUrl: obj.sourceUrl || '',
+    priceMode: r.priceMode || 'manual',
+    manualLock: r.manualLock || false,
+    manualLockReason: r.manualLockReason || '',
+    sourceUrl: r.sourceUrl || '',
   };
 }

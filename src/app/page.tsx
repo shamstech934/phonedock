@@ -13,9 +13,9 @@ export default async function HomePage() {
 
   try {
     const raw = await fetchHomeData();
-    // phoneToJSON returns brand with {id, name, slug, logo} which is a subset of Brand — safe to cast
-    homeData = raw as HomeData;
-    heroPhones = raw.featured.slice(0, 6) as HeroPhone[];
+    // phoneToJSON returns Record<string,unknown> but Phone is a superset — safe to cast
+    homeData = raw as unknown as HomeData;
+    heroPhones = raw.featured.slice(0, 6) as unknown as HeroPhone[];
   } catch {
     // If DB fails, return a minimal page with error
     return (
