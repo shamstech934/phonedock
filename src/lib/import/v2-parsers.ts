@@ -1,11 +1,11 @@
 /**
  * V2 Parsers — JSON, CSV, XLSX, ZIP.
  * Adds ZIP support, security validation, and strict size limits.
- * Reuses papaparse and xlsx from existing dependencies.
+ * Uses papaparse, ExcelJS, and adm-zip with strict resource limits.
  */
 
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import { parseExcelRecords } from './excel';
 import AdmZip from 'adm-zip';
 import { detectFileType } from './parsers'; // reuse V1 detection
 
@@ -46,7 +46,7 @@ function isSafeObject(val: unknown, depth = 0): boolean {
   if (val instanceof Date || val instanceof RegExp) return true;
   if (val.constructor?.name === 'Object' || val.constructor?.name === 'Array') {
     if (Object.keys(val).length > 500) return false;
-    return !('__proto__' in val || 'constructor' in val || 'prototype' in val);
+    return !['__proto__', 'constructor', 'prototype'].some(key => Object.prototype.hasOwnProperty.call(val, key));
   }
   return false;
 }
@@ -134,29 +134,17 @@ export function parseCSV(content: string, fileName: string): ParsedFile {
 /**
  * Parse XLSX buffer.
  */
-export function parseXLSX(buffer: ArrayBuffer, fileName: string): ParsedFile {
+export async function parseXLSX(buffer: ArrayBuffer, fileName: string): Promise<ParsedFile> {
   const warnings: string[] = [];
 
   try {
-    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: true });
-    const sheetName = workbook.SheetNames[0] || 'Sheet1';
-    const sheet = workbook.Sheets[sheetName];
-
-    if (!sheet) {
-      return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: ['No sheets found in workbook'] };
+    const parsed = await parseExcelRecords(buffer, MAX_RECORDS);
+    if (parsed.truncated) {
+      warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${parsed.totalRecords})`);
     }
 
-    let records: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-    if (records.length > MAX_RECORDS) {
-      warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${records.length})`);
-      records = records.slice(0, MAX_RECORDS);
-    }
-
-    // Sanitize
-    const safeRecords = records.filter(r => isSafeObject(r));
-
-    return { records: safeRecords, fileType: 'xlsx', fileName, totalRecords: records.length, warnings };
+    const safeRecords = parsed.records.filter(r => isSafeObject(r));
+    return { records: safeRecords, fileType: 'xlsx', fileName, totalRecords: parsed.totalRecords, warnings };
   } catch (err: unknown) {
     return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: [`XLSX parse error: ${err instanceof Error ? err.message : String(err)}`] };
   }
@@ -216,7 +204,7 @@ export async function parseZIP(buffer: ArrayBuffer, fileName: string): Promise<P
       } else if (ext === 'csv') {
         parsed = parseCSV(new TextDecoder().decode(data), entryName);
       } else if (ext === 'xlsx') {
-        parsed = parseXLSX(data.buffer as ArrayBuffer, entryName);
+        parsed = await parseXLSX(data.buffer as ArrayBuffer, entryName);
       } else {
         continue;
       }
@@ -269,7 +257,7 @@ export async function parseImportFile(
   if (ext === 'zip') return parseZIP(buffer, fileName);
 
   if (detected === 'xlsx') {
-    return parseXLSX(buffer, fileName);
+    return await parseXLSX(buffer, fileName);
   }
   if (detected === 'csv') {
     const content = new TextDecoder().decode(buffer);
