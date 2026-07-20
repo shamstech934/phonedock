@@ -426,6 +426,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
     const highestPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
+    const averagePrice = allPrices.length > 0
+      ? Math.round(allPrices.reduce((sum, value) => sum + value, 0) / allPrices.length)
+      : 0;
     const priceChange = previousPrice > 0 ? currentPrice - previousPrice : 0;
     const percentageChange = previousPrice > 0 ? Math.round((priceChange / previousPrice) * 10000) / 100 : 0;
     const lastPriceChangedAt = confirmed.length > 0 ? confirmed[0].capturedAt : null;
@@ -435,6 +438,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       previousPrice,
       lowestPrice,
       highestPrice,
+      averagePrice,
+      dataPoints: confirmed.length,
+      savingsFromHigh: highestPrice > 0 && currentPrice > 0 ? Math.max(0, highestPrice - currentPrice) : 0,
+      trend: priceChange < 0 ? 'down' : priceChange > 0 ? 'up' : 'stable',
       priceChange,
       percentageChange,
       lastPriceChangedAt,

@@ -207,17 +207,31 @@ function ScoreRadar({ phone }: { phone: Phone }) {
 
 function BuyingInsight({ phone }: { phone: Phone }) {
   const entries = [
-    ['Performance', phone.performanceScore || 0],
-    ['Camera', phone.cameraScore || 0],
-    ['Battery', phone.batteryScore || 0],
-    ['Display', phone.displayScore || 0],
-    ['Value', phone.valueScore || 0],
+    ['Performance', Number(phone.performanceScore) || 0],
+    ['Camera', Number(phone.cameraScore) || 0],
+    ['Battery', Number(phone.batteryScore) || 0],
+    ['Display', Number(phone.displayScore) || 0],
+    ['Value', Number(phone.valueScore) || 0],
   ] as const;
-  const best = [...entries].sort((a, b) => b[1] - a[1])[0];
-  const weakest = [...entries].sort((a, b) => a[1] - b[1])[0];
-  const average = Math.round(entries.reduce((sum, [, score]) => sum + score, 0) / entries.length);
+  const available = entries.filter(([, score]) => score > 0);
+
+  if (available.length < 2) {
+    return (
+      <div className="card-premium p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+        <h3 className="mt-1 text-xl font-bold text-gray-900">Compare the essentials before buying</h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Detailed category scores are not available for this phone yet. Check its chipset, camera, battery, display and current price, then compare it with nearby alternatives below.
+        </p>
+      </div>
+    );
+  }
+
+  const best = [...available].sort((a, b) => b[1] - a[1])[0];
+  const weakest = [...available].sort((a, b) => a[1] - b[1])[0];
+  const average = Math.round(available.reduce((sum, [, score]) => sum + score, 0) / available.length);
   const verdict = average >= 85 ? 'Excellent all-round choice' : average >= 75 ? 'Strong choice for most buyers' : average >= 65 ? 'Good, but compare alternatives' : 'Best for a specific use case';
-  const priceValue = phone.valueScore >= 80 ? 'strong value for money' : phone.valueScore >= 65 ? 'reasonable value' : 'premium pricing for its score';
+  const priceValue = phone.valueScore >= 80 ? 'strong value for money' : phone.valueScore >= 65 ? 'reasonable value' : 'pricing that should be compared carefully';
 
   return (
     <div className="card-premium p-5">
@@ -226,7 +240,7 @@ function BuyingInsight({ phone }: { phone: Phone }) {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
           <h3 className="mt-1 text-xl font-bold text-gray-900">{verdict}</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Best for <strong className="text-gray-800">{best[0].toLowerCase()}</strong>, with {priceValue}. Its weakest area is {weakest[0].toLowerCase()}, so buyers focused on that should compare nearby options first.
+            Best for <strong className="text-gray-800">{best[0].toLowerCase()}</strong>, with {priceValue}. Its weakest scored area is {weakest[0].toLowerCase()}, so buyers focused on that should compare nearby options first.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3 rounded-2xl bg-blue-50 px-4 py-3">
@@ -447,6 +461,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTracker, setPriceTracker] = useState<{
     currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
+    averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
     priceChange: number; percentageChange: number; lastPriceChangedAt: string | null;
     priceMode: string; manualLock: boolean;
     history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
@@ -521,6 +536,33 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const p = phone;
 
   const images = p.images && p.images.length > 0 ? p.images : p.thumbnail ? [{ id: 'thumb', url: p.thumbnail, altText: p.modelName, sortOrder: 0 }] : [];
+
+  const recommendationGroups = (() => {
+    const used = new Set<string>();
+    const takeBest = (key: keyof Phone, label: string) => {
+      const match = [...related]
+        .filter(item => !used.has(item.id) && Number(item[key] || 0) > Number(p[key] || 0))
+        .sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0))[0];
+      if (!match) return null;
+      used.add(match.id);
+      return { label, phone: match };
+    };
+    const groups = [
+      takeBest('cameraScore', 'Better camera'),
+      takeBest('performanceScore', 'Better performance'),
+      takeBest('batteryScore', 'Better battery'),
+      takeBest('valueScore', 'Better value'),
+    ].filter(Boolean) as Array<{ label: string; phone: Phone }>;
+
+    for (const item of related) {
+      if (groups.length >= 4) break;
+      if (!used.has(item.id)) {
+        used.add(item.id);
+        groups.push({ label: item.brand?.name === p.brand?.name ? `More from ${p.brand?.name}` : 'Similar price', phone: item });
+      }
+    }
+    return groups;
+  })();
 
   const specGroups = [
     { title: 'Display & Design', icon: Monitor, specs: [
@@ -749,6 +791,34 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   </div>
                 );
               })()}
+
+              {/* Price Tracker 2.0 summary */}
+              {priceTracker && priceTracker.dataPoints > 0 && (
+                <div className="card-premium p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-blue-500" /> Price insights
+                    </h3>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${priceTracker.trend === 'down' ? 'bg-emerald-50 text-emerald-700' : priceTracker.trend === 'up' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {priceTracker.trend === 'down' ? 'Price dropped' : priceTracker.trend === 'up' ? 'Price increased' : 'Price stable'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      ['Lowest', priceTracker.lowestPrice],
+                      ['Highest', priceTracker.highestPrice],
+                      ['Average', priceTracker.averagePrice],
+                      ['Saved vs high', priceTracker.savingsFromHigh],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-xl bg-[#F8FAFC] p-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+                        <p className="mt-1 text-sm font-bold text-gray-900">{formatPrice(Number(value || 0))}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[10px] text-muted-foreground">Based on {priceTracker.dataPoints} confirmed price update{priceTracker.dataPoints === 1 ? '' : 's'}.</p>
+                </div>
+              )}
 
               {/* Price Tracker Chart */}
               {priceTracker && priceTracker.history.length >= 2 ? (
@@ -1072,12 +1142,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
               {/* User Reviews Section */}
               <UserReviewsSection slug={slug} />
 
-              {/* Related Phones */}
-              {related.length > 0 && (
+              {/* Smart alternatives */}
+              {recommendationGroups.length > 0 && (
                 <section className="space-y-5 pt-4">
-                  <SectionHeader title={`More from ${p.brand?.name}`} icon={Smartphone} />
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {related.slice(0, 6).map(r => <PhoneCard key={r.id} phone={r} />)}
+                  <SectionHeader title="Smart alternatives" icon={Smartphone} />
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {recommendationGroups.map(({ label, phone: item }) => (
+                      <div key={item.id} className="space-y-2">
+                        <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{label}</span>
+                        <PhoneCard phone={item} />
+                      </div>
+                    ))}
                   </div>
                 </section>
               )}
