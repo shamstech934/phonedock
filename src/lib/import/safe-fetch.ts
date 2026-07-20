@@ -4,7 +4,7 @@
  * Handles HTML error pages, non-JSON responses, timeouts, AbortError.
  */
 
-interface SafeFetchResult<T = unknown> {
+export interface SafeFetchResult<T = unknown> {
   ok: boolean;
   data: T | null;
   error: string;
@@ -27,23 +27,42 @@ export async function safeFetch<T = unknown>(
 
     const ct = (res.headers.get('content-type') || '').toLowerCase();
 
+    const unwrapEnvelope = (value: unknown): T => {
+      if (value && typeof value === 'object' && 'success' in value && 'data' in value) {
+        return (value as { data: T }).data;
+      }
+      return value as T;
+    };
+
+    const extractError = (value: unknown): string => {
+      if (!value || typeof value !== 'object') return '';
+      const error = (value as { error?: unknown }).error;
+      if (typeof error === 'string') return error;
+      if (error && typeof error === 'object') {
+        const message = (error as { message?: unknown }).message;
+        if (typeof message === 'string') return message;
+      }
+      const message = (value as { message?: unknown }).message;
+      return typeof message === 'string' ? message : '';
+    };
+
     if (!res.ok) {
-      let body = '';
+      let body: unknown = '';
       try { body = ct.includes('json') ? await res.json() : await res.text(); } catch { body = ''; }
-      const msg = typeof body === 'object' && (body as Record<string, unknown>)?.error ? String((body as Record<string, unknown>).error)
-        : typeof body === 'string' && body.length < 200 ? body
-        : `HTTP ${res.status}`;
+      const msg = extractError(body)
+        || (typeof body === 'string' && body.length < 200 ? body : '')
+        || `HTTP ${res.status}`;
       return { ok: false, data: null, error: msg, status: res.status };
     }
 
     if (ct.includes('application/json')) {
       const data = await res.json();
-      return { ok: true, data, error: '', status: res.status };
+      return { ok: true, data: unwrapEnvelope(data), error: '', status: res.status };
     }
 
     const text = await res.text();
     try {
-      return { ok: true, data: JSON.parse(text) as T, error: '', status: res.status };
+      return { ok: true, data: unwrapEnvelope(JSON.parse(text)), error: '', status: res.status };
     } catch {
       return { ok: false, data: null, error: `Expected JSON, got ${ct}: ${text.substring(0, 100)}`, status: res.status };
     }

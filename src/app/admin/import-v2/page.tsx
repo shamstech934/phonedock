@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -45,7 +45,7 @@ const STORAGE_KEY = 'import-v2-active-job';
 type TabValue = 'upload' | 'preview' | 'settings' | 'progress' | 'history';
 type DuplicateMode = 'skip' | 'update' | 'replace' | 'review';
 type PublishMode = 'immediate' | 'review';
-type JobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+type JobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'completed_with_errors' | 'failed' | 'cancelled' | 'rolled_back';
 type BatchStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,8 @@ interface HistoryEntry {
   skipped: number;
   failed: number;
   duration: string;
+  rollbackStatus?: string;
+  errorSummary?: string;
   batches?: BatchInfo[];
 }
 
@@ -172,6 +174,123 @@ function loadJobFromStorage(): JobProgress | null {
 
 function clearJobStorage() {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
+}
+
+function toUiStatus(status: unknown): JobStatus {
+  switch (status) {
+    case 'queued':
+    case 'processing':
+    case 'uploaded':
+    case 'parsing':
+    case 'validating':
+    case 'ready':
+      return status === 'ready' ? 'pending' : 'running';
+    case 'paused': return 'paused';
+    case 'completed': return 'completed';
+    case 'completed_with_errors': return 'completed_with_errors';
+    case 'failed': return 'failed';
+    case 'cancelled': return 'cancelled';
+    case 'rolled_back': return 'rolled_back';
+    default: return 'pending';
+  }
+}
+
+function normalizeFields(data: Record<string, unknown>): FieldInfo[] {
+  const fields = data.fields;
+  if (Array.isArray(fields)) return fields as FieldInfo[];
+  const source = (fields && typeof fields === 'object' ? fields : data) as Record<string, unknown>;
+  const result: FieldInfo[] = [];
+  for (const name of (source.recognizedFields as string[] | undefined) || []) result.push({ name, status: 'recognized' });
+  for (const name of (source.ignoredFields as string[] | undefined) || []) result.push({ name, status: 'ignored' });
+  for (const name of (source.missingFields as string[] | undefined) || []) result.push({ name, status: 'missing' });
+  return result;
+}
+
+function normalizePreview(records: unknown): PreviewRecord[] {
+  if (!Array.isArray(records)) return [];
+  return records.map((item, index) => {
+    const row = (item || {}) as Record<string, unknown>;
+    const normalized = (row.normalized || row.normalizedData || row) as Record<string, unknown>;
+    const errors = Array.isArray(row.errors) ? row.errors.map(String) : [];
+    const warnings = Array.isArray(row.warnings) ? row.warnings.map(String) : [];
+    const specs = normalized.specs && typeof normalized.specs === 'object' ? normalized.specs as Record<string, unknown> : {};
+    return {
+      row: Number(row.row ?? row.rowNumber ?? index + 1),
+      brand: String(normalized.brand || ''),
+      model: String(normalized.model || normalized.modelName || ''),
+      pricePKR: (normalized.pricePKR ?? normalized.price ?? null) as string | number | null,
+      specsCount: Object.keys(specs).length,
+      status: errors.length ? 'error' : warnings.length ? 'warning' : 'valid',
+      warnings,
+      errors,
+    };
+  });
+}
+
+function normalizeBatches(value: unknown): BatchInfo[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const batch = (item || {}) as Record<string, unknown>;
+    const created = Number(batch.created || 0);
+    const updated = Number(batch.updated || 0);
+    const skipped = Number(batch.skipped || 0);
+    const failed = Number(batch.failed || 0);
+    const rawStatus = String(batch.status || 'pending');
+    const status: BatchStatus = rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : rawStatus === 'processing' || rawStatus === 'retrying' ? 'running' : 'pending';
+    return {
+      batchNumber: Number(batch.batchNumber || 0),
+      status,
+      total: Number(batch.total || created + updated + skipped + failed),
+      created,
+      updated,
+      skipped,
+      failed,
+      startedAt: typeof batch.startedAt === 'string' ? batch.startedAt : undefined,
+      completedAt: typeof batch.completedAt === 'string' ? batch.completedAt : undefined,
+      durationMs: typeof batch.durationMs === 'number' ? batch.durationMs : undefined,
+    };
+  });
+}
+
+function normalizeJob(data: Record<string, unknown>, fallbackJobId: string): JobProgress {
+  return {
+    jobId: String(data.importId || data.jobId || data.id || fallbackJobId),
+    status: toUiStatus(data.status),
+    totalRecords: Number(data.totalRecords || 0),
+    processedRecords: Number(data.processedRecords || 0),
+    createdCount: Number(data.createdRecords ?? data.createdCount ?? 0),
+    updatedCount: Number(data.updatedRecords ?? data.updatedCount ?? 0),
+    skippedCount: Number(data.skippedRecords ?? data.skippedCount ?? 0),
+    failedCount: Number(data.failedRecords ?? data.failedCount ?? 0),
+    currentBatch: Number(data.currentBatch || 0),
+    totalBatches: Number(data.totalBatches || 0),
+    batches: normalizeBatches(data.batches),
+    startedAt: typeof data.startedAt === 'string' ? data.startedAt : undefined,
+    completedAt: typeof data.completedAt === 'string' ? data.completedAt : undefined,
+  };
+}
+
+function normalizeHistory(value: unknown): HistoryEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const job = (item || {}) as Record<string, unknown>;
+    const durationMs = typeof job.duration === 'number' ? job.duration : 0;
+    return {
+      id: String(job.importId || job.id || ''),
+      date: String(job.startedAt || job.createdAt || ''),
+      fileName: String(job.fileName || ''),
+      status: toUiStatus(job.status),
+      total: Number(job.totalRecords ?? job.total ?? 0),
+      created: Number(job.createdRecords ?? job.created ?? 0),
+      updated: Number(job.updatedRecords ?? job.updated ?? 0),
+      skipped: Number(job.skippedRecords ?? job.skipped ?? 0),
+      failed: Number(job.failedRecords ?? job.failed ?? 0),
+      duration: durationMs > 0 ? formatDuration(durationMs) : '-',
+      rollbackStatus: typeof job.rollbackStatus === 'string' ? job.rollbackStatus : undefined,
+      errorSummary: typeof job.errorSummary === 'string' ? job.errorSummary : undefined,
+      batches: normalizeBatches(job.batches),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -253,9 +372,9 @@ export default function ImportV2Page() {
   useEffect(() => {
     if (activeTab !== 'history') return;
     setHistoryLoading(true);
-    safeFetch<{ jobs?: HistoryEntry[] } | HistoryEntry[]>('/api/admin/import-v2/history')
+    safeFetch<{ jobs?: unknown[] }>('/api/admin/import-v2/history')
       .then(res => {
-        if (res.ok) setHistory((res.data as { jobs?: HistoryEntry[] })?.jobs || (res.data as HistoryEntry[]) || []);
+        if (res.ok) setHistory(normalizeHistory(res.data?.jobs || []));
       })
       .finally(() => setHistoryLoading(false));
   }, [activeTab]);
@@ -267,21 +386,17 @@ export default function ImportV2Page() {
       const res = await safeFetch<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}`);
       if (res.ok && res.data) {
         const jobData = res.data;
-        setProgress(prev => {
-          const updated = {
-            ...prev,
-            ...jobData,
-            jobId: prev?.jobId || jobData.id || jobId,
-          } as JobProgress;
-          saveJobToStorage(updated);
-          return updated;
+        const normalized = normalizeJob(jobData, jobId);
+        setProgress(() => {
+          saveJobToStorage(normalized);
+          return normalized;
         });
-        if (jobData.status === 'completed') {
+        if (normalized.status === 'completed') {
           setIsCompleted(true);
           setIsRunning(false);
           clearJobStorage();
           if (pollRef.current) clearInterval(pollRef.current);
-        } else if (jobData.status === 'failed' || jobData.status === 'cancelled') {
+        } else if (normalized.status === 'failed' || normalized.status === 'cancelled' || normalized.status === 'rolled_back') {
           setIsRunning(false);
           clearJobStorage();
           if (pollRef.current) clearInterval(pollRef.current);
@@ -344,13 +459,12 @@ export default function ImportV2Page() {
         return;
       }
       const data = res.data;
-      const id = data?.jobId || data?.id;
+      const id = data?.jobId || data?.importId || data?.id;
       if (id) {
-        setJobId(id);
-        // Set preview fields from response
-        if (data.fields) setFields(data.fields);
-        if (data.preview) setPreviewRecords(data.preview);
-        if (data.duplicateEstimate !== undefined) setDuplicateEstimate(data.duplicateEstimate);
+        setJobId(String(id));
+        setFields(normalizeFields(data));
+        setPreviewRecords(normalizePreview(data.firstRecords || data.preview));
+        if (data.duplicateEstimate !== undefined) setDuplicateEstimate(Number(data.duplicateEstimate));
         setActiveTab('preview');
       }
     } finally {
@@ -367,9 +481,9 @@ export default function ImportV2Page() {
     try {
       const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/validate`, {});
       if (res.ok && res.data) {
-        if (res.data.fields) setFields(res.data.fields);
-        if (res.data.preview) setPreviewRecords(res.data.preview.slice(0, 20));
-        if (res.data.duplicateEstimate !== undefined) setDuplicateEstimate(res.data.duplicateEstimate);
+        setFields(normalizeFields(res.data));
+        setPreviewRecords(normalizePreview(res.data.preview).slice(0, 20));
+        if (res.data.duplicateEstimate !== undefined) setDuplicateEstimate(Number(res.data.duplicateEstimate));
       }
     } finally {
       setPreviewLoading(false);
@@ -418,10 +532,10 @@ export default function ImportV2Page() {
 
       const jobData = res.data;
       const totalBatches = Math.ceil((jobData?.totalRecords || 0) / batchSize);
-      setProgress({
+      const initialProgress: JobProgress = {
         jobId,
         status: 'running',
-        totalRecords: jobData?.totalRecords || 0,
+        totalRecords: Number(jobData?.totalRecords || 0),
         processedRecords: 0,
         createdCount: 0,
         updatedCount: 0,
@@ -439,13 +553,14 @@ export default function ImportV2Page() {
           failed: 0,
         })),
         startedAt: new Date().toISOString(),
-      });
+      };
+      setProgress(initialProgress);
       setIsRunning(true);
       setIsPaused(false);
       setIsCompleted(false);
       nextBatchRef.current = 1;
       startTimeRef.current = Date.now();
-      saveJobToStorage(progress!);
+      saveJobToStorage(initialProgress);
     } finally {
       setActionLoading(false);
       actionLockRef.current = false;
@@ -605,25 +720,9 @@ export default function ImportV2Page() {
       if (!res.ok && res.status !== 207) return;
       const refreshed = await safeFetch<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}`);
       if (refreshed.ok && refreshed.data) {
-        const data = refreshed.data;
-        setProgress(prev => prev ? {
-          ...prev,
-          status: data.status === 'completed' ? 'completed' : 'failed',
-          processedRecords: data.processedRecords || 0,
-          createdCount: data.createdRecords || 0,
-          updatedCount: data.updatedRecords || 0,
-          skippedCount: data.skippedRecords || 0,
-          failedCount: data.failedRecords || 0,
-          batches: (data.batches || []).map((b: any) => ({
-            batchNumber: b.batchNumber,
-            status: b.status === 'completed' ? 'completed' : b.status === 'failed' ? 'failed' : 'pending',
-            total: (b.created || 0) + (b.updated || 0) + (b.skipped || 0) + (b.failed || 0),
-            created: b.created || 0,
-            updated: b.updated || 0,
-            skipped: b.skipped || 0,
-            failed: b.failed || 0,
-          })),
-        } : prev);
+        const normalized = normalizeJob(refreshed.data, jobId);
+        setProgress(normalized);
+        if (normalized.status === 'completed') setIsCompleted(true);
       }
     } finally {
       setActionLoading(false);
@@ -1375,7 +1474,7 @@ export default function ImportV2Page() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">Import History</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { safeFetch<{ jobs?: HistoryEntry[] }>('/api/admin/import-v2/history').then((res) => { if (res.ok) setHistory(res.data?.jobs || []); }); }}>
+                  <Button variant="outline" size="sm" onClick={() => { safeFetch<{ jobs?: unknown[] }>('/api/admin/import-v2/history').then((res) => { if (res.ok) setHistory(normalizeHistory(res.data?.jobs || [])); }); }}>
                     <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                     Refresh
                   </Button>
@@ -1413,7 +1512,7 @@ export default function ImportV2Page() {
                       </TableHeader>
                       <TableBody>
                         {history.map(h => (
-                          <>
+                          <Fragment key={h.id}>
                             <TableRow
                               key={h.id}
                               className="cursor-pointer hover:bg-gray-50"
@@ -1484,7 +1583,7 @@ export default function ImportV2Page() {
                                 </TableCell>
                               </TableRow>
                             )}
-                          </>
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
