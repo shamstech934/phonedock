@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import PhoneDetailClient from './PhoneDetailClient';
-import { fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
+import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +49,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PhoneDetailPage({ params }: Props) {
   const { slug } = await params;
-  const phone = await fetchPhoneDetailForMetadata(slug);
+  const data = await fetchPhoneDetail(slug);
+  const phone = data?.phone ?? null;
 
   const brand = (phone?.brand as { name?: string; slug?: string } | null)?.name || '';
   const brandSlug = (phone?.brand as { name?: string; slug?: string } | null)?.slug || '';
@@ -97,7 +98,7 @@ export default async function PhoneDetailPage({ params }: Props) {
     <>
       {productJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />}
       {breadcrumbJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />}
-      <PhoneDetailClient params={params} />
+      <PhoneDetailClient slug={slug} initialData={data} />
     </>
   );
 }

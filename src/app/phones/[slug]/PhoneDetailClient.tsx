@@ -357,10 +357,9 @@ function UserReviewsSection({ slug }: { slug: string }) {
   );
 }
 
-export default function PhoneDetailPage({ params }: { params: Promise<{ slug: string }> }) {
-  const [slug, setSlug] = useState<string>('');
-  const [data, setData] = useState<{ phone: Phone; related: Phone[] } | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function PhoneDetailPage({ slug, initialData }: { slug: string; initialData: { phone: Phone; related: Phone[] } | null }) {
+  const data = initialData;
+  const loading = false;
   const [activeTab, setActiveTab] = useState('specs');
   const [activeImage, setActiveImage] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
@@ -374,19 +373,18 @@ export default function PhoneDetailPage({ params }: { params: Promise<{ slug: st
   } | null>(null);
 
   useEffect(() => {
-    params.then(p => setSlug(p.slug));
-  }, [params]);
-
-  useEffect(() => {
     if (!slug) return;
     let cancelled = false;
-    setLoading(true);
-    fetch(`/api/phones/${slug}`).then(r => r.json()).then(d => { if (!cancelled) { setData(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
-    // Fetch price history
+    // Secondary price datasets stay client-loaded so they do not delay the main HTML.
     setHistoryLoading(true);
-    fetch(`/api/phones/${slug}/price-history`).then(r => r.json()).then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } }).catch(() => { if (!cancelled) setHistoryLoading(false); });
-    // Fetch price tracker data
-    fetch(`/api/phones/${slug}/price-tracker`).then(r => r.json()).then(d => { if (!cancelled && !d.error) setPriceTracker(d); }).catch(() => {});
+    fetch(`/api/phones/${slug}/price-history`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } })
+      .catch(() => { if (!cancelled) setHistoryLoading(false); });
+    fetch(`/api/phones/${slug}/price-tracker`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && !d.error) setPriceTracker(d); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [slug]);
 
