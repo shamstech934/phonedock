@@ -164,11 +164,19 @@ async function main() {
   /* ================================================================== */
   console.log('\n── PhoneSpecs ──');
   const specsCol = db.collection('phonespecs');
-  const specsResult = await ensureIndex(specsCol, 'phonespecs_phoneId_unique', {
-    key: { phoneId: 1 }, options: { unique: true },
-  });
-  console.log(specsResult.message);
-  if (specsResult.created) totalCreated++; else totalExisted++;
+  const specsIndexes: Record<string, IndexEntry> = {
+    'phonespecs_phoneId_unique': { key: { phoneId: 1 }, options: { unique: true } },
+    'phonespecs_ramGB': { key: { ramGB: 1 } },
+    'phonespecs_storageGB': { key: { storageGB: 1 } },
+    'phonespecs_screenSizeInch': { key: { screenSizeInch: 1 } },
+    'phonespecs_mainCameraMP': { key: { mainCameraMP: 1 } },
+    'phonespecs_batteryMAh': { key: { batteryMAh: 1 } },
+  };
+  for (const [name, spec] of Object.entries(specsIndexes)) {
+    const result = await ensureIndex(specsCol, name, spec);
+    console.log(result.message);
+    if (result.created) totalCreated++; else totalExisted++;
+  }
 
   /* ================================================================== */
   /*  3. PhoneBenchmark indexes                                         */

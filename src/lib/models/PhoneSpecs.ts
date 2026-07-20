@@ -89,5 +89,13 @@ const PhoneSpecsSchema = new Schema<IPhoneSpecs>({
 }, { timestamps: true });
 
 PhoneSpecsSchema.index({ phoneId: 1 }, { unique: true });
+// Public filter indexes. These fields are queried independently by the phones
+// listing API, so single-field indexes remain useful for MongoDB index
+// intersection without creating a large matrix of compound indexes.
+PhoneSpecsSchema.index({ ramGB: 1 });
+PhoneSpecsSchema.index({ storageGB: 1 });
+PhoneSpecsSchema.index({ screenSizeInch: 1 });
+PhoneSpecsSchema.index({ mainCameraMP: 1 });
+PhoneSpecsSchema.index({ batteryMAh: 1 });
 
 export const PhoneSpecs = mongoose.models.PhoneSpecs || mongoose.model<IPhoneSpecs>('PhoneSpecs', PhoneSpecsSchema);
