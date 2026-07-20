@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Search, Smartphone, TrendingUp } from 'lucide-react';
 
-export function HomeHeroSearch({ placeholder = 'Phone name, brand...' }: { placeholder?: string }) {
+export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text = 'Browse Phones', cta1Url = '/phones', cta2Text = 'Compare', cta2Url = '/compare' }: { placeholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string }) {
   const [query, setQuery] = useState('');
   const router = useRouter();
 
@@ -36,11 +36,11 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...' }: { place
       </form>
 
       <div className="hero-animate flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6" style={{ animationDelay: '0.9s' }}>
-        <Link href="/phones" className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border border-white/20 text-xs sm:text-sm rounded-md inline-flex items-center">
-          <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Browse Phones
+        <Link href={cta1Url || '/phones'} className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border border-white/20 text-xs sm:text-sm rounded-md inline-flex items-center">
+          <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> {cta1Text || 'Browse Phones'}
         </Link>
-        <Link href="/compare" className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border border-white/20 text-xs sm:text-sm rounded-md inline-flex items-center">
-          <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Compare
+        <Link href={cta2Url || '/compare'} className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border border-white/20 text-xs sm:text-sm rounded-md inline-flex items-center">
+          <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> {cta2Text || 'Compare'}
         </Link>
       </div>
     </>

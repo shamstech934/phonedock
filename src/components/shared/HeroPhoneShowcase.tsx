@@ -26,7 +26,7 @@ export interface HeroPhone {
   } | null;
 }
 
-export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
+export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true }: { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; showInfo?: boolean }) {
   const [current, setCurrent] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -51,10 +51,10 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
 
   // Auto-slide every 5 seconds, pause on hover
   useEffect(() => {
-    if (isPaused || phones.length <= 1) return;
-    timerRef.current = setInterval(goNext, 5000);
+    if (!autoplay || isPaused || phones.length <= 1) return;
+    timerRef.current = setInterval(goNext, Math.max(2000, intervalMs));
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isPaused, goNext, phones.length]);
+  }, [autoplay, intervalMs, isPaused, goNext, phones.length]);
 
   // Restart progress bar when unpausing
   useEffect(() => {
@@ -148,7 +148,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
         </div>
 
         {/* Info Card — 10% smaller */}
-        <div className="relative z-0 flex-1 min-w-0">
+        {showInfo && <div className="relative z-0 flex-1 min-w-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={`card-${phone.id}-${progressKey}`}
@@ -199,7 +199,7 @@ export function HeroPhoneShowcase({ phones }: { phones: HeroPhone[] }) {
               </Link>
             </motion.div>
           </AnimatePresence>
-        </div>
+        </div>}
       </div>
 
       {/* Navigation arrows */}

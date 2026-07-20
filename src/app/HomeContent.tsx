@@ -299,7 +299,7 @@ function ComingSoonTeasers() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; sections?: Record<string, boolean>; titles?: Record<string, string> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; sections?: Record<string, boolean>; titles?: Record<string, string> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -355,7 +355,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                       {cms.heroSubtitle || 'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.'}
                     </p>
 
-                    <HomeHeroSearch placeholder={cms.searchPlaceholder} />
+                    <HomeHeroSearch placeholder={cms.searchPlaceholder} cta1Text={cms.cta1Text} cta1Url={cms.cta1Url} cta2Text={cms.cta2Text} cta2Url={cms.cta2Url} />
 
                     <div className="flex flex-wrap gap-3 sm:gap-5 mt-4 sm:mt-6 text-[10px] sm:text-sm text-gray-300/70">
                       <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> PTA Status</span>
@@ -367,7 +367,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
                   <div className="w-full lg:w-[55%] h-[200px] sm:h-[280px] lg:h-[320px] flex-shrink-0 -mb-4 sm:-mb-6 lg:-mb-10">
                     {heroPhones.length > 0 ? (
-                      <HeroPhoneShowcase phones={heroPhones} />
+                      <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="w-7 h-7 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
@@ -391,7 +391,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
 
             {/* ===== 6. TRENDING PHONES ===== */}
-            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
+            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty />}
 
             {/* ===== 7. BEST CAMERA PHONES ===== */}
             {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" />}

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Star, ChevronRight, Smartphone, Camera, Battery, Cpu, Trophy,
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
-  Share2, ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
+  ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
   HardDrive, Heart,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/shared/TurnstileWidget';
@@ -21,6 +21,7 @@ import { SectionHeader } from '@/components/shared/SectionHeader';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
 import { useRecentlyViewed, useWishlist } from '@/lib/personalization/usePersonalization';
+import { PhoneShareMenu } from '@/components/shared/PhoneShareMenu';
 
 // ── Lightweight SVG Price History Chart (no SSR issues) ──
 function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; storeName: string | null; price: number }> }) {
@@ -442,7 +443,6 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const loading = false;
   const [activeTab, setActiveTab] = useState('specs');
   const [activeImage, setActiveImage] = useState(0);
-  const [shareOpen, setShareOpen] = useState(false);
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTracker, setPriceTracker] = useState<{
@@ -471,17 +471,6 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   useEffect(() => {
     if (data?.phone) recent.add(data.phone);
   }, [data?.phone?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleShare = async () => {
-    const url = window.location.href;
-    if (navigator.share) {
-      try { await navigator.share({ title: data?.phone?.modelName || '', url }); } catch (e) { /* share dismissed or unsupported — non-critical */ console.error('[share]', e); }
-    } else {
-      await navigator.clipboard.writeText(url);
-      setShareOpen(true);
-      setTimeout(() => setShareOpen(false), 2000);
-    }
-  };
 
   if (loading) {
     return (
@@ -597,11 +586,6 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                       <Smartphone className="w-16 h-16 text-gray-300" />
                     </div>
                   )}
-                  {shareOpen && (
-                    <div className="absolute top-3 right-3 bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg animate-fade-in flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Link copied!
-                    </div>
-                  )}
                 </div>
                 {images.length > 1 && (
                   <div className="flex gap-2 p-3 overflow-x-auto no-scrollbar">
@@ -703,9 +687,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   >
                     <Heart className={`w-4 h-4 ${wishlist.has(p.slug) ? 'fill-current' : ''}`} />
                   </button>
-                  <button onClick={handleShare} aria-label="Share this phone" className="h-11 px-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center">
-                    <Share2 className="w-4 h-4 text-gray-600" />
-                  </button>
+                  <PhoneShareMenu title={`${p.brand?.name || ''} ${p.modelName}`.trim()} text={`${p.modelName} price, full specifications and review in Pakistan`} compact />
                 </div>
                 <a href={`mailto:info@phonedock.pk?subject=Incorrect info: ${p.modelName}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-blue-500 transition-colors justify-center">
                   <AlertTriangle className="w-3 h-3" /> Report incorrect information
@@ -1108,9 +1090,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
             <Button variant="outline" className="h-11 flex-1 rounded-xl" asChild>
               <Link href={`/compare?phones=${encodeURIComponent(p.slug)}`}><GitCompare className="mr-2 h-4 w-4" /> Compare</Link>
             </Button>
-            <Button onClick={handleShare} className="h-11 flex-1 rounded-xl bg-blue-600 hover:bg-blue-700">
-              <Share2 className="mr-2 h-4 w-4" /> Share
-            </Button>
+            <PhoneShareMenu title={`${p.brand?.name || ''} ${p.modelName}`.trim()} text={`${p.modelName} price, full specifications and review in Pakistan`} />
           </div>
         </div>
       </main>

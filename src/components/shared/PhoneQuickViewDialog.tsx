@@ -95,7 +95,7 @@ function getSpecValue(specs: Record<string, any>, row: typeof QV_SPEC_ROWS[numbe
 
 function specsHasData(s: unknown): boolean {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return false;
-  return getSpecValue(s, QV_SPEC_ROWS[0]) !== '';
+  return QV_SPEC_ROWS.some(row => getSpecValue(s as Record<string, any>, row) !== '');
 }
 
 type QVState = 'idle' | 'loading' | 'success' | 'partial-data' | 'empty' | 'error' | 'retrying';
