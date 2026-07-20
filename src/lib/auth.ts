@@ -36,6 +36,9 @@ function getSecretKey(): Uint8Array {
 }
 
 const SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
+const SESSION_ISSUER = 'phonedock';
+const SESSION_AUDIENCE = 'phonedock-admin';
+const MAX_SESSION_TOKEN_LENGTH = 4096;
 
 // ============ TOKEN TYPES ============
 
@@ -82,6 +85,8 @@ export async function signSessionToken(payload: { sub: string; email: string; ro
     sessionVersion: payload.sessionVersion,
   })
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(SESSION_ISSUER)
+    .setAudience(SESSION_AUDIENCE)
     .setIssuedAt()
     .setExpirationTime('24h')
     .setJti(jti)
@@ -91,9 +96,33 @@ export async function signSessionToken(payload: { sub: string; email: string; ro
 }
 
 export async function verifyToken(token: string): Promise<TokenPayload | null> {
+  if (!token || token.length > MAX_SESSION_TOKEN_LENGTH) return null;
+
   try {
-    const { payload } = await jwtVerify(token, getSecretKey());
-    return payload as unknown as TokenPayload;
+    const { payload, protectedHeader } = await jwtVerify(token, getSecretKey(), {
+      algorithms: ['HS256'],
+      issuer: SESSION_ISSUER,
+      audience: SESSION_AUDIENCE,
+      clockTolerance: 5,
+    });
+
+    if (protectedHeader.alg !== 'HS256') return null;
+    if (typeof payload.sub !== 'string' || !payload.sub) return null;
+    if (typeof payload.email !== 'string' || !payload.email) return null;
+    if (typeof payload.role !== 'string' || !payload.role) return null;
+    if (typeof payload.jti !== 'string' || !payload.jti) return null;
+    if (!Number.isInteger(payload.sessionVersion) || Number(payload.sessionVersion) < 0) return null;
+    if (typeof payload.iat !== 'number' || typeof payload.exp !== 'number' || payload.exp <= payload.iat) return null;
+
+    return {
+      sub: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      jti: payload.jti,
+      sessionVersion: Number(payload.sessionVersion),
+      iat: payload.iat,
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }

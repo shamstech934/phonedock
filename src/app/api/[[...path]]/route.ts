@@ -294,6 +294,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const isContact = segments.length === 1 && segments[0] === 'contact';
   const isCollector = segments.length >= 2 && segments[0] === 'collector';
   const isImport = segments.length >= 1 && segments[0] === 'import';
+  const isAdminMutation = segments.length >= 1 && segments[0] === 'admin' && !isLogin && !isForgotPassword && !isResetPassword;
 
   try {
     await connectDB();
@@ -309,6 +310,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     } else if (isContact) {
       if (!await checkIpRateLimit(`contact:${ip}`, 3, 60_000, RateLimit)) {
         return NextResponse.json({ error: 'Too many contact submissions.' }, { status: 429 });
+      }
+    } else if (isAdminMutation) {
+      if (!await checkIpRateLimit(`admin:${ip}`, 120, 60_000, RateLimit)) {
+        return NextResponse.json(
+          { error: 'Too many admin requests. Try again shortly.' },
+          { status: 429, headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' } },
+        );
       }
     } else if (isCollector || isImport) {
       if (!await checkIpRateLimit(`api:${ip}`, 400, 60_000, RateLimit)) {

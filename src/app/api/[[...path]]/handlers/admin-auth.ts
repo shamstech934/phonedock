@@ -130,6 +130,10 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
+    // Bound input sizes before bcrypt/database work to reduce abuse and accidental oversized payloads.
+    if (email.length > 254 || password.length > 128 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    }
 
     const admin = await Admin.findOne({ email }).select('+password +failedAttempts +lockedUntil +sessionVersion');
 
@@ -208,7 +212,10 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     if (!currentPassword || !newPassword) {
       return NextResponse.json({ error: 'Current and new password required' }, { status: 400 });
     }
-    const pwCheck = isStrongPassword(newPassword);
+    if (String(currentPassword).length > 128 || String(newPassword).length > 128) {
+      return NextResponse.json({ error: 'Password input is too long' }, { status: 400 });
+    }
+    const pwCheck = isStrongPassword(String(newPassword));
     if (!pwCheck.valid) {
       return NextResponse.json({ error: `Weak password: ${pwCheck.errors.join(', ')}` }, { status: 400 });
     }
