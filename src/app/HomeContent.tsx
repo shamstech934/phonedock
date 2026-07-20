@@ -1,15 +1,11 @@
-'use client';
-
-import React, { useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import {
-  Search, Star, Shield, Camera, Battery, Cpu, Trophy,
+  Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, ChevronRight, Newspaper, BarChart3, Target, Play, X,
-  Zap, Mail,
+  Check, ChevronRight, Newspaper, BarChart3, Target,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,12 +14,11 @@ import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
-// Dynamic import: framer-motion is ~120KB, only load on client when needed
-const HeroPhoneShowcase = dynamic(
-  () => import('@/components/shared/HeroPhoneShowcase').then(mod => ({ default: mod.HeroPhoneShowcase })),
-  { loading: () => <div className="h-[400px] rounded-xl bg-slate-900" aria-hidden="true" /> }
-);
+import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
 import { formatPrice } from '@/components/shared/formatPrice';
+import { HomeHeroSearch } from '@/components/home/HomeHeroSearch';
+import { HomeNewsletter } from '@/components/home/HomeNewsletter';
+import { HomeVideoSection } from '@/components/home/HomeVideoSection';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
 // ============ QUICK CATEGORY STRIP ============
@@ -113,7 +108,6 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
 function CompactTopPhones({ phones, title, icon: Icon, gradient, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; gradient: string; link: string; linkText?: string }) {
-  const router = useRouter();
   if (!phones.length) return null;
   return (
     <section className="space-y-4">
@@ -125,14 +119,14 @@ function CompactTopPhones({ phones, title, icon: Icon, gradient, link, linkText 
           </div>
           <div className="p-3 space-y-1.5">
             {phones.slice(0, 5).map((p, i) => (
-              <div key={p.id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors" onClick={() => router.push(`/phones/${p.slug}`)}>
+              <Link key={p.id} href={`/phones/${p.slug}`} className="flex items-center gap-3 hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors">
                 <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
                   <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
                 </div>
                 <p className="text-xs font-bold text-blue-600 shrink-0">{formatPrice(p.pricePKR)}</p>
-              </div>
+              </Link>
             ))}
             <Link href={link} className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium pt-2 hover:text-blue-600 transition-colors">
               {linkText || 'View All'} <ChevronRight className="w-3 h-3" />
@@ -249,93 +243,8 @@ function TrustSection({ totalPhones, totalBrands }: { totalPhones?: number; tota
   );
 }
 
-// ============ VIDEO REVIEWS SECTION ============
-function HomeVideoSection() {
-  const [videos, setVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string; publishedAt: string; phone: { modelName: string; slug: string; brand: string; thumbnail: string } | null }>>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [activeVideo, setActiveVideo] = useState<typeof videos[0] | null>(null);
-
-  const closeModal = useCallback(() => setActiveVideo(null), []);
-
-  React.useEffect(() => {
-    fetch('/api/videos?limit=4')
-      .then(r => r.json())
-      .then(d => { if (d.videos?.length) { setVideos(d.videos); setLoaded(true); } })
-      .catch(() => {});
-  }, []);
-
-  React.useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeModal();
-    };
-    if (activeVideo) {
-      document.addEventListener('keydown', handleKey);
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      document.body.style.overflow = '';
-    };
-  }, [activeVideo, closeModal]);
-
-  if (!loaded || !videos.length) return null;
-
-  return (
-    <section className="space-y-5">
-      <SectionHeader title="Latest Video Reviews" icon={Play} link="/videos" linkText="All Videos" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {videos.map(v => (
-          <div key={v.id} onClick={() => setActiveVideo(v)} className="card-premium overflow-hidden group cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
-            <div className="relative aspect-video bg-gray-100">
-              {v.thumbnailUrl && <Image src={v.thumbnailUrl} alt={v.title} fill className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                  <Play className="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" />
-                </div>
-              </div>
-            </div>
-            <div className="p-3">
-              <h3 className="font-semibold text-sm line-clamp-2 text-gray-900 leading-snug mb-1">{v.title}</h3>
-              {v.phone && <Link href={`/phones/${v.phone.slug}`} className="text-[11px] text-blue-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>{v.phone.brand} {v.phone.modelName}</Link>}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Video Player Modal */}
-      {activeVideo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={closeModal}>
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-          <div className="relative z-10 w-full max-w-4xl" onClick={e => e.stopPropagation()}>
-            <button onClick={closeModal} className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors p-2">
-              <X className="w-6 h-6" />
-            </button>
-            <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl">
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${activeVideo.youtubeId}?autoplay=1&rel=0`}
-                title={activeVideo.title}
-                className="absolute inset-0 w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-            <h2 className="text-white font-semibold text-sm sm:text-base mt-3 px-1 line-clamp-2">{activeVideo.title}</h2>
-            {activeVideo.phone && (
-              <Link href={`/phones/${activeVideo.phone.slug}`} onClick={closeModal} className="inline-flex items-center gap-2 mt-2 px-1 text-blue-400 hover:text-blue-300 text-xs font-medium transition-colors">
-                {activeVideo.phone.thumbnail && <Image src={activeVideo.phone.thumbnail} alt={activeVideo.phone.modelName} width={16} height={16} className="rounded object-contain" unoptimized />}
-                {activeVideo.phone.brand} {activeVideo.phone.modelName}
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 // ============ LATEST REVIEWS SECTION ============
 function HomeReviewsSection({ phones }: { phones: Phone[] }) {
-  const router = useRouter();
   const reviewedPhones = phones.filter(p => p.reviewSummary && p.overallRating > 0).slice(0, 4);
   if (!reviewedPhones.length) return null;
 
@@ -344,7 +253,7 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
       <SectionHeader title="Latest Reviews" icon={Star} link="/reviews" linkText="All Reviews" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {reviewedPhones.map(p => (
-          <div key={p.id} onClick={() => router.push(`/phones/${p.slug}`)} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
+          <Link key={p.id} href={`/phones/${p.slug}`} className="card-premium p-4 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
             <div className="flex items-center gap-2 mb-2">
               <p className="text-xs text-muted-foreground font-medium">{p.brand?.name}</p>
               <div className="flex items-center gap-0.5 ml-auto">
@@ -354,7 +263,7 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
             </div>
             <h3 className="font-semibold text-sm text-gray-900 mb-2 line-clamp-1">{p.modelName}</h3>
             <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">{p.reviewSummary}</p>
-          </div>
+          </Link>
         ))}
       </div>
     </section>
@@ -389,80 +298,8 @@ function ComingSoonTeasers() {
   );
 }
 
-// ============ NEWSLETTER ============
-function NewsletterSection() {
-  const [email, setEmail] = useState('');
-  const [subscribed, setSubscribed] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubscribe = async () => {
-    if (!email.trim() || !email.includes('@')) return;
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/newsletter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      const d = await res.json();
-      if (res.ok) {
-        setSubscribed(true);
-        setEmail('');
-      } else {
-        setError(d.error || 'Subscription failed. Try again.');
-      }
-    } catch {
-      setError('Network error. Please try again.');
-    }
-    setLoading(false);
-  };
-
-  return (
-    <section className="space-y-4">
-      <SectionHeader title="Stay Updated" icon={Mail} />
-      <div className="card-premium p-6 sm:p-8 text-center">
-        <h3 className="font-bold text-gray-900 text-lg mb-2">Get the Latest Phone Updates</h3>
-        <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">New launches, price drops, and expert reviews delivered straight to your inbox.</p>
-        {subscribed ? (
-          <div className="flex items-center justify-center gap-2 text-emerald-600 font-medium text-sm py-2">
-            <Check className="w-4 h-4" /> Subscribed successfully! Check your inbox.
-          </div>
-        ) : (
-          <div className="space-y-2 max-w-md mx-auto">
-          <div className="flex gap-2">
-            <input
-              type="email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubscribe()}
-              className="flex-1 h-11 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
-            />
-            <button onClick={handleSubscribe} disabled={loading} className="btn-primary h-11 px-6 rounded-xl text-sm font-semibold whitespace-nowrap disabled:opacity-50">
-              {loading ? 'Subscribing...' : 'Subscribe'}
-            </button>
-          </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-// ============ MAIN CLIENT CONTENT ============
+// ============ MAIN HOMEPAGE CONTENT ============
 export default function HomeContent({ homeData, heroPhones }: { homeData: HomeData; heroPhones: HeroPhone[] }) {
-  const [homeSearchQ, setHomeSearchQ] = useState('');
-  const router = useRouter();
-
-  const handleHomeSearch = () => {
-    if (homeSearchQ.trim()) {
-      router.push(`/search?q=${encodeURIComponent(homeSearchQ.trim())}`);
-    }
-  };
-
   const data = homeData;
   const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 5);
   const budgetPhones = data.featured.filter(p => p.pricePKR > 0 && p.pricePKR <= 40000).slice(0, 5);
@@ -506,24 +343,8 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                       Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.
                     </p>
 
-                    <div className="hero-search-slide flex gap-2 max-w-xl" style={{ animationDelay: '0.7s' }}>
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                        <input placeholder="Phone name, brand..." value={homeSearchQ} onChange={e => setHomeSearchQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleHomeSearch()} className="w-full pl-9 sm:pl-12 pr-3 sm:pr-4 h-10 sm:h-12 text-xs sm:text-sm rounded-xl bg-white/15 backdrop-blur-xl text-white outline-none focus:ring-2 focus:ring-blue-400/40 focus:bg-white/20 border border-white/10 placeholder:text-gray-400 transition-all" />
-                      </div>
-                      <button onClick={handleHomeSearch} className="glass-float text-white h-10 sm:h-12 px-4 sm:px-6 text-xs sm:text-sm font-semibold flex items-center gap-1.5 sm:gap-2">
-                        <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Search
-                      </button>
-                    </div>
+                    <HomeHeroSearch />
 
-                    <div className="hero-animate flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-6" style={{ animationDelay: '0.9s' }}>
-                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border-white/20 text-xs sm:text-sm" onClick={() => router.push('/brands')}>
-                        <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Browse Phones
-                      </Button>
-                      <Button className="btn-glass text-white hover:bg-white/15 font-semibold h-9 sm:h-10 px-4 sm:px-5 border-white/20 text-xs sm:text-sm" onClick={() => router.push('/compare')}>
-                        <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" /> Compare
-                      </Button>
-                    </div>
                     <div className="flex flex-wrap gap-3 sm:gap-5 mt-4 sm:mt-6 text-[10px] sm:text-sm text-gray-300/70">
                       <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> PTA Status</span>
                       <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.2s' }}><Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" /> PKR Prices</span>
@@ -582,7 +403,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
             <HomeReviewsSection phones={data.featured} />
 
             {/* ===== 14. LATEST VIDEOS ===== */}
-            <HomeVideoSection />
+            <HomeVideoSection videos={data.videos} />
 
             {/* ===== 15. LATEST NEWS ===== */}
             {data.news.length > 0 && (
@@ -636,7 +457,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
             )}
 
             {/* ===== 20. NEWSLETTER ===== */}
-            <NewsletterSection />
+            <HomeNewsletter />
 
             {/* ===== 21. TRUST SECTION ===== */}
             <TrustSection totalPhones={data.totalPhones} totalBrands={data.totalBrands} />

@@ -153,6 +153,22 @@ export interface NewsItem {
   createdAt: string;
 }
 
+
+export interface HomeVideo {
+  id: string;
+  youtubeId: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+  phone: {
+    id?: string;
+    modelName: string;
+    slug: string;
+    thumbnail: string;
+    brand: string;
+  } | null;
+}
+
 export interface HomeData {
   featured: Phone[];
   trending: Phone[];
@@ -162,6 +178,7 @@ export interface HomeData {
   bestBattery: Phone[];
   upcoming: Phone[];
   news: NewsItem[];
+  videos: HomeVideo[];
   priceCategories: {
     above100k: Phone[];
     price60to100: Phone[];

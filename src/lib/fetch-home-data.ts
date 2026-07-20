@@ -6,7 +6,7 @@
 
 import { Types } from 'mongoose';
 import { unstable_cache } from 'next/cache';
-import { Phone, Brand, News, PhoneSpecs, Sponsor } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, Sponsor, Video } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones, type PhoneDocOrJson } from '@/app/api/[[...path]]/handlers/helpers';
 
@@ -47,6 +47,21 @@ interface SponsorLeanDoc {
   active?: boolean;
 }
 
+interface HomeVideoLeanDoc {
+  _id: Types.ObjectId;
+  youtubeId: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: Date;
+  phoneId?: {
+    _id?: Types.ObjectId;
+    modelName?: string;
+    slug?: string;
+    thumbnail?: string;
+    brand?: { name?: string };
+  } | null;
+}
+
 /** Bridge Mongoose lean phone types to phoneToJSON's PhoneDocOrJson parameter. */
 const toPhoneRecord = (doc: unknown): Record<string, unknown> =>
   phoneToJSON(doc as PhoneDocOrJson) as Record<string, unknown>;
@@ -59,7 +74,7 @@ const toPhoneRecord = (doc: unknown): Record<string, unknown> =>
 async function fetchHomeDataUncached() {
   await connectDB();
 
-  const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news] = await Promise.all([
+  const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news, videos] = await Promise.all([
     Phone.find({ active: true, status: 'published', featured: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
     Phone.find({ active: true, status: 'published', trending: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
     Phone.find({ active: true, status: 'published' }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
@@ -68,6 +83,7 @@ async function fetchHomeDataUncached() {
     Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).populate('brand').lean(),
     Phone.find({ active: true, status: 'published', upcoming: true }).sort({ createdAt: -1 }).limit(4).populate('brand').lean(),
     News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
+    Video.find({ active: true }).sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brand').lean(),
   ]);
 
   const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors, totalPhones, totalBrands] = await Promise.all([
@@ -166,6 +182,20 @@ async function fetchHomeDataUncached() {
       published: n.published || false,
       createdAt: n.createdAt?.toISOString?.() || n.createdAt || '',
     })),
+    videos: (videos as unknown as HomeVideoLeanDoc[]).map(v => ({
+      id: v._id?.toString(),
+      youtubeId: v.youtubeId,
+      title: v.title,
+      thumbnailUrl: v.thumbnailUrl,
+      publishedAt: v.publishedAt?.toISOString?.() || String(v.publishedAt || ''),
+      phone: v.phoneId ? {
+        id: v.phoneId._id?.toString(),
+        modelName: v.phoneId.modelName || '',
+        slug: v.phoneId.slug || '',
+        thumbnail: v.phoneId.thumbnail || '',
+        brand: v.phoneId.brand?.name || '',
+      } : null,
+    })),
     priceCategories,
     brands,
     sponsors: sponsors.map((s: SponsorLeanDoc) => ({
@@ -187,7 +217,7 @@ async function fetchHomeDataUncached() {
  */
 export const fetchHomeData = unstable_cache(
   fetchHomeDataUncached,
-  ['home-data-v1'],
+  ['home-data-v2'],
   { revalidate: 300, tags: ['home-data'] },
 );
 
