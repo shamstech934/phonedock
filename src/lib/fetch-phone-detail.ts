@@ -46,12 +46,15 @@ export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailD
     Phone.find({
       active: true,
       status: 'published',
-      brandId: phone.brandId,
       _id: { $ne: phone._id },
+      $or: [
+        { brandId: phone.brandId },
+        { pricePKR: { $gte: Math.max(0, (phone.pricePKR || 0) * 0.72), $lte: (phone.pricePKR || 0) * 1.28 } },
+      ],
     })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .sort({ createdAt: -1 })
-      .limit(6)
+      .sort({ overallRating: -1, valueScore: -1, createdAt: -1 })
+      .limit(12)
       .populate('brand')
       .lean(),
     Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),

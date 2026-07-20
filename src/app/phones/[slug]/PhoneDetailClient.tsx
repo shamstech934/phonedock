@@ -161,6 +161,82 @@ function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; cap
   );
 }
 
+
+function ScoreRadar({ phone }: { phone: Phone }) {
+  const scores = [
+    { label: 'Performance', value: phone.performanceScore || 0 },
+    { label: 'Camera', value: phone.cameraScore || 0 },
+    { label: 'Battery', value: phone.batteryScore || 0 },
+    { label: 'Display', value: phone.displayScore || 0 },
+    { label: 'Value', value: phone.valueScore || 0 },
+  ];
+  const cx = 120, cy = 120, radius = 82;
+  const point = (index: number, value = 100) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / scores.length;
+    const r = radius * Math.max(0, Math.min(value, 100)) / 100;
+    return `${cx + Math.cos(angle) * r},${cy + Math.sin(angle) * r}`;
+  };
+  const polygon = scores.map((score, index) => point(index, score.value)).join(' ');
+  const rings = [25, 50, 75, 100];
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-[#F8FAFC] p-4">
+      <svg viewBox="0 0 240 240" className="mx-auto h-auto w-full max-w-[300px]" role="img" aria-label="Phone score radar chart">
+        {rings.map(ring => (
+          <polygon key={ring} points={scores.map((_, index) => point(index, ring)).join(' ')} fill="none" stroke="#dbeafe" strokeWidth="1" />
+        ))}
+        {scores.map((_, index) => (
+          <line key={index} x1={cx} y1={cy} x2={point(index).split(',')[0]} y2={point(index).split(',')[1]} stroke="#e5e7eb" strokeWidth="1" />
+        ))}
+        <polygon points={polygon} fill="rgba(37,99,235,0.18)" stroke="#2563eb" strokeWidth="2.5" />
+        {scores.map((score, index) => {
+          const [x, y] = point(index, score.value).split(',');
+          const [lx, ly] = point(index, 118).split(',');
+          return (
+            <g key={score.label}>
+              <circle cx={x} cy={y} r="4" fill="#2563eb" stroke="white" strokeWidth="2" />
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize="9" fontWeight="600" fill="#334155">{score.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function BuyingInsight({ phone }: { phone: Phone }) {
+  const entries = [
+    ['Performance', phone.performanceScore || 0],
+    ['Camera', phone.cameraScore || 0],
+    ['Battery', phone.batteryScore || 0],
+    ['Display', phone.displayScore || 0],
+    ['Value', phone.valueScore || 0],
+  ] as const;
+  const best = [...entries].sort((a, b) => b[1] - a[1])[0];
+  const weakest = [...entries].sort((a, b) => a[1] - b[1])[0];
+  const average = Math.round(entries.reduce((sum, [, score]) => sum + score, 0) / entries.length);
+  const verdict = average >= 85 ? 'Excellent all-round choice' : average >= 75 ? 'Strong choice for most buyers' : average >= 65 ? 'Good, but compare alternatives' : 'Best for a specific use case';
+  const priceValue = phone.valueScore >= 80 ? 'strong value for money' : phone.valueScore >= 65 ? 'reasonable value' : 'premium pricing for its score';
+
+  return (
+    <div className="card-premium p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+          <h3 className="mt-1 text-xl font-bold text-gray-900">{verdict}</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            Best for <strong className="text-gray-800">{best[0].toLowerCase()}</strong>, with {priceValue}. Its weakest area is {weakest[0].toLowerCase()}, so buyers focused on that should compare nearby options first.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3 rounded-2xl bg-blue-50 px-4 py-3">
+          <div className="text-3xl font-extrabold text-blue-700">{average}</div>
+          <div className="text-xs font-medium leading-tight text-blue-700">Smart buy<br />score / 100</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
   if (mini) {
     return (
@@ -884,6 +960,8 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                 </div>
               )}
 
+              <BuyingInsight phone={p} />
+
               {/* Ratings & Scores */}
               <div className="card-premium p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -894,12 +972,15 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     <span className="text-sm text-muted-foreground">/ 10</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                  <ScoreBar score={p.performanceScore} label="Performance" />
-                  <ScoreBar score={p.cameraScore} label="Camera" />
-                  <ScoreBar score={p.batteryScore} label="Battery" />
-                  <ScoreBar score={p.displayScore} label="Display" />
-                  <ScoreBar score={p.valueScore} label="Value" />
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                    <ScoreBar score={p.performanceScore} label="Performance" />
+                    <ScoreBar score={p.cameraScore} label="Camera" />
+                    <ScoreBar score={p.batteryScore} label="Battery" />
+                    <ScoreBar score={p.displayScore} label="Display" />
+                    <ScoreBar score={p.valueScore} label="Value" />
+                  </div>
+                  <ScoreRadar phone={p} />
                 </div>
               </div>
 
