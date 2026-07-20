@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
-import { revalidatePricePages } from '@/lib/revalidate';
+import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
 import { escapeRegex } from '@/lib/sanitize';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 
@@ -1031,6 +1031,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     // Record store price history
     if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ phoneSlug: slug });
     return NextResponse.json({ success: true, id: phone._id?.toString(), slug });
   }
 
@@ -1045,6 +1046,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (await Brand.findOne({ slug }).lean()) return NextResponse.json({ error: 'Brand slug exists' }, { status: 409 });
     const brand = await Brand.create({ name, slug, logo: logo || '', country: country || '', description: description || '', sortOrder: sortOrder || 0, active: true });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_brand', details: `Created: ${name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeBrands: true });
     return NextResponse.json({ success: true, id: brand._id?.toString() });
   }
 
@@ -1059,6 +1061,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (await News.findOne({ slug }).lean()) return NextResponse.json({ error: 'News slug exists' }, { status: 409 });
     const news = await News.create({ title, slug, content: content || '', excerpt: excerpt || '', category: category || 'General', image: image || '', author: author || '', published: published !== false, featured: featured || false, status: 'published' });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_news', details: `Created: ${title}`, entityType: 'news', entityId: news._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeNews: true });
     return NextResponse.json({ success: true, id: news._id?.toString() });
   }
 
@@ -1453,6 +1456,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       console.error('[SavePhone revalidatePricePages]', e instanceof Error ? e.message : e);
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ phoneSlug: phone.slug });
     return NextResponse.json({ success: true, id: phone._id?.toString() });
 
     } catch (e: unknown) {
@@ -1482,6 +1486,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     await brand.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_brand', details: `Updated: ${brand.name}`, entityType: 'brand', entityId: brand._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeBrands: true });
     return NextResponse.json({ success: true, id: brand._id?.toString() });
   }
 
@@ -1515,6 +1520,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     await news.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_news', details: `Updated: ${news.title}`, entityType: 'news', entityId: news._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeNews: true });
     return NextResponse.json({ success: true, id: news._id?.toString() });
   }
 
@@ -1525,6 +1531,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const phone = await Phone.findById(segments[2]);
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     phone.featured = !phone.featured; await phone.save();
+    revalidatePublicContent({ phoneSlug: phone.slug });
     return NextResponse.json({ success: true, featured: phone.featured });
   }
 
@@ -1535,6 +1542,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const phone = await Phone.findById(segments[2]);
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     phone.trending = !phone.trending; await phone.save();
+    revalidatePublicContent({ phoneSlug: phone.slug });
     return NextResponse.json({ success: true, trending: phone.trending });
   }
 
@@ -1555,6 +1563,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (endDate !== undefined) updateData.endDate = endDate;
     const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: updateData }, { new: true }).lean();
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    revalidatePublicContent({ includeSponsors: true });
     return NextResponse.json({ success: true, sponsor: { ...updated, id: updated._id?.toString() } });
   }
 
@@ -1583,6 +1592,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (body.status === 'pending') { video.active = false; }
     await video.save();
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_video', details: `Updated: ${video.title}`, entityType: 'video', entityId: video._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeVideos: true });
     return NextResponse.json({ success: true, id: video._id?.toString() });
   }
 
@@ -1698,6 +1708,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const title = video.title;
     await Video.deleteOne({ _id: segments[2] });
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_video', details: `Deleted: ${title}`, entityType: 'video', entityId: segments[2] }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeVideos: true });
     return NextResponse.json({ success: true });
   }
 
@@ -1735,6 +1746,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
       PriceTrackerHistory.deleteMany({ phoneId: id }),
     ]);
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_phone', details: `Deleted: ${name}`, entityType: 'phone', entityId: id }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ phoneSlug: phone.slug });
     return NextResponse.json({ success: true });
   }
 
@@ -1750,6 +1762,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const name = brand.name;
     await Brand.deleteOne({ _id: id });
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_brand', details: `Deleted: ${name}`, entityType: 'brand', entityId: id }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeBrands: true });
     return NextResponse.json({ success: true });
   }
 
@@ -1763,6 +1776,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const title = news.title;
     await News.deleteOne({ _id: id });
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_news', details: `Deleted: ${title}`, entityType: 'news', entityId: id }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePublicContent({ includeNews: true });
     return NextResponse.json({ success: true });
   }
 
@@ -1772,6 +1786,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
     const { Sponsor } = await import('@/lib/models/Other');
     await Sponsor.findByIdAndDelete(segments[2]);
+    revalidatePublicContent({ includeSponsors: true });
     return NextResponse.json({ success: true });
   }
 
