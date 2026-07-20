@@ -145,6 +145,8 @@ PhoneSchema.pre('save', async function(this: IPhone) {
 PhoneSchema.index({ slug: 1 }, { unique: true });
 PhoneSchema.index({ createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, createdAt: -1 });
+PhoneSchema.index({ active: 1, status: 1, modelName: 1 });
+PhoneSchema.index({ modelName: 1 });
 // Public homepage/listing query indexes (filters first, sort field last).
 PhoneSchema.index({ active: 1, status: 1, featured: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, trending: 1, createdAt: -1 });

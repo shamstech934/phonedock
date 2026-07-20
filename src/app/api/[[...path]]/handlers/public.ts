@@ -198,13 +198,29 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const slugs = (url.searchParams.get('slugs') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
     const ids = (url.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
     if (slugs.length === 0 && ids.length === 0) return NextResponse.json({ phones: [] });
-    const filter: Record<string, unknown> = { active: true, status: 'published' };
-    if (slugs.length > 0) filter.slug = { $in: slugs };
-    if (ids.length > 0) filter._id = { $in: ids };
+    const selectors: Record<string, unknown>[] = [];
+    if (slugs.length > 0) selectors.push({ slug: { $in: slugs } });
+    if (ids.length > 0) selectors.push({ _id: { $in: ids } });
+    const filter: Record<string, unknown> = {
+      active: true,
+      status: 'published',
+      ...(selectors.length === 1 ? selectors[0] : { $or: selectors }),
+    };
     const phones = await Phone.find(filter)
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .populate('brand').lean();
-    return cached({ phones: await attachListSpecs(phones) }, 60, 300);
+    const phonesWithSpecs = await attachListSpecs(phones);
+    const orderMap = new Map<string, number>();
+    slugs.forEach((slug, index) => orderMap.set(`slug:${slug}`, index));
+    ids.forEach((id, index) => orderMap.set(`id:${id}`, slugs.length + index));
+    phonesWithSpecs.sort((a, b) => {
+      const aId = a.id || '';
+      const bId = b.id || '';
+      const aOrder = orderMap.get(`slug:${a.slug}`) ?? orderMap.get(`id:${aId}`) ?? Number.MAX_SAFE_INTEGER;
+      const bOrder = orderMap.get(`slug:${b.slug}`) ?? orderMap.get(`id:${bId}`) ?? Number.MAX_SAFE_INTEGER;
+      return aOrder - bOrder;
+    });
+    return cached({ phones: phonesWithSpecs }, 60, 300);
   }
 
   // ---- /api/phones/autocomplete?q=... ----
@@ -214,13 +230,17 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return cached({ phones: [] }, 60, 180);
     const safe = escapeRegex(q);
+    const prefix = new RegExp(`^${safe}`, 'i');
+    const contains = new RegExp(safe, 'i');
     const phones = await Phone.find({
-      active: true, status: 'published',
+      active: true,
+      status: 'published',
       $or: [
-        { modelName: { $regex: safe, $options: 'i' } },
-        { slug: { $regex: safe, $options: 'i' } },
-      ]
-    }).select('slug modelName thumbnail pricePKR brandId').sort({ modelName: 1 }).limit(20).lean();
+        { modelName: prefix },
+        { slug: prefix },
+        { modelName: contains },
+      ],
+    }).select('slug modelName thumbnail pricePKR brandId').sort({ modelName: 1 }).limit(12).lean();
     // Manual brand lookup — virtual populate + .lean() drops selected fields
     const brandIds = [...new Set(phones.map(p => p.brandId?.toString()).filter(Boolean))];
     const brands = brandIds.length > 0 ? await Brand.find({ _id: { $in: brandIds } }).select('name slug').lean() : [];
@@ -399,8 +419,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       Phone.find({ active: true, status: 'published', $or: [
         { modelName: { $regex: safe, $options: 'i' } },
         { slug: { $regex: safe, $options: 'i' } },
-        { description: { $regex: safe, $options: 'i' } },
-      ] }).sort({ createdAt: -1 }).limit(20)
+        { keywords: { $regex: safe, $options: 'i' } },
+      ] }).sort({ modelName: 1 }).limit(20)
         .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .populate('brand').lean(),
       Brand.aggregate([

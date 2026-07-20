@@ -26,8 +26,6 @@ function CompareContent() {
   const [loading, setLoading] = useState(true);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [detailedSelected, setDetailedSelected] = useState<Phone[]>([]);
-  const [fetchingDetails, setFetchingDetails] = useState(false);
   const [autocompleteResults, setAutocompleteResults] = useState<Phone[]>([]);
   const [acLoading, setAcLoading] = useState(false);
   const [acError, setAcError] = useState(false);
@@ -38,16 +36,17 @@ function CompareContent() {
     if (!slugsParam) { setLoading(false); return; }
     let cancelled = false;
     const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
-    Promise.all(
-      slugs.map(slug => fetch(`/api/phones/${encodeURIComponent(slug)}`).then(r => {
+    fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
+      .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
-      }).then(d => d.phone).catch(() => null))
-    ).then(results => {
+      })
+      .then(data => {
       if (cancelled) return;
-      const phones: Phone[] = results
-        .filter((d): d is any => d != null)
-        .map(d => ({ id: d._id || d.id, ...d }));
+      const phones: Phone[] = (data.phones || []).map((d: Phone & { _id?: string }) => ({
+        ...d,
+        id: d.id || d._id || d.slug,
+      }));
       setSelected(phones);
       if (phones.length >= 2) {
         setCompared(true);
@@ -90,33 +89,6 @@ function CompareContent() {
     }, 300);
     return () => { clearTimeout(timer); if (acAbortRef.current) acAbortRef.current.abort(); };
   }, [search, selected]);
-
-  // Fetch full details for comparison
-  useEffect(() => {
-    if (!compared || selected.length < 2) {
-      setDetailedSelected([]);
-      return;
-    }
-    let cancelled = false;
-    setFetchingDetails(true);
-    Promise.all(
-      selected.map(p => fetch(`/api/phones/${encodeURIComponent(p.slug)}`).then(r => {
-        if (!r.ok) throw new Error();
-        return r.json();
-      }))
-    ).then(results => {
-      if (cancelled) return;
-      const detailed: Phone[] = results.map((d, i) => {
-        if (d.phone) return { ...selected[i], ...d.phone };
-        return selected[i];
-      });
-      setDetailedSelected(detailed);
-      setFetchingDetails(false);
-    }).catch(() => {
-      if (!cancelled) setFetchingDetails(false);
-    });
-    return () => { cancelled = true; };
-  }, [compared, selected]);
 
   const updateURL = (phones: Phone[]) => {
     const slugs = phones.map(p => p.slug).join(',');
@@ -169,7 +141,7 @@ function CompareContent() {
     setAutocompleteResults([]);
   };
 
-  const comparePhones = detailedSelected.length === selected.length ? detailedSelected : selected;
+  const comparePhones = selected;
 
   const getWinner = (key: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore') => {
     let best: Phone | null = null;
@@ -444,7 +416,7 @@ function CompareContent() {
       )}
 
       {compared && selected.length >= 2 && (
-        fetchingDetails ? (
+        false ? (
           <div className="card-premium p-8 text-center">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">Loading full specifications...</p>
