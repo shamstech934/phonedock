@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Smartphone, SlidersHorizontal, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Smartphone, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
@@ -39,6 +39,10 @@ const PRICE_RANGES: { label: string; min: number; max: number }[] = [
 
 const RAM_OPTIONS = ['All', '2', '3', '4', '6', '8', '12', '16'];
 const STORAGE_OPTIONS = ['All', '32', '64', '128', '256', '512', '1024'];
+const DISPLAY_OPTIONS = ['all', 'AMOLED', 'OLED', 'IPS LCD'];
+const REFRESH_OPTIONS = ['all', '90', '120', '144'];
+const CAMERA_OPTIONS = ['all', '50', '108', '200'];
+const BATTERY_OPTIONS = ['all', '4500', '5000', '6000'];
 
 export default function PhonesClient({ initialPhones, initialBrands, initialTotal, initialQueryKey }: { initialPhones: Phone[]; initialBrands: Brand[]; initialTotal: number; initialQueryKey: string }) {
   const router = useRouter();
@@ -46,7 +50,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
 
   // ── All hooks BEFORE any early return ──
   const [phones, setPhones] = useState<Phone[]>(initialPhones);
-  const [brands, setBrands] = useState<Brand[]>(initialBrands);
+  const [brands] = useState<Brand[]>(initialBrands);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(initialTotal);
   const hydratedQueryKey = useRef(initialQueryKey);
@@ -60,6 +64,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const fiveGParam = searchParams.get('5g') || 'all';
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
+  const displayParam = searchParams.get('display') || 'all';
+  const refreshParam = searchParams.get('refresh') || 'all';
+  const cameraParam = searchParams.get('camera') || 'all';
+  const batteryParam = searchParams.get('battery') || 'all';
   const priceDropParam = searchParams.get('priceDrop') || '';
   const collectionParam = searchParams.get('collection') || '';
   const pageParam = parseInt(searchParams.get('page') || '1');
@@ -113,6 +121,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
 
     // NFC filter
     if (nfcParam !== 'all') params.set('nfc', nfcParam);
+    if (displayParam !== 'all') params.set('displayType', displayParam);
+    if (refreshParam !== 'all') params.set('refreshMin', refreshParam);
+    if (cameraParam !== 'all') params.set('cameraMin', cameraParam);
+    if (batteryParam !== 'all') params.set('batteryMin', batteryParam);
 
     // Curated collection filter
     if (collectionParam) params.set('collection', collectionParam);
@@ -135,7 +147,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam, collectionParam]);
+  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -158,7 +170,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all').length;
+  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
@@ -221,6 +233,18 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 <option value="approved">PTA: Approved</option>
                 <option value="pending">PTA: Not Approved</option>
               </select>
+              <select value={displayParam} onChange={e => updateParam('display', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {DISPLAY_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Display: All' : `Display: ${value}`}</option>)}
+              </select>
+              <select value={refreshParam} onChange={e => updateParam('refresh', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {REFRESH_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Refresh: All' : `${value}Hz+`}</option>)}
+              </select>
+              <select value={cameraParam} onChange={e => updateParam('camera', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {CAMERA_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Camera: All' : `${value}MP+`}</option>)}
+              </select>
+              <select value={batteryParam} onChange={e => updateParam('battery', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {BATTERY_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Battery: All' : `${value}mAh+`}</option>)}
+              </select>
             </div>
 
             {/* Active Filters */}
@@ -235,6 +259,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 {fiveGParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('5g', 'all')}>5G: {fiveGParam}<span className="ml-1">&times;</span></Badge>}
                 {nfcParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('nfc', 'all')}>NFC: {nfcParam}<span className="ml-1">&times;</span></Badge>}
                 {ptaParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('pta', 'all')}>PTA: {ptaParam}<span className="ml-1">&times;</span></Badge>}
+                {displayParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('display', 'all')}>Display: {displayParam}<span className="ml-1">&times;</span></Badge>}
+                {refreshParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('refresh', 'all')}>{refreshParam}Hz+<span className="ml-1">&times;</span></Badge>}
+                {cameraParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('camera', 'all')}>{cameraParam}MP+<span className="ml-1">&times;</span></Badge>}
+                {batteryParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('battery', 'all')}>{batteryParam}mAh+<span className="ml-1">&times;</span></Badge>}
                 <button onClick={clearAll} className="text-xs text-blue-500 hover:text-blue-600 font-medium">Clear all</button>
               </div>
             )}

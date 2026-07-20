@@ -138,10 +138,27 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     else if (ptaFilter === 'pending') filter.ptaApproved = false;
     if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
     if (search) {
-      const safe = escapeRegex(search);
+      const safe = escapeRegex(search.trim());
+      const searchRegex = { $regex: safe, $options: 'i' };
+      const [matchingBrands, matchingSpecs] = await Promise.all([
+        Brand.find({ name: searchRegex }).select('_id').limit(50).lean(),
+        PhoneSpecs.find({
+          $or: [
+            { chipset: searchRegex },
+            { cpu: searchRegex },
+            { gpu: searchRegex },
+            { ram: searchRegex },
+            { storage: searchRegex },
+            { displayType: searchRegex },
+            { os: searchRegex },
+          ],
+        }).select('phoneId').limit(500).lean(),
+      ]);
       filter.$or = [
-        { modelName: { $regex: safe, $options: 'i' } },
-        { slug: { $regex: safe, $options: 'i' } },
+        { modelName: searchRegex },
+        { slug: searchRegex },
+        ...(matchingBrands.length ? [{ brandId: { $in: matchingBrands.map(item => item._id) } }] : []),
+        ...(matchingSpecs.length ? [{ _id: { $in: matchingSpecs.map(item => item.phoneId) } }] : []),
       ];
     }
     if (brand) { const b = await Brand.findOne({ slug: brand }).lean(); if (b) filter.brandId = b._id; }
@@ -157,13 +174,15 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const priceMax = parseFloat(url.searchParams.get('priceMax') || '');
     const cameraMin = parseFloat(url.searchParams.get('cameraMin') || '');
     const batteryMin = parseFloat(url.searchParams.get('batteryMin') || '');
+    const displayType = (url.searchParams.get('displayType') || '').trim();
+    const refreshMin = parseFloat(url.searchParams.get('refreshMin') || '');
 
     // Price range filter on Phone model
     if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
     if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '';
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || displayType !== '' || !isNaN(refreshMin) || fiveGFilter !== '' || nfcFilter !== '';
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
@@ -175,6 +194,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $lte: screenMax };
       if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
       if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+      if (displayType) specFilter.displayType = { $regex: escapeRegex(displayType), $options: 'i' };
+      if (!isNaN(refreshMin)) specFilter.refreshRate = { $regex: new RegExp(`(?:^|\D)(?:${Math.ceil(refreshMin)}|1[2-9]\d|[2-9]\d{2,})(?:\D|$)`, 'i') };
       if (fiveGFilter === 'yes') specFilter.fiveG = { $regex: /yes|supported|true/i };
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };

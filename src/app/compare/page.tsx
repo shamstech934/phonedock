@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus,
+  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -36,7 +36,7 @@ function CompareContent() {
   useEffect(() => {
     if (!slugsParam) { setLoading(false); return; }
     let cancelled = false;
-    const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
+    const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
     fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -104,7 +104,7 @@ function CompareContent() {
     let next: Phone[];
     if (selected.some(p => p.id === phone.id)) {
       next = selected.filter(p => p.id !== phone.id);
-    } else if (selected.length < 6) {
+    } else if (selected.length < 4) {
       next = [...selected, phone];
     } else {
       return;
@@ -140,6 +140,19 @@ function CompareContent() {
     setPickerOpen(false);
     setSearch('');
     setAutocompleteResults([]);
+  };
+
+  const shareComparison = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'PhoneDock phone comparison', url });
+      } else {
+        await navigator.clipboard.writeText(url);
+      }
+    } catch {
+      // The user may cancel the native share sheet; no error state is needed.
+    }
   };
 
   const comparePhones = selected;
@@ -266,14 +279,21 @@ function CompareContent() {
                 </button>
               </div>
             ))}
-            {selected.length < 6 && (
+            {selected.length < 4 && (
               <button onClick={openPicker} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-500 hover:bg-blue-50 hover:border-blue-400 transition-colors shrink-0" aria-label="Add phones to compare">
                 <Plus className="w-4 h-4" /> Add Phones
               </button>
             )}
-            <button onClick={clearAll} className="ml-auto text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors" aria-label="Clear all selected phones">
-              Clear All
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              {compared && (
+                <button onClick={shareComparison} className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1" aria-label="Share this comparison">
+                  <Share2 className="w-3.5 h-3.5" /> Share
+                </button>
+              )}
+              <button onClick={clearAll} className="text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors" aria-label="Clear all selected phones">
+                Clear All
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -283,7 +303,7 @@ function CompareContent() {
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="p-4 sm:p-5 pb-0">
             <DialogTitle>Search & Add Phones</DialogTitle>
-            <DialogDescription>Select 2 to 6 phones to compare. Type at least 2 characters to search.</DialogDescription>
+            <DialogDescription>Select 2 to 4 phones to compare. Type at least 2 characters to search.</DialogDescription>
           </DialogHeader>
           <div className="px-4 sm:px-5 pt-3">
             <div className="relative">
@@ -324,21 +344,21 @@ function CompareContent() {
                 <p className="text-xs text-muted-foreground mt-1">Remove a phone to add a different one</p>
               </div>
             )}
-            {selected.length < 6 && acLoading && (
+            {selected.length < 4 && acLoading && (
               <div className="flex items-center justify-center py-8">
                 <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs text-gray-400 ml-2">Searching...</span>
               </div>
             )}
-            {selected.length < 6 && !acLoading && acError && (
+            {selected.length < 4 && !acLoading && acError && (
               <div className="text-center py-6">
                 <p className="text-sm text-red-500">Search failed. Please try again.</p>
               </div>
             )}
-            {selected.length < 6 && !acLoading && search.length >= 2 && autocompleteResults.length === 0 && !acError && (
+            {selected.length < 4 && !acLoading && search.length >= 2 && autocompleteResults.length === 0 && !acError && (
               <div className="text-center py-8 text-sm text-muted-foreground">No phones found matching &ldquo;{search}&rdquo;</div>
             )}
-            {selected.length < 6 && !acLoading && search.length < 2 && (
+            {selected.length < 4 && !acLoading && search.length < 2 && (
               <div className="text-center py-8 text-sm text-muted-foreground">Type at least 2 characters to search</div>
             )}
             <div className="divide-y divide-gray-50 rounded-xl border border-gray-100 overflow-hidden">
