@@ -28,7 +28,7 @@ check('Reset-password UI is public', middleware.includes("pathname === '/admin/r
 check('Cron authentication fails closed when secret is missing', route.includes('if (!configured || !provided) return false;'));
 check('Cron routes use configured-secret validator', (route.match(/if \(!isValidCronSecret\(secret\)\)/g) || []).length === 2);
 check('Login session persistence is awaited', auth.includes('await persistSessionRecord(admin._id.toString(), session.jti'));
-check('Login creates one session record, not duplicate records', (auth.match(/session\.jti, getClientIp\(req\)/g) || []).length === 1);
+check('Login creates one session record, not duplicate records', (auth.match(/persistSessionRecord\(admin\._id\.toString\(\), session\.jti, requestIp, requestUa\)/g) || []).length === 1);
 check('Rotated session persistence is awaited', auth.includes('await persistSessionRecord(admin._id.toString(), newSession.jti'));
 
 console.log(`\nSprint 3 checks: ${passed} passed, ${failed} failed`);

@@ -71,13 +71,6 @@ export default function AdminActivityPage() {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchQuery]);
 
-  // Auto-refresh
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(() => fetchLogs(), 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
   const fetchLogs = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -100,6 +93,13 @@ export default function AdminActivityPage() {
   }, []);
 
   useEffect(() => { fetchLogs(); fetchStats(); }, [fetchLogs, fetchStats]);
+
+  // Auto-refresh the current activity view without recreating stale closures.
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = window.setInterval(fetchLogs, 30000);
+    return () => window.clearInterval(interval);
+  }, [autoRefresh, fetchLogs]);
 
   const getActionIcon = (action: string) => {
     for (const [key, icon] of Object.entries(ACTION_ICONS)) {
