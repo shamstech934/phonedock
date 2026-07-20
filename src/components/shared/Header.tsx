@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail, ChevronDown, Play, Star, BarChart3 } from 'lucide-react';
+import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail, ChevronDown, Play, Star, BarChart3, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -101,6 +101,7 @@ export function Header() {
 
   const navLinks = [
     { label: 'Home', href: '/' },
+    { label: 'Smart Finder', href: '/phone-finder' },
     { label: 'Brands', href: '/brands' },
     { label: 'Compare', href: '/compare' },
     { label: 'News', href: '/news' },
@@ -109,6 +110,7 @@ export function Header() {
   ];
 
   const moreLinks = [
+    { label: 'Smart Finder', href: '/phone-finder', icon: Sparkles },
     { label: 'Reviews', href: '/reviews', icon: Star },
     { label: 'Videos', href: '/videos', icon: Play },
     { label: 'PTA Status', href: '/phones', icon: Shield },

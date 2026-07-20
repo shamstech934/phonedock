@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Smartphone, SlidersHorizontal, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Smartphone, SlidersHorizontal, X, ChevronLeft, ChevronRight, Sparkles, Save, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
@@ -39,6 +39,11 @@ const PRICE_RANGES: { label: string; min: number; max: number }[] = [
 
 const RAM_OPTIONS = ['All', '2', '3', '4', '6', '8', '12', '16'];
 const STORAGE_OPTIONS = ['All', '32', '64', '128', '256', '512', '1024'];
+const SCREEN_OPTIONS = ['all', '6', '6.5', '6.7'];
+const CAMERA_OPTIONS = ['all', '48', '50', '64', '108', '200'];
+const BATTERY_OPTIONS = ['all', '4000', '4500', '5000', '6000'];
+const REFRESH_OPTIONS = ['all', '90', '120', '144'];
+const CHIPSET_OPTIONS = ['all', 'Snapdragon', 'Dimensity', 'Exynos', 'Apple', 'Helio'];
 
 export default function PhonesClient({ initialPhones, initialBrands, initialTotal, initialQueryKey }: { initialPhones: Phone[]; initialBrands: Brand[]; initialTotal: number; initialQueryKey: string }) {
   const router = useRouter();
@@ -61,6 +66,11 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
   const priceDropParam = searchParams.get('priceDrop') || '';
+  const screenParam = searchParams.get('screen') || 'all';
+  const cameraParam = searchParams.get('camera') || 'all';
+  const batteryParam = searchParams.get('battery') || 'all';
+  const refreshParam = searchParams.get('refresh') || 'all';
+  const chipsetParam = searchParams.get('chipset') || 'all';
   const pageParam = parseInt(searchParams.get('page') || '1');
 
   const [search, setSearch] = useState(q);
@@ -115,6 +125,11 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
 
     // Price drop filter
     if (priceDropParam === 'true') params.set('priceDrop', 'true');
+    if (screenParam !== 'all') params.set('screenMin', screenParam);
+    if (cameraParam !== 'all') params.set('cameraMin', cameraParam);
+    if (batteryParam !== 'all') params.set('batteryMin', batteryParam);
+    if (refreshParam !== 'all') params.set('refresh', refreshParam);
+    if (chipsetParam !== 'all') params.set('chipset', chipsetParam);
 
     const queryKey = params.toString();
     if (hydratedQueryKey.current === queryKey) {
@@ -131,7 +146,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam]);
+  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam, screenParam, cameraParam, batteryParam, refreshParam, chipsetParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -154,7 +169,20 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : ''].filter(f => f && f !== 'all').length;
+  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, screenParam, cameraParam, batteryParam, refreshParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : ''].filter(f => f && f.toLowerCase() !== 'all').length;
+
+  const saveCurrentSearch = useCallback(() => {
+    try {
+      localStorage.setItem('pd_saved_phone_filters', searchParams.toString());
+    } catch { /* local storage may be unavailable */ }
+  }, [searchParams]);
+
+  const loadSavedSearch = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('pd_saved_phone_filters');
+      if (saved) router.push(`/phones?${saved}`);
+    } catch { /* ignore */ }
+  }, [router]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -200,6 +228,21 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
               <select value={storageParam} onChange={e => updateParam('storage', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 {STORAGE_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All Storage' : r === '1024' ? '1TB' : `${r}GB`}</option>)}
               </select>
+              <select value={screenParam} onChange={e => updateParam('screen', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {SCREEN_OPTIONS.map(v => <option key={v} value={v}>{v === 'all' ? 'All Screens' : `${v}\" or larger`}</option>)}
+              </select>
+              <select value={cameraParam} onChange={e => updateParam('camera', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {CAMERA_OPTIONS.map(v => <option key={v} value={v}>{v === 'all' ? 'All Cameras' : `${v}MP+`}</option>)}
+              </select>
+              <select value={batteryParam} onChange={e => updateParam('battery', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {BATTERY_OPTIONS.map(v => <option key={v} value={v}>{v === 'all' ? 'All Batteries' : `${v}mAh+`}</option>)}
+              </select>
+              <select value={refreshParam} onChange={e => updateParam('refresh', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {REFRESH_OPTIONS.map(v => <option key={v} value={v}>{v === 'all' ? 'All Refresh Rates' : `${v}Hz`}</option>)}
+              </select>
+              <select value={chipsetParam} onChange={e => updateParam('chipset', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {CHIPSET_OPTIONS.map(v => <option key={v} value={v}>{v === 'all' ? 'All Chipsets' : v}</option>)}
+              </select>
               <select value={fiveGParam} onChange={e => updateParam('5g', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="all">5G: All</option>
                 <option value="yes">5G: Yes</option>
@@ -217,6 +260,12 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
               </select>
             </div>
 
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={saveCurrentSearch}><Save className="w-3.5 h-3.5" /> Save filters</Button>
+              <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={loadSavedSearch}><RotateCcw className="w-3.5 h-3.5" /> Load saved</Button>
+              <Button type="button" variant="outline" size="sm" className="rounded-xl text-violet-600" onClick={() => router.push('/phone-finder')}><Sparkles className="w-3.5 h-3.5" /> Smart finder</Button>
+            </div>
+
             {/* Active Filters */}
             {activeFilterCount > 0 && (
               <div className="flex items-center gap-2 flex-wrap">
@@ -228,6 +277,11 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 {storageParam !== 'All' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('storage', 'All')}>Storage: {storageParam === '1024' ? '1TB' : `${storageParam}GB`}<span className="ml-1">&times;</span></Badge>}
                 {fiveGParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('5g', 'all')}>5G: {fiveGParam}<span className="ml-1">&times;</span></Badge>}
                 {nfcParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('nfc', 'all')}>NFC: {nfcParam}<span className="ml-1">&times;</span></Badge>}
+                {screenParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('screen', 'all')}>Screen: {screenParam}\"+<span className="ml-1">&times;</span></Badge>}
+                {cameraParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('camera', 'all')}>Camera: {cameraParam}MP+<span className="ml-1">&times;</span></Badge>}
+                {batteryParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('battery', 'all')}>Battery: {batteryParam}mAh+<span className="ml-1">&times;</span></Badge>}
+                {refreshParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('refresh', 'all')}>Refresh: {refreshParam}Hz<span className="ml-1">&times;</span></Badge>}
+                {chipsetParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('chipset', 'all')}>Chipset: {chipsetParam}<span className="ml-1">&times;</span></Badge>}
                 {ptaParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('pta', 'all')}>PTA: {ptaParam}<span className="ml-1">&times;</span></Badge>}
                 <button onClick={clearAll} className="text-xs text-blue-500 hover:text-blue-600 font-medium">Clear all</button>
               </div>
