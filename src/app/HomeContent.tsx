@@ -21,7 +21,7 @@ import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 // Dynamic import: framer-motion is ~120KB, only load on client when needed
 const HeroPhoneShowcase = dynamic(
   () => import('@/components/shared/HeroPhoneShowcase').then(mod => ({ default: mod.HeroPhoneShowcase })),
-  { ssr: false, loading: () => <div className="h-[400px] bg-gray-100 animate-pulse rounded-xl" /> }
+  { loading: () => <div className="h-[400px] rounded-xl bg-slate-900" aria-hidden="true" /> }
 );
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
