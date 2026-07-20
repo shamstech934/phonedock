@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor } from 'lucide-react';
+import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor, Heart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
@@ -12,6 +12,7 @@ const PhoneQuickViewDialog = dynamic(
   { ssr: false },
 );
 import type { Phone } from '@/components/shared/types';
+import { useWishlist } from '@/lib/personalization/usePersonalization';
 
 interface PhoneCardProps {
   phone: Phone;
@@ -27,6 +28,8 @@ function extractDisplaySize(display?: string): string {
 
 export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
   const [qvOpen, setQvOpen] = useState(false);
+  const wishlist = useWishlist();
+  const wishlisted = wishlist.has(phone.slug);
   const eyeButtonRef = useRef<HTMLButtonElement>(null);
   const displaySize = extractDisplaySize(phone.specs?.display);
 
@@ -136,6 +139,16 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             >
               View Details <ChevronRight className="w-3.5 h-3.5" />
             </Link>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); wishlist.toggle(phone); }}
+              aria-label={`${wishlisted ? 'Remove' : 'Add'} ${phone.modelName} ${wishlisted ? 'from' : 'to'} wishlist`}
+              aria-pressed={wishlisted}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
+              title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            >
+              <Heart className={`w-3.5 h-3.5 ${wishlisted ? 'fill-current' : ''}`} />
+            </button>
             {/* Compare button */}
             <Link
               href={`/compare?p=${phone.slug}`}

@@ -126,8 +126,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const ptaFilter = url.searchParams.get('pta') || '';
     const fiveGFilter = url.searchParams.get('5g') || '';
     const nfcFilter = url.searchParams.get('nfc') || '';
-    const refreshFilter = url.searchParams.get('refresh') || '';
-    const chipsetFilter = url.searchParams.get('chipset') || '';
     const trendingOnly = url.searchParams.get('trending') === 'true';
     const priceDropOnly = url.searchParams.get('priceDrop') === 'true';
 
@@ -162,7 +160,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '' || refreshFilter !== '' || chipsetFilter !== '';
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '';
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
@@ -178,8 +176,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
       else if (nfcFilter === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
-      if (refreshFilter) specFilter.refreshRate = { $regex: new RegExp(`(^|\\D)${Math.max(1, parseInt(refreshFilter, 10))}\\s*Hz`, 'i') };
-      if (chipsetFilter) specFilter.chipset = { $regex: escapeRegex(chipsetFilter), $options: 'i' };
 
       const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
       filter._id = { ...((filter._id as Record<string, unknown>) || {}), $in: matchingSpecPhoneIds };

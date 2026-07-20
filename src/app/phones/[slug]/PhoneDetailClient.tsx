@@ -7,7 +7,7 @@ import {
   Star, ChevronRight, Smartphone, Camera, Battery, Cpu, Trophy,
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
   Share2, ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
-  HardDrive,
+  HardDrive, Heart,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/shared/TurnstileWidget';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
+import { useRecentlyViewed, useWishlist } from '@/lib/personalization/usePersonalization';
 
 // ── Lightweight SVG Price History Chart (no SSR issues) ──
 function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; storeName: string | null; price: number }> }) {
@@ -359,6 +360,8 @@ function UserReviewsSection({ slug }: { slug: string }) {
 }
 
 export default function PhoneDetailPage({ slug, initialData }: { slug: string; initialData: { phone: Phone; related: Phone[] } | null }) {
+  const wishlist = useWishlist();
+  const recent = useRecentlyViewed();
   const data = initialData;
   const loading = false;
   const [activeTab, setActiveTab] = useState('specs');
@@ -388,6 +391,10 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .catch(() => {});
     return () => { cancelled = true; };
   }, [slug]);
+
+  useEffect(() => {
+    if (data?.phone) recent.add(data.phone);
+  }, [data?.phone?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -609,9 +616,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                 )}
                 <Separator className="bg-gray-100" />
                 <div className="flex gap-2">
-                  <Link href={`/compare?ids=${p.id}`} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25">
+                  <Link href={`/compare?p=${p.slug}`} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white rounded-xl h-11 text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-500/25">
                     <GitCompare className="w-4 h-4" /> Compare
                   </Link>
+                  <button
+                    onClick={() => wishlist.toggle(p)}
+                    aria-label={`${wishlist.has(p.slug) ? 'Remove from' : 'Add to'} wishlist`}
+                    aria-pressed={wishlist.has(p.slug)}
+                    className={`h-11 px-4 rounded-xl border transition-colors flex items-center justify-center ${wishlist.has(p.slug) ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-gray-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600'}`}
+                  >
+                    <Heart className={`w-4 h-4 ${wishlist.has(p.slug) ? 'fill-current' : ''}`} />
+                  </button>
                   <button onClick={handleShare} aria-label="Share this phone" className="h-11 px-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center">
                     <Share2 className="w-4 h-4 text-gray-600" />
                   </button>

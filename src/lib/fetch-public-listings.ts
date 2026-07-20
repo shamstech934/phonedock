@@ -17,11 +17,6 @@ export interface PhoneListParams {
   nfc?: string;
   pta?: string;
   priceDrop?: string;
-  screen?: string;
-  camera?: string;
-  battery?: string;
-  refresh?: string;
-  chipset?: string;
 }
 
 const PRICE_RANGES: Record<string, { min?: number; max?: number }> = {
@@ -93,14 +88,6 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
   else if (params['5g'] === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
   if (params.nfc === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
   else if (params.nfc === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
-  const screen = Number.parseFloat(params.screen || '');
-  const camera = Number.parseFloat(params.camera || '');
-  const battery = Number.parseFloat(params.battery || '');
-  if (Number.isFinite(screen)) specFilter.screenSizeInch = { $gte: screen };
-  if (Number.isFinite(camera)) specFilter.mainCameraMP = { $gte: camera };
-  if (Number.isFinite(battery)) specFilter.batteryMAh = { $gte: battery };
-  if (params.refresh && params.refresh !== 'all') specFilter.refreshRate = { $regex: new RegExp(`(^|\\D)${Number.parseInt(params.refresh, 10)}\\s*Hz`, 'i') };
-  if (params.chipset && params.chipset !== 'all') specFilter.chipset = { $regex: new RegExp(escapeRegex(params.chipset), 'i') };
   if (Object.keys(specFilter).length > 0) {
     const ids = await PhoneSpecs.find(specFilter).distinct('phoneId');
     filter._id = { $in: ids };
@@ -145,11 +132,6 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
   if (params['5g'] && params['5g'] !== 'all') apiParams.set('5g', params['5g']);
   if (params.nfc && params.nfc !== 'all') apiParams.set('nfc', params.nfc);
   if (params.priceDrop === 'true') apiParams.set('priceDrop', 'true');
-  if (Number.isFinite(screen)) apiParams.set('screenMin', String(screen));
-  if (Number.isFinite(camera)) apiParams.set('cameraMin', String(camera));
-  if (Number.isFinite(battery)) apiParams.set('batteryMin', String(battery));
-  if (params.refresh && params.refresh !== 'all') apiParams.set('refresh', params.refresh);
-  if (params.chipset && params.chipset !== 'all') apiParams.set('chipset', params.chipset);
 
   return { phones, total, queryKey: apiParams.toString() };
 }

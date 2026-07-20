@@ -35,7 +35,7 @@ function CompareContent() {
   useEffect(() => {
     if (!slugsParam) { setLoading(false); return; }
     let cancelled = false;
-    const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+    const slugs = slugsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
     fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -103,7 +103,7 @@ function CompareContent() {
     let next: Phone[];
     if (selected.some(p => p.id === phone.id)) {
       next = selected.filter(p => p.id !== phone.id);
-    } else if (selected.length < 4) {
+    } else if (selected.length < 6) {
       next = [...selected, phone];
     } else {
       return;
@@ -265,7 +265,7 @@ function CompareContent() {
                 </button>
               </div>
             ))}
-            {selected.length < 4 && (
+            {selected.length < 6 && (
               <button onClick={openPicker} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-500 hover:bg-blue-50 hover:border-blue-400 transition-colors shrink-0" aria-label="Add phones to compare">
                 <Plus className="w-4 h-4" /> Add Phones
               </button>
@@ -282,7 +282,7 @@ function CompareContent() {
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="p-4 sm:p-5 pb-0">
             <DialogTitle>Search & Add Phones</DialogTitle>
-            <DialogDescription>Select 2 to 4 phones to compare. Type at least 2 characters to search.</DialogDescription>
+            <DialogDescription>Select 2 to 6 phones to compare. Type at least 2 characters to search.</DialogDescription>
           </DialogHeader>
           <div className="px-4 sm:px-5 pt-3">
             <div className="relative">
@@ -319,25 +319,25 @@ function CompareContent() {
           <div className="flex-1 overflow-y-auto px-4 sm:px-5 pt-2 pb-2">
             {selected.length >= 4 && (
               <div className="text-center py-8">
-                <p className="text-sm text-amber-600 font-medium">Maximum 4 phones allowed</p>
+                <p className="text-sm text-amber-600 font-medium">Maximum 6 phones allowed</p>
                 <p className="text-xs text-muted-foreground mt-1">Remove a phone to add a different one</p>
               </div>
             )}
-            {selected.length < 4 && acLoading && (
+            {selected.length < 6 && acLoading && (
               <div className="flex items-center justify-center py-8">
                 <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs text-gray-400 ml-2">Searching...</span>
               </div>
             )}
-            {selected.length < 4 && !acLoading && acError && (
+            {selected.length < 6 && !acLoading && acError && (
               <div className="text-center py-6">
                 <p className="text-sm text-red-500">Search failed. Please try again.</p>
               </div>
             )}
-            {selected.length < 4 && !acLoading && search.length >= 2 && autocompleteResults.length === 0 && !acError && (
+            {selected.length < 6 && !acLoading && search.length >= 2 && autocompleteResults.length === 0 && !acError && (
               <div className="text-center py-8 text-sm text-muted-foreground">No phones found matching &ldquo;{search}&rdquo;</div>
             )}
-            {selected.length < 4 && !acLoading && search.length < 2 && (
+            {selected.length < 6 && !acLoading && search.length < 2 && (
               <div className="text-center py-8 text-sm text-muted-foreground">Type at least 2 characters to search</div>
             )}
             <div className="divide-y divide-gray-50 rounded-xl border border-gray-100 overflow-hidden">
@@ -373,7 +373,7 @@ function CompareContent() {
 
           {/* Picker footer */}
           <div className="border-t border-gray-100 p-4 sm:p-5 flex items-center justify-between gap-3 bg-gray-50/50">
-            <span className="text-xs text-muted-foreground">{selected.length}/4 phones selected</span>
+            <span className="text-xs text-muted-foreground">{selected.length}/6 phones selected</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={closePicker}>Cancel</Button>
               {selected.length >= 2 && (
@@ -395,7 +395,7 @@ function CompareContent() {
         <div className="text-center py-16">
           <GitCompare className="w-14 h-14 mx-auto mb-4 text-gray-300" />
           <h2 className="text-lg font-bold text-gray-900 mb-2">Select phones to compare</h2>
-          <p className="text-sm text-muted-foreground mb-6">Choose 2 to 4 phones by searching, or use URL params like ?p=iphone-15,samsung-s24</p>
+          <p className="text-sm text-muted-foreground mb-6">Choose 2 to 6 phones by searching, or use URL params like ?p=iphone-15,samsung-s24</p>
           <div className="flex gap-3 justify-center">
             <Button className="rounded-xl" onClick={openPicker}>
               <Plus className="w-4 h-4 mr-1" /> Add Phones
@@ -425,7 +425,7 @@ function CompareContent() {
           <>
             {/* Sticky visual phone header for long comparisons */}
             <section className="sticky top-[8.5rem] z-20 rounded-2xl border border-gray-200/70 bg-white/95 p-3 shadow-sm backdrop-blur-xl">
-              <div className={`grid gap-2 ${comparePhones.length === 2 ? 'grid-cols-2' : comparePhones.length === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
+              <div className={`grid gap-2 ${comparePhones.length === 2 ? 'grid-cols-2' : comparePhones.length === 3 ? 'grid-cols-3' : comparePhones.length === 4 ? 'grid-cols-4' : comparePhones.length === 5 ? 'grid-cols-3 lg:grid-cols-5' : 'grid-cols-3 lg:grid-cols-6'}`}>
                 {comparePhones.map(phone => (
                   <Link key={phone.id} href={`/phones/${phone.slug}`} className="group min-w-0 rounded-xl px-2 py-2 text-center hover:bg-blue-50 transition-colors">
                     <SafePhoneImage src={phone.thumbnail} alt={phone.modelName} width={42} height={42} className="mx-auto h-10 w-10 rounded-lg bg-gray-50 object-contain p-1" />
