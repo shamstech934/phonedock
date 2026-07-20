@@ -1,5 +1,30 @@
 import type { NextConfig } from "next";
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+const scriptSources = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(isProduction ? [] : ["'unsafe-eval'"]),
+  'https://va.vercel-scripts.com',
+  'https://challenges.cloudflare.com',
+].join(' ');
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "object-src 'none'",
+  `script-src ${scriptSources}`,
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https://fdn2.gsmarena.com https://res.cloudinary.com https://images.unsplash.com https://upload.wikimedia.org https://i.ytimg.com",
+  "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com https://mongodb.googleapis.com",
+  "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  ...(isProduction ? ['upgrade-insecure-requests'] : []),
+].join('; ');
+
 const nextConfig: NextConfig = {
   // output: "standalone",
   typescript: {
@@ -22,11 +47,9 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizeCss: false,
   },
-  // Security headers
   async headers() {
     return [
       {
-        // Apply to all routes except Next.js internals
         source: '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -35,52 +58,26 @@ const nextConfig: NextConfig = {
           { key: 'X-DNS-Prefetch-Control', value: 'off' },
           { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'same-site' },
           { key: 'Origin-Agent-Cluster', value: '?1' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-          {
-            key: 'Content-Security-Policy',
-            // Note: 'unsafe-inline' and 'unsafe-eval' are required by Next.js runtime.
-            // Without them, Next.js hydration, hot-reload (dev), and client components break.
-            // TODO: Future hardening — adopt Next.js nonce-based CSP via middleware once
-            // the framework supports it fully, then remove 'unsafe-inline' and 'unsafe-eval'.
-            value: [
-              "object-src 'none'",
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: https://fdn2.gsmarena.com https://res.cloudinary.com https://images.unsplash.com https://upload.wikimedia.org https://i.ytimg.com blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com https://mongodb.googleapis.com",
-              "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
-          },
+          { key: 'Content-Security-Policy', value: contentSecurityPolicy },
         ],
       },
-      // Allow YouTube embed frames (relaxed X-Frame-Options for embed pages only)
       {
-        source: '/videos',
+        source: '/admin/:path*',
         headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "object-src 'none'",
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com https://challenges.cloudflare.com",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: https://fdn2.gsmarena.com https://res.cloudinary.com https://images.unsplash.com https://upload.wikimedia.org https://i.ytimg.com blob:",
-              "connect-src 'self' https://va.vercel-scripts.com https://challenges.cloudflare.com https://res.cloudinary.com https://mongodb.googleapis.com",
-              "frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com",
-              "frame-ancestors 'self'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
-          },
+          { key: 'Cache-Control', value: 'private, no-store, max-age=0, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+        ],
+      },
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store, max-age=0, must-revalidate' },
         ],
       },
     ];

@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
+import { getBaseUrl } from "@/lib/urls";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -36,7 +37,10 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
   },
   alternates: { canonical: BASE_URL },
-  icons: { icon: "/logo.svg" },
+  applicationName: "PhoneDock",
+  category: "technology",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/logo.svg", shortcut: "/logo.svg", apple: "/logo.svg" },
 };
 
 export const viewport: Viewport = {
@@ -100,9 +104,9 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <div id="main-content">
+          <main id="main-content" tabIndex={-1}>
             {children}
-          </div>
+          </main>
         </ThemeProvider>
       </body>
     </html>
