@@ -7,6 +7,7 @@ import {
   Star, ChevronRight, Smartphone, Camera, Battery, Cpu, Trophy,
   Monitor, Wifi, Check, Minus, GitCompare, Shield, BarChart3,
   Share2, ChevronLeft, ExternalLink, AlertTriangle, Play, Bell,
+  HardDrive,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/shared/TurnstileWidget';
 import { Badge } from '@/components/ui/badge';
@@ -711,7 +712,23 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
               <div>
                 <p className="text-sm text-muted-foreground font-medium mb-1">{p.brand?.name}</p>
                 <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">{p.modelName}</h2>
-                {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{p.description}</p>}
+                {p.description && <p className="text-muted-foreground mt-3 text-sm leading-relaxed max-w-3xl">{p.description}</p>}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5" aria-label="Phone highlights">
+                  {[
+                    { icon: Monitor, label: 'Display', value: p.specs?.display || p.specs?.displayType },
+                    { icon: Cpu, label: 'Chipset', value: p.specs?.chipset },
+                    { icon: HardDrive, label: 'Memory', value: [p.specs?.ram, p.specs?.storage].filter(Boolean).join(' / ') },
+                    { icon: Battery, label: 'Battery', value: p.specs?.battery },
+                  ].filter(item => item.value).map(({ icon: FactIcon, label, value }) => (
+                    <div key={label} className="rounded-2xl border border-gray-100 bg-white/80 p-3 shadow-sm">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        <FactIcon className="h-3.5 w-3.5 text-blue-500" /> {label}
+                      </div>
+                      <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-relaxed text-gray-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Quick Verdict */}
@@ -873,11 +890,13 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
 
               {/* Tabs: Specs / Benchmarks / Review */}
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="glass-filter w-full justify-start rounded-2xl p-1.5 h-auto">
+                <div className="sticky top-16 z-30 -mx-1 px-1 py-2 bg-white/90 backdrop-blur-xl supports-[backdrop-filter]:bg-white/75">
+                <TabsList className="glass-filter w-full justify-start rounded-2xl p-1.5 h-auto overflow-x-auto no-scrollbar shadow-sm border border-white/70">
                   <TabsTrigger value="specs" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Specifications</TabsTrigger>
                   <TabsTrigger value="benchmarks" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Benchmarks</TabsTrigger>
                   <TabsTrigger value="review" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=active]:shadow-blue-500/25 rounded-xl text-xs sm:text-sm">Review</TabsTrigger>
                 </TabsList>
+                </div>
 
                 <TabsContent value="specs" className="mt-5 space-y-4">
                   {specGroups.map(group => {
@@ -985,6 +1004,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                 </section>
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200/80 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
+          <div className="mx-auto flex max-w-7xl gap-2">
+            <Button variant="outline" className="h-11 flex-1 rounded-xl" asChild>
+              <Link href={`/compare?phones=${encodeURIComponent(p.slug)}`}><GitCompare className="mr-2 h-4 w-4" /> Compare</Link>
+            </Button>
+            <Button onClick={handleShare} className="h-11 flex-1 rounded-xl bg-blue-600 hover:bg-blue-700">
+              <Share2 className="mr-2 h-4 w-4" /> Share
+            </Button>
           </div>
         </div>
       </main>
