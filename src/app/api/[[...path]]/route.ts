@@ -47,6 +47,64 @@ interface PopulatedPhoneDoc {
   pricePKR: number;
 }
 
+const DEFAULT_BODY_LIMIT = 1024 * 1024; // 1 MB
+const LARGE_BODY_LIMIT = 12 * 1024 * 1024; // import/upload routes
+
+function securityError(message: string, status: number): NextResponse {
+  return NextResponse.json(
+    { error: message },
+    {
+      status,
+      headers: {
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    },
+  );
+}
+
+function isPrivilegedMutation(segments: string[]): boolean {
+  return ['admin', 'collector', 'import', 'import-v2', 'price-tracker', 'data-quality', 'first-setup'].includes(segments[0] || '');
+}
+
+function validateMutationOrigin(req: NextRequest, segments: string[]): NextResponse | null {
+  if (!isPrivilegedMutation(segments)) return null;
+
+  const fetchSite = req.headers.get('sec-fetch-site');
+  if (fetchSite === 'cross-site') {
+    return securityError('Cross-site request blocked', 403);
+  }
+
+  const origin = req.headers.get('origin');
+  if (!origin) return null; // non-browser clients and same-origin navigations may omit Origin
+
+  const allowedOrigins = new Set<string>([new URL(req.url).origin]);
+  for (const value of [process.env.NEXT_PUBLIC_BASE_URL, process.env.APP_URL]) {
+    if (!value) continue;
+    try { allowedOrigins.add(new URL(value).origin); } catch { /* ignore malformed optional URL */ }
+  }
+
+  if (!allowedOrigins.has(origin)) {
+    return securityError('Invalid request origin', 403);
+  }
+  return null;
+}
+
+function validateRequestSize(req: NextRequest, segments: string[]): NextResponse | null {
+  const rawLength = req.headers.get('content-length');
+  if (!rawLength) return null;
+  const length = Number(rawLength);
+  if (!Number.isFinite(length) || length < 0) return securityError('Invalid content length', 400);
+
+  const largeRoute = segments[0] === 'import' || segments[0] === 'import-v2';
+  const limit = largeRoute ? LARGE_BODY_LIMIT : DEFAULT_BODY_LIMIT;
+  return length > limit ? securityError('Request body too large', 413) : null;
+}
+
+function validateMutationRequest(req: NextRequest, segments: string[]): NextResponse | null {
+  return validateMutationOrigin(req, segments) || validateRequestSize(req, segments);
+}
+
 // ============ GET HANDLER ============
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
@@ -224,6 +282,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 export async function POST(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
+
+  const requestGuard = validateMutationRequest(req, segments);
+  if (requestGuard) return requestGuard;
 
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
@@ -464,6 +525,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
   const { path } = await params;
   const segments = path || [];
 
+  const requestGuard = validateMutationRequest(req, segments);
+  if (requestGuard) return requestGuard;
+
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
   try {
@@ -504,6 +568,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ path?: string[] }> }): HandlerResult {
   const { path } = await params;
   const segments = path || [];
+
+  const requestGuard = validateMutationRequest(req, segments);
+  if (requestGuard) return requestGuard;
 
   // MongoDB-backed IP rate limiting
   const ip = getClientIp(req);
