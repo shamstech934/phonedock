@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { Admin, ActivityLog } from '@/lib/models';
+import { recordSecurityEvent } from '@/lib/security-events';
 import {
   connectDB, getAdminFromRequest, isEmailConfigured, getClientIp,
   verifyPassword, hashPassword, createSignedSession, getSessionFromRequest, validateSessionVersion,
@@ -126,12 +127,15 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     const body = await req.json();
     const email = sanitizeInput(String(body.email || '')).toLowerCase();
     const password = String(body.password || '');
+    const requestIp = getClientIp(req);
+    const requestUa = req.headers.get('user-agent')?.slice(0, 200) || '';
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
     // Bound input sizes before bcrypt/database work to reduce abuse and accidental oversized payloads.
     if (email.length > 254 || password.length > 128 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await recordSecurityEvent({ action: 'login_rejected', ip: requestIp, userAgent: requestUa, reason: 'invalid_input' });
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
@@ -140,17 +144,20 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     // Check rate limit for existing accounts; always return 401 for non-existent
     // to prevent account enumeration (same response regardless of email existence)
     if (!admin) {
+      await recordSecurityEvent({ action: 'login_failed', ip: requestIp, userAgent: requestUa, reason: 'invalid_credentials' });
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     // DB-backed rate limiting (only reached when admin exists — no info leak)
     const rateCheck = checkLoginRateLimitFromDB(admin);
     if (!rateCheck.allowed) {
+      await recordSecurityEvent({ action: 'login_blocked', adminId: admin._id, ip: requestIp, userAgent: requestUa, reason: 'account_lockout' });
       // Return 401 (not 429) to avoid revealing account existence via status code
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     if (!admin.active) {
+      await recordSecurityEvent({ action: 'login_blocked', adminId: admin._id, ip: requestIp, userAgent: requestUa, reason: 'account_disabled' });
       // Return same 401 message to avoid revealing account exists but is disabled
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
@@ -159,14 +166,15 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
     if (!valid) {
       recordFailedLoginDB(admin);
       await admin.save();
+      await recordSecurityEvent({ action: 'login_failed', adminId: admin._id, ip: requestIp, userAgent: requestUa, reason: 'invalid_credentials' });
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     // Successful login
     resetFailedAttempts(admin);
     admin.lastLogin = new Date();
-    admin.lastLoginIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
-    admin.lastLoginUA = req.headers.get('user-agent')?.slice(0, 200) || '';
+    admin.lastLoginIp = requestIp;
+    admin.lastLoginUA = requestUa;
     await admin.save();
 
     const session = await createSignedSession({
@@ -178,7 +186,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
 
     // Persist before returning the cookie so the first session check cannot race
     // against AdminSession creation and incorrectly reject a valid login.
-    await persistSessionRecord(admin._id.toString(), session.jti, getClientIp(req), req.headers.get('user-agent')?.slice(0, 200) || '');
+    await persistSessionRecord(admin._id.toString(), session.jti, requestIp, requestUa);
 
     // Single cookie — no token in response body
     const response = NextResponse.json({
@@ -189,6 +197,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
 
 
     try { await ActivityLog.create({ adminId: admin._id, action: 'login', details: 'Admin logged in', entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
+    await recordSecurityEvent({ action: 'login_success', adminId: admin._id, ip: requestIp, userAgent: requestUa });
     return response;
   }
 

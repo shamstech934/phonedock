@@ -43,20 +43,33 @@ function isStaticAsset(pathname: string): boolean {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
+  const nextWithSecurityHeaders = () => {
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set('x-request-id', requestId);
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set('X-Request-Id', requestId);
+    if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
+      response.headers.set('Cache-Control', 'no-store, max-age=0');
+      response.headers.set('Pragma', 'no-cache');
+    }
+    return response;
+  };
   // Skip static assets & public pages
-  if (isStaticAsset(pathname)) return NextResponse.next();
+  if (isStaticAsset(pathname)) return nextWithSecurityHeaders();
   if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
-    return NextResponse.next();
+    return nextWithSecurityHeaders();
   }
 
   // === LOGIN PAGE: allow through (no session needed) ===
-  if (isLoginPath(pathname)) return NextResponse.next();
-  if (pathname === '/admin/forgot-password' || pathname === '/admin/reset-password' || pathname === '/admin/auth/forgot-password') return NextResponse.next();
+  if (isLoginPath(pathname)) return nextWithSecurityHeaders();
+  if (pathname === '/admin/forgot-password' || pathname === '/admin/reset-password' || pathname === '/admin/auth/forgot-password') return nextWithSecurityHeaders();
 
   // === ADMIN API ROUTES: check session cookie existence ===
   if (pathname.startsWith('/api/admin')) {
     // Allow first-setup endpoint
-    if (pathname === '/api/admin/first-setup') return NextResponse.next();
+    if (pathname === '/api/admin/first-setup') return nextWithSecurityHeaders();
 
     // Public admin authentication endpoints (no existing session required)
     if (
@@ -64,13 +77,16 @@ export function middleware(req: NextRequest) {
       pathname === '/api/admin/forgot-password' ||
       pathname === '/api/admin/reset-password' ||
       pathname.startsWith('/api/admin/auth/')
-    ) return NextResponse.next();
+    ) return nextWithSecurityHeaders();
 
     // All other /api/admin/* need session cookie
     if (!hasSessionCookie(req)) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      const response = NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      response.headers.set('Cache-Control', 'no-store, max-age=0');
+      response.headers.set('X-Request-Id', requestId);
+      return response;
     }
-    return NextResponse.next();
+    return nextWithSecurityHeaders();
   }
 
   // === ADMIN UI PAGES: check session cookie ===
@@ -78,12 +94,15 @@ export function middleware(req: NextRequest) {
     if (!hasSessionCookie(req)) {
       const loginUrl = new URL(LOGIN_PATH, req.url);
       loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
+      const response = NextResponse.redirect(loginUrl);
+      response.headers.set('Cache-Control', 'no-store, max-age=0');
+      response.headers.set('X-Request-Id', requestId);
+      return response;
     }
-    return NextResponse.next();
+    return nextWithSecurityHeaders();
   }
 
-  return NextResponse.next();
+  return nextWithSecurityHeaders();
 }
 
 export const config = {
