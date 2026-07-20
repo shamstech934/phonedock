@@ -51,15 +51,15 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
 
   return (
     <>
-      <div className="phone-card glass-shine cursor-pointer group block">
+      <article className="phone-card glass-shine group block h-full overflow-hidden">
         <div className="p-3 sm:p-4">
-          <div className="relative aspect-square bg-[#F8FAFC] rounded-xl mb-3 overflow-hidden flex items-center justify-center">
+          <div className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
             <SafePhoneImage
               src={phone.thumbnail}
               alt={phone.modelName}
               width={200}
               height={200}
-              className="p-4 group-hover:scale-[1.03] transition-transform duration-500 ease-out"
+              className="p-4 transition-transform duration-500 ease-out group-hover:scale-[1.035]"
             />
             {phone.ptaApproved && (
               <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
@@ -92,7 +92,9 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
                 </div>
               )}
             </div>
-            <h3 className="font-bold text-sm line-clamp-2 leading-tight text-gray-900">{phone.modelName}</h3>
+            <h3 className="line-clamp-2 min-h-10 text-sm font-extrabold leading-tight text-slate-900">
+              <Link href={`/phones/${phone.slug}`} className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">{phone.modelName}</Link>
+            </h3>
             <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
             {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
               <p className="text-[10px] text-emerald-600 font-medium line-through">{formatPrice(phone.originalPricePKR)} <span className="text-emerald-700 font-bold">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
@@ -130,7 +132,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             <Link
               href={`/phones/${phone.slug}`}
               onClick={() => onSelect?.(phone.id)}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg h-9 text-xs font-semibold transition-colors flex items-center justify-center gap-1"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-bold text-white shadow-sm shadow-sky-500/20 transition hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
             >
               View Details <ChevronRight className="w-3.5 h-3.5" />
             </Link>
@@ -138,7 +140,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             <Link
               href={`/compare?p=${phone.slug}`}
               onClick={(e) => e.stopPropagation()}
-              className="shrink-0 w-11 h-11 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Compare"
               aria-label={`Compare ${phone.modelName}`}
             >
@@ -153,14 +155,14 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               aria-label={`Quick view ${phone.modelName}`}
               aria-expanded={qvOpen}
               aria-haspopup="dialog"
-              className="shrink-0 w-11 h-11 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Quick View"
             >
               <Eye className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
-      </div>
+      </article>
 
       {/* Quick View Dialog - rendered via PhoneQuickViewDialog (Radix Portal to document.body) */}
       {qvOpen && (

@@ -10,16 +10,20 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, icon: Icon, link, linkText }: SectionHeaderProps) {
   return (
-    <div className="flex items-center justify-between mb-5">
-      <div className="flex items-center gap-3">
-        {Icon && <Icon className="w-5 h-5 text-blue-500" />}
-        <h2 className="section-title text-lg sm:text-xl text-gray-900">
+    <div className="mb-5 flex items-end justify-between gap-4 sm:mb-6">
+      <div className="flex min-w-0 items-center gap-3">
+        {Icon && (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+            <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+          </span>
+        )}
+        <h2 className="section-title truncate text-lg text-gray-900 sm:text-xl">
           {title}
         </h2>
       </div>
       {link && (
-        <Link href={link} className="text-sm font-medium text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
-          {linkText || 'View All'} <ChevronRight className="w-4 h-4" />
+        <Link href={link} className="group inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-bold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 sm:text-sm">
+          {linkText || 'View All'} <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         </Link>
       )}
     </div>
