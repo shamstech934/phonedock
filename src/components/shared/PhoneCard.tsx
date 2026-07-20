@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
-import { PhoneQuickViewDialog } from '@/components/shared/PhoneQuickViewDialog';
+const PhoneQuickViewDialog = dynamic(
+  () => import('@/components/shared/PhoneQuickViewDialog').then((mod) => mod.PhoneQuickViewDialog),
+  { ssr: false },
+);
 import type { Phone } from '@/components/shared/types';
 
 interface PhoneCardProps {
@@ -159,11 +163,13 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
       </div>
 
       {/* Quick View Dialog - rendered via PhoneQuickViewDialog (Radix Portal to document.body) */}
-      <PhoneQuickViewDialog
-        phone={phone}
-        open={qvOpen}
-        onClose={handleQVClose}
-      />
+      {qvOpen && (
+        <PhoneQuickViewDialog
+          phone={phone}
+          open={qvOpen}
+          onClose={handleQVClose}
+        />
+      )}
     </>
   );
 }

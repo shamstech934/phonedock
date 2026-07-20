@@ -5,6 +5,7 @@
  */
 
 import { Types } from 'mongoose';
+import { unstable_cache } from 'next/cache';
 import { Phone, Brand, News, PhoneSpecs, Sponsor } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones, type PhoneDocOrJson } from '@/app/api/[[...path]]/handlers/helpers';
@@ -55,7 +56,7 @@ const toPhoneRecord = (doc: unknown): Record<string, unknown> =>
 
 // ============ HOMEPAGE DATA ============
 
-export async function fetchHomeData() {
+async function fetchHomeDataUncached() {
   await connectDB();
 
   const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news] = await Promise.all([
@@ -179,6 +180,16 @@ export async function fetchHomeData() {
     totalBrands: totalBrands as number,
   };
 }
+
+/**
+ * Cache the expensive homepage aggregation so most requests do not hit MongoDB.
+ * Admin mutations can later call revalidateTag('home-data') for immediate refresh.
+ */
+export const fetchHomeData = unstable_cache(
+  fetchHomeDataUncached,
+  ['home-data-v1'],
+  { revalidate: 300, tags: ['home-data'] },
+);
 
 // ============ HERO PHONES (with specs) ============
 

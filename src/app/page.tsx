@@ -5,7 +5,8 @@ import { fetchHomeData } from '@/lib/fetch-home-data';
 import type { HomeData } from '@/components/shared/types';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 
-export const dynamic = 'force-dynamic';
+// Refresh the cached homepage in the background every 5 minutes.
+export const revalidate = 300;
 
 export default async function HomePage() {
   let homeData: HomeData;
