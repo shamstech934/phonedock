@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { parseExcelRecords } from './excel';
+import * as XLSX from 'xlsx';
 import { RawPhoneRecord } from './types';
 import { sanitizeCsvValue } from '@/lib/auth';
 
@@ -63,10 +63,22 @@ export async function parseCSV(content: string): Promise<RawPhoneRecord[]> {
 }
 
 // ============ XLSX PARSER ============
-export async function parseXLSX(buffer: ArrayBuffer): Promise<RawPhoneRecord[]> {
+export function parseXLSX(buffer: ArrayBuffer): RawPhoneRecord[] {
   try {
-    const { records } = await parseExcelRecords(buffer);
-    return records as RawPhoneRecord[];
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      throw new Error('Excel file has no sheets');
+    }
+    const sheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json<RawPhoneRecord>(sheet, {
+      defval: '',
+      raw: false,
+    });
+    if (!data || data.length === 0) {
+      throw new Error('Excel sheet is empty or has no valid rows');
+    }
+    return data;
   } catch (e: unknown) {
     throw new Error(`Excel parsing error: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -97,7 +109,7 @@ export async function parseFile(content: string | ArrayBuffer, fileType: 'json' 
     case 'csv':
       return parseCSV(typeof content === 'string' ? content : new TextDecoder().decode(content));
     case 'xlsx':
-      return await parseXLSX(content instanceof ArrayBuffer ? content : new TextEncoder().encode(content).buffer);
+      return parseXLSX(content instanceof ArrayBuffer ? content : new TextEncoder().encode(content).buffer);
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
