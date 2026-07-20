@@ -54,13 +54,14 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const q = searchParams.get('q') || '';
   const brandParam = searchParams.get('brand') || 'all';
   const priceParam = searchParams.get('price') || 'all';
-  const ramParam = searchParams.get('ram') || 'all';
-  const storageParam = searchParams.get('storage') || 'all';
+  const ramParam = searchParams.get('ram') || 'All';
+  const storageParam = searchParams.get('storage') || 'All';
   const sortParam = searchParams.get('sort') || 'newest';
   const fiveGParam = searchParams.get('5g') || 'all';
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
   const priceDropParam = searchParams.get('priceDrop') || '';
+  const collectionParam = searchParams.get('collection') || '';
   const pageParam = parseInt(searchParams.get('page') || '1');
 
   const [search, setSearch] = useState(q);
@@ -113,6 +114,9 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
     // NFC filter
     if (nfcParam !== 'all') params.set('nfc', nfcParam);
 
+    // Curated collection filter
+    if (collectionParam) params.set('collection', collectionParam);
+
     // Price drop filter
     if (priceDropParam === 'true') params.set('priceDrop', 'true');
 
@@ -131,7 +135,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam]);
+  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -154,7 +158,9 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : ''].filter(f => f && f !== 'all').length;
+  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all').length;
+
+  const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -162,7 +168,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       <main className="flex-1">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
           <div>
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">All Phones</h1>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
           </div>
 

@@ -23,8 +23,8 @@ import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
 // ============ QUICK CATEGORY STRIP ============
 const QUICK_CATEGORIES = [
-  { emoji: '\u{1F4F1}', label: 'Latest', href: '/phones?sort=newest' },
-  { emoji: '\u{1F525}', label: 'Trending', href: '/phones?sort=trending' },
+  { emoji: '\u{1F4F1}', label: 'Latest', href: '/phones?collection=latest&sort=newest' },
+  { emoji: '\u{1F525}', label: 'Trending', href: '/phones?collection=trending&sort=trending' },
   { emoji: '\u{1F3AE}', label: 'Gaming', href: '/best-gaming-phone' },
   { emoji: '\u{1F4F7}', label: 'Camera', href: '/best-camera-phone' },
   { emoji: '\u{1F50B}', label: 'Battery', href: '/best-battery-phone' },
@@ -388,10 +388,10 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {visible('brands') && <BrandsGrid brands={data.brands} />}
 
             {/* ===== 5. LATEST PHONES ===== */}
-            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones" linkText="All Phones" showEmpty />}
+            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
 
             {/* ===== 6. TRENDING PHONES ===== */}
-            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones" linkText="All Phones" showEmpty />}
+            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
 
             {/* ===== 7. BEST CAMERA PHONES ===== */}
             {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" />}

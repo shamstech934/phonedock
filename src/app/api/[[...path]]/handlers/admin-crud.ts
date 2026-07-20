@@ -1687,9 +1687,13 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
     }
-    const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true }).lean();
+    const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
+    // Make CMS changes visible immediately instead of waiting for the homepage cache window.
+    const { revalidatePath } = await import('next/cache');
+    revalidatePath('/');
+    revalidatePath('/admin/settings');
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings', entityId: 'main' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
+    return NextResponse.json({ success: true, settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
   }
 
   return undefined;

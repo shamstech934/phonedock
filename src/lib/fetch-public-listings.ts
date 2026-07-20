@@ -17,6 +17,7 @@ export interface PhoneListParams {
   nfc?: string;
   pta?: string;
   priceDrop?: string;
+  collection?: string;
 }
 
 const PRICE_RANGES: Record<string, { min?: number; max?: number }> = {
@@ -56,6 +57,10 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
   const limit = 20;
   const filter: Record<string, unknown> = { active: true, status: 'published' };
+  const collection = params.collection || '';
+  if (collection === 'trending') filter.trending = true;
+  if (collection === 'featured') filter.featured = true;
+  if (collection === 'upcoming') filter.upcoming = true;
 
   if (params.q) {
     const safe = escapeRegex(params.q);
@@ -103,7 +108,7 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
   };
   const sorting = sortMap[params.sort || 'newest'] || sortMap.newest;
 
-  const [rawPhones, total] = await Promise.all([
+  const [rawPhones, rawTotal] = await Promise.all([
     Phone.find(filter)
       .sort({ [sorting.field]: sorting.order })
       .skip((page - 1) * limit)
@@ -113,6 +118,9 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
       .lean(),
     Phone.countDocuments(filter),
   ]);
+  // The Latest collection is intentionally capped so its View All page does not
+  // become indistinguishable from the complete phone catalogue.
+  const total = collection === 'latest' ? Math.min(rawTotal, 40) : rawTotal;
   const ids = rawPhones.map(phone => phone._id.toString());
   const specs = ids.length ? await PhoneSpecs.find({ phoneId: { $in: ids } }).lean() : [];
   const phones = attachSpecsToRawPhones(rawPhones, buildSpecsMap(specs)) as unknown as PhoneType[];
@@ -132,6 +140,7 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
   if (params['5g'] && params['5g'] !== 'all') apiParams.set('5g', params['5g']);
   if (params.nfc && params.nfc !== 'all') apiParams.set('nfc', params.nfc);
   if (params.priceDrop === 'true') apiParams.set('priceDrop', 'true');
+  if (collection) apiParams.set('collection', collection);
 
   return { phones, total, queryKey: apiParams.toString() };
 }

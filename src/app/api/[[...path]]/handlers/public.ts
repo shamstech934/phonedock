@@ -127,10 +127,13 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const fiveGFilter = url.searchParams.get('5g') || '';
     const nfcFilter = url.searchParams.get('nfc') || '';
     const trendingOnly = url.searchParams.get('trending') === 'true';
+    const collection = url.searchParams.get('collection') || '';
     const priceDropOnly = url.searchParams.get('priceDrop') === 'true';
 
     const filter: Record<string, unknown> = { active: true, status: 'published' };
-    if (trendingOnly) filter.trending = true;
+    if (trendingOnly || collection === 'trending') filter.trending = true;
+    if (collection === 'featured') filter.featured = true;
+    if (collection === 'upcoming') filter.upcoming = true;
     if (ptaFilter === 'approved') filter.ptaApproved = true;
     else if (ptaFilter === 'pending') filter.ptaApproved = false;
     if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
@@ -181,12 +184,13 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       filter._id = { ...((filter._id as Record<string, unknown>) || {}), $in: matchingSpecPhoneIds };
     }
 
-    const [phones, total] = await Promise.all([
+    const [phones, rawTotal] = await Promise.all([
       Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit)
         .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .populate('brand').lean(),
       Phone.countDocuments(filter),
     ]);
+    const total = collection === 'latest' ? Math.min(rawTotal, 40) : rawTotal;
 
     const phonesWithSpecs = await attachListSpecs(phones);
     return cached({ phones: phonesWithSpecs, total, page, limit }, 120, 300);
@@ -560,13 +564,13 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     if (isNaN(maxPrice) || maxPrice <= 0) return cachedError('Invalid price', 400, 60, 300);
     const page = Math.max(1, parseInt(new URL(req.url).searchParams.get('page') || '1'));
     const limit = 20;
-    const [phones, total] = await Promise.all([
+    const [phones, rawTotal] = await Promise.all([
       Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } })
         .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .sort({ pricePKR: 1 }).skip((page - 1) * limit).limit(limit).populate('brand').lean(),
       Phone.countDocuments({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } }),
     ]);
-    return cached({ phones: await attachListSpecs(phones), total, page, limit, maxPrice, totalPages: Math.ceil(total / limit) }, 120, 300);
+    return cached({ phones: await attachListSpecs(phones), total: rawTotal, page, limit, maxPrice, totalPages: Math.ceil(rawTotal / limit) }, 120, 300);
   }
 
   // ---- /api/price-ranges ----
