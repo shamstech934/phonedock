@@ -13,6 +13,7 @@ import { Footer } from '@/components/shared/Footer';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
 import type { Phone } from '@/components/shared/types';
+import { SmartComparisonSummary } from '@/components/compare/SmartComparisonSummary';
 
 function CompareContent() {
   const searchParams = useSearchParams();
@@ -465,6 +466,8 @@ function CompareContent() {
                 })}
               </div>
             </section>
+
+            <SmartComparisonSummary phones={comparePhones} />
 
             {/* Score Comparison */}
             <section className="card-premium p-4 sm:p-6 space-y-5">
