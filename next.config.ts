@@ -74,12 +74,23 @@ const nextConfig: NextConfig = {
           { key: 'Expires', value: '0' },
         ],
       },
-      {
-        source: '/api/:path*',
+      ...[
+        '/api/admin/:path*',
+        '/api/collector/:path*',
+        '/api/import/:path*',
+        '/api/import-v2/:path*',
+        '/api/price-tracker/:path*',
+        '/api/data-quality/:path*',
+        '/api/first-setup/:path*',
+        '/api/cron/:path*',
+      ].map((source) => ({
+        source,
         headers: [
           { key: 'Cache-Control', value: 'private, no-store, max-age=0, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
         ],
-      },
+      })),
     ];
   },
 };

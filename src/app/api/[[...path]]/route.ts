@@ -38,6 +38,7 @@ import { handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-quality';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { Video } from '@/lib/models';
+import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -111,6 +112,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const segments = path || [];
 
   try {
+    // Lightweight production health check. Deliberately does not expose environment values.
+    if (segments.length === 1 && segments[0] === 'health') {
+      return NextResponse.json(
+        { status: 'ok', service: 'phonedock', version: '1.0.0' },
+        { status: 200, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
+      );
+    }
+
     // Cron: /api/cron/update-prices — protected by CRON_SECRET, NO rate limiting
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
       const cronResult = await handleCronUpdatePrices(req);
@@ -158,7 +167,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
           try {
             const transporter = await getEmailTransporter();
             const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
-            const unsubscribeUrl = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(alert.email)}&phoneId=${phone._id}`;
+            const unsubscribeToken = createUnsubscribeToken(alert.email, phone._id.toString());
+            const unsubscribeUrl = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(alert.email)}&phoneId=${phone._id}&token=${unsubscribeToken}`;
             await transporter.sendMail({
               from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
               to: alert.email,
@@ -214,7 +224,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const { searchParams } = new URL(req.url);
       const email = (searchParams.get('email') || '').toLowerCase();
       const phoneId = searchParams.get('phoneId') || '';
-      if (!email || !phoneId) {
+      const token = searchParams.get('token') || '';
+      if (!email || !phoneId || !verifyUnsubscribeToken(email, phoneId, token)) {
         return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
       }
       await PriceAlert.updateMany(
@@ -454,7 +465,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       if (isEmailConfigured()) {
         const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
         const confirmLink = `${siteUrl}/api/price-alerts/confirm?token=${confirmToken}&email=${encodeURIComponent(emailLower)}`;
-        const unsubscribeLink = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(emailLower)}&phoneId=${phone._id}`;
+        const unsubscribeToken = createUnsubscribeToken(emailLower, phone._id.toString());
+        const unsubscribeLink = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(emailLower)}&phoneId=${phone._id}&token=${unsubscribeToken}`;
         try {
           const transporter = await getEmailTransporter();
           await transporter.sendMail({

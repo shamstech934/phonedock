@@ -6,6 +6,7 @@ import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
 import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
+import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -374,10 +375,14 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   // ---- /api/price-alerts/unsubscribe (GET) ----
   if (segments.length === 2 && segments[0] === 'price-alerts' && segments[1] === 'unsubscribe') {
     await connectDB();
-    const email = new URL(req.url).searchParams.get('email') || '';
-    const phoneId = new URL(req.url).searchParams.get('phoneId') || '';
-    if (!email || !phoneId) return NextResponse.json({ error: 'Missing params' }, { status: 400 });
-    await PriceAlert.updateOne({ phoneId, email }, { $set: { unsubscribedAt: new Date(), notified: true } });
+    const params = new URL(req.url).searchParams;
+    const email = (params.get('email') || '').trim().toLowerCase();
+    const phoneId = params.get('phoneId') || '';
+    const token = params.get('token') || '';
+    if (!email || !phoneId || !verifyUnsubscribeToken(email, phoneId, token)) {
+      return NextResponse.json({ error: 'Invalid or expired unsubscribe link' }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
+    }
+    await PriceAlert.updateOne({ phoneId, email }, { $set: { status: 'unsubscribed', unsubscribedAt: new Date(), notified: true } });
     return NextResponse.json({ success: true, message: 'Unsubscribed successfully' });
   }
 
