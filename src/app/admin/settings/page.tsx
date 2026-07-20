@@ -1,254 +1,33 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Check, Globe, Share2, Search, Shield, Wrench, LucideIcon, Loader2 } from 'lucide-react';
+import { Settings, Check, Globe, Share2, Search, Shield, Loader2, Image as ImageIcon, LayoutDashboard, Megaphone, Palette } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 
-interface SiteSettings {
-  siteName: string;
-  tagline: string;
-  contactEmail: string;
-  supportEmail: string;
-  logo: string;
-  favicon: string;
-  facebook: string;
-  twitter: string;
-  instagram: string;
-  youtubeChannel: string;
-  titleSuffix: string;
-  metaDescription: string;
-  ogImage: string;
-  googleAnalyticsId: string;
-  maintenanceMode: boolean;
-  footerText: string;
-}
-
-const DEFAULTS: SiteSettings = {
-  siteName: 'PhoneDock',
-  tagline: '',
-  contactEmail: '',
-  supportEmail: '',
-  logo: '',
-  favicon: '',
-  facebook: '',
-  twitter: '',
-  instagram: '',
-  youtubeChannel: '',
-  titleSuffix: '',
-  metaDescription: '',
-  ogImage: '',
-  googleAnalyticsId: '',
-  maintenanceMode: false,
-  footerText: '',
-};
-
-function SectionCard({ icon: Icon, title, children, color }: { icon: LucideIcon; title: string; children: React.ReactNode; color: string }) {
-  return (
-    <div className="card-premium p-5 animate-fade-in">
-      <div className="flex items-center gap-3 mb-4">
-        <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center`}>
-          <Icon className="w-4.5 h-4.5" />
-        </div>
-        <h2 className="font-bold text-sm text-gray-900">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function InputField({ label, value, onChange, type = 'text', placeholder = '' }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
-  return (
-    <div>
-      <label className="text-xs font-medium text-gray-700 mb-1 block">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
-    </div>
-  );
-}
-
-export default function AdminSettingsPage() {
-  const { admin, loading: authLoading } = useAdmin();
-  const [form, setForm] = useState<SiteSettings>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
-
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/settings', { credentials: 'include' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || `Failed to load settings (${res.status})`);
-        return;
-      }
-      const data = await res.json();
-      if (data.settings) {
-        setForm((prev) => ({
-          siteName: data.settings.siteName ?? prev.siteName,
-          tagline: data.settings.tagline ?? prev.tagline,
-          contactEmail: data.settings.contactEmail ?? prev.contactEmail,
-          supportEmail: data.settings.supportEmail ?? prev.supportEmail,
-          logo: data.settings.logo ?? prev.logo,
-          favicon: data.settings.favicon ?? prev.favicon,
-          facebook: data.settings.facebook ?? prev.facebook,
-          twitter: data.settings.twitter ?? prev.twitter,
-          instagram: data.settings.instagram ?? prev.instagram,
-          youtubeChannel: data.settings.youtubeChannel ?? prev.youtubeChannel,
-          titleSuffix: data.settings.titleSuffix ?? prev.titleSuffix,
-          metaDescription: data.settings.metaDescription ?? prev.metaDescription,
-          ogImage: data.settings.ogImage ?? prev.ogImage,
-          googleAnalyticsId: data.settings.googleAnalyticsId ?? prev.googleAnalyticsId,
-          maintenanceMode: data.settings.maintenanceMode ?? prev.maintenanceMode,
-          footerText: data.settings.footerText ?? prev.footerText,
-        }));
-      }
-    } catch {
-      setError('Network error while loading settings.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!authLoading && admin) {
-      fetchSettings();
-    } else if (!authLoading && !admin) {
-      setLoading(false);
-    }
-  }, [authLoading, admin, fetchSettings]);
-
-  const updateField = (key: keyof SiteSettings, value: string | boolean) => {
-    setForm(prev => ({ ...prev, [key]: value }));
-    setSaved(false);
-    setError('');
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setError('');
-    try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || `Save failed (${res.status})`);
-        return;
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch {
-      setError('Network error while saving settings.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (authLoading || loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-      </div>
-    );
-  }
-
-  if (!admin) return null;
-
-  return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-gray-900">Site Settings</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Configure your PhoneDock installation</p>
-        </div>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 disabled:opacity-50">
-          {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : saved ? <><Check className="w-3.5 h-3.5" /> Saved!</> : <><Settings className="w-3.5 h-3.5" /> Save Settings</>}
-        </button>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200/50 rounded-xl p-3 text-sm text-red-700 font-medium animate-fade-in">
-          {error}
-        </div>
-      )}
-
-      {saved && !error && (
-        <div className="bg-emerald-50 border border-emerald-200/50 rounded-xl p-3 text-sm text-emerald-700 font-medium animate-fade-in">
-          Settings saved successfully.
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SectionCard icon={Globe} title="General" color="bg-blue-50">
-          <div className="space-y-3">
-            <InputField label="Site Name" value={form.siteName} onChange={v => updateField('siteName', v)} />
-            <InputField label="Tagline" value={form.tagline} onChange={v => updateField('tagline', v)} />
-            <InputField label="Contact Email" type="email" value={form.contactEmail} onChange={v => updateField('contactEmail', v)} placeholder="info@example.com" />
-            <InputField label="Support Email" type="email" value={form.supportEmail} onChange={v => updateField('supportEmail', v)} placeholder="support@example.com" />
-            <InputField label="Logo URL" value={form.logo} onChange={v => updateField('logo', v)} placeholder="https://example.com/logo.png" />
-            <InputField label="Favicon URL" value={form.favicon} onChange={v => updateField('favicon', v)} placeholder="https://example.com/favicon.ico" />
-          </div>
-        </SectionCard>
-
-        <SectionCard icon={Share2} title="Social Links" color="bg-emerald-50">
-          <div className="space-y-3">
-            <InputField label="Facebook URL" value={form.facebook} onChange={v => updateField('facebook', v)} placeholder="https://facebook.com/phonedock" />
-            <InputField label="Twitter/X URL" value={form.twitter} onChange={v => updateField('twitter', v)} placeholder="https://x.com/phonedock" />
-            <InputField label="Instagram URL" value={form.instagram} onChange={v => updateField('instagram', v)} placeholder="https://instagram.com/phonedock" />
-            <InputField label="YouTube Channel URL" value={form.youtubeChannel} onChange={v => updateField('youtubeChannel', v)} placeholder="https://youtube.com/@phonedock" />
-          </div>
-        </SectionCard>
-
-        <SectionCard icon={Search} title="SEO Settings" color="bg-violet-50">
-          <div className="space-y-3">
-            <InputField label="Default Title Suffix" value={form.titleSuffix} onChange={v => updateField('titleSuffix', v)} />
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Meta Description</label>
-              <textarea value={form.metaDescription} onChange={e => updateField('metaDescription', e.target.value)} rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white resize-none" />
-            </div>
-            <InputField label="OG Image URL" value={form.ogImage} onChange={v => updateField('ogImage', v)} placeholder="https://example.com/og.png" />
-            <InputField label="Google Analytics ID" value={form.googleAnalyticsId} onChange={v => updateField('googleAnalyticsId', v)} placeholder="G-XXXXXXXXXX" />
-          </div>
-        </SectionCard>
-
-        <SectionCard icon={Shield} title="Advanced" color="bg-amber-50">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-red-50/50 rounded-xl border border-red-100/50">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Show a maintenance page to all visitors</p>
-              </div>
-              <button
-                onClick={() => updateField('maintenanceMode', !form.maintenanceMode)}
-                className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${form.maintenanceMode ? 'bg-red-500' : 'bg-gray-300'}`}
-              >
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${form.maintenanceMode ? 'translate-x-5.5' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Footer Text</label>
-              <textarea value={form.footerText} onChange={e => updateField('footerText', e.target.value)} rows={2}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white resize-none" placeholder="© 2025 PhoneDock. All rights reserved." />
-            </div>
-            <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50">
-              <div className="flex items-center gap-2 mb-2">
-                <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                <p className="text-xs font-semibold text-amber-800">Environment Info</p>
-              </div>
-              <div className="space-y-1 text-[10px] text-amber-700/80">
-                <p>App: PhoneDock v1.0</p>
-                <p>Framework: Next.js 16</p>
-                <p>Database: MongoDB</p>
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-      </div>
-    </div>
-  );
+type SectionKey = 'brands'|'latest'|'trending'|'camera'|'gaming'|'battery'|'budget'|'flagship'|'upcoming'|'reviews'|'videos'|'news'|'sponsors'|'newsletter'|'trust';
+interface SiteSettings { [key:string]: unknown; siteName:string; tagline:string; contactEmail:string; supportEmail:string; logo:string; favicon:string; facebook:string; twitter:string; instagram:string; youtubeChannel:string; titleSuffix:string; metaDescription:string; ogImage:string; googleAnalyticsId:string; maintenanceMode:boolean; footerText:string; homepage:{heroEnabled:boolean;heroBadge:string;heroTitle:string;heroHighlight:string;heroSubtitle:string;searchPlaceholder:string;cta1Text:string;cta1Url:string;cta2Text:string;cta2Url:string;sections:Record<SectionKey,boolean>;titles:Record<string,string>}; announcement:{enabled:boolean;text:string;buttonText:string;buttonUrl:string;background:string}; theme:{primaryColor:string;secondaryColor:string;accentColor:string}; }
+const sectionLabels:Record<SectionKey,string>={brands:'Popular Brands',latest:'Latest Phones',trending:'Trending Phones',camera:'Best Camera Phones',gaming:'Best Gaming Phones',battery:'Best Battery Phones',budget:'Budget Champions',flagship:'Premium Flagships',upcoming:'Upcoming Phones',reviews:'Latest Reviews',videos:'Latest Videos',news:'Latest News',sponsors:'Sponsor Banner',newsletter:'Newsletter',trust:'Trust Section'};
+const DEFAULTS:SiteSettings={siteName:'PhoneDock',tagline:'',contactEmail:'',supportEmail:'',logo:'',favicon:'',facebook:'',twitter:'',instagram:'',youtubeChannel:'',titleSuffix:'',metaDescription:'',ogImage:'',googleAnalyticsId:'',maintenanceMode:false,footerText:'',homepage:{heroEnabled:true,heroBadge:"Pakistan's #1 Phone Database",heroTitle:'Find Your Perfect',heroHighlight:'Smartphone',heroSubtitle:'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.',searchPlaceholder:'Search phones, brands or chipsets...',cta1Text:'',cta1Url:'',cta2Text:'',cta2Url:'',sections:Object.fromEntries(Object.keys(sectionLabels).map(k=>[k,true])) as Record<SectionKey,boolean>,titles:{...sectionLabels}},announcement:{enabled:false,text:'',buttonText:'',buttonUrl:'',background:'#2563eb'},theme:{primaryColor:'#2563eb',secondaryColor:'#7c3aed',accentColor:'#06b6d4'}};
+function Card({title,icon:Icon,children}:{title:string;icon:React.ElementType;children:React.ReactNode}){return <section className="card-premium p-5"><div className="flex items-center gap-2 mb-4"><Icon className="w-5 h-5 text-blue-500"/><h2 className="font-bold text-gray-900">{title}</h2></div>{children}</section>}
+function Input({label,value,onChange,type='text',placeholder=''}:{label:string;value:string;onChange:(v:string)=>void;type?:string;placeholder?:string}){return <label className="block"><span className="text-xs font-medium text-gray-700">{label}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"/></label>}
+function Toggle({label,value,onChange}:{label:string;value:boolean;onChange:(v:boolean)=>void}){return <button type="button" onClick={()=>onChange(!value)} className="flex items-center justify-between w-full p-3 rounded-xl border border-gray-200 bg-white"><span className="text-sm font-medium text-gray-800">{label}</span><span className={`relative w-11 h-6 rounded-full ${value?'bg-blue-500':'bg-gray-300'}`}><span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value?'translate-x-5':'translate-x-0.5'}`}/></span></button>}
+export default function AdminSettingsPage(){
+ const {admin,loading:authLoading}=useAdmin(); const [form,setForm]=useState(DEFAULTS); const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [saved,setSaved]=useState(false); const [error,setError]=useState('');
+ const load=useCallback(async()=>{try{const r=await fetch('/api/admin/settings',{credentials:'include'});const d=await r.json();if(!r.ok)throw new Error(d.error||'Load failed');setForm(prev=>({...prev,...d.settings,homepage:{...prev.homepage,...d.settings?.homepage,sections:{...prev.homepage.sections,...d.settings?.homepage?.sections},titles:{...prev.homepage.titles,...d.settings?.homepage?.titles}},announcement:{...prev.announcement,...d.settings?.announcement},theme:{...prev.theme,...d.settings?.theme}}));}catch(e){setError(e instanceof Error?e.message:'Load failed')}finally{setLoading(false)}},[]);
+ useEffect(()=>{if(!authLoading&&admin)load();else if(!authLoading)setLoading(false)},[authLoading,admin,load]);
+ const set=(key:keyof SiteSettings,v:unknown)=>setForm(f=>({...f,[key]:v})); const hp=(key:string,v:unknown)=>setForm(f=>({...f,homepage:{...f.homepage,[key]:v}}));
+ const save=async()=>{setSaving(true);setError('');try{const r=await fetch('/api/admin/settings',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Save failed');setSaved(true);setTimeout(()=>setSaved(false),2200)}catch(e){setError(e instanceof Error?e.message:'Save failed')}finally{setSaving(false)}};
+ if(authLoading||loading)return <div className="py-24 flex justify-center"><Loader2 className="animate-spin"/></div>; if(!admin)return null;
+ return <div className="space-y-5 pb-16"><div className="flex items-center justify-between sticky top-0 z-20 bg-gray-50/90 backdrop-blur py-3"><div><h1 className="text-xl font-extrabold">Website CMS & Settings</h1><p className="text-xs text-muted-foreground">Homepage, hero, sections, branding, SEO aur footer ko admin se control karein</p></div><button onClick={save} disabled={saving} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold flex gap-2 items-center disabled:opacity-50">{saving?<Loader2 className="w-4 h-4 animate-spin"/>:saved?<Check className="w-4 h-4"/>:<Settings className="w-4 h-4"/>}{saving?'Saving...':saved?'Saved':'Save All'}</button></div>
+ {error&&<div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{error}</div>}
+ <div className="grid lg:grid-cols-2 gap-4">
+  <Card title="Hero Banner" icon={LayoutDashboard}><div className="space-y-3"><Toggle label="Show Hero Banner" value={form.homepage.heroEnabled} onChange={v=>hp('heroEnabled',v)}/><Input label="Top Badge" value={form.homepage.heroBadge} onChange={v=>hp('heroBadge',v)}/><div className="grid grid-cols-2 gap-3"><Input label="Main Title" value={form.homepage.heroTitle} onChange={v=>hp('heroTitle',v)}/><Input label="Highlighted Word" value={form.homepage.heroHighlight} onChange={v=>hp('heroHighlight',v)}/></div><label className="block"><span className="text-xs font-medium">Subtitle</span><textarea rows={3} value={form.homepage.heroSubtitle} onChange={e=>hp('heroSubtitle',e.target.value)} className="mt-1 w-full px-3 py-2 border rounded-xl text-sm"/></label><Input label="Search Placeholder" value={form.homepage.searchPlaceholder} onChange={v=>hp('searchPlaceholder',v)}/><div className="grid grid-cols-2 gap-3"><Input label="CTA 1 Text" value={form.homepage.cta1Text} onChange={v=>hp('cta1Text',v)}/><Input label="CTA 1 URL" value={form.homepage.cta1Url} onChange={v=>hp('cta1Url',v)}/><Input label="CTA 2 Text" value={form.homepage.cta2Text} onChange={v=>hp('cta2Text',v)}/><Input label="CTA 2 URL" value={form.homepage.cta2Url} onChange={v=>hp('cta2Url',v)}/></div></div></Card>
+  <Card title="Announcement Bar" icon={Megaphone}><div className="space-y-3"><Toggle label="Enable Announcement Bar" value={form.announcement.enabled} onChange={v=>set('announcement',{...form.announcement,enabled:v})}/><Input label="Message" value={form.announcement.text} onChange={v=>set('announcement',{...form.announcement,text:v})}/><div className="grid grid-cols-2 gap-3"><Input label="Button Text" value={form.announcement.buttonText} onChange={v=>set('announcement',{...form.announcement,buttonText:v})}/><Input label="Button URL" value={form.announcement.buttonUrl} onChange={v=>set('announcement',{...form.announcement,buttonUrl:v})}/></div><Input label="Background Color" type="color" value={form.announcement.background} onChange={v=>set('announcement',{...form.announcement,background:v})}/></div></Card>
+  <Card title="Homepage Sections" icon={ImageIcon}><div className="grid sm:grid-cols-2 gap-2">{(Object.keys(sectionLabels) as SectionKey[]).map(k=><div key={k} className="space-y-2 p-3 border rounded-xl"><Toggle label={sectionLabels[k]} value={form.homepage.sections[k]} onChange={v=>hp('sections',{...form.homepage.sections,[k]:v})}/>{k in form.homepage.titles&&<Input label="Custom Title" value={form.homepage.titles[k]||''} onChange={v=>hp('titles',{...form.homepage.titles,[k]:v})}/>}</div>)}</div></Card>
+  <Card title="Branding & Theme" icon={Palette}><div className="space-y-3"><Input label="Site Name" value={form.siteName} onChange={v=>set('siteName',v)}/><Input label="Tagline" value={form.tagline} onChange={v=>set('tagline',v)}/><Input label="Logo URL" value={form.logo} onChange={v=>set('logo',v)}/><Input label="Favicon URL" value={form.favicon} onChange={v=>set('favicon',v)}/><div className="grid grid-cols-3 gap-3"><Input label="Primary" type="color" value={form.theme.primaryColor} onChange={v=>set('theme',{...form.theme,primaryColor:v})}/><Input label="Secondary" type="color" value={form.theme.secondaryColor} onChange={v=>set('theme',{...form.theme,secondaryColor:v})}/><Input label="Accent" type="color" value={form.theme.accentColor} onChange={v=>set('theme',{...form.theme,accentColor:v})}/></div></div></Card>
+  <Card title="SEO" icon={Search}><div className="space-y-3"><Input label="Title Suffix" value={form.titleSuffix} onChange={v=>set('titleSuffix',v)}/><label className="block"><span className="text-xs font-medium">Meta Description</span><textarea rows={3} value={form.metaDescription} onChange={e=>set('metaDescription',e.target.value)} className="mt-1 w-full px-3 py-2 border rounded-xl text-sm"/></label><Input label="OG Image URL" value={form.ogImage} onChange={v=>set('ogImage',v)}/><Input label="Google Analytics ID" value={form.googleAnalyticsId} onChange={v=>set('googleAnalyticsId',v)}/></div></Card>
+  <Card title="Social Links" icon={Share2}><div className="space-y-3"><Input label="Facebook" value={form.facebook} onChange={v=>set('facebook',v)}/><Input label="X / Twitter" value={form.twitter} onChange={v=>set('twitter',v)}/><Input label="Instagram" value={form.instagram} onChange={v=>set('instagram',v)}/><Input label="YouTube" value={form.youtubeChannel} onChange={v=>set('youtubeChannel',v)}/></div></Card>
+  <Card title="Footer & Contact" icon={Globe}><div className="space-y-3"><Input label="Contact Email" value={form.contactEmail} onChange={v=>set('contactEmail',v)}/><Input label="Support Email" value={form.supportEmail} onChange={v=>set('supportEmail',v)}/><label className="block"><span className="text-xs font-medium">Footer Text</span><textarea rows={3} value={form.footerText} onChange={e=>set('footerText',e.target.value)} className="mt-1 w-full px-3 py-2 border rounded-xl text-sm"/></label></div></Card>
+  <Card title="Advanced" icon={Shield}><Toggle label="Maintenance Mode" value={form.maintenanceMode} onChange={v=>set('maintenanceMode',v)}/></Card>
+ </div></div>
 }

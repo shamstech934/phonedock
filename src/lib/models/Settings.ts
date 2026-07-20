@@ -17,6 +17,9 @@ export interface ISettings extends Document {
   googleAnalyticsId: string;
   maintenanceMode: boolean;
   footerText: string;
+  homepage: Record<string, unknown>;
+  announcement: Record<string, unknown>;
+  theme: Record<string, unknown>;
   updatedAt: Date;
 }
 
@@ -37,6 +40,13 @@ const SettingsSchema = new Schema<ISettings>({
   googleAnalyticsId: { type: String, default: '' },
   maintenanceMode: { type: Boolean, default: false },
   footerText: { type: String, default: '' },
+  homepage: { type: Schema.Types.Mixed, default: {
+    heroEnabled: true, heroBadge: "Pakistan's #1 Phone Database", heroTitle: 'Find Your Perfect', heroHighlight: 'Smartphone', heroSubtitle: 'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.', searchPlaceholder: 'Search phones, brands or chipsets...', cta1Text: '', cta1Url: '', cta2Text: '', cta2Url: '',
+    sections: { brands: true, latest: true, trending: true, camera: true, gaming: true, battery: true, budget: true, flagship: true, upcoming: true, reviews: true, videos: true, news: true, sponsors: true, newsletter: true, trust: true },
+    titles: { brands: 'Popular Brands', latest: 'Latest Phones', trending: 'Trending Phones', camera: 'Best Camera Phones', gaming: 'Best Gaming Phones', battery: 'Best Battery Phones', budget: 'Budget Champions', flagship: 'Premium Flagships', upcoming: 'Upcoming Phones', reviews: 'Latest Reviews', videos: 'Latest Videos', news: 'Latest News' }
+  } },
+  announcement: { type: Schema.Types.Mixed, default: { enabled: false, text: '', buttonText: '', buttonUrl: '', background: '#2563eb' } },
+  theme: { type: Schema.Types.Mixed, default: { primaryColor: '#2563eb', secondaryColor: '#7c3aed', accentColor: '#06b6d4' } },
 }, { timestamps: true });
 
 // Singleton: only one document

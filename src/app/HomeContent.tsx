@@ -299,14 +299,26 @@ function ComingSoonTeasers() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-export default function HomeContent({ homeData, heroPhones }: { homeData: HomeData; heroPhones: HeroPhone[] }) {
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; sections?: Record<string, boolean>; titles?: Record<string, string> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+
+export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
   const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 5);
   const budgetPhones = data.featured.filter(p => p.pricePKR > 0 && p.pricePKR <= 40000).slice(0, 5);
+  const cms = siteSettings?.homepage || {};
+  const sections = cms.sections || {};
+  const titles = cms.titles || {};
+  const visible = (key: string) => sections[key] !== false;
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
+      {siteSettings?.announcement?.enabled && siteSettings.announcement.text && (
+        <div className="px-4 py-2 text-center text-sm font-medium text-white" style={{ background: siteSettings.announcement.background || '#2563eb' }}>
+          <span>{siteSettings.announcement.text}</span>
+          {siteSettings.announcement.buttonText && siteSettings.announcement.buttonUrl && <Link href={siteSettings.announcement.buttonUrl} className="ml-3 underline font-bold">{siteSettings.announcement.buttonText}</Link>}
+        </div>
+      )}
       <main className="flex-1">
         <div className="relative">
           <div className="glass-orb glass-orb-cyan" />
@@ -314,7 +326,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
           <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
 
             {/* ===== 1. HERO ===== */}
-            <section className="hero-gradient rounded-3xl text-white relative sky-glow">
+            {cms.heroEnabled !== false && <section className="hero-gradient rounded-3xl text-white relative sky-glow">
               {/* Background effects — clipped to rounded corners */}
               <div className="hero-shimmer-effect absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
                 <div className="hero-particles">
@@ -333,17 +345,17 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                   <div className="w-full lg:w-[45%]">
                     <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
                       <Badge className="bg-white/10 backdrop-blur-md text-white border border-white/20 mb-3 sm:mb-5 text-[10px] sm:text-xs font-medium">
-                        <Trophy className="w-3 h-3 mr-1" /> Pakistan&apos;s #1 Phone Database
+                        <Trophy className="w-3 h-3 mr-1" /> {cms.heroBadge || "Pakistan's #1 Phone Database"}
                       </Badge>
                     </div>
                     <h1 className="hero-text-reveal font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3 sm:mb-4 leading-tight tracking-tight" style={{ animationDelay: '0.25s' }}>
-                      Find Your Perfect <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.74em' }}>Smartphone</span>
+                      {cms.heroTitle || 'Find Your Perfect'} <span className="text-blue-400 hero-float" style={{ display: 'inline-block', fontSize: '0.74em' }}>{cms.heroHighlight || 'Smartphone'}</span>
                     </h1>
                     <p className="hero-animate text-gray-300/80 text-xs sm:text-base mb-4 sm:mb-6 leading-relaxed" style={{ animationDelay: '0.5s' }}>
-                      Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.
+                      {cms.heroSubtitle || 'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.'}
                     </p>
 
-                    <HomeHeroSearch />
+                    <HomeHeroSearch placeholder={cms.searchPlaceholder} />
 
                     <div className="flex flex-wrap gap-3 sm:gap-5 mt-4 sm:mt-6 text-[10px] sm:text-sm text-gray-300/70">
                       <span className="hero-feature-slide flex items-center gap-1 sm:gap-1.5" style={{ animationDelay: '1.1s' }}><Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> PTA Status</span>
@@ -364,7 +376,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
                   </div>
                 </div>
               </div>
-            </section>
+            </section>}
 
             {/* ===== 2. QUICK CATEGORIES ===== */}
             <QuickCategoryStrip />
@@ -373,42 +385,42 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
             <PakistanTrustBar />
 
             {/* ===== 4. POPULAR BRANDS ===== */}
-            <BrandsGrid brands={data.brands} />
+            {visible('brands') && <BrandsGrid brands={data.brands} />}
 
             {/* ===== 5. LATEST PHONES ===== */}
-            <PhoneSection phones={data.latest} title="Latest Phones" icon={Clock} link="/phones" linkText="All Phones" showEmpty />
+            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones" linkText="All Phones" showEmpty />}
 
             {/* ===== 6. TRENDING PHONES ===== */}
-            <PhoneSection phones={data.trending} title="Trending Phones" icon={TrendingUp} link="/phones" linkText="All Phones" showEmpty />
+            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones" linkText="All Phones" showEmpty />}
 
             {/* ===== 7. BEST CAMERA PHONES ===== */}
-            <PhoneSection phones={data.bestCamera} title="Best Camera Phones" icon={Camera} link="/best-camera-phone" linkText="See All" />
+            {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" />}
 
             {/* ===== 8. BEST GAMING PHONES ===== */}
-            <PhoneSection phones={data.bestGaming} title="Best Gaming Phones" icon={Cpu} link="/best-gaming-phone" linkText="See All" />
+            {visible('gaming') && <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" />}
 
             {/* ===== 9. BEST BATTERY PHONES ===== */}
-            <PhoneSection phones={data.bestBattery} title="Best Battery Phones" icon={Battery} link="/best-battery-phone" linkText="See All" />
+            {visible('battery') && <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" />}
 
             {/* ===== 10. BUDGET CHAMPIONS ===== */}
-            <CompactTopPhones phones={budgetPhones} title="Budget Champions" icon={Tag} gradient="from-green-500 to-emerald-600" link="/best-budget-phone" />
+            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} gradient="from-green-500 to-emerald-600" link="/best-budget-phone" />}
 
             {/* ===== 11. PREMIUM FLAGSHIPS ===== */}
-            <CompactTopPhones phones={flagshipPhones} title="Premium Flagships" icon={Star} gradient="from-amber-500 to-orange-500" link="/best-value-phone" linkText="See All" />
+            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} gradient="from-amber-500 to-orange-500" link="/best-value-phone" linkText="See All" />}
 
             {/* ===== 12. UPCOMING PHONES ===== */}
-            <CompactTopPhones phones={data.upcoming} title="Upcoming Phones" icon={Clock} gradient="from-indigo-500 to-violet-600" link="/upcoming" />
+            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} gradient="from-indigo-500 to-violet-600" link="/upcoming" />}
 
             {/* ===== 13. LATEST REVIEWS ===== */}
-            <HomeReviewsSection phones={data.featured} />
+            {visible('reviews') && <HomeReviewsSection phones={data.featured} />}
 
             {/* ===== 14. LATEST VIDEOS ===== */}
-            <HomeVideoSection videos={data.videos} />
+            {visible('videos') && <HomeVideoSection videos={data.videos} />}
 
             {/* ===== 15. LATEST NEWS ===== */}
-            {data.news.length > 0 && (
+            {visible('news') && data.news.length > 0 && (
               <section className="space-y-5">
-                <SectionHeader title="Latest News" icon={Newspaper} link="/news" linkText="All News" />
+                <SectionHeader title={titles.news || 'Latest News'} icon={Newspaper} link="/news" linkText="All News" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {data.news.slice(0, 4).map(n => (
                     <Link key={n.id} href={`/news/${n.slug}`} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
@@ -426,7 +438,7 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
             <ComingSoonTeasers />
 
             {/* ===== 19. SPONSOR BANNER ===== */}
-            {data.sponsors && data.sponsors.length > 0 && (
+            {visible('sponsors') && data.sponsors && data.sponsors.length > 0 && (
               <section>
                 <div className="rounded-2xl overflow-hidden">
                   <div className="flex items-center gap-4 p-5 sm:p-6" style={{ background: 'linear-gradient(135deg, #111827, #1F2937)' }}>
@@ -457,10 +469,10 @@ export default function HomeContent({ homeData, heroPhones }: { homeData: HomeDa
             )}
 
             {/* ===== 20. NEWSLETTER ===== */}
-            <HomeNewsletter />
+            {visible('newsletter') && <HomeNewsletter />}
 
             {/* ===== 21. TRUST SECTION ===== */}
-            <TrustSection totalPhones={data.totalPhones} totalBrands={data.totalBrands} />
+            {visible('trust') && <TrustSection totalPhones={data.totalPhones} totalBrands={data.totalBrands} />}
           </div>
         </div>
       </main>
