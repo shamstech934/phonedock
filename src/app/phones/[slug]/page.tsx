@@ -1,8 +1,12 @@
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import PhoneDetailClient from './PhoneDetailClient';
 import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
 
-export const dynamic = 'force-dynamic';
+// Render on demand and refresh cached phone pages hourly. This avoids a database
+// round-trip on every visit while still keeping prices and specifications fresh.
+export const revalidate = 3600;
+export const dynamicParams = true;
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -13,7 +17,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const phone = await fetchPhoneDetailForMetadata(slug);
 
   if (!phone) {
-    return { title: 'Phone Not Found' };
+    return {
+      title: 'Phone Not Found',
+      robots: { index: false, follow: false },
+    };
   }
 
   const brand = (phone.brand as { name?: string } | null)?.name || '';
@@ -51,6 +58,7 @@ export default async function PhoneDetailPage({ params }: Props) {
   const { slug } = await params;
   const data = await fetchPhoneDetail(slug);
   const phone = data?.phone ?? null;
+  if (!phone) notFound();
 
   const brand = (phone?.brand as { name?: string; slug?: string } | null)?.name || '';
   const brandSlug = (phone?.brand as { name?: string; slug?: string } | null)?.slug || '';
@@ -66,12 +74,12 @@ export default async function PhoneDetailPage({ params }: Props) {
     sku: phone.slug,
     brand: brand ? { '@type': 'Brand', name: brand } : undefined,
     releaseDate: phone.releaseDate || undefined,
-    aggregateRating: phone.overallRating > 0 ? {
+    aggregateRating: Number((phone as unknown as { userReviewCount?: number }).userReviewCount || 0) > 0 ? {
       '@type': 'AggregateRating',
-      ratingValue: Math.min(5, Math.max(1, phone.overallRating / 2)).toFixed(1),
+      ratingValue: Number((phone as unknown as { userReviewAverage?: number }).userReviewAverage || 0).toFixed(1),
       bestRating: 5,
       worstRating: 1,
-      ratingCount: 1,
+      ratingCount: Number((phone as unknown as { userReviewCount?: number }).userReviewCount || 0),
     } : undefined,
     offers: phone.pricePKR > 0 ? {
       '@type': 'Offer',

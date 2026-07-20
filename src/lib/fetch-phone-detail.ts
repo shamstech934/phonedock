@@ -13,6 +13,7 @@ import {
   PhonePrice,
   Video,
   CollectedPhone,
+  UserReview,
 } from '@/lib/models';
 import {
   connectDB,
@@ -38,7 +39,7 @@ export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailD
 
   if (!phone) return null;
 
-  const [specsDoc, benchmarks, images, prices, related, phoneVideos, collectedDoc] = await Promise.all([
+  const [specsDoc, benchmarks, images, prices, related, phoneVideos, collectedDoc, reviewStats] = await Promise.all([
     PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
     PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
     PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
@@ -59,6 +60,10 @@ export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailD
       .lean(),
     Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
     CollectedPhone.findOne({ approvedPhoneId: phone._id, status: { $in: ['approved', 'imported'] } }).lean(),
+    UserReview.aggregate([
+      { $match: { phoneId: phone._id, status: 'approved' } },
+      { $group: { _id: null, count: { $sum: 1 }, average: { $avg: '$rating' } } },
+    ]),
   ]);
 
   const normalizedSpecs = normalizePhoneSpecs(
@@ -74,6 +79,12 @@ export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailD
     images as unknown as Record<string, unknown>[],
     prices as unknown as Record<string, unknown>[],
   ) as unknown as PhoneJson;
+
+  const approvedReviewStats = reviewStats[0] as { count?: number; average?: number } | undefined;
+  (phoneJSON as unknown as Record<string, unknown>).userReviewCount = approvedReviewStats?.count || 0;
+  (phoneJSON as unknown as Record<string, unknown>).userReviewAverage = approvedReviewStats?.average
+    ? Math.round(approvedReviewStats.average * 10) / 10
+    : 0;
 
   (phoneJSON as unknown as Record<string, unknown>).videos = phoneVideos.map((video) => ({
     id: video._id?.toString(),

@@ -6,6 +6,9 @@ import { getBaseUrl } from '@/lib/urls';
 
 const BASE_URL = getBaseUrl();
 
+// Avoid rebuilding the full database-backed sitemap on every crawler request.
+export const revalidate = 3600;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static pages
   // Keep static entries stable so search engines do not see a false change on every request.
