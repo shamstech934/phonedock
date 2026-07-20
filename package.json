@@ -24,7 +24,8 @@
     "production:audit": "npm run lint && npm run typecheck && npm test && npm run test:launch && npm run build",
     "test:launch": "npx tsx scripts/__tests__/sprint4-checkpoint6-batch3.test.ts",
     "clean": "node scripts/clean-project.mjs",
-    "release:prepare": "npm run clean"
+    "release:prepare": "npm run clean",
+    "test:sprint6": "npx tsx scripts/__tests__/sprint6-intelligence-data-quality.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

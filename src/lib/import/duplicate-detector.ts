@@ -1,72 +1,109 @@
-/**
- * Duplicate detection for Import Engine V2.
- * Uses normalized brand+model as primary key.
- * Tolerates casing, spacing, hyphen, punctuation differences.
- */
+/** Duplicate detection shared by Import Engine V2. */
 
 export interface DuplicateCheckResult {
   isDuplicate: boolean;
   matchType: 'exact' | 'slug' | 'likely' | 'none';
   existingSlug?: string;
   existingPhoneId?: string;
-  confidence: number; // 0-1
+  confidence: number;
 }
 
-// Normalize for comparison: lowercase, strip non-alphanumeric, collapse spaces
-function normalizeForCompare(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/\s+/g, '');
+type DuplicateEntry = { slug: string; phoneId: string; normalizedName: string; tokens: string[] };
+export type DuplicateIndex = Map<string, DuplicateEntry>;
+
+const NOISE_TOKENS = new Set(['smartphone', 'mobile', 'phone', 'official', 'global', 'edition', '5g', '4g', 'lte']);
+
+export function normalizePhoneIdentity(value: string): string {
+  return String(value || '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/\b(5g|4g|lte)\b/g, ' $1 ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(token => token && !NOISE_TOKENS.has(token))
+    .join(' ');
 }
 
-/**
- * Build a duplicate check map from existing phones.
- * Returns a Map<string, { slug, phoneId }> keyed by normalized brand+model.
- */
-export function buildDuplicateIndex(phones: Array<{ _id: { toString(): string }; slug: string; brandId?: { toString(): string }; brandName?: string; modelName: string }>): Map<string, { slug: string; phoneId: string }> {
-  const map = new Map<string, { slug: string; phoneId: string }>();
-  for (const p of phones) {
-    const key = normalizeForCompare(`${p.brandName || ''} ${p.modelName}`);
-    map.set(key, { slug: p.slug, phoneId: p._id?.toString() });
+function compact(value: string): string {
+  return normalizePhoneIdentity(value).replace(/\s+/g, '');
+}
+
+function tokens(value: string): string[] {
+  return normalizePhoneIdentity(value).split(' ').filter(Boolean);
+}
+
+function tokenSimilarity(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const aSet = new Set(a);
+  const bSet = new Set(b);
+  const intersection = [...aSet].filter(token => bSet.has(token)).length;
+  const union = new Set([...aSet, ...bSet]).size;
+  return union ? intersection / union : 0;
+}
+
+export function buildDuplicateIndex(phones: Array<{ _id: { toString(): string }; slug: string; brandId?: { toString(): string }; brandName?: string; modelName: string }>): DuplicateIndex {
+  const map: DuplicateIndex = new Map();
+  for (const phone of phones) {
+    const normalizedName = normalizePhoneIdentity(`${phone.brandName || ''} ${phone.modelName}`);
+    const entry = { slug: phone.slug, phoneId: phone._id?.toString(), normalizedName, tokens: tokens(normalizedName) };
+    map.set(compact(normalizedName), entry);
+    map.set(`slug:${compact(phone.slug)}`, entry);
   }
   return map;
 }
 
-/**
- * Check if a normalized record is a duplicate of an existing phone.
- */
 export function checkDuplicate(
   record: { brand: string; model: string; slug: string; specs?: Record<string, string> },
-  duplicateIndex: Map<string, { slug: string; phoneId: string }>,
+  duplicateIndex: DuplicateIndex,
 ): DuplicateCheckResult {
-  const key = normalizeForCompare(`${record.brand} ${record.model}`);
-
-  const match = duplicateIndex.get(key);
-  if (!match) return { isDuplicate: false, matchType: 'none', confidence: 0 };
-
-  // Exact match on brand+model
-  if (match.slug === record.slug) {
-    return { isDuplicate: true, matchType: 'exact', existingSlug: match.slug, existingPhoneId: match.phoneId, confidence: 1 };
+  const normalizedName = normalizePhoneIdentity(`${record.brand} ${record.model}`);
+  const exact = duplicateIndex.get(compact(normalizedName));
+  if (exact) {
+    const sameSlug = compact(exact.slug) === compact(record.slug);
+    return {
+      isDuplicate: true,
+      matchType: sameSlug ? 'exact' : 'likely',
+      existingSlug: exact.slug,
+      existingPhoneId: exact.phoneId,
+      confidence: sameSlug ? 1 : 0.94,
+    };
   }
 
-  // Slug match only
-  const slugKey = record.slug.toLowerCase();
-  for (const [, v] of duplicateIndex) {
-    if (v.slug.toLowerCase() === slugKey) {
-      return { isDuplicate: true, matchType: 'slug', existingSlug: v.slug, existingPhoneId: v.phoneId, confidence: 0.7 };
-    }
+  const slugMatch = duplicateIndex.get(`slug:${compact(record.slug)}`);
+  if (slugMatch) {
+    return { isDuplicate: true, matchType: 'slug', existingSlug: slugMatch.slug, existingPhoneId: slugMatch.phoneId, confidence: 0.98 };
   }
 
-  // Likely match (brand+model match but different slug due to minor variants)
-  return { isDuplicate: true, matchType: 'likely', existingSlug: match.slug, existingPhoneId: match.phoneId, confidence: 0.5 };
+  // Conservative fuzzy match: strong token overlap plus same brand token.
+  const incomingTokens = tokens(normalizedName);
+  const incomingBrand = tokens(record.brand)[0];
+  let best: { entry: DuplicateEntry; similarity: number } | null = null;
+  const uniqueEntries = new Map<string, DuplicateEntry>();
+  duplicateIndex.forEach(entry => uniqueEntries.set(entry.phoneId, entry));
+  for (const entry of uniqueEntries.values()) {
+    if (incomingBrand && !entry.tokens.includes(incomingBrand)) continue;
+    const similarity = tokenSimilarity(incomingTokens, entry.tokens);
+    if (!best || similarity > best.similarity) best = { entry, similarity };
+  }
+
+  if (best && best.similarity >= 0.84) {
+    return {
+      isDuplicate: true,
+      matchType: 'likely',
+      existingSlug: best.entry.slug,
+      existingPhoneId: best.entry.phoneId,
+      confidence: Math.min(0.93, Number(best.similarity.toFixed(2))),
+    };
+  }
+
+  return { isDuplicate: false, matchType: 'none', confidence: 0 };
 }
 
-/**
- * Generate a duplicate key for a normalized record.
- */
 export function getDuplicateKey(brand: string, model: string, specs?: Record<string, string>): string {
-  let key = normalizeForCompare(`${brand} ${model}`);
-  // Optionally include RAM/storage for variant context
-  const ram = specs?.ram?.toLowerCase().replace(/\s/g, '') || '';
-  const storage = specs?.storage?.toLowerCase().replace(/\s/g, '') || '';
+  let key = compact(`${brand} ${model}`);
+  const ram = compact(specs?.ram || '');
+  const storage = compact(specs?.storage || '');
   if (ram || storage) key += `|${ram}|${storage}`;
   return key;
 }
