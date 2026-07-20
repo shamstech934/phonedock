@@ -54,3 +54,9 @@ worklog.md
 test-results/
 playwright-report/
 blob-report/
+# Local/generated runtime files
+.zscripts/*.pid
+dev.log
+build-output.txt
+playwright-report/
+test-results/

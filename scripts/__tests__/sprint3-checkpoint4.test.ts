@@ -10,13 +10,13 @@ function check(name: string, condition: boolean) {
 const root = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
 
-const middleware = read('src/middleware.ts');
+const proxy = read('src/proxy.ts');
 const helpers = read('src/app/api/[[...path]]/handlers/helpers.ts');
 const other = read('src/lib/models/Other.ts');
 const route = read('src/app/api/[[...path]]/route.ts');
 
-check('Middleware has no process-local login rate-limit Map', !middleware.includes('loginRateLimitMap') && !middleware.includes('new Map<'));
-check('Middleware documents MongoDB-backed API rate limiting', middleware.includes('MongoDB-backed'));
+check('Middleware has no process-local login rate-limit Map', !proxy.includes('loginRateLimitMap') && !proxy.includes('new Map<'));
+check('Middleware documents MongoDB-backed API rate limiting', proxy.includes('MongoDB-backed'));
 check('Session persistence fails closed instead of swallowing create errors', helpers.includes('await AdminSession.create') && !/persistSessionRecord[\s\S]*?catch\s*\(/.test(helpers.slice(helpers.indexOf('persistSessionRecord'), helpers.indexOf('validateSessionRecord'))));
 check('Price alerts enforce one subscription per phone and email', /PriceAlertSchema\.index\(\{ phoneId: 1, email: 1 \}, \{ unique: true \}\)/.test(other));
 check('Review endpoint validates email format', route.includes("A valid email address is required"));
