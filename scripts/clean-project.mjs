@@ -11,6 +11,7 @@ const generatedPaths = [
   'dev.log',
   'build-output.txt',
   'tsconfig.tsbuildinfo',
+  '.zscripts/dev.pid',
 ];
 
 for (const path of generatedPaths) {
