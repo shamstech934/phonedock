@@ -66,6 +66,10 @@ interface HomeVideoLeanDoc {
 const toPhoneRecord = (doc: unknown): Record<string, unknown> =>
   phoneToJSON(doc as PhoneDocOrJson) as Record<string, unknown>;
 
+// Keep homepage card queries small. Long review/SEO/source fields are not rendered here.
+const HOME_PHONE_PROJECTION =
+  '-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl -manualLockReason';
+
 // ============ BATCH SPECS ATTACHMENT ============
 // (attachBasicSpecs removed — fetchHomeData now uses a single batch query below)
 
@@ -75,30 +79,30 @@ async function fetchHomeDataUncached() {
   await connectDB();
 
   const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, news, videos] = await Promise.all([
-    Phone.find({ active: true, status: 'published', featured: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', trending: true }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published' }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', cameraScore: { $gt: 0 } }).sort({ cameraScore: -1 }).limit(4).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', performanceScore: { $gt: 0 } }).sort({ performanceScore: -1 }).limit(4).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', upcoming: true }).sort({ createdAt: -1 }).limit(4).populate('brand').lean(),
-    News.find({ published: true, status: 'published' }).sort({ createdAt: -1 }).limit(6).lean(),
-    Video.find({ active: true }).sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brand').lean(),
+    Phone.find({ active: true, status: 'published', featured: true }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', trending: true }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published' }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', cameraScore: { $gt: 0 } }).sort({ cameraScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', performanceScore: { $gt: 0 } }).sort({ performanceScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', upcoming: true }).sort({ createdAt: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    News.find({ published: true, status: 'published' }).select('title slug excerpt category author image published createdAt').sort({ createdAt: -1 }).limit(6).lean(),
+    Video.find({ active: true }).select('youtubeId title thumbnailUrl publishedAt phoneId').sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brandId').lean(),
   ]);
 
   const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors, totalPhones, totalBrands] = await Promise.all([
-    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 100000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 60000, $lte: 100000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 40000, $lte: 60000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 20000, $lte: 40000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
-    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: 20000 } }).sort({ createdAt: -1 }).limit(8).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 100000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 60000, $lte: 100000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 40000, $lte: 60000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 20000, $lte: 40000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: 20000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     Brand.aggregate([
       { $match: { active: true } },
       { $sort: { sortOrder: 1 } },
       { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
       { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
     ]),
-    Sponsor.find({ active: true }).lean().catch(() => []),
+    Sponsor.find({ active: true }).select('name image url position active').lean().catch(() => []),
     Phone.countDocuments({ active: true, status: 'published' }),
     Brand.countDocuments({ active: true }),
   ]);
@@ -135,7 +139,10 @@ async function fetchHomeDataUncached() {
 
   let globalSpecsMap: Map<string, Record<string, unknown>> = new Map();
   if (allPhoneIds.length > 0) {
-    const allSpecs = await PhoneSpecs.find({ phoneId: { $in: allPhoneIds } }).lean();
+    const uniquePhoneIds = [...new Set(allPhoneIds)];
+    const allSpecs = await PhoneSpecs.find({ phoneId: { $in: uniquePhoneIds } })
+      .select('phoneId displaySize displayType refreshRate resolution chipset processor ramGB storageGB mainCamera selfieCamera batteryCapacity chargingSpeed fiveG nfc')
+      .lean();
     globalSpecsMap = buildSpecsMap(allSpecs);
   }
 

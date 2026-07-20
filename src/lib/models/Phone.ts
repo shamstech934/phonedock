@@ -145,18 +145,21 @@ PhoneSchema.pre('save', async function(this: IPhone) {
 PhoneSchema.index({ slug: 1 }, { unique: true });
 PhoneSchema.index({ createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, createdAt: -1 });
+// Public homepage/listing query indexes (filters first, sort field last).
+PhoneSchema.index({ active: 1, status: 1, featured: 1, createdAt: -1 });
+PhoneSchema.index({ active: 1, status: 1, trending: 1, createdAt: -1 });
+PhoneSchema.index({ active: 1, status: 1, upcoming: 1, createdAt: -1 });
+PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
+PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });
 PhoneSchema.index({ brandId: 1, status: 1 });
 PhoneSchema.index({ active: 1, status: 1, pricePKR: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ featured: 1 });
-PhoneSchema.index({ active: 1, upcoming: 1 });
 PhoneSchema.index({ modelName: 'text', description: 'text', keywords: 'text' });
 // Score-based sort indexes for top-phones ranking pages
 PhoneSchema.index({ active: 1, status: 1, overallRating: -1 });
-PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });
-PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
-PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, valueScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, displayScore: -1 });
 

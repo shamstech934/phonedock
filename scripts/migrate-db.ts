@@ -143,6 +143,14 @@ async function main() {
     'phone_brandId_status': { key: { brandId: 1, status: 1 } },
     'phone_status_active': { key: { status: 1, active: 1 } },
     'phone_text_search': { key: { modelName: 'text', slug: 'text' } },
+    'phone_public_latest': { key: { active: 1, status: 1, createdAt: -1 } },
+    'phone_public_featured': { key: { active: 1, status: 1, featured: 1, createdAt: -1 } },
+    'phone_public_trending': { key: { active: 1, status: 1, trending: 1, createdAt: -1 } },
+    'phone_public_upcoming': { key: { active: 1, status: 1, upcoming: 1, createdAt: -1 } },
+    'phone_public_price': { key: { active: 1, status: 1, pricePKR: 1, createdAt: -1 } },
+    'phone_public_camera': { key: { active: 1, status: 1, cameraScore: -1 } },
+    'phone_public_performance': { key: { active: 1, status: 1, performanceScore: -1 } },
+    'phone_public_battery': { key: { active: 1, status: 1, batteryScore: -1 } },
   };
 
   for (const [name, spec] of Object.entries(phoneIndexes)) {
