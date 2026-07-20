@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2,
+  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -142,19 +142,6 @@ function CompareContent() {
     setAutocompleteResults([]);
   };
 
-  const shareComparison = async () => {
-    const url = window.location.href;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'PhoneDock phone comparison', url });
-      } else {
-        await navigator.clipboard.writeText(url);
-      }
-    } catch {
-      // The user may cancel the native share sheet; no error state is needed.
-    }
-  };
-
   const comparePhones = selected;
 
   const getWinner = (key: 'cameraScore' | 'performanceScore' | 'batteryScore' | 'valueScore') => {
@@ -284,16 +271,9 @@ function CompareContent() {
                 <Plus className="w-4 h-4" /> Add Phones
               </button>
             )}
-            <div className="ml-auto flex items-center gap-1">
-              {compared && (
-                <button onClick={shareComparison} className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1" aria-label="Share this comparison">
-                  <Share2 className="w-3.5 h-3.5" /> Share
-                </button>
-              )}
-              <button onClick={clearAll} className="text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors" aria-label="Clear all selected phones">
-                Clear All
-              </button>
-            </div>
+            <button onClick={clearAll} className="ml-auto text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors" aria-label="Clear all selected phones">
+              Clear All
+            </button>
           </div>
         </div>
       )}
@@ -303,7 +283,7 @@ function CompareContent() {
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="p-4 sm:p-5 pb-0">
             <DialogTitle>Search & Add Phones</DialogTitle>
-            <DialogDescription>Select 2 to 4 phones to compare. Type at least 2 characters to search.</DialogDescription>
+            <DialogDescription>Select 2 to 6 phones to compare. Type at least 2 characters to search.</DialogDescription>
           </DialogHeader>
           <div className="px-4 sm:px-5 pt-3">
             <div className="relative">
@@ -446,7 +426,7 @@ function CompareContent() {
           <>
             {/* Sticky visual phone header for long comparisons */}
             <section className="sticky top-[8.5rem] z-20 rounded-2xl border border-gray-200/70 bg-white/95 p-3 shadow-sm backdrop-blur-xl">
-              <div className={`grid gap-2 ${comparePhones.length === 2 ? 'grid-cols-2' : comparePhones.length === 3 ? 'grid-cols-3' : comparePhones.length === 4 ? 'grid-cols-4' : comparePhones.length === 5 ? 'grid-cols-3 lg:grid-cols-5' : 'grid-cols-3 lg:grid-cols-6'}`}>
+              <div className={`grid gap-2 ${comparePhones.length === 2 ? 'grid-cols-2' : comparePhones.length === 3 ? 'grid-cols-3' : comparePhones.length === 4 ? 'grid-cols-4' : 'grid-cols-4'}`}>
                 {comparePhones.map(phone => (
                   <Link key={phone.id} href={`/phones/${phone.slug}`} className="group min-w-0 rounded-xl px-2 py-2 text-center hover:bg-blue-50 transition-colors">
                     <SafePhoneImage src={phone.thumbnail} alt={phone.modelName} width={42} height={42} className="mx-auto h-10 w-10 rounded-lg bg-gray-50 object-contain p-1" />
@@ -473,6 +453,7 @@ function CompareContent() {
                             <Link href={`/phones/${winner.slug}`} className="font-bold text-sm leading-snug hover:underline">{winner.modelName}</Link>
                             <p className="text-xs text-white/70 mt-1">{winner.brand?.name}</p>
                             <p className="text-2xl font-extrabold mt-2">{winner[cat.key] || 0}<span className="text-sm font-medium text-white/70">/100</span></p>
+                            {winner.compareScoresEstimated && <p className="mt-1 text-[10px] font-medium text-white/70">Estimated from available specs</p>}
                           </>
                         ) : (
                           <>

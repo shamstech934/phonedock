@@ -62,6 +62,98 @@ function cachedError(msg: string, status: number, sMaxAge: number, swr: number) 
 
 // ============ BATCH SPECS ATTACHMENT (reusable) ============
 
+
+function firstNumber(value: unknown): number {
+  const match = String(value ?? '').replace(/,/g, '').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+function clampScore(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function deriveCompareScores(phone: PhoneJson, specs: Record<string, unknown> | null, benchmark?: Record<string, unknown> | null): PhoneJson {
+  const current = phone as PhoneJson & Record<string, unknown>;
+  const hasStoredScores = ['cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'valueScore']
+    .some(key => Number(current[key] || 0) > 0);
+  if (hasStoredScores) return phone;
+
+  const mainCameraMP = firstNumber(specs?.mainCameraMP || specs?.mainCamera);
+  const batteryMAh = firstNumber(specs?.batteryMAh || specs?.battery);
+  const refreshRate = firstNumber(specs?.refreshRate);
+  const chargingW = firstNumber(specs?.chargingSpeed || specs?.charging);
+  const antutu = firstNumber(benchmark?.antutu);
+  const gaming = firstNumber(benchmark?.gamingScore);
+  const displayType = String(specs?.displayType || '').toLowerCase();
+  const chipset = String(specs?.chipset || '').trim();
+  const ois = String(specs?.ois || '').toLowerCase();
+  const price = Number(current.pricePKR || 0);
+
+  const cameraScore = clampScore(
+    (mainCameraMP ? Math.min(62, 28 + mainCameraMP * 0.34) : 0) +
+    (/yes|supported|true/.test(ois) ? 12 : 0) +
+    (String(specs?.ultrawide || '').trim() ? 8 : 0) +
+    (String(specs?.telephoto || '').trim() ? 10 : 0)
+  );
+  const performanceScore = clampScore(
+    antutu ? 35 + Math.min(60, antutu / 25000) :
+    gaming ? Math.min(95, gaming) :
+    chipset ? 58 : 0
+  );
+  const batteryScore = clampScore(
+    (batteryMAh ? Math.min(72, batteryMAh / 75) : 0) +
+    (chargingW ? Math.min(22, chargingW / 4) : 0) +
+    (String(specs?.wirelessCharge || '').trim() ? 5 : 0)
+  );
+  const displayScore = clampScore(
+    (displayType.includes('amoled') || displayType.includes('oled') ? 55 : displayType ? 38 : 0) +
+    (refreshRate ? Math.min(30, refreshRate / 4) : 0) +
+    (String(specs?.resolution || '').trim() ? 10 : 0)
+  );
+
+  const available = [cameraScore, performanceScore, batteryScore, displayScore].filter(v => v > 0);
+  const baseAverage = available.length ? available.reduce((a, b) => a + b, 0) / available.length : 0;
+  const priceBonus = price > 0 ? Math.max(-12, Math.min(16, (100000 - price) / 6000)) : 0;
+  const valueScore = clampScore(baseAverage + priceBonus);
+  const overall = available.length ? Math.round(((baseAverage + valueScore) / 2) * 10) / 100 : 0;
+
+  return {
+    ...phone,
+    cameraScore,
+    performanceScore,
+    batteryScore,
+    displayScore,
+    valueScore,
+    overallRating: Number(current.overallRating || 0) > 0 ? Number(current.overallRating) : overall,
+    compareScoresEstimated: true,
+  } as PhoneJson;
+}
+
+async function attachCompareData(phones: PhoneDocOrJson[]): Promise<PhoneJson[]> {
+  if (phones.length === 0) return [];
+  const ids = phones.map(p => p._id?.toString()).filter((id): id is string => Boolean(id));
+  const [specDocs, benchmarkDocs, collectedDocs] = await Promise.all([
+    PhoneSpecs.find({ phoneId: { $in: ids } }).lean(),
+    PhoneBenchmark.find({ phoneId: { $in: ids } }).lean(),
+    CollectedPhone.find({ approvedPhoneId: { $in: ids }, status: { $in: ['approved', 'imported'] } }).lean(),
+  ]);
+  const specMap = new Map(specDocs.map(doc => [doc.phoneId?.toString(), doc as unknown as Record<string, unknown>]));
+  const benchmarkMap = new Map(benchmarkDocs.map(doc => [doc.phoneId?.toString(), doc as unknown as Record<string, unknown>]));
+  const collectedMap = new Map(collectedDocs.map(doc => [doc.approvedPhoneId?.toString(), doc as unknown as Record<string, unknown>]));
+
+  return phones.map(raw => {
+    const id = raw._id?.toString() || '';
+    const normalized = normalizePhoneSpecs(
+      specMap.get(id) || null,
+      raw as unknown as Record<string, unknown>,
+      collectedMap.get(id) || null,
+    );
+    const serialized = normalized ? normalizedToSerialized(normalized) : null;
+    const json = phoneToJSON(raw, serialized || undefined, benchmarkMap.get(id));
+    return deriveCompareScores(json, serialized, benchmarkMap.get(id));
+  });
+}
+
 async function attachListSpecs(phones: PhoneDocOrJson[]): Promise<PhoneJson[]> {
   if (phones.length === 0) return phones as PhoneJson[];
   const ids = phones.map(p => p._id?.toString()).filter((id): id is string => Boolean(id));
@@ -138,27 +230,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     else if (ptaFilter === 'pending') filter.ptaApproved = false;
     if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
     if (search) {
-      const safe = escapeRegex(search.trim());
-      const searchRegex = { $regex: safe, $options: 'i' };
-      const [matchingBrands, matchingSpecs] = await Promise.all([
-        Brand.find({ name: searchRegex }).select('_id').limit(50).lean(),
-        PhoneSpecs.find({
-          $or: [
-            { chipset: searchRegex },
-            { cpu: searchRegex },
-            { gpu: searchRegex },
-            { ram: searchRegex },
-            { storage: searchRegex },
-            { displayType: searchRegex },
-            { os: searchRegex },
-          ],
-        }).select('phoneId').limit(500).lean(),
-      ]);
+      const safe = escapeRegex(search);
       filter.$or = [
-        { modelName: searchRegex },
-        { slug: searchRegex },
-        ...(matchingBrands.length ? [{ brandId: { $in: matchingBrands.map(item => item._id) } }] : []),
-        ...(matchingSpecs.length ? [{ _id: { $in: matchingSpecs.map(item => item.phoneId) } }] : []),
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
       ];
     }
     if (brand) { const b = await Brand.findOne({ slug: brand }).lean(); if (b) filter.brandId = b._id; }
@@ -174,15 +249,13 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const priceMax = parseFloat(url.searchParams.get('priceMax') || '');
     const cameraMin = parseFloat(url.searchParams.get('cameraMin') || '');
     const batteryMin = parseFloat(url.searchParams.get('batteryMin') || '');
-    const displayType = (url.searchParams.get('displayType') || '').trim();
-    const refreshMin = parseFloat(url.searchParams.get('refreshMin') || '');
 
     // Price range filter on Phone model
     if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
     if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || displayType !== '' || !isNaN(refreshMin) || fiveGFilter !== '' || nfcFilter !== '';
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '';
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
@@ -194,8 +267,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $lte: screenMax };
       if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
       if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
-      if (displayType) specFilter.displayType = { $regex: escapeRegex(displayType), $options: 'i' };
-      if (!isNaN(refreshMin)) specFilter.refreshRate = { $regex: new RegExp(`(?:^|\D)(?:${Math.ceil(refreshMin)}|1[2-9]\d|[2-9]\d{2,})(?:\D|$)`, 'i') };
       if (fiveGFilter === 'yes') specFilter.fiveG = { $regex: /yes|supported|true/i };
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
@@ -235,7 +306,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const phones = await Phone.find(filter)
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .populate('brand').lean();
-    const phonesWithSpecs = await attachListSpecs(phones);
+    const phonesWithSpecs = await attachCompareData(phones);
     const orderMap = new Map<string, number>();
     slugs.forEach((slug, index) => orderMap.set(`slug:${slug}`, index));
     ids.forEach((id, index) => orderMap.set(`id:${id}`, slugs.length + index));

@@ -114,6 +114,7 @@ export interface Phone {
   batteryScore: number;
   displayScore: number;
   valueScore: number;
+  compareScoresEstimated?: boolean;
   ptaStatus: string;
   ptaApproved: boolean;
   releaseDate: string;
