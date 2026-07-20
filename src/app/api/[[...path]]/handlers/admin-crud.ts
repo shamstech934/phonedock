@@ -801,6 +801,75 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     return NextResponse.json({ settings: { id: settings._id?.toString(), ...settings, _id: undefined } });
   }
 
+  // ---- /api/admin/reviews/stats ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews' && segments[2] === 'stats') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [total, pending, approved, rejected, flagged, spam, todayReviews] = await Promise.all([
+      UserReview.estimatedDocumentCount(),
+      UserReview.countDocuments({ status: 'pending' }),
+      UserReview.countDocuments({ status: 'approved' }),
+      UserReview.countDocuments({ status: 'rejected' }),
+      UserReview.countDocuments({ status: 'flagged' }),
+      UserReview.countDocuments({ spamFlags: { $exists: true, $ne: [] } }),
+      UserReview.countDocuments({ createdAt: { $gte: todayStart } }),
+    ]);
+    const avgRating = await UserReview.aggregate([{ $group: { _id: null, avg: { $avg: '$rating' } } }]);
+    return NextResponse.json({ total, pending, approved, rejected, flagged, spam, todayReviews, avgRating: avgRating[0]?.avg ? Number(avgRating[0].avg.toFixed(1)) : 0 });
+  }
+
+  // ---- /api/admin/reviews ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const filter: Record<string, unknown> = {};
+    const status = url.searchParams.get('status') || 'all';
+    if (status === 'spam') filter.spamFlags = { $exists: true, $ne: [] };
+    else if (status !== 'all') filter.status = status;
+    const search = (url.searchParams.get('search') || '').trim();
+    if (search.length >= 2) {
+      const safe = escapeRegex(search);
+      filter.$or = [{ name: { $regex: safe, $options: 'i' } }, { comment: { $regex: safe, $options: 'i' } }, { email: { $regex: safe, $options: 'i' } }];
+    }
+    const rating = Number(url.searchParams.get('rating'));
+    if (Number.isInteger(rating) && rating >= 1 && rating <= 5) filter.rating = rating;
+    const sortParam = url.searchParams.get('sort');
+    let sort: MongooseSort = { createdAt: -1 };
+    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    else if (sortParam === 'highest') sort = { rating: -1, createdAt: -1 };
+    else if (sortParam === 'lowest') sort = { rating: 1, createdAt: -1 };
+    const [reviews, total] = await Promise.all([
+      UserReview.find(filter).sort(sort).skip((page - 1) * limit).limit(limit).lean(),
+      UserReview.countDocuments(filter),
+    ]);
+    const phoneIds = [...new Set(reviews.map((r: { phoneId?: { toString(): string } }) => r.phoneId?.toString()).filter((id): id is string => Boolean(id)))];
+    const phones = phoneIds.length
+      ? await Phone.find({ _id: { $in: phoneIds } }).select('modelName slug thumbnail brand').populate('brand', 'name').lean()
+      : [];
+    const phoneMap = Object.fromEntries(phones.map((phone: { _id: { toString(): string }; modelName?: string; slug?: string; thumbnail?: string; brand?: { name?: string } }) => [
+      phone._id.toString(),
+      { modelName: phone.modelName || '', slug: phone.slug || '', thumbnail: phone.thumbnail || '', brand: phone.brand?.name || '' },
+    ]));
+    return NextResponse.json({
+      reviews: reviews.map((review: Record<string, unknown> & { _id?: { toString(): string }; phoneId?: { toString(): string } }) => ({
+        ...review,
+        id: review._id?.toString(),
+        phone: phoneMap[review.phoneId?.toString() || ''] || null,
+        email: undefined,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  }
+
   return undefined;
 }
 
@@ -1694,6 +1763,31 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     revalidatePath('/admin/settings');
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings', entityId: 'main' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
+  }
+
+  // ---- /api/admin/reviews/:id ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'reviews') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:edit'); if (permCheck) return permCheck;
+    if (!mongoose.Types.ObjectId.isValid(segments[2])) return NextResponse.json({ error: 'Invalid review id' }, { status: 400 });
+    await connectDB();
+    const body = await req.json();
+    const review = await UserReview.findById(segments[2]);
+    if (!review) return NextResponse.json({ error: 'Review not found' }, { status: 404 });
+    const requestedStatus = typeof body.status === 'string' ? body.status : '';
+    const validStatuses = ['approved', 'rejected', 'flagged', 'pending'];
+    if (requestedStatus === 'spam') {
+      review.status = 'flagged';
+      if (!review.spamFlags.includes('manual-spam')) review.spamFlags.push('manual-spam');
+    } else if (validStatuses.includes(requestedStatus)) {
+      review.status = requestedStatus;
+      if (requestedStatus !== 'flagged') review.spamFlags = review.spamFlags.filter((flag: string) => flag !== 'manual-spam');
+    } else if (requestedStatus) {
+      return NextResponse.json({ error: 'Invalid review status' }, { status: 400 });
+    }
+    await review.save();
+    try { await ActivityLog.create({ adminId: admin._id, action: `${requestedStatus || 'update'}_review`, details: `Updated review by ${review.name}`, entityType: 'review', entityId: segments[2] }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, status: requestedStatus === 'spam' ? 'spam' : review.status });
   }
 
   return undefined;

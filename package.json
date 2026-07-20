@@ -22,7 +22,9 @@
     "scores:preview": "npx tsx scripts/calc-scores.ts --dry-run",
     "scores:calculate": "npx tsx scripts/calc-scores.ts",
     "production:audit": "npm run lint && npm run typecheck && npm test && npm run test:launch && npm run build",
-    "test:launch": "npx tsx scripts/__tests__/sprint4-checkpoint6-batch3.test.ts"
+    "test:launch": "npx tsx scripts/__tests__/sprint4-checkpoint6-batch3.test.ts",
+    "clean": "node scripts/clean-project.mjs",
+    "release:prepare": "npm run clean"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
