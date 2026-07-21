@@ -4,7 +4,8 @@ import { connectDB } from '@/lib/mongodb';
 import { User } from '@/lib/models/User';
 
 export const USER_COOKIE = 'pd_user_session';
-const MAX_AGE = 60 * 60 * 24 * 30;
+// Seven days limits exposure while still keeping a practical consumer session.
+const MAX_AGE = 60 * 60 * 24 * 7;
 const ISSUER = 'phonedock';
 const AUDIENCE = 'phonedock-user';
 const MAX_TOKEN_LENGTH = 4096;
@@ -13,6 +14,10 @@ function secret() {
   const value = process.env.USER_JWT_SECRET || process.env.JWT_SECRET;
   if (!value || value.length < 32) throw new Error('USER_JWT_SECRET or JWT_SECRET must be at least 32 characters');
   return new TextEncoder().encode(value);
+}
+
+export function isUserEmailVerificationRequired(): boolean {
+  return process.env.REQUIRE_USER_EMAIL_VERIFICATION === 'true';
 }
 
 export async function createUserToken(user: { id: string; email: string; name: string; sessionVersion?: number }) {

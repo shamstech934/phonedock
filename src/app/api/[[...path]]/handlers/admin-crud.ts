@@ -7,6 +7,7 @@ import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
 import { escapeRegex } from '@/lib/sanitize';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
+import { parseBoundedInt } from '@/lib/http';
 
 // ============ LOCAL TYPES ============
 
@@ -159,8 +160,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = { active: true };
     // Search
@@ -291,8 +292,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const status = sp.get('status') || 'all';
     const country = sp.get('country') || '';
     const sort = sp.get('sort') || 'sort-order';
-    const page = Math.max(1, parseInt(sp.get('page') || '1') || 1);
-    const pageSize = Math.min(100, Math.max(1, parseInt(sp.get('pageSize') || '24') || 24));
+    const page = parseBoundedInt(sp.get('page'), 1);
+    const pageSize = parseBoundedInt(sp.get('pageSize'), 24, { max: 100 });
 
     // Build filter
     const filter: Record<string, unknown> = {};
@@ -352,8 +353,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'news:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
     const search = (url.searchParams.get('search') || '').trim();
@@ -474,8 +475,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'users:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
     // Search
@@ -582,8 +583,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'activity:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 50, { max: 200 });
     const filter: Record<string, unknown> = {};
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
@@ -684,8 +685,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'videos:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = {};
     // Search
@@ -826,8 +827,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const filter: Record<string, unknown> = {};
     const status = url.searchParams.get('status') || 'all';
     if (status === 'spam') filter.spamFlags = { $exists: true, $ne: [] };
@@ -932,7 +933,9 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
 
     try {
       await ActivityLog.create({ adminId: admin._id, action: 'specs_backfill', details: `Backfilled specs for ${created} phones`, entityType: 'system' });
-    } catch {}
+    } catch (error) {
+      console.error('[AdminCrud] specs_backfill audit log failed', { requestId: req.headers.get('x-request-id'), error });
+    }
 
     return NextResponse.json({
       success: true,
@@ -1055,7 +1058,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
       const result = await Admin.deleteMany({ _id: { $in: ids, $ne: admin._id } });
       // Also revoke their sessions
       for (const id of ids) {
-        try { await revokeAllSessions(id); } catch {}
+        try { await revokeAllSessions(id); } catch (error) { console.error('[AdminCrud] bulk session cleanup failed', { requestId: req.headers.get('x-request-id'), adminId: id, error }); }
       }
       try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_users', details: `Bulk deleted ${result.deletedCount} users`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
       return NextResponse.json({ success: true, deleted: result.deletedCount });
@@ -1067,7 +1070,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     // If forcing password reset, also revoke sessions
     if (action === 'force_password_reset') {
       for (const id of ids) {
-        try { await revokeAllSessions(id); } catch {}
+        try { await revokeAllSessions(id); } catch (error) { console.error('[AdminCrud] bulk session revocation failed', { requestId: req.headers.get('x-request-id'), adminId: id, error }); }
       }
     }
     try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_users`, details: `Bulk ${action}: ${result.modifiedCount} users`, entityType: 'admin' }); } catch (e) { console.error('[ActivityLog]', e); }
@@ -1738,7 +1741,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const result = await Admin.findByIdAndUpdate(targetId, { $set: updates, ...(updates.$inc ? { $inc: updates.$inc } : {}) }, { new: true }).select('-password -resetTokenHash -resetTokenExpires -twoFactorSecret -twoFactorRecoveryCodes -invitationTokenHash -invitationExpires');
     // If suspending or forcing password reset, revoke all sessions
     if (body.suspended || body.requirePasswordChange) {
-      try { await revokeAllSessions(targetId); } catch {}
+      try { await revokeAllSessions(targetId); } catch (error) { console.error('[AdminCrud] session revocation failed', { requestId: req.headers.get('x-request-id'), adminId: targetId, error }); }
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_user', details: `Updated user ${targetUser.email}: ${logDetails}`, entityType: 'admin', entityId: targetId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: targetId });
@@ -1906,7 +1909,7 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
       if (superCount <= 1) return NextResponse.json({ error: 'Cannot delete the last superadmin' }, { status: 400 });
     }
     // Revoke all sessions for this user
-    try { await revokeAllSessions(targetId); } catch {}
+    try { await revokeAllSessions(targetId); } catch (error) { console.error('[AdminCrud] deleted-user session cleanup failed', { requestId: req.headers.get('x-request-id'), adminId: targetId, error }); }
     await Admin.findByIdAndDelete(targetId);
     try { await ActivityLog.create({ adminId: admin._id, action: 'delete_user', details: `Deleted user: ${targetUser.email}`, entityType: 'admin', entityId: targetId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true });
@@ -1937,8 +1940,8 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const filter: Record<string, unknown> = {};
     const status = url.searchParams.get('status') || 'all';
     if (status !== 'all') filter.status = status;

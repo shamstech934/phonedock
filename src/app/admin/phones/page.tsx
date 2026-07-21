@@ -121,18 +121,20 @@ export default function AdminPhonesPage() {
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/phones/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to load phone statistics');
       const d = await res.json();
       setStats(d);
-    } catch {}
+    } catch (error) { console.error('[AdminPhones] stats request failed', error); }
   }, []);
 
   // Fetch brands
   const fetchBrands = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/brands?limit=200', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to load brands');
       const d = await res.json();
       setBrands(d.brands || []);
-    } catch {}
+    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to load brands'); }
   }, []);
 
   useEffect(() => { fetchPhones(); fetchStats(); fetchBrands(); }, [fetchPhones, fetchStats, fetchBrands]);
@@ -166,24 +168,26 @@ export default function AdminPhonesPage() {
         setBulkDeleteModal(true); setBulkLoading(false); return;
       }
 
-      await Promise.all(ids.map(id =>
+      const responses = await Promise.all(ids.map(id =>
         fetch(`/api/admin/phones/${id}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify(updates),
         })
       ));
+      if (responses.some(response => !response.ok)) throw new Error('One or more phone updates failed');
       setSelected(new Set()); fetchPhones(); fetchStats();
-    } catch {} finally { setBulkLoading(false); }
+    } catch (error) { setError(error instanceof Error ? error.message : 'Bulk update failed'); } finally { setBulkLoading(false); }
   };
 
   const handleBulkDelete = async () => {
     setBulkLoading(true);
     try {
-      await Promise.all(Array.from(selected).map(id =>
+      const responses = await Promise.all(Array.from(selected).map(id =>
         fetch(`/api/admin/phones/${id}`, { method: 'DELETE', credentials: 'include' })
       ));
+      if (responses.some(response => !response.ok)) throw new Error('One or more phone deletions failed');
       setBulkDeleteModal(false); setSelected(new Set()); fetchPhones(); fetchStats();
-    } catch {} finally { setBulkLoading(false); }
+    } catch (error) { setError(error instanceof Error ? error.message : 'Bulk delete failed'); } finally { setBulkLoading(false); }
   };
 
   // Select logic

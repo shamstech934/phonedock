@@ -5,6 +5,7 @@ import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/mode
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
+import { parseBoundedInt } from '@/lib/http';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -126,8 +127,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     await connectDB();
 
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const search = (url.searchParams.get('search') || '').trim();
     const mode = url.searchParams.get('mode') || 'all';
@@ -225,8 +226,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     await connectDB();
 
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const skip = (page - 1) * limit;
     const changeType = url.searchParams.get('changeType');
     const sourceType = url.searchParams.get('sourceType');

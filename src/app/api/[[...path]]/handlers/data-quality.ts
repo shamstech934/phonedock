@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand } from '@/lib/models';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
+import { parseBoundedInt } from '@/lib/http';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -116,8 +117,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (permCheck) return permCheck;
 
     const { searchParams } = new URL(req.url);
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20')));
+    const page = parseBoundedInt(searchParams.get('page'), 1);
+    const limit = parseBoundedInt(searchParams.get('limit'), 20, { max: 50 });
     const skip = (page - 1) * limit;
 
     const [scans, total] = await Promise.all([
@@ -148,8 +149,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (permCheck) return permCheck;
 
     const { searchParams } = new URL(req.url);
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')));
+    const page = parseBoundedInt(searchParams.get('page'), 1);
+    const limit = parseBoundedInt(searchParams.get('limit'), 50, { max: 100 });
     const skip = (page - 1) * limit;
     const severity = searchParams.get('severity') || '';
     const issueType = searchParams.get('issueType') || '';

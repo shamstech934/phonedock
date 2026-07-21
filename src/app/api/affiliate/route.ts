@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const partnerUrls: Record<string, string | undefined> = {
-  daraz: process.env.NEXT_PUBLIC_AFFILIATE_DARAZ_URL,
-  priceoye: process.env.NEXT_PUBLIC_AFFILIATE_PRICEOYE_URL,
-  mega: process.env.NEXT_PUBLIC_AFFILIATE_MEGA_URL,
+  daraz: process.env.AFFILIATE_DARAZ_URL || process.env.NEXT_PUBLIC_AFFILIATE_DARAZ_URL,
+  priceoye: process.env.AFFILIATE_PRICEOYE_URL || process.env.NEXT_PUBLIC_AFFILIATE_PRICEOYE_URL,
+  mega: process.env.AFFILIATE_MEGA_URL || process.env.NEXT_PUBLIC_AFFILIATE_MEGA_URL,
 };
+
+const allowedHosts = (process.env.AFFILIATE_ALLOWED_HOSTS || 'daraz.pk,priceoye.pk,mega.pk')
+  .split(',').map((host) => host.trim().toLowerCase()).filter(Boolean);
 
 export function GET(request: NextRequest) {
   const partner = request.nextUrl.searchParams.get('partner')?.toLowerCase() || '';
@@ -19,6 +22,8 @@ export function GET(request: NextRequest) {
   try {
     url = new URL(destination);
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported protocol');
+    const hostname = url.hostname.toLowerCase();
+    if (!allowedHosts.some((host) => hostname === host || hostname.endsWith(`.${host}`))) throw new Error('Host is not allowlisted');
   } catch {
     return NextResponse.json({ error: 'Affiliate destination is invalid' }, { status: 500 });
   }

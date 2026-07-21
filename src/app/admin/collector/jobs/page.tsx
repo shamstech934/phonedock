@@ -33,10 +33,11 @@ export default function AdminCollectorJobsPage() {
 
   const deleteJob = async (id: string) => {
     try {
-      await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ jobId: id }) });
+      const response = await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ jobId: id }) });
+      if (!response.ok) throw new Error('Failed to delete collector job');
       setDeleteModal(null);
       setJobs(prev => prev.filter(j => j.id !== id));
-    } catch {}
+    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to delete collector job'); }
   };
 
   const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {

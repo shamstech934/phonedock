@@ -262,20 +262,25 @@ export default function PhoneForm({
       return;
     }
     try {
-      await fetch(`/api/admin/videos/${videoId}`, {
+      const updateResponse = await fetch(`/api/admin/videos/${videoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ phoneId, active: true, autoLinked: false }),
       });
+      if (!updateResponse.ok) throw new Error('Failed to link video');
       // Refresh linked videos
       const res = await fetch(`/api/admin/videos?limit=50`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to refresh linked videos');
       const d = await res.json();
       const linked = (d.videos || []).filter((v: Record<string, unknown>) => v.phoneId === phoneId);
       setLinkedVideos(linked.map((v: Record<string, unknown>) => ({
         id: String(v.id), youtubeId: String(v.youtubeId), title: String(v.title), thumbnailUrl: String(v.thumbnailUrl),
       })));
-    } catch {}
+    } catch (error) {
+      console.error('[PhoneForm] Link video failed', error);
+      setError('Unable to link the video. Please try again.');
+    }
   }, [phoneId]);
 
   const handleUnlinkVideo = useCallback(async (videoId: string) => {
@@ -284,14 +289,18 @@ export default function PhoneForm({
       return;
     }
     try {
-      await fetch(`/api/admin/videos/${videoId}`, {
+      const updateResponse = await fetch(`/api/admin/videos/${videoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ phoneId: null, active: false, autoLinked: false }),
       });
+      if (!updateResponse.ok) throw new Error('Failed to unlink video');
       setLinkedVideos(prev => prev.filter(v => v.id !== videoId));
-    } catch {}
+    } catch (error) {
+      console.error('[PhoneForm] Unlink video failed', error);
+      setError('Unable to unlink the video. Please try again.');
+    }
   }, [phoneId]);
 
   // ── Submit handler ──

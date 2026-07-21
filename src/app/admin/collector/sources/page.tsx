@@ -37,21 +37,23 @@ export default function AdminCollectorSourcesPage() {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
-      await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) });
+      const response = await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) });
+      if (!response.ok) throw new Error('Failed to add collector source');
       setForm({ name: '', type: 'api', url: '' }); setShowForm(false); fetchSources();
-    } catch {} finally { setSaving(false); }
+    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to add collector source'); } finally { setSaving(false); }
   };
 
   const toggleSource = async (s: CollectorSource) => {
-    try { await fetch(`/api/collector/sources/${s.id}`, { method: 'PUT', credentials: 'include' }); fetchSources(); } catch {}
+    try { const response = await fetch(`/api/collector/sources/${s.id}`, { method: 'PUT', credentials: 'include' }); if (!response.ok) throw new Error('Failed to update collector source'); fetchSources(); } catch (error) { setError(error instanceof Error ? error.message : 'Failed to update collector source'); }
   };
 
   const handleDelete = async () => {
     if (!deleteModal) return;
     try {
-      await fetch(`/api/collector/sources/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
+      const response = await fetch(`/api/collector/sources/${deleteModal.id}`, { method: 'DELETE', credentials: 'include' });
+      if (!response.ok) throw new Error('Failed to delete collector source');
       setDeleteModal(null); fetchSources();
-    } catch {}
+    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to delete collector source'); }
   };
 
   const activeCount = sources.filter(s => s.enabled).length;

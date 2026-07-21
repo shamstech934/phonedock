@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { connectDB } from '@/lib/mongodb';
 import { User } from '@/lib/models/User';
-import { createUserToken, USER_COOKIE, userCookieOptions } from '@/lib/user-auth';
+import { createUserToken, isUserEmailVerificationRequired, USER_COOKIE, userCookieOptions } from '@/lib/user-auth';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { enforceUserAuthRateLimit, getRequestSecurityContext } from '@/lib/user-security';
 
@@ -23,6 +23,10 @@ export async function POST(req: NextRequest) {
     if (!user || user.status !== 'active' || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
       await recordSecurityEvent({ action: 'user_login_failed', ip, userAgent, reason: 'invalid_credentials' });
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
+    }
+    if (isUserEmailVerificationRequired() && !user.emailVerified) {
+      await recordSecurityEvent({ action: 'user_login_unverified', ip, userAgent, reason: 'email_not_verified' });
+      return NextResponse.json({ error: 'Please verify your email before signing in.', code: 'EMAIL_VERIFICATION_REQUIRED' }, { status: 403 });
     }
     user.lastLoginAt = new Date();
     await user.save();
