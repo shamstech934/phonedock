@@ -5,8 +5,8 @@
  */
 
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
-import AdmZip from 'adm-zip';
+import JSZip from 'jszip';
+import { readExcelRecords } from './excel-reader';
 import { detectFileType } from './parsers'; // reuse V1 detection
 
 // ── Security Constants ─────────────────────────────────────────────
@@ -44,7 +44,8 @@ function isSafeObject(val: unknown, depth = 0): boolean {
   if (val == null || typeof val !== 'object') return true;
   if (Array.isArray(val)) return val.length <= 1000 && val.every(v => isSafeObject(v, depth + 1));
   if (val instanceof Date || val instanceof RegExp) return true;
-  if (val.constructor?.name === 'Object' || val.constructor?.name === 'Array') {
+  const prototype = Object.getPrototypeOf(val);
+  if (prototype === null || val.constructor?.name === 'Object' || val.constructor?.name === 'Array') {
     if (Object.keys(val).length > 500) return false;
     return !('__proto__' in val || 'constructor' in val || 'prototype' in val);
   }
@@ -131,31 +132,13 @@ export function parseCSV(content: string, fileName: string): ParsedFile {
   return { records: safeRecords, fileType: 'csv', fileName, totalRecords: records.length, warnings };
 }
 
-/**
- * Parse XLSX buffer.
- */
-export function parseXLSX(buffer: ArrayBuffer, fileName: string): ParsedFile {
+/** Parse XLSX buffer with maintained ExcelJS. */
+export async function parseXLSX(buffer: ArrayBuffer, fileName: string): Promise<ParsedFile> {
   const warnings: string[] = [];
-
   try {
-    const workbook = XLSX.read(buffer, { type: 'array', raw: false, cellDates: true });
-    const sheetName = workbook.SheetNames[0] || 'Sheet1';
-    const sheet = workbook.Sheets[sheetName];
-
-    if (!sheet) {
-      return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: ['No sheets found in workbook'] };
-    }
-
-    let records: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-
-    if (records.length > MAX_RECORDS) {
-      warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${records.length})`);
-      records = records.slice(0, MAX_RECORDS);
-    }
-
-    // Sanitize
-    const safeRecords = records.filter(r => isSafeObject(r));
-
+    let records = await readExcelRecords(buffer, MAX_RECORDS);
+    const safeRecords = records.filter(record => isSafeObject(record));
+    if (safeRecords.length !== records.length) warnings.push('Unsafe records were discarded');
     return { records: safeRecords, fileType: 'xlsx', fileName, totalRecords: records.length, warnings };
   } catch (err: unknown) {
     return { records: [], fileType: 'xlsx', fileName, totalRecords: 0, warnings: [`XLSX parse error: ${err instanceof Error ? err.message : String(err)}`] };
@@ -167,90 +150,39 @@ export function parseXLSX(buffer: ArrayBuffer, fileName: string): ParsedFile {
  */
 export async function parseZIP(buffer: ArrayBuffer, fileName: string): Promise<ParsedFile> {
   const warnings: string[] = [];
-
   try {
-    const zip = new AdmZip(Buffer.from(buffer));
-
-    // Security: check compression ratio
-    const compressedSize = buffer.byteLength;
-    let totalExtracted = 0;
-    const entries = zip.getEntries();
-
-    if (entries.length === 0) {
-      return { records: [], fileType: 'zip', fileName, totalRecords: 0, warnings: ['ZIP file is empty'] };
-    }
-
-    if (entries.length > MAX_ZIP_FILE_COUNT) {
-      throw new Error(`ZIP contains ${entries.length} files (max ${MAX_ZIP_FILE_COUNT})`);
-    }
-
-    // Validate each entry
-    for (const entry of entries) {
-      const entryName = entry.entryName;
-
-      // Path traversal check
-      for (const pattern of UNSAFE_PATTERNS) {
-        if (pattern.test(entryName)) {
-          throw new Error(`Unsafe entry rejected: ${entryName}`);
-        }
-      }
-    }
-
-    // Extract and parse each valid file
+    const archive = await JSZip.loadAsync(buffer, { checkCRC32: true, createFolders: false });
+    const entries = Object.values(archive.files);
+    if (!entries.length) return { records: [], fileType: 'zip', fileName, totalRecords: 0, warnings: ['ZIP file is empty'] };
+    if (entries.length > MAX_ZIP_FILE_COUNT) throw new Error(`ZIP contains ${entries.length} files (max ${MAX_ZIP_FILE_COUNT})`);
     let allRecords: Record<string, unknown>[] = [];
+    let totalExtracted = 0;
     let totalFileCount = 0;
-
     for (const entry of entries) {
-      const entryName = entry.entryName.toLowerCase();
-      if (entry.isDirectory) continue;
-
-      const ext = entryName.split('.').pop() || '';
+      const originalName = entry.name;
+      if (entry.dir) continue;
+      if (UNSAFE_PATTERNS.some(pattern => pattern.test(originalName))) throw new Error(`Unsafe entry rejected: ${originalName}`);
+      const ext = originalName.toLowerCase().split('.').pop() || '';
       if (!['json', 'csv', 'xlsx'].includes(ext)) continue;
-
-      totalFileCount++;
-      const data = entry.getData();
-
-      let parsed: ParsedFile;
-      if (ext === 'json') {
-        parsed = parseJSON(new TextDecoder().decode(data), entryName);
-      } else if (ext === 'csv') {
-        parsed = parseCSV(new TextDecoder().decode(data), entryName);
-      } else if (ext === 'xlsx') {
-        parsed = parseXLSX(data.buffer as ArrayBuffer, entryName);
-      } else {
-        continue;
-      }
-
-      allRecords.push(...parsed.records.map(r => ({ ...r, _sourceFile: entryName })));
+      const data = await entry.async('uint8array');
       totalExtracted += data.byteLength;
-      warnings.push(...parsed.warnings.map(w => `[${entryName}] ${w}`));
+      if (totalExtracted > MAX_ZIP_TOTAL_SIZE) throw new Error(`Extracted data exceeds ${MAX_ZIP_TOTAL_SIZE / 1048576} MB limit`);
+      if (buffer.byteLength > 0 && totalExtracted / buffer.byteLength > MAX_ZIP_COMPRESSION_RATIO) throw new Error('Suspicious ZIP compression ratio');
+      totalFileCount++;
+      const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+      const parsed = ext === 'json'
+        ? parseJSON(new TextDecoder().decode(data), originalName)
+        : ext === 'csv'
+          ? parseCSV(new TextDecoder().decode(data), originalName)
+          : await parseXLSX(arrayBuffer, originalName);
+      allRecords.push(...parsed.records.map(record => ({ ...record, _sourceFile: originalName })));
+      warnings.push(...parsed.warnings.map(warning => `[${originalName}] ${warning}`));
     }
-
-    // Compression ratio check
-    if (totalExtracted > 0 && compressedSize > 0) {
-      const ratio = totalExtracted / compressedSize;
-      if (ratio > MAX_ZIP_COMPRESSION_RATIO) {
-        throw new Error(`Suspicious compression ratio: ${ratio.toFixed(1)}x (max ${MAX_ZIP_COMPRESSION_RATIO}x). Possible ZIP bomb.`);
-      }
-    }
-
-    if (totalExtracted > MAX_ZIP_TOTAL_SIZE) {
-      throw new Error(`Extracted data exceeds ${MAX_ZIP_TOTAL_SIZE / (1024 * 1024)} MB limit`);
-    }
-
-    if (totalFileCount === 0) {
-      throw new Error('ZIP contains no supported files (JSON, CSV, or XLSX)');
-    }
-
-    if (allRecords.length > MAX_RECORDS) {
-      warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${allRecords.length})`);
-      allRecords = allRecords.slice(0, MAX_RECORDS);
-    }
-
+    if (!totalFileCount) throw new Error('ZIP contains no supported files (JSON, CSV, or XLSX)');
+    if (allRecords.length > MAX_RECORDS) { warnings.push(`Truncated to ${MAX_RECORDS} records`); allRecords = allRecords.slice(0, MAX_RECORDS); }
     return { records: allRecords, fileType: 'zip', fileName, totalRecords: allRecords.length, warnings };
   } catch (err: unknown) {
-    let message = err instanceof Error ? err.message : 'Unknown ZIP error';
-    if (message.includes('password')) message = 'ZIP file is password-protected (not supported)';
+    const message = err instanceof Error ? err.message : 'Unknown ZIP error';
     return { records: [], fileType: 'zip', fileName, totalRecords: 0, warnings: [`ZIP error: ${message}`] };
   }
 }
@@ -269,7 +201,7 @@ export async function parseImportFile(
   if (ext === 'zip') return parseZIP(buffer, fileName);
 
   if (detected === 'xlsx') {
-    return parseXLSX(buffer, fileName);
+    return await parseXLSX(buffer, fileName);
   }
   if (detected === 'csv') {
     const content = new TextDecoder().decode(buffer);

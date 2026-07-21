@@ -4,6 +4,7 @@ import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailCon
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
+import { normalizeCompareValues } from '@/lib/compare';
 import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
@@ -308,8 +309,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'lookup') {
     await connectDB();
     const url = new URL(req.url);
-    const slugs = (url.searchParams.get('slugs') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
-    const ids = (url.searchParams.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 4);
+    const slugs = normalizeCompareValues(url.searchParams.get('slugs'));
+    const ids = normalizeCompareValues(url.searchParams.get('ids'));
     if (slugs.length === 0 && ids.length === 0) return NextResponse.json({ phones: [] });
     const selectors: Record<string, unknown>[] = [];
     if (slugs.length > 0) selectors.push({ slug: { $in: slugs } });

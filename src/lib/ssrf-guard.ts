@@ -117,7 +117,20 @@ export function safeHostname(urlStr: string): string | null {
  * Check if a URL's hostname resolves to a private/reserved IP.
  * This uses DNS resolution — only call server-side.
  */
-export async function isPrivateUrl(urlStr: string): Promise<boolean> {
+export type DnsResolver = (hostname: string) => Promise<string[]>;
+
+async function systemDnsResolver(hostname: string): Promise<string[]> {
+  const { default: dns } = await import('dns');
+  const { promisify } = await import('util');
+  const resolve4 = promisify(dns.resolve4);
+  const resolve6 = promisify(dns.resolve6);
+  const results: string[] = [];
+  try { results.push(...await resolve4(hostname)); } catch { /* no IPv4 */ }
+  try { results.push(...await resolve6(hostname)); } catch { /* no IPv6 */ }
+  return results;
+}
+
+export async function isPrivateUrl(urlStr: string, resolver: DnsResolver = systemDnsResolver): Promise<boolean> {
   const hostname = safeHostname(urlStr);
   if (!hostname) return true;
 
@@ -133,17 +146,9 @@ export async function isPrivateUrl(urlStr: string): Promise<boolean> {
     return isPrivateIPv6(hostname);
   }
 
-  // Resolve DNS
+  // Resolve DNS through an injectable resolver so security tests stay deterministic.
   try {
-    const { default: dns } = await import('dns');
-    const { promisify } = await import('util');
-    const resolve4 = promisify(dns.resolve4);
-    const resolve6 = promisify(dns.resolve6);
-
-    const results: string[] = [];
-    try { const v4 = await resolve4(hostname); results.push(...v4); } catch { /* no IPv4 */ }
-    try { const v6 = await resolve6(hostname); results.push(...v6); } catch { /* no IPv6 */ }
-
+    const results = await resolver(hostname);
     if (results.length === 0) return true; // Can't resolve = reject
     return results.some((ip) => isPrivateIP(ip));
   } catch {
@@ -174,6 +179,7 @@ export function isDomainAllowed(urlStr: string, allowedDomains: string[]): boole
 export async function validateUrlForFetch(
   urlStr: string,
   allowedDomains: string[] = [],
+  resolver?: DnsResolver,
 ): Promise<{ safe: boolean; reason?: string }> {
   if (!/^https?:\/\//i.test(urlStr)) {
     return { safe: false, reason: 'Only HTTP(S) URLs are allowed' };
@@ -183,7 +189,7 @@ export async function validateUrlForFetch(
     return { safe: false, reason: 'Domain not in allowed list' };
   }
 
-  if (await isPrivateUrl(urlStr)) {
+  if (await isPrivateUrl(urlStr, resolver)) {
     return { safe: false, reason: 'URL resolves to a private or reserved IP address' };
   }
 

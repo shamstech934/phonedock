@@ -154,6 +154,8 @@ export async function generateMetadata({
 }
 
 /* ── Page Component ────────────────────────────────────────────────── */
+export const dynamic = 'force-dynamic';
+
 export default async function NewsArticlePage({
   params,
 }: {

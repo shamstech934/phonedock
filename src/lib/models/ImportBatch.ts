@@ -52,6 +52,36 @@ export interface IImportBatch {
   updatedAt: Date;
 }
 
+const BatchErrorSchema = new Schema({
+  rowNumber: Number,
+  brand: String,
+  model: String,
+  field: String,
+  originalValue: String,
+  errorCode: String,
+  errorMessage: String,
+  phoneId: String,
+}, { _id: false, suppressReservedKeysWarning: true });
+
+const FieldChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  // Stored key remains `collection` for backward compatibility with existing imports.
+  collection: { type: String, default: 'Phone' },
+  field: String,
+  oldValue: Schema.Types.Mixed,
+  newValue: Schema.Types.Mixed,
+}, { _id: false, suppressReservedKeysWarning: true });
+
+const SpecsChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  // Stored key remains `collection` for rollback compatibility.
+  collection: { type: String, default: 'PhoneSpecs' },
+  changeType: { type: String, enum: ['created', 'updated'] },
+  beforeFields: { type: Schema.Types.Mixed, default: {} },
+  afterFields: { type: Schema.Types.Mixed, default: {} },
+  fields: { type: Schema.Types.Mixed, default: {} },
+}, { _id: false, suppressReservedKeysWarning: true });
+
 const ImportBatchSchema = new Schema<IImportBatch>({
   importId: { type: String, required: true, index: true },
   batchNumber: { type: Number, required: true },
@@ -59,7 +89,6 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   recordEnd: { type: Number, required: true },
   recordCount: { type: Number, required: true },
   checksum: { type: String, required: true },
-  // FIX #3: executionMode distinguishes dry-run from real batches
   executionMode: { type: String, enum: ['dry_run', 'real'], default: 'real' },
   status: { type: String, enum: ['pending', 'processing', 'completed', 'failed', 'retrying'], default: 'pending', index: true },
   attemptCount: { type: Number, default: 0 },
@@ -68,42 +97,18 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   replaced: { type: Number, default: 0 },
   skipped: { type: Number, default: 0 },
   failed: { type: Number, default: 0 },
-  errors: [{
-    rowNumber: Number,
-    brand: String,
-    model: String,
-    field: String,
-    originalValue: String,
-    errorCode: String,
-    errorMessage: String,
-    phoneId: String,
-  }],
+  errors: { type: [BatchErrorSchema], default: [] },
   createdPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   updatedPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
-  fieldChanges: [{
-    phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
-    collection: { type: String, default: 'Phone' },
-    field: String,
-    oldValue: Schema.Types.Mixed,
-    newValue: Schema.Types.Mixed,
-  }],
-  // FIX #8: Track PhoneSpecs changes for complete rollback
-  specsChanges: [{
-    phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
-    collection: { type: String, default: 'PhoneSpecs' },
-    changeType: { type: String, enum: ['created', 'updated'] },
-    beforeFields: { type: Schema.Types.Mixed, default: {} },
-    afterFields: { type: Schema.Types.Mixed, default: {} },
-    fields: { type: Schema.Types.Mixed, default: {} },
-  }],
+  fieldChanges: { type: [FieldChangeSchema], default: [] },
+  specsChanges: { type: [SpecsChangeSchema], default: [] },
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
-}, { timestamps: true });
+}, { timestamps: true, suppressReservedKeysWarning: true });
 
 // Compound unique: same batch for same import must not duplicate
 ImportBatchSchema.index({ importId: 1, batchNumber: 1 }, { unique: true });
 ImportBatchSchema.index({ status: 1, createdAt: -1 });
-// FIX #10: Index for completion queries
 ImportBatchSchema.index({ importId: 1, status: 1 });
 
 export const ImportBatch = mongoose.models.ImportBatch || mongoose.model<IImportBatch>('ImportBatch', ImportBatchSchema);

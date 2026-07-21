@@ -103,7 +103,7 @@ export default function AdminCollectorSourcesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-extrabold text-gray-900">Collector Sources</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">{sources.length} sources configured</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{sources.length} sources configured. Official manufacturer feeds require a vendor-approved adapter.</p>
         </div>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
           <Plus className="w-3.5 h-3.5" /> Add Source

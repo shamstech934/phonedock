@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import { parseXLSX } from '@/lib/import/parsers';
 import { ActivityLog } from '@/lib/models';
 import {
   connectDB, getAdminFromRequest, requirePermission, sanitizeCsvValue,
@@ -83,11 +83,7 @@ export async function handleImportPost(req: NextRequest, segments: string[]): Pr
         });
         records = result.data;
       } else if (ext === 'xlsx' || ext === 'xls') {
-        const workbook = XLSX.read(buffer, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        if (sheetName) {
-          records = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
-        }
+        records = await parseXLSX(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
       }
     } catch (e: unknown) {
       return NextResponse.json({ error: `Parse error: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 });

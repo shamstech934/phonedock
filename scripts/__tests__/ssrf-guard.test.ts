@@ -19,7 +19,8 @@ import {
 
 let passed = 0;
 let failed = 0;
-let errors: string[] = [];
+const errors: string[] = [];
+const publicDns = async (_hostname: string) => ['93.184.216.34'];
 
 function assert(condition: boolean, name: string) {
   if (condition) {
@@ -108,11 +109,11 @@ assert(isDomainAllowed('ftp://daraz.pk/', ['daraz.pk']) === false, 'Non-HTTP(S) 
 console.log('\n=== validateUrlForFetch ===');
 
 const vfTests: Array<{ fn: () => Promise<boolean>; name: string }> = [
-  async () => { const r = await validateUrlForFetch('https://daraz.pk/product/1'); return r.safe === true; },
+  async () => { const r = await validateUrlForFetch('https://daraz.pk/product/1', [], publicDns); return r.safe === true; },
   async () => { const r = await validateUrlForFetch('ftp://daraz.pk/product/1'); return r.safe === false && r.reason === 'Only HTTP(S) URLs are allowed'; },
   async () => { const r = await validateUrlForFetch('https://127.0.0.1/admin'); return r.safe === false; },
   async () => { const r = await validateUrlForFetch('https://daraz.pk/product/1', ['priceoye.pk']); return r.safe === false && r.reason === 'Domain not in allowed list'; },
-  async () => { const r = await validateUrlForFetch('https://daraz.pk/product/1', ['daraz.pk']); return r.safe === true; },
+  async () => { const r = await validateUrlForFetch('https://daraz.pk/product/1', ['daraz.pk'], publicDns); return r.safe === true; },
   async () => { const r = await validateUrlForFetch('http://192.168.1.1/admin'); return r.safe === false; },
   async () => { const r = await validateUrlForFetch('http://10.0.0.1/admin'); return r.safe === false; },
   async () => { const r = await validateUrlForFetch('http://172.16.0.1/'); return r.safe === false; },

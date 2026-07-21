@@ -1,34 +1,24 @@
 import { BaseProvider, ProviderFetchResult, ProviderTestResult } from './base';
-import { NormalizedPhone } from '../types';
 
 /**
- * Manufacturer provider is a placeholder/stub for official manufacturer APIs.
- * Real integrations would use manufacturer-specific SDKs or approved API endpoints.
- * This provider does NOT scrape manufacturer websites.
+ * Official manufacturer integrations require a vendor-approved adapter.
+ * The generic collector intentionally stays disabled rather than pretending to scrape or map arbitrary sites.
  */
 export class ManufacturerProvider extends BaseProvider {
   async fetch(_page?: number, _pageToken?: string): Promise<ProviderFetchResult> {
     return {
       phones: [],
       hasNextPage: false,
-      providerErrors: ['Manufacturer provider requires a custom adapter. Configure the endpoint and mapping rules for the specific manufacturer API.'],
+      providerErrors: [
+        'Unsupported provider: install a vendor-approved manufacturer adapter before enabling this source.',
+      ],
     };
   }
 
   async test(): Promise<ProviderTestResult> {
-    if (!this.config.endpoint) {
-      return { success: false, message: 'No manufacturer API endpoint configured' };
-    }
-    const start = Date.now();
-    try {
-      const response = await this.fetchWithTimeout(this.config.endpoint, {}, 10000);
-      return {
-        success: response.ok,
-        message: response.ok ? 'Endpoint reachable' : `HTTP ${response.status}`,
-        latencyMs: Date.now() - start,
-      };
-    } catch (e: unknown) {
-      return { success: false, message: e instanceof Error ? e.message : 'Connection failed', latencyMs: Date.now() - start };
-    }
+    return {
+      success: false,
+      message: 'Manufacturer sources are disabled until a vendor-approved adapter is installed.',
+    };
   }
 }

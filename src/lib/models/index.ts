@@ -16,4 +16,4 @@ export { Video } from './Video';
 export { Settings, getSettings } from './Settings';
 export { SystemState } from './SystemState';
 export { PriceSource, PhoneRetailListing, PriceTrackerHistory } from './PriceTracker';
-export { DataQualityIssue, ScanJob } from './DataQuality';
+export { DataQualityIssue, ScanJob } from './DataQuality';export { User } from './User';

@@ -11,7 +11,9 @@ async function main() {
   };
 
   assert.equal(pkg.dependencies?.xlsx, undefined, 'vulnerable SheetJS package must not be installed');
-  assert.match(pkg.dependencies?.['adm-zip'] ?? '', /0\.6\.0/, 'adm-zip must include ZIP bomb allocation fix');
+  assert.equal(pkg.dependencies?.['adm-zip'], undefined, 'adm-zip must not be installed');
+  assert.match(pkg.dependencies?.jszip ?? '', /3\./, 'maintained JSZip must provide archive support');
+  assert.match(pkg.dependencies?.exceljs ?? '', /4\./, 'maintained ExcelJS must provide spreadsheet support');
   assert.equal(pkg.overrides?.uuid, '11.1.1');
   assert.equal(pkg.overrides?.postcss, '8.5.10');
 

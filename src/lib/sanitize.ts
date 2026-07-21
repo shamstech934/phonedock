@@ -1,24 +1,45 @@
+import sanitize from 'sanitize-html';
+
 export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Strips dangerous HTML elements and attributes for defense-in-depth.
- * Used on admin-created content before rendering with dangerouslySetInnerHTML.
- * Allows safe tags: p, br, div, span, h1-h6, a, img, ul, ol, li, strong, em,
- * b, i, u, blockquote, table, thead, tbody, tr, th, td, pre, code, hr, figure,
- * figcaption, video, source, sup, sub.
- */
+const allowedTags = [
+  'p','br','div','span','h1','h2','h3','h4','h5','h6','a','img','ul','ol','li',
+  'strong','em','b','i','u','blockquote','table','thead','tbody','tr','th','td',
+  'pre','code','hr','figure','figcaption','sup','sub'
+];
+
+/** Server-side allowlist sanitizer for admin-authored article HTML. */
 export function sanitizeHtml(html: string): string {
   if (!html) return '';
-  let safe = html;
-  // Remove script, iframe, object, embed, form, input, textarea, select, button, meta, link, base tags
-  safe = safe.replace(/<\s*\/?\s*(script|iframe|object|embed|form|input|textarea|select|button|meta|link|base)[^>]*>/gi, '');
-  // Remove on* event handler attributes
-  safe = safe.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  // Remove javascript: URLs
-  safe = safe.replace(/(href|src|action)\s*=\s*["']?\s*javascript\s*:/gi, '$1="');
-  // Remove data: URLs in src (except for images which are allowed)
-  safe = safe.replace(/(src)\s*=\s*["']?\s*data\s*:(?!image)/gi, '$1=""');
-  return safe;
+  return sanitize(html, {
+    allowedTags,
+    allowedAttributes: {
+      '*': ['class', 'title'],
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'width', 'height', 'loading'],
+      th: ['colspan', 'rowspan', 'scope'],
+      td: ['colspan', 'rowspan'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedSchemesByTag: { img: ['http', 'https'] },
+    allowProtocolRelative: false,
+    disallowedTagsMode: 'discard',
+    enforceHtmlBoundary: true,
+    transformTags: {
+      a: (_tag, attrs) => ({
+        tagName: 'a',
+        attribs: {
+          ...attrs,
+          rel: 'noopener noreferrer nofollow',
+          ...(attrs.target === '_blank' ? { target: '_blank' } : {}),
+        },
+      }),
+    },
+    exclusiveFilter(frame) {
+      if (frame.tag === 'img' && !/^https?:\/\//i.test(frame.attribs.src || '')) return true;
+      return false;
+    },
+  });
 }

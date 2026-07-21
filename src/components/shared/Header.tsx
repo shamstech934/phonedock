@@ -4,9 +4,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail, ChevronDown, Play, Star, BarChart3, Heart, Clock3, BookOpen, Trophy } from 'lucide-react';
+import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail, ChevronDown, Play, Star, BarChart3, Heart, Clock3, BookOpen, Trophy, UserRound } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useAdmin } from '@/lib/useAdmin';
+import { useUser } from '@/lib/useUser';
 
 interface AutocompleteResult {
   id: string;
@@ -23,7 +23,7 @@ export function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { admin } = useAdmin();
+  const { user } = useUser();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -182,15 +182,9 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-1">
-            {admin ? (
-              <Link href="/admin/dashboard" className="px-3.5 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-all duration-200 flex items-center gap-1.5 shadow-sm shadow-blue-500/25">
-                <Shield className="w-4 h-4" />Dashboard
-              </Link>
-            ) : (
-              <Link href="/admin/login" className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-white/60 transition-all duration-200 flex items-center gap-1.5">
-                <Shield className="w-4 h-4" />Admin
-              </Link>
-            )}
+            <Link href={user ? "/account" : "/login"} className={`px-3.5 py-2 text-sm font-medium rounded-xl transition-all duration-200 flex items-center gap-1.5 ${user ? 'text-white bg-blue-500 hover:bg-blue-600 shadow-sm shadow-blue-500/25' : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'}`}>
+              <UserRound className="w-4 h-4" />{user ? 'Account' : 'Sign in'}
+            </Link>
             <div className="relative" ref={searchContainerRef}>
               <button onClick={() => setSearchOpen(!searchOpen)} aria-label="Search" className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
                 <Search className="w-[18px] h-[18px]" />
@@ -326,15 +320,9 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
-            {admin ? (
-              <Link href="/admin/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-blue-600 bg-blue-50/80">
-                <Shield className="w-4 h-4" />Dashboard
-              </Link>
-            ) : (
-              <Link href="/admin/login" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-                <Shield className="w-4 h-4 text-gray-400" />Admin
-              </Link>
-            )}
+            <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+              <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
+            </Link>
           </nav>
         </div>
       )}

@@ -33,6 +33,8 @@ async function getPhones(slug: GuideSlug): Promise<PhoneType[]> {
   return docs.map((p: any) => ({ ...p, id: p._id.toString(), brandId: p.brandId?.toString?.() || '', brand: p.brand ? { ...p.brand, id: p.brand._id?.toString?.() || '' } : undefined })) as PhoneType[];
 }
 
+export const dynamic = 'force-dynamic';
+
 export default async function GuidePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params; const guide = guides[slug as GuideSlug]; if (!guide) notFound();
   const phones = await getPhones(slug as GuideSlug);

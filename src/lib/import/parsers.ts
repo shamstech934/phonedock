@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+import { readExcelRecords } from './excel-reader';
 import { RawPhoneRecord } from './types';
 import { sanitizeCsvValue } from '@/lib/auth';
 
@@ -63,28 +63,14 @@ export async function parseCSV(content: string): Promise<RawPhoneRecord[]> {
 }
 
 // ============ XLSX PARSER ============
-export function parseXLSX(buffer: ArrayBuffer): RawPhoneRecord[] {
+export async function parseXLSX(buffer: ArrayBuffer): Promise<RawPhoneRecord[]> {
   try {
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
-      throw new Error('Excel file has no sheets');
-    }
-    const sheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json<RawPhoneRecord>(sheet, {
-      defval: '',
-      raw: false,
-    });
-    if (!data || data.length === 0) {
-      throw new Error('Excel sheet is empty or has no valid rows');
-    }
-    return data;
-  } catch (e: unknown) {
-    throw new Error(`Excel parsing error: ${e instanceof Error ? e.message : String(e)}`);
+    return await readExcelRecords(buffer) as RawPhoneRecord[];
+  } catch (error) {
+    throw new Error(`Failed to parse Excel file: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-// ============ DETECT FILE TYPE ============
 export function detectFileType(filename: string, mimeType?: string): 'json' | 'csv' | 'xlsx' | null {
   const ext = filename.split('.').pop()?.toLowerCase();
   if (ext === 'json') return 'json';
@@ -109,7 +95,7 @@ export async function parseFile(content: string | ArrayBuffer, fileType: 'json' 
     case 'csv':
       return parseCSV(typeof content === 'string' ? content : new TextDecoder().decode(content));
     case 'xlsx':
-      return parseXLSX(content instanceof ArrayBuffer ? content : new TextEncoder().encode(content).buffer);
+      return await parseXLSX(content instanceof ArrayBuffer ? content : new TextEncoder().encode(content).buffer);
     default:
       throw new Error(`Unsupported file type: ${fileType}`);
   }
