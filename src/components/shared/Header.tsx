@@ -29,10 +29,13 @@ export function Header() {
   const [searchQ, setSearchQ] = useState('');
   const [autocompleteResults, setAutocompleteResults] = useState<AutocompleteResult[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [autocompleteLoading, setAutocompleteLoading] = useState(false);
+  const [autocompleteError, setAutocompleteError] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autocompleteAbortRef = useRef<AbortController | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
 
@@ -45,21 +48,40 @@ export function Header() {
   }, []);
 
   useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); autocompleteAbortRef.current?.abort(); }, []);
   useEffect(() => { setMobileOpen(false); setSearchOpen(false); setShowDropdown(false); setMoreOpen(false); }, [pathname]);
 
   // Debounced autocomplete
   const handleSearchChange = useCallback((value: string) => {
     setSearchQ(value);
-    if (value.length < 2) { setAutocompleteResults([]); setShowDropdown(false); return; }
-    setShowDropdown(true);
+    setAutocompleteError(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    autocompleteAbortRef.current?.abort();
+    if (value.trim().length < 2) {
+      setAutocompleteResults([]);
+      setAutocompleteLoading(false);
+      setShowDropdown(false);
+      return;
+    }
+    setShowDropdown(true);
+    setAutocompleteLoading(true);
     debounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      autocompleteAbortRef.current = controller;
       try {
-        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value)}`);
+        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value.trim())}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setAutocompleteResults(data.phones || []);
-      } catch { setAutocompleteResults([]); }
-    }, 300);
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          setAutocompleteResults([]);
+          setAutocompleteError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setAutocompleteLoading(false);
+      }
+    }, 250);
   }, []);
 
   // Close dropdowns on outside click
@@ -208,14 +230,21 @@ export function Header() {
             {/* Autocomplete dropdown */}
             {showDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 max-h-[340px] overflow-y-auto z-50">
+                {autocompleteLoading && (
+                  <div className="px-3.5 py-4 text-sm text-gray-500">Searching phones...</div>
+                )}
+                {!autocompleteLoading && autocompleteError && (
+                  <div className="px-3.5 py-4 text-sm text-amber-700">Search suggestions are temporarily unavailable. Press Enter for full search.</div>
+                )}
+
                 {/* Search results */}
-                {autocompleteResults.length > 0 && (
+                {!autocompleteLoading && autocompleteResults.length > 0 && (
                   <div className="py-1">
                     <p className="px-3.5 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Results</p>
                     {autocompleteResults.slice(0, 6).map(p => (
                       <button
                         key={p.id}
-                        onClick={() => doSearch(p.modelName)}
+                        onClick={() => { saveRecentSearch(p.modelName); router.push(`/phones/${p.slug}`); setSearchOpen(false); setShowDropdown(false); setSearchQ(''); }}
                         className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-gray-50 transition-colors text-left"
                       >
                         <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
@@ -235,7 +264,7 @@ export function Header() {
                 )}
 
                 {/* Recent searches */}
-                {autocompleteResults.length === 0 && recentSearches.length > 0 && (
+                {!autocompleteLoading && !autocompleteError && autocompleteResults.length === 0 && recentSearches.length > 0 && (
                   <div className="py-1">
                     <p className="px-3.5 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recent Searches</p>
                     {recentSearches.map((s, i) => (
@@ -252,7 +281,7 @@ export function Header() {
                 )}
 
                 {/* Popular searches */}
-                {autocompleteResults.length === 0 && (
+                {!autocompleteLoading && !autocompleteError && autocompleteResults.length === 0 && (
                   <div className="py-1 border-t border-gray-100">
                     <p className="px-3.5 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Popular Searches</p>
                     <div className="flex flex-wrap gap-1.5 px-3.5 pb-2.5">

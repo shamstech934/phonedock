@@ -43,6 +43,7 @@ const DISPLAY_OPTIONS = ['all', 'AMOLED', 'OLED', 'IPS LCD'];
 const REFRESH_OPTIONS = ['all', '90', '120', '144'];
 const CAMERA_OPTIONS = ['all', '50', '108', '200'];
 const BATTERY_OPTIONS = ['all', '4500', '5000', '6000'];
+const CHIPSET_OPTIONS = ['all', 'Snapdragon', 'Dimensity', 'Exynos', 'Apple', 'Helio', 'Unisoc'];
 
 export default function PhonesClient({ initialPhones, initialBrands, initialTotal, initialQueryKey }: { initialPhones: Phone[]; initialBrands: Brand[]; initialTotal: number; initialQueryKey: string }) {
   const router = useRouter();
@@ -68,6 +69,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const refreshParam = searchParams.get('refresh') || 'all';
   const cameraParam = searchParams.get('camera') || 'all';
   const batteryParam = searchParams.get('battery') || 'all';
+  const chipsetParam = searchParams.get('chipset') || 'all';
   const priceDropParam = searchParams.get('priceDrop') || '';
   const collectionParam = searchParams.get('collection') || '';
   const pageParam = parseInt(searchParams.get('page') || '1');
@@ -125,6 +127,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
     if (refreshParam !== 'all') params.set('refreshMin', refreshParam);
     if (cameraParam !== 'all') params.set('cameraMin', cameraParam);
     if (batteryParam !== 'all') params.set('batteryMin', batteryParam);
+    if (chipsetParam !== 'all') params.set('chipset', chipsetParam);
 
     // Curated collection filter
     if (collectionParam) params.set('collection', collectionParam);
@@ -147,7 +150,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, priceDropParam, collectionParam]);
+  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -170,7 +173,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
@@ -245,6 +248,9 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
               <select value={batteryParam} onChange={e => updateParam('battery', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 {BATTERY_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Battery: All' : `${value}mAh+`}</option>)}
               </select>
+              <select value={chipsetParam} onChange={e => updateParam('chipset', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                {CHIPSET_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Chipset: All' : value}</option>)}
+              </select>
             </div>
 
             {/* Active Filters */}
@@ -263,6 +269,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 {refreshParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('refresh', 'all')}>{refreshParam}Hz+<span className="ml-1">&times;</span></Badge>}
                 {cameraParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('camera', 'all')}>{cameraParam}MP+<span className="ml-1">&times;</span></Badge>}
                 {batteryParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('battery', 'all')}>{batteryParam}mAh+<span className="ml-1">&times;</span></Badge>}
+                {chipsetParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('chipset', 'all')}>Chipset: {chipsetParam}<span className="ml-1">&times;</span></Badge>}
                 <button onClick={clearAll} className="text-xs text-blue-500 hover:text-blue-600 font-medium">Clear all</button>
               </div>
             )}

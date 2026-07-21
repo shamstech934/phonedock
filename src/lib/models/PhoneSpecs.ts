@@ -97,5 +97,7 @@ PhoneSpecsSchema.index({ storageGB: 1 });
 PhoneSpecsSchema.index({ screenSizeInch: 1 });
 PhoneSpecsSchema.index({ mainCameraMP: 1 });
 PhoneSpecsSchema.index({ batteryMAh: 1 });
+PhoneSpecsSchema.index({ displayType: 1 });
+PhoneSpecsSchema.index({ chipset: 1 });
 
 export const PhoneSpecs = mongoose.models.PhoneSpecs || mongoose.model<IPhoneSpecs>('PhoneSpecs', PhoneSpecsSchema);

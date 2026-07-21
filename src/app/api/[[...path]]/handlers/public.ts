@@ -249,13 +249,16 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const priceMax = parseFloat(url.searchParams.get('priceMax') || '');
     const cameraMin = parseFloat(url.searchParams.get('cameraMin') || '');
     const batteryMin = parseFloat(url.searchParams.get('batteryMin') || '');
+    const displayType = (url.searchParams.get('displayType') || '').trim();
+    const refreshMin = parseFloat(url.searchParams.get('refreshMin') || '');
+    const chipset = (url.searchParams.get('chipset') || '').trim();
 
     // Price range filter on Phone model
     if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
     if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
 
     // Numeric spec filters require joining with PhoneSpecs
-    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || fiveGFilter !== '' || nfcFilter !== '';
+    const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || !isNaN(refreshMin) || displayType !== '' || chipset !== '' || fiveGFilter !== '' || nfcFilter !== '';
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
@@ -267,6 +270,19 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $lte: screenMax };
       if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
       if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+      if (displayType) specFilter.displayType = { $regex: escapeRegex(displayType), $options: 'i' };
+      if (chipset) specFilter.chipset = { $regex: escapeRegex(chipset), $options: 'i' };
+      if (!isNaN(refreshMin)) {
+        // refreshRate is legacy text (for example "1-120Hz LTPO"). Match
+        // supported tiers without requiring a risky collection-wide JS expression.
+        const refreshPatterns: Record<number, string> = {
+          90: '(?:90|120|144|165|180|240)\s*hz',
+          120: '(?:120|144|165|180|240)\s*hz',
+          144: '(?:144|165|180|240)\s*hz',
+        };
+        const pattern = refreshPatterns[refreshMin] || `${Math.round(refreshMin)}\s*hz`;
+        specFilter.refreshRate = { $regex: pattern, $options: 'i' };
+      }
       if (fiveGFilter === 'yes') specFilter.fiveG = { $regex: /yes|supported|true/i };
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
