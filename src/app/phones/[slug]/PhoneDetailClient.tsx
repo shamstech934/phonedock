@@ -463,6 +463,9 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
     priceChange: number; percentageChange: number; lastPriceChangedAt: string | null;
+    positionInRange: number | null; discountFromAveragePct: number;
+    buyRecommendation: 'buy_now' | 'good_price' | 'wait' | 'insufficient_data';
+    buyRecommendationReason: string;
     priceMode: string; manualLock: boolean;
     history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
   } | null>(null);
@@ -815,6 +818,27 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                         <p className="mt-1 text-sm font-bold text-gray-900">{formatPrice(Number(value || 0))}</p>
                       </div>
                     ))}
+                  </div>
+                  <div className={`mt-3 rounded-xl border p-3 ${
+                    priceTracker.buyRecommendation === 'buy_now' ? 'border-emerald-200 bg-emerald-50' :
+                    priceTracker.buyRecommendation === 'good_price' ? 'border-blue-200 bg-blue-50' :
+                    priceTracker.buyRecommendation === 'wait' ? 'border-amber-200 bg-amber-50' :
+                    'border-gray-200 bg-gray-50'
+                  }`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-bold text-gray-900">
+                        {priceTracker.buyRecommendation === 'buy_now' ? 'Best time to buy' :
+                         priceTracker.buyRecommendation === 'good_price' ? 'Good price' :
+                         priceTracker.buyRecommendation === 'wait' ? 'Consider waiting' :
+                         'Price guidance pending'}
+                      </p>
+                      {priceTracker.discountFromAveragePct > 0 && (
+                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          {priceTracker.discountFromAveragePct}% below average
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{priceTracker.buyRecommendationReason}</p>
                   </div>
                   <p className="mt-2 text-[10px] text-muted-foreground">Based on {priceTracker.dataPoints} confirmed price update{priceTracker.dataPoints === 1 ? '' : 's'}.</p>
                 </div>
