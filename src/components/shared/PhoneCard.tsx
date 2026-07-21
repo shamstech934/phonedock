@@ -54,8 +54,8 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
 
   return (
     <>
-      <article className="phone-card glass-shine group block h-full overflow-hidden">
-        <div className="p-3 sm:p-4">
+      <article className="phone-card glass-shine group flex h-full min-h-[440px] overflow-hidden sm:min-h-[472px]">
+        <div className="flex h-full min-w-0 flex-1 flex-col p-3 sm:p-4">
           <div className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
             <SafePhoneImage
               src={phone.thumbnail}
@@ -69,13 +69,13 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
                 <Shield className="w-3 h-3 mr-0.5" /> PTA
               </Badge>
             )}
-            {phone.overallRating >= 8 && !phone.upcoming && (
-              <Badge className="absolute top-2 right-2 bg-blue-600 text-white text-[10px] font-semibold shadow-sm shadow-blue-500/30">
-                <Star className="w-3 h-3 mr-0.5 fill-current" /> {phone.overallRating}
+            {phone.overallRating > 0 && (
+              <Badge className="absolute right-2 top-2 border border-amber-200 bg-white/95 text-[10px] font-bold text-slate-800 shadow-sm backdrop-blur-md">
+                <Star className="mr-0.5 h-3 w-3 fill-amber-400 text-amber-400" /> {phone.overallRating.toFixed(1)}
               </Badge>
             )}
             {phone.upcoming && (
-              <Badge className="absolute top-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
+              <Badge className="absolute bottom-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
                 <Clock className="w-3 h-3 mr-0.5" /> Upcoming
               </Badge>
             )}
@@ -85,24 +85,20 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               </Badge>
             )}
           </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex h-5 items-center justify-between">
               <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
-              {phone.overallRating > 0 && !phone.upcoming && phone.overallRating < 8 && (
-                <div className="flex items-center gap-0.5">
-                  <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                  <span className="text-[10px] font-semibold text-gray-700">{phone.overallRating}</span>
-                </div>
-              )}
             </div>
-            <h3 className="line-clamp-2 min-h-10 text-sm font-extrabold leading-tight text-slate-900">
+            <h3 className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">
               <Link href={`/phones/${phone.slug}`} className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">{phone.modelName}</Link>
             </h3>
-            <p className="font-bold text-blue-600 text-sm">{formatPrice(phone.pricePKR)}</p>
-            {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
-              <p className="text-[10px] text-emerald-600 font-medium line-through">{formatPrice(phone.originalPricePKR)} <span className="text-emerald-700 font-bold">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
-            )}
-            <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+            <div className="h-10 pt-1">
+              <p className="truncate text-sm font-bold text-blue-600">{formatPrice(phone.pricePKR)}</p>
+              {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
+                <p className="truncate text-[10px] font-medium text-emerald-600 line-through">{formatPrice(phone.originalPricePKR)} <span className="font-bold text-emerald-700">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
+              )}
+            </div>
+            <div className="flex h-[52px] content-start items-start gap-1.5 overflow-hidden pt-1 flex-wrap sm:h-[58px]">
               {phone.specs?.ram && (
                 <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                   <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
@@ -131,20 +127,20 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             </div>
           </div>
           {/* Action buttons row */}
-          <div className="flex items-center gap-2 mt-3">
+          <div className="mt-auto flex h-11 items-center gap-1.5 pt-0 sm:gap-2">
             <Link
               href={`/phones/${phone.slug}`}
               onClick={() => onSelect?.(phone.id)}
               className="flex min-h-11 flex-1 items-center justify-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-bold text-white shadow-sm shadow-sky-500/20 transition hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
             >
-              View Details <ChevronRight className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">View Details</span><span className="xl:hidden">View</span> <ChevronRight className="h-3.5 w-3.5" />
             </Link>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); wishlist.toggle(phone); }}
               aria-label={`${wishlisted ? 'Remove' : 'Add'} ${phone.modelName} ${wishlisted ? 'from' : 'to'} wishlist`}
               aria-pressed={wishlisted}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
               title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
             >
               <Heart className={`w-3.5 h-3.5 ${wishlisted ? 'fill-current' : ''}`} />
@@ -153,7 +149,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             <Link
               href={`/compare?p=${phone.slug}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Compare"
               aria-label={`Compare ${phone.modelName}`}
             >
@@ -168,7 +164,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               aria-label={`Quick view ${phone.modelName}`}
               aria-expanded={qvOpen}
               aria-haspopup="dialog"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+              className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Quick View"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -186,5 +182,18 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
         />
       )}
     </>
+  );
+}
+
+export function PhoneCardSkeleton() {
+  return (
+    <div className="h-[440px] animate-pulse rounded-2xl border border-slate-200 bg-white p-3 sm:h-[472px] sm:p-4" aria-hidden="true">
+      <div className="aspect-square rounded-2xl bg-slate-100" />
+      <div className="mt-3 h-3 w-1/3 rounded bg-slate-100" />
+      <div className="mt-2 h-10 rounded bg-slate-100" />
+      <div className="mt-2 h-4 w-2/3 rounded bg-slate-100" />
+      <div className="mt-4 h-12 rounded bg-slate-100" />
+      <div className="mt-3 h-11 rounded-xl bg-slate-100" />
+    </div>
   );
 }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, ChevronRight, Newspaper, BarChart3, Target,
+  Check, Newspaper, BarChart3, Target,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
-import { formatPrice } from '@/components/shared/formatPrice';
 import { HomeHeroSearch } from '@/components/home/HomeHeroSearch';
 import { HomeNewsletter } from '@/components/home/HomeNewsletter';
 import { HomeVideoSection } from '@/components/home/HomeVideoSection';
@@ -108,32 +107,13 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
 }
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
-function CompactTopPhones({ phones, title, icon: Icon, gradient, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; gradient: string; link: string; linkText?: string }) {
+function CompactTopPhones({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string }) {
   if (!phones.length) return null;
   return (
     <section className="space-y-4">
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="card-premium overflow-hidden hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
-          <div className={`bg-gradient-to-br ${gradient} p-4 text-white`}>
-            <div className="flex items-center gap-2"><Icon className="w-5 h-5" /><h3 className="font-bold text-sm">{title}</h3></div>
-          </div>
-          <div className="p-3 space-y-1.5">
-            {phones.slice(0, 5).map((p, i) => (
-              <Link key={p.id} href={`/phones/${p.slug}`} className="flex items-center gap-3 hover:bg-gray-50 rounded-xl p-2 -m-1 transition-colors">
-                <span className="text-xs font-bold text-gray-300 w-5 text-center">#{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-muted-foreground">{p.brand?.name}</p>
-                  <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
-                </div>
-                <p className="text-xs font-bold text-blue-600 shrink-0">{formatPrice(p.pricePKR)}</p>
-              </Link>
-            ))}
-            <Link href={link} className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium pt-2 hover:text-blue-600 transition-colors">
-              {linkText || 'View All'} <ChevronRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+        {phones.slice(0, 4).map(p => <PhoneCard key={p.id} phone={p} />)}
       </div>
     </section>
   );
@@ -252,20 +232,8 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
   return (
     <section className="space-y-4">
       <SectionHeader title="Latest Reviews" icon={Star} link="/reviews" linkText="All Reviews" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {reviewedPhones.map(p => (
-          <Link key={p.id} href={`/phones/${p.slug}`} className="card-premium p-4 hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-muted-foreground font-medium">{p.brand?.name}</p>
-              <div className="flex items-center gap-0.5 ml-auto">
-                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                <span className="text-xs font-bold text-gray-900">{p.overallRating}/10</span>
-              </div>
-            </div>
-            <h3 className="font-semibold text-sm text-gray-900 mb-2 line-clamp-1">{p.modelName}</h3>
-            <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">{p.reviewSummary}</p>
-          </Link>
-        ))}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+        {reviewedPhones.map(p => <PhoneCard key={p.id} phone={p} />)}
       </div>
     </section>
   );
@@ -408,13 +376,13 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
 
             {/* ===== 10. BUDGET CHAMPIONS ===== */}
-            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} gradient="from-green-500 to-emerald-600" link="/best-budget-phone" />}
+            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" />}
 
             {/* ===== 11. PREMIUM FLAGSHIPS ===== */}
-            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} gradient="from-amber-500 to-orange-500" link="/best-value-phone" linkText="See All" />}
+            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" />}
 
             {/* ===== 12. UPCOMING PHONES ===== */}
-            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} gradient="from-indigo-500 to-violet-600" link="/upcoming" />}
+            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" />}
 
             {/* ===== 13. LATEST REVIEWS ===== */}
             {visible('reviews') && <HomeReviewsSection phones={data.featured} />}

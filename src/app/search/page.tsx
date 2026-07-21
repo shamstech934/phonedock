@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useMemo } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import { Search, Smartphone, Layers, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
-import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Brand, Phone } from '@/components/shared/types';
 
 function HighlightText({ text, query }: { text: string; query: string }) {
@@ -25,19 +25,6 @@ function HighlightText({ text, query }: { text: string; query: string }) {
         )
       )}
     </>
-  );
-}
-
-function PhoneCardSkeleton() {
-  return (
-    <div className="card-premium overflow-hidden">
-      <div className="p-3 sm:p-4">
-        <div className="skeleton-shimmer aspect-square rounded-xl mb-3" />
-        <div className="skeleton-shimmer h-3 w-16 mb-2 rounded-md" />
-        <div className="skeleton-shimmer h-4 w-full mb-1.5 rounded-md" />
-        <div className="skeleton-shimmer h-9 w-full rounded-lg" />
-      </div>
-    </div>
   );
 }
 

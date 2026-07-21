@@ -1,10 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Award, BatteryCharging, Camera, Gamepad2, Sparkles, WalletCards } from 'lucide-react';
 import { getTopPhones } from '@/lib/get-top-phones';
 import { rankPhones, getRankingMethodology, type RankingCategory } from '@/lib/intelligence/rankings';
-import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
-import { formatPrice } from '@/components/shared/formatPrice';
+import { PhoneCard } from '@/components/shared/PhoneCard';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
@@ -60,20 +58,12 @@ export default async function RankingsPage() {
               </div>
 
               {section.phones.length ? (
-                <div className="grid gap-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
                   {section.phones.map(item => (
-                    <Link key={item.phone.id} href={`/phone/${item.phone.slug}`} className="group rounded-xl border border-slate-200 p-4 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-2xl font-black text-slate-300">#{item.rank}</span>
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{item.score}/100</span>
-                      </div>
-                      <div className="relative mx-auto mb-3 h-32 w-full">
-                        <SafePhoneImage src={item.phone.thumbnail} alt={item.phone.modelName} width={220} height={128} className="h-32 w-full object-contain transition group-hover:scale-105" sizes="(max-width: 1024px) 50vw, 20vw" />
-                      </div>
-                      <h3 className="line-clamp-2 font-semibold text-slate-900">{item.phone.modelName}</h3>
-                      <p className="mt-1 text-sm font-bold text-blue-600">{formatPrice(item.phone.pricePKR)}</p>
-                      <p className="mt-2 text-xs text-slate-500">Data confidence: {item.confidence}%</p>
-                    </Link>
+                    <div key={item.phone.id} className="relative">
+                      <span className="absolute left-2 top-2 z-10 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-white">#{item.rank}</span>
+                      <PhoneCard phone={item.phone} />
+                    </div>
                   ))}
                 </div>
               ) : (
