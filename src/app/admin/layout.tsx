@@ -7,7 +7,7 @@ import {
   BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
   ChevronDown, DollarSign, Database, Zap, Key, Play, TrendingDown,
-  ShieldCheck,
+  ShieldCheck, Rocket,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
@@ -22,6 +22,7 @@ interface NavLink {
 
 const adminLinks: NavLink[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
+  { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
   { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
   { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },
   { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },
