@@ -1170,11 +1170,13 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
               {recommendationGroups.length > 0 && (
                 <section className="space-y-5 pt-4">
                   <SectionHeader title="Smart alternatives" icon={Smartphone} />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div data-testid="smart-alternatives-grid" className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-4">
                     {recommendationGroups.map(({ label, phone: item }) => (
-                      <div key={item.id} className="space-y-2">
-                        <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{label}</span>
-                        <PhoneCard phone={item} />
+                      <div key={item.id} className="flex h-full min-w-0 flex-col gap-2">
+                        <div className="flex h-6 min-h-6 items-center overflow-hidden">
+                          <span className="truncate rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{label}</span>
+                        </div>
+                        <div className="min-h-0 flex-1"><PhoneCard phone={item} /></div>
                       </div>
                     ))}
                   </div>

@@ -61,7 +61,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
 
   return (
     <>
-      <article data-testid="phone-card" className="phone-card glass-shine group flex h-full min-h-[440px] overflow-hidden sm:min-h-[472px]">
+      <article data-testid="phone-card" className="phone-card glass-shine group flex h-[440px] min-h-0 overflow-hidden sm:h-[472px]">
         <div className="flex h-full min-w-0 flex-1 flex-col p-3 sm:p-4">
           <Link
             href={`/phones/${phone.slug}`}
@@ -115,37 +115,37 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
                 <p className="truncate text-[10px] font-medium text-emerald-600 line-through">{formatPrice(phone.originalPricePKR)} <span className="font-bold text-emerald-700">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
               )}
             </div>
-            <div className="flex h-[52px] content-start items-start gap-1.5 overflow-hidden pt-1 flex-wrap sm:h-[58px]">
+            <div data-testid="phone-card-specs" className="grid h-16 min-h-16 max-h-16 grid-cols-2 grid-rows-3 content-start gap-1.5 overflow-hidden pt-1">
               {phone.specs?.ram && (
-                <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                  <Zap className="w-2.5 h-2.5" />{phone.specs.ram}
+                <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Zap className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.ram}</span>
                 </span>
               )}
               {phone.specs?.storage && (
-                <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                  <Layers className="w-2.5 h-2.5" />{phone.specs.storage}
+                <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Layers className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.storage}</span>
                 </span>
               )}
               {displaySize && (
-                <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                  <Monitor className="w-2.5 h-2.5" />{displaySize}
+                <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Monitor className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{displaySize}</span>
                 </span>
               )}
               {phone.specs?.chipset && (
-                <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md items-center gap-0.5 hidden sm:flex">
-                  <Cpu className="w-2.5 h-2.5" />{phone.specs.chipset.split(' ').slice(0, 2).join(' ')}
+                <span className="hidden min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground sm:flex">
+                  <Cpu className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.chipset}</span>
                 </span>
               )}
               {phone.specs?.battery && (
-                <span className="text-[10px] text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                  <Battery className="w-2.5 h-2.5" />{phone.specs.battery}
+                <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Battery className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.battery}</span>
                 </span>
               )}
             </div>
           </div>
           </Link>
           {/* Action buttons row */}
-          <div className="mt-auto flex h-11 items-center gap-1.5 pt-0 sm:gap-2">
+          <div data-testid="phone-card-actions" className="mt-auto flex h-11 min-h-11 items-center gap-1.5 pt-0 sm:gap-2">
             <Link
               href={`/phones/${phone.slug}`}
               onClick={() => onSelect?.(phone.id)}
