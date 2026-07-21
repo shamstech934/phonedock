@@ -7,6 +7,7 @@ const UserSchema = new Schema({
   emailVerified: { type: Boolean, default: false },
   status: { type: String, enum: ['active', 'blocked'], default: 'active', index: true },
   lastLoginAt: { type: Date, default: null },
+  sessionVersion: { type: Number, default: 0, min: 0 },
 }, { timestamps: true });
 
 export interface IUser extends mongoose.Document {
@@ -16,6 +17,7 @@ export interface IUser extends mongoose.Document {
   emailVerified: boolean;
   status: 'active' | 'blocked';
   lastLoginAt: Date | null;
+  sessionVersion: number;
   createdAt: Date;
   updatedAt: Date;
 }

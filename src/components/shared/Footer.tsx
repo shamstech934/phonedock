@@ -16,13 +16,13 @@ export function Footer() {
               </div>
               <span className="font-display font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
             </Link>
-            <p className="text-sm leading-relaxed text-gray-500">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+            <p className="text-sm leading-relaxed text-gray-400">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
           </div>
           <div>
             <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
             <div className="space-y-2.5 text-sm">
               {FOOTER_BRANDS.map(b => (
-                <Link key={b} href={`/brands/${b.toLowerCase()}`} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{b}</Link>
+                <Link key={b} href={`/brands/${b.toLowerCase()}`} className="block text-gray-400 hover:text-blue-300 transition-colors duration-200">{b}</Link>
               ))}
             </div>
           </div>
@@ -37,7 +37,7 @@ export function Footer() {
                 { l: 'Price Ranges', h: '/price-ranges', icon: BarChart3 },
                 { l: 'News', h: '/news', icon: null },
               ].map(item => (
-                <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
+                <Link key={item.l} href={item.h} className="block text-gray-400 hover:text-blue-300 transition-colors duration-200">{item.l}</Link>
               ))}
             </div>
           </div>
@@ -52,7 +52,7 @@ export function Footer() {
                 { l: 'Advertise', h: '/advertise' },
                 { l: 'Best Budget Phones', h: '/best-budget-phone' },
               ].map(item => (
-                <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
+                <Link key={item.l} href={item.h} className="block text-gray-400 hover:text-blue-300 transition-colors duration-200">{item.l}</Link>
               ))}
             </div>
           </div>
@@ -67,15 +67,15 @@ export function Footer() {
                 { l: 'Data Sources', h: '/data-sources' },
                 { l: 'Rating Methodology', h: '/rating-methodology' },
               ].map(item => (
-                <Link key={item.l} href={item.h} className="block text-gray-500 hover:text-blue-400 transition-colors duration-200">{item.l}</Link>
+                <Link key={item.l} href={item.h} className="block text-gray-400 hover:text-blue-300 transition-colors duration-200">{item.l}</Link>
               ))}
             </div>
           </div>
         </div>
         <div className="divider-glass mb-6" />
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-600">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-400">
           <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
-          <p className="text-cyan-400/60 font-medium">Phone prices may vary. Check with retailers.</p>
+          <p className="text-cyan-300 font-medium">Phone prices may vary. Check with retailers.</p>
           {process.env.NEXT_PUBLIC_BUILD_ID && (
             <p className="text-gray-700 text-[10px]">Build: {process.env.NEXT_PUBLIC_BUILD_ID}</p>
           )}

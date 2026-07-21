@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { connectDB, getAdminFromRequest, requirePermission, MAX_UPLOAD_RECORDS, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES } from './helpers';
+import { parseBoundedInt } from '@/lib/http';
 import { ImportJob, ImportBatch, ImportRecord } from '@/lib/models';
 import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
@@ -624,8 +625,8 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
   const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
   const permCheck = requirePermission(authResult.admin, 'imports:read'); if (permCheck) return permCheck;
 
-  const page = parseInt(req.nextUrl.searchParams.get('page') || '1');
-  const limit = Math.min(50, parseInt(req.nextUrl.searchParams.get('limit') || '20'));
+  const page = parseBoundedInt(req.nextUrl.searchParams.get('page'), 1);
+  const limit = parseBoundedInt(req.nextUrl.searchParams.get('limit'), 20, { max: 50 });
 
   const [jobs, total] = await Promise.all([
     ImportJob.find().sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),

@@ -71,5 +71,6 @@ const PriceHistorySchema = new Schema({
 
 PriceHistorySchema.index({ phoneId: 1, storeName: 1 });
 PriceHistorySchema.index({ phoneId: 1, recordedAt: -1 });
+PriceHistorySchema.index({ phoneId: 1, storeName: 1, recordedAt: -1 });
 
 export const PriceHistory = mongoose.models.PriceHistory || mongoose.model('PriceHistory', PriceHistorySchema);

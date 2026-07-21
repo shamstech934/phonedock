@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { parseBoundedInt } from '@/lib/http';
 import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones, type PhoneDocOrJson, type PhoneJson } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
@@ -207,8 +208,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   if (segments.length === 1 && segments[0] === 'phones') {
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const search = url.searchParams.get('search') || '';
     const brand = url.searchParams.get('brand') || '';
     const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
@@ -596,8 +597,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   if (segments.length === 1 && segments[0] === 'videos') {
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '12', 10)));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 12, { max: 20 });
     const skip = (page - 1) * limit;
     const [videos, total] = await Promise.all([
       Video.find({ active: true }).sort({ publishedAt: -1 }).skip(skip).limit(limit).populate('phoneId', 'modelName slug thumbnail brand').lean(),
@@ -635,7 +636,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const url = new URL(req.url);
     const ALLOWED = new Set(['cameraScore', 'batteryScore', 'performanceScore', 'valueScore', 'displayScore', 'overallRating', 'pricePKR']);
     const sort = ALLOWED.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'overallRating';
-    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 10, { max: 20 });
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
     const raw = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
@@ -678,7 +679,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const maxPrice = parseFloat(segments[1]);
     if (isNaN(maxPrice) || maxPrice <= 0) return cachedError('Invalid price', 400, 60, 300);
-    const page = Math.max(1, parseInt(new URL(req.url).searchParams.get('page') || '1'));
+    const page = parseBoundedInt(new URL(req.url).searchParams.get('page'), 1);
     const limit = 20;
     const [phones, rawTotal] = await Promise.all([
       Phone.find({ active: true, status: 'published', pricePKR: { $gt: 0, $lte: maxPrice } })
@@ -712,8 +713,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
   if (segments.length === 1 && segments[0] === 'reviews') {
     await connectDB();
     const url = new URL(req.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '10')));
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 10, { max: 20 });
     const skip = (page - 1) * limit;
     const [reviews, total] = await Promise.all([
       UserReview.find({ status: 'approved' }).sort({ createdAt: -1 }).skip(skip).limit(limit)

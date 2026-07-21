@@ -149,7 +149,7 @@ export function Header() {
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
               <Smartphone className="w-5 h-5 text-white" />
             </div>
-            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-500">Dock</span></span>
+            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-700">Dock</span></span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-0.5">

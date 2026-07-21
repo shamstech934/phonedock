@@ -8,8 +8,6 @@ import { UserProvider } from "@/lib/useUser";
 
 const BASE_URL = getBaseUrl();
 
-export const dynamic = 'force-dynamic';
-
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {

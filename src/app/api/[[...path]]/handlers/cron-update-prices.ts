@@ -32,28 +32,35 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
   // ── Distributed lock via SystemState ──
   const now = new Date();
-  let lockDoc = await SystemState.findOne({ key: LOCK_KEY }).lean();
-
-  if (lockDoc && lockDoc.completed && lockDoc.completedAt) {
-    const lockAge = now.getTime() - new Date(lockDoc.completedAt).getTime();
-    // If lock was acquired less than LOCK_TTL_MS ago, another instance is running
-    if (lockAge < LOCK_TTL_MS) {
-      return NextResponse.json({ error: 'Job already running', lockedAt: lockDoc.completedAt }, { status: 409 });
-    }
-  }
-
-  // Acquire lock
-  await SystemState.findOneAndUpdate(
-    { key: LOCK_KEY },
-    {
-      $set: {
-        completed: true,
-        completedAt: now,
-        metadata: { startedAt: now.toISOString() },
+  const staleBefore = new Date(now.getTime() - LOCK_TTL_MS);
+  try {
+    // Acquire the lock atomically. The old read-then-write sequence allowed two
+    // serverless invocations to observe an unlocked document simultaneously.
+    await SystemState.findOneAndUpdate(
+      {
+        key: LOCK_KEY,
+        $or: [
+          { completed: false },
+          { completedAt: null },
+          { completedAt: { $lt: staleBefore } },
+        ],
       },
-    },
-    { upsert: true, new: true },
-  );
+      {
+        $set: {
+          completed: true,
+          completedAt: now,
+          metadata: { startedAt: now.toISOString() },
+        },
+      },
+      { upsert: true, new: true },
+    );
+  } catch (error: unknown) {
+    // A duplicate-key race means the unique lock key is already held.
+    if ((error as { code?: number }).code === 11000) {
+      return NextResponse.json({ error: 'Job already running' }, { status: 409 });
+    }
+    throw error;
+  }
 
   // ── Process listings ──
   const summary = { processed: 0, updated: 0, failed: 0, pending: 0 };

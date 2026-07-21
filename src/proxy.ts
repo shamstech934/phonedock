@@ -107,10 +107,8 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all admin routes and API admin routes
-    '/admin/:path*',
-    '/api/admin/:path*',
-    // Login path is included so public-route handling stays explicit
-    '/admin/login',
+    // Apply request IDs and security routing consistently to all application
+    // requests while excluding immutable Next.js assets.
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
