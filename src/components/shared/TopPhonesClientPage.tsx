@@ -4,7 +4,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { Smartphone } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
-import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Phone } from '@/components/shared/types';
 
 interface TopPhonesClientPageProps {
@@ -94,25 +94,19 @@ export function TopPhonesClientPage({
           {loading ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="rounded-xl border border-gray-100 bg-white p-4 animate-pulse">
-                  <div className="aspect-square bg-gray-100 rounded-lg mb-3" />
-                  <div className="h-3 bg-gray-100 rounded w-16 mb-2" />
-                  <div className="h-4 bg-gray-100 rounded w-28 mb-2" />
-                  <div className="h-4 bg-gray-100 rounded w-20" />
-                </div>
+                <PhoneCardSkeleton key={i} />
               ))}
             </div>
           ) : phones.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {phones.map((phone) => (
-                <div key={phone.id} className="relative">
-                  <PhoneCard phone={phone} />
-                  {badgeField && badgeLabel && (phone as unknown as Record<string, unknown>)[badgeField] as number > 0 && (
-                    <span className="absolute top-3 right-3 z-10 bg-emerald-600 text-white text-[10px] font-semibold shadow-sm px-2 py-0.5 rounded">
-                      {badgeLabel}: {(phone as unknown as Record<string, unknown>)[badgeField] as number}
-                    </span>
-                  )}
-                </div>
+                <PhoneCard
+                  key={phone.id}
+                  phone={phone}
+                  categoryScore={badgeField ? (phone as unknown as Record<string, unknown>)[badgeField] : undefined}
+                  categoryLabel={badgeLabel}
+                  hideOverallRating={badgeField === 'overallRating'}
+                />
               ))}
             </div>
           ) : (

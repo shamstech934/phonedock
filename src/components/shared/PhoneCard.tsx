@@ -13,10 +13,15 @@ const PhoneQuickViewDialog = dynamic(
 );
 import type { Phone } from '@/components/shared/types';
 import { useWishlist } from '@/lib/personalization/usePersonalization';
+import { formatCardScore } from '@/components/shared/phone-card-utils';
 
 interface PhoneCardProps {
   phone: Phone;
   onSelect?: (_id: string) => void;
+  categoryScore?: unknown;
+  categoryLabel?: string;
+  categoryScoreClassName?: string;
+  hideOverallRating?: boolean;
 }
 
 // Extract display size from display string
@@ -26,12 +31,14 @@ function extractDisplaySize(display?: string): string {
   return match ? `${match[1]}"` : '';
 }
 
-export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
+export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categoryScoreClassName = 'bg-emerald-600', hideOverallRating = false }: PhoneCardProps) {
   const [qvOpen, setQvOpen] = useState(false);
   const wishlist = useWishlist();
   const wishlisted = wishlist.has(phone.slug);
   const eyeButtonRef = useRef<HTMLButtonElement>(null);
   const displaySize = extractDisplaySize(phone.specs?.display);
+  const formattedCategoryScore = formatCardScore(categoryScore);
+  const formattedOverallRating = hideOverallRating ? null : formatCardScore(phone.overallRating);
 
   const handleQuickView = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -54,9 +61,16 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
 
   return (
     <>
-      <article className="phone-card glass-shine group flex h-full min-h-[440px] overflow-hidden sm:min-h-[472px]">
+      <article data-testid="phone-card" className="phone-card glass-shine group flex h-full min-h-[440px] overflow-hidden sm:min-h-[472px]">
         <div className="flex h-full min-w-0 flex-1 flex-col p-3 sm:p-4">
-          <div className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
+          <Link
+            href={`/phones/${phone.slug}`}
+            onClick={() => onSelect?.(phone.id)}
+            aria-label={`View ${phone.brand?.name ? `${phone.brand.name} ` : ''}${phone.modelName} details`}
+            data-testid="phone-card-link"
+            className="flex min-h-0 flex-1 cursor-pointer flex-col rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+          >
+          <div data-testid="phone-card-image" className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
             <SafePhoneImage
               src={phone.thumbnail}
               alt={phone.modelName}
@@ -69,18 +83,23 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
                 <Shield className="w-3 h-3 mr-0.5" /> PTA
               </Badge>
             )}
-            {phone.overallRating > 0 && (
-              <Badge className="absolute right-2 top-2 border border-amber-200 bg-white/95 text-[10px] font-bold text-slate-800 shadow-sm backdrop-blur-md">
-                <Star className="mr-0.5 h-3 w-3 fill-amber-400 text-amber-400" /> {phone.overallRating.toFixed(1)}
+            {formattedCategoryScore && categoryLabel && (
+              <Badge data-testid="category-score" className={`absolute right-2 top-2 z-[2] border-0 text-[10px] font-semibold text-white shadow-sm ${categoryScoreClassName}`}>
+                {categoryLabel} {formattedCategoryScore}
+              </Badge>
+            )}
+            {formattedOverallRating && (
+              <Badge data-testid="overall-rating" className="absolute bottom-2 right-2 z-[2] border border-amber-200 bg-white/95 text-[10px] font-bold text-slate-800 shadow-sm backdrop-blur-md">
+                <Star className="mr-0.5 h-3 w-3 fill-amber-400 text-amber-400" /> {formattedOverallRating}
               </Badge>
             )}
             {phone.upcoming && (
-              <Badge className="absolute bottom-2 right-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
+              <Badge className="absolute bottom-2 left-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
                 <Clock className="w-3 h-3 mr-0.5" /> Upcoming
               </Badge>
             )}
             {phone.trending && (
-              <Badge className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
+              <Badge className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md text-red-600 text-[10px] border border-red-100 font-medium">
                 <TrendingUp className="w-3 h-3 mr-0.5" /> Hot
               </Badge>
             )}
@@ -89,9 +108,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
             <div className="flex h-5 items-center justify-between">
               <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
             </div>
-            <h3 className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">
-              <Link href={`/phones/${phone.slug}`} className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">{phone.modelName}</Link>
-            </h3>
+            <h3 data-testid="phone-card-title" className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">{phone.modelName}</h3>
             <div className="h-10 pt-1">
               <p className="truncate text-sm font-bold text-blue-600">{formatPrice(phone.pricePKR)}</p>
               {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
@@ -126,6 +143,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               )}
             </div>
           </div>
+          </Link>
           {/* Action buttons row */}
           <div className="mt-auto flex h-11 items-center gap-1.5 pt-0 sm:gap-2">
             <Link
@@ -140,6 +158,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               onClick={(e) => { e.stopPropagation(); wishlist.toggle(phone); }}
               aria-label={`${wishlisted ? 'Remove' : 'Add'} ${phone.modelName} ${wishlisted ? 'from' : 'to'} wishlist`}
               aria-pressed={wishlisted}
+              data-testid="wishlist-action"
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
               title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
             >
@@ -152,6 +171,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Compare"
               aria-label={`Compare ${phone.modelName}`}
+              data-testid="compare-action"
             >
               <GitCompare className="w-3.5 h-3.5" />
             </Link>
@@ -164,6 +184,7 @@ export function PhoneCard({ phone, onSelect }: PhoneCardProps) {
               aria-label={`Quick view ${phone.modelName}`}
               aria-expanded={qvOpen}
               aria-haspopup="dialog"
+              data-testid="quick-view-action"
               className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Quick View"
             >
