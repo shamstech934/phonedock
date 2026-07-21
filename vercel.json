@@ -9,6 +9,5 @@
       "schedule": "0 6 * * *"
     }
   ],
-  "installCommand": "npx --yes npm@10.9.2 ci --no-audit --no-fund",
-  "$schema": "https://openapi.vercel.sh/vercel.json"
+  "installCommand": "npm ci --ignore-scripts --no-audit --no-fund"
 }
