@@ -12,6 +12,10 @@ for (const width of widths) {
 
     const heights = await cards.evaluateAll(nodes => nodes.slice(0, 4).map(node => Math.round(node.getBoundingClientRect().height)));
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1);
+    const actionY = await cards.evaluateAll(nodes => nodes.slice(0, 4).map(node => Math.round(node.querySelector('[data-testid="phone-card-actions"]')!.getBoundingClientRect().y)));
+    expect(Math.max(...actionY) - Math.min(...actionY)).toBeLessThanOrEqual(1);
+    const specsHeights = await cards.evaluateAll(nodes => nodes.slice(0, 4).map(node => Math.round(node.querySelector('[data-testid="phone-card-specs"]')!.getBoundingClientRect().height)));
+    expect(new Set(specsHeights).size).toBe(1);
     const first = cards.first();
     const category = first.getByTestId('category-score');
     const overall = first.getByTestId('overall-rating');
@@ -51,4 +55,29 @@ test('camera ranking image and title use the detail link', async ({ page }) => {
   await page.goBack();
   await page.getByTestId('phone-card').first().getByTestId('phone-card-title').click();
   await expect(page).toHaveURL(new RegExp(`${href!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+});
+
+test('smart alternatives reserve equal specs space and align actions', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.goto('/phones', { waitUntil: 'domcontentloaded' });
+  const firstPhone = page.getByTestId('phone-card-link').first();
+  test.skip(await firstPhone.count() === 0, 'Requires at least one seeded phone.');
+  await firstPhone.click();
+
+  const grid = page.getByTestId('smart-alternatives-grid');
+  test.skip(await grid.count() === 0, 'Selected phone has no Smart Alternatives.');
+  const cards = grid.getByTestId('phone-card');
+  test.skip(await cards.count() < 2, 'Requires at least two Smart Alternatives.');
+
+  const metrics = await cards.evaluateAll(nodes => nodes.map(node => {
+    const card = node.getBoundingClientRect();
+    const specs = node.querySelector('[data-testid="phone-card-specs"]')!.getBoundingClientRect();
+    const actions = node.querySelector('[data-testid="phone-card-actions"]')!.getBoundingClientRect();
+    return { cardHeight: Math.round(card.height), specsHeight: Math.round(specs.height), actionY: Math.round(actions.y), actionsBottom: Math.round(actions.bottom), specsOverflow: specs.scrollHeight > specs.clientHeight };
+  }));
+  expect(new Set(metrics.map(metric => metric.cardHeight)).size).toBe(1);
+  expect(new Set(metrics.map(metric => metric.specsHeight)).size).toBe(1);
+  expect(new Set(metrics.map(metric => metric.actionY)).size).toBe(1);
+  expect(new Set(metrics.map(metric => metric.actionsBottom)).size).toBe(1);
+  expect(metrics.every(metric => !metric.specsOverflow)).toBeTruthy();
 });

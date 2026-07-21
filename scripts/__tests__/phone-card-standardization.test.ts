@@ -13,7 +13,11 @@ assert.equal((card.match(/data-testid="overall-rating"/g) || []).length, 1, 'rat
 assert.match(card, /overall-rating[\s\S]*absolute bottom-2 right-2/, 'overall rating must remain in the fixed bottom-right position');
 assert.match(card, /fill-amber-400 text-amber-400/, 'rating must use the canonical gold-star style');
 assert.match(card, /line-clamp-2 h-10 min-h-10/, 'long titles need a fixed two-line area');
-assert.match(card, /mt-auto flex h-11/, 'actions need a fixed bottom-aligned area');
+assert.match(card, /phone-card-specs[\s\S]*h-16 min-h-16 max-h-16/, 'zero to five specs must share a fixed reserved area');
+assert.match(card, /grid-cols-2 grid-rows-3/, 'specs must use a bounded three-row layout');
+assert.equal((card.match(/phone\.specs\?\./g) || []).length >= 4, true, 'missing specs must remain conditional rather than fabricated');
+assert.match(card, /phone-card-actions[\s\S]*mt-auto flex h-11 min-h-11/, 'actions need a fixed bottom-aligned area');
+assert.match(card, /h-\[440px\][\s\S]*sm:h-\[472px\]/, 'card variants need deterministic responsive heights');
 assert.doesNotMatch(phones, /function PhoneCardSkeleton/);
 assert.doesNotMatch(search, /function PhoneCardSkeleton/);
 assert.match(home, /reviewedPhones\.map\(p => <PhoneCard/);
