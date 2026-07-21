@@ -449,35 +449,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const percentageChange = previousPrice > 0 ? Math.round((priceChange / previousPrice) * 10000) / 100 : 0;
     const lastPriceChangedAt = confirmed.length > 0 ? confirmed[0].capturedAt : null;
 
-    // Buying guidance is deliberately conservative: it only becomes decisive
-    // when enough confirmed observations exist. This avoids presenting a
-    // one-off price update as a reliable market trend.
-    const priceRange = highestPrice > lowestPrice ? highestPrice - lowestPrice : 0;
-    const positionInRange = priceRange > 0 && currentPrice > 0
-      ? Math.max(0, Math.min(1, (currentPrice - lowestPrice) / priceRange))
-      : null;
-    const discountFromAveragePct = averagePrice > 0 && currentPrice > 0
-      ? Math.round(((averagePrice - currentPrice) / averagePrice) * 10000) / 100
-      : 0;
-
-    let buyRecommendation: 'buy_now' | 'good_price' | 'wait' | 'insufficient_data' = 'insufficient_data';
-    let buyRecommendationReason = 'More confirmed price updates are needed before a reliable recommendation can be made.';
-    if (confirmed.length >= 3 && currentPrice > 0) {
-      if ((positionInRange !== null && positionInRange <= 0.2) || discountFromAveragePct >= 5) {
-        buyRecommendation = 'buy_now';
-        buyRecommendationReason = 'The current price is close to its confirmed low or meaningfully below the tracked average.';
-      } else if (priceChange < 0 || (positionInRange !== null && positionInRange <= 0.45)) {
-        buyRecommendation = 'good_price';
-        buyRecommendationReason = 'The price is in the lower half of its confirmed range and offers reasonable value.';
-      } else if (priceChange > 0 && positionInRange !== null && positionInRange >= 0.7) {
-        buyRecommendation = 'wait';
-        buyRecommendationReason = 'The current price is near the upper end of its confirmed range and recently increased.';
-      } else {
-        buyRecommendation = 'good_price';
-        buyRecommendationReason = 'The current price is broadly in line with its confirmed history.';
-      }
-    }
-
     return cached({
       currentPrice,
       previousPrice,
@@ -490,10 +461,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
       priceChange,
       percentageChange,
       lastPriceChangedAt,
-      positionInRange,
-      discountFromAveragePct,
-      buyRecommendation,
-      buyRecommendationReason,
       priceMode: phone.priceMode || 'manual',
       manualLock: phone.manualLock || false,
       history: confirmed.map(h => ({
