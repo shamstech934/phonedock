@@ -8,6 +8,5 @@
       "path": "/api/cron/check-price-drops",
       "schedule": "0 6 * * *"
     }
-  ],
-  "installCommand": "npm ci --ignore-scripts --no-audit --no-fund"
+  ]
 }
