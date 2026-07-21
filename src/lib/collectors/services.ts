@@ -85,6 +85,11 @@ export function validateCollectedPhone(phone: NormalizedPhone): ValidationIssue[
     }
   }
 
+  if (phone.pakistanPrice !== undefined && (phone.pakistanPrice < 1000 || phone.pakistanPrice > 5000000)) {
+    issues.push({ field: 'pakistanPrice', severity: 'error', message: 'Pakistan price is outside the accepted range' });
+  }
+  if (!phone.pakistanPrice) issues.push({ field: 'pakistanPrice', severity: 'warning', message: 'Pakistan pricing is missing' });
+
   return issues;
 }
 
@@ -126,7 +131,7 @@ function levenshtein(a: string, b: string): number {
 export function detectDuplicates(
   phone: NormalizedPhone,
   existingPhones: Array<{ _id: string; modelName: string; slug: string; brandId?: string; brand?: { name: string } }>,
-  providerRecordId?: string
+  _providerRecordId?: string
 ): DuplicateResult {
   const matches: DuplicateResult['matches'] = [];
   const phoneNorm = normalizeForComparison(`${phone.brandName} ${phone.model}`);
@@ -326,4 +331,13 @@ export function buildFieldProvenance(
   if (phone.benchmarks) Object.entries(phone.benchmarks).forEach(([k, v]) => add(`benchmarks.${k}`, v, 0.7));
 
   return provenance;
+}
+
+export function scoreCollectedPhone(phone: NormalizedPhone, issues: ValidationIssue[], sourceReliability = 1) {
+  const fields = [phone.brandName, phone.model, phone.slug, phone.releaseDate, phone.thumbnail, phone.display?.size, phone.processor?.chipset, phone.memory?.ram, phone.memory?.storage, phone.camera?.rearModules, phone.battery?.capacity, phone.software?.os, phone.pakistanPrice];
+  const completenessScore = Math.round(fields.filter(value => value !== undefined && value !== null && value !== '').length / fields.length * 100);
+  const errors = issues.filter(issue => issue.severity === 'error').length; const warnings = issues.length - errors;
+  const qualityScore = Math.max(0, Math.min(100, completenessScore - errors * 25 - warnings * 5));
+  const confidenceScore = Math.max(0, Math.min(100, Math.round(qualityScore * Math.max(0, Math.min(1, sourceReliability)))));
+  return { completenessScore, qualityScore, confidenceScore };
 }

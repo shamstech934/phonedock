@@ -3,10 +3,10 @@ import connectDB from '@/lib/mongodb';
 import { Types } from 'mongoose';
 import { createProvider, ProviderFetchResult } from './providers';
 import { NormalizedPhone, ProviderConfig, ProviderType, ConflictInfo } from './types';
-import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance } from './services';
+import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance, scoreCollectedPhone } from './services';
+import { createHash } from 'node:crypto';
 import { generateSlug } from '@/lib/import/validators';
 
-const BATCH_SIZE = 25;
 const MAX_COLLECT_PER_JOB = 2000;
 // Vercel serverless: limit pages per invocation to stay within timeout.
 // Set via env var (default 3 pages ~ safe for 60s Pro tier).
@@ -147,6 +147,7 @@ async function processCollectedPhone(
   // Validate
   const issues = validateCollectedPhone(phone);
   const isValid = !issues.some(i => i.severity === 'error');
+  const scores = scoreCollectedPhone(phone, issues, reliability);
 
   // Detect duplicates
   const dupResult = detectDuplicates(phone, existingPhones);
@@ -209,6 +210,8 @@ async function processCollectedPhone(
     sourceName,
     sourceUrl,
     providerRecordId: phone.slug || '',
+    checksum: createHash('sha256').update(JSON.stringify(phone)).digest('hex'),
+    lastVerifiedAt: new Date(),
     fieldProvenance,
     duplicateMatches: dupResult.matches.map(m => ({
       type: m.type, phoneId: m.phoneId || '', modelName: m.modelName || '',
@@ -219,7 +222,10 @@ async function processCollectedPhone(
     conflicts,
     conflictCount: conflicts.length,
     validationIssues: issues.map(i => `${i.severity}: ${i.field} - ${i.message}`),
+    validationErrors: issues.filter(i => i.severity === 'error').map(i => `${i.field}: ${i.message}`),
+    validationWarnings: issues.filter(i => i.severity === 'warning').map(i => `${i.field}: ${i.message}`),
     isValid,
+    ...scores,
     jobId: new Types.ObjectId(jobId),
     sourceReliability: reliability,
   });
@@ -391,6 +397,10 @@ function buildProviderConfig(source: Record<string, unknown>): ProviderConfig {
     region: (source.region as string) || '',
     dataPath: (source.dataPath as string) || '',
     mappingRules,
+    allowedDomains: (source.allowedDomains as string[]) || [],
+    timeoutMs: (source.timeoutMs as number) || 30000,
+    maxResponseBytes: (source.maxResponseBytes as number) || 5 * 1024 * 1024,
+    defaultValues: Object.fromEntries(Object.entries((source.defaultValues as Record<string, unknown>) || {})),
     pagination: {
       pageSize: (source.paginationPageSize as number) || 50,
       maxPages: (source.paginationMaxPages as number) || 10,

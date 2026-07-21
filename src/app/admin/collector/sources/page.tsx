@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle } from 'lucide-react';
+import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
 interface CollectorSource {
-  id: string; name: string; type: string; url?: string;
-  enabled: boolean; lastRun?: string; createdAt: string;
+  id: string; name: string; type: string; endpoint?: string;
+  enabled: boolean; lastSyncAt?: string; lastSuccessfulSyncAt?: string; lastError?: string; reliabilityScore?: number; createdAt: string;
 }
 
 export default function AdminCollectorSourcesPage() {
@@ -18,7 +18,7 @@ export default function AdminCollectorSourcesPage() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<string>('newest');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', type: 'api', url: '' });
+  const [form, setForm] = useState({ name: '', type: 'api', endpoint: '', dataPath: '', brandFilter: '', pollingSchedule: 'manual', apiKeyEnvVar: '' });
   const [saving, setSaving] = useState(false);
   const [deleteModal, setDeleteModal] = useState<CollectorSource | null>(null);
 
@@ -39,8 +39,24 @@ export default function AdminCollectorSourcesPage() {
     try {
       const response = await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) });
       if (!response.ok) throw new Error('Failed to add collector source');
-      setForm({ name: '', type: 'api', url: '' }); setShowForm(false); fetchSources();
+      setForm({ name: '', type: 'api', endpoint: '', dataPath: '', brandFilter: '', pollingSchedule: 'manual', apiKeyEnvVar: '' }); setShowForm(false); fetchSources();
     } catch (error) { setError(error instanceof Error ? error.message : 'Failed to add collector source'); } finally { setSaving(false); }
+  };
+
+  const testSource = async (source: CollectorSource) => {
+    setError(null);
+    const response = await fetch(`/api/collector/sources/${source.id}/test`, { method: 'POST', credentials: 'include' });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || result.message || 'Connection test failed');
+    else alert(`Connected: ${result.sampleCount || 0} sample records in ${result.latencyMs || 0}ms`);
+    fetchSources();
+  };
+
+  const runSource = async (source: CollectorSource, mode: 'incremental' | 'full') => {
+    const response = await fetch('/api/collector/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ sourceId: source.id, mode }) });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || 'Collector job failed');
+    else fetchSources();
   };
 
   const toggleSource = async (s: CollectorSource) => {
@@ -59,8 +75,8 @@ export default function AdminCollectorSourcesPage() {
   const activeCount = sources.filter(s => s.enabled).length;
   const inactiveCount = sources.length - activeCount;
   const lastRunDate = sources.reduce((latest, s) => {
-    if (!s.lastRun) return latest;
-    return !latest || new Date(s.lastRun) > new Date(latest) ? s.lastRun : latest;
+    if (!s.lastSyncAt) return latest;
+    return !latest || new Date(s.lastSyncAt) > new Date(latest) ? s.lastSyncAt : latest;
   }, null as string | null);
 
   const filteredSources = sources
@@ -110,6 +126,11 @@ export default function AdminCollectorSourcesPage() {
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
           <Plus className="w-3.5 h-3.5" /> Add Source
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="font-semibold text-gray-700">Templates:</span>
+        {['phones.csv', 'phones.json', 'prices.csv', 'prices.json'].map(file => <a key={file} href={`/templates/${file}`} download className="text-blue-600 hover:underline">{file}</a>)}
       </div>
 
       {/* Stats Cards */}
@@ -169,17 +190,22 @@ export default function AdminCollectorSourcesPage() {
               <label className="text-xs font-medium text-gray-700 mb-1 block">Type</label>
               <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white">
                 <option value="api">API</option>
-                <option value="web_scrape">Web Scraper</option>
-                <option value="csv">CSV Import</option>
-                <option value="xml">XML Feed</option>
-                <option value="rss">RSS Feed</option>
-                <option value="json">JSON Feed</option>
+                <option value="json_url">JSON URL</option>
+                <option value="csv_url">CSV URL</option>
+                <option value="xml_feed">XML Feed</option>
+                <option value="rss_feed">RSS / Atom Feed</option>
+                <option value="manual_url">Manual Structured URL</option>
+                <option value="file_upload">JSON / CSV Upload</option>
+                <option value="manufacturer">Manufacturer Adapter (approval required)</option>
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">URL / Endpoint</label>
-              <input value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder="https://..." />
+              <input value={form.endpoint} onChange={e => setForm({ ...form, endpoint: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder="https://..." />
             </div>
+            <div><label className="text-xs font-medium text-gray-700 mb-1 block">JSON data path</label><input value={form.dataPath} onChange={e => setForm({ ...form, dataPath: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="data.phones" /></div>
+            <div><label className="text-xs font-medium text-gray-700 mb-1 block">Supported brands</label><input value={form.brandFilter} onChange={e => setForm({ ...form, brandFilter: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="Samsung, Apple" /></div>
+            <div><label className="text-xs font-medium text-gray-700 mb-1 block">Secret environment variable</label><input value={form.apiKeyEnvVar} onChange={e => setForm({ ...form, apiKeyEnvVar: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="VENDOR_API_KEY" autoComplete="off" /></div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
@@ -199,21 +225,23 @@ export default function AdminCollectorSourcesPage() {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-sm text-gray-900 truncate">{s.name}</h3>
-              {s.url && <p className="text-[10px] text-muted-foreground truncate mt-0.5">{s.url}</p>}
+              {s.endpoint && <p className="text-[10px] text-muted-foreground truncate mt-0.5">{s.endpoint}</p>}
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge variant="secondary" className="text-[10px]">{s.type || 'api'}</Badge>
                 {s.enabled
                   ? <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50"><Zap className="w-2.5 h-2.5 mr-0.5" /> Active</Badge>
                   : <Badge variant="secondary" className="text-[10px]">Inactive</Badge>
                 }
-                {s.lastRun && (
+                {s.lastSyncAt && (
                   <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                    <Clock className="w-2.5 h-2.5" /> {new Date(s.lastRun).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    <Clock className="w-2.5 h-2.5" /> {new Date(s.lastSyncAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              <button onClick={() => testSource(s)} className="p-2 rounded-lg hover:bg-blue-100 text-blue-600" title="Test and preview"><PlugZap className="w-4 h-4" /></button>
+              <button onClick={() => runSource(s, 'incremental')} className="p-2 rounded-lg hover:bg-violet-100 text-violet-600" title="Run incremental sync"><Play className="w-4 h-4" /></button>
               <button onClick={() => toggleSource(s)} className={`p-2 rounded-lg transition-colors ${s.enabled ? 'hover:bg-red-100 text-red-500' : 'hover:bg-emerald-100 text-emerald-600'}`} title={s.enabled ? 'Disable' : 'Enable'} aria-label={s.enabled ? 'Disable' : 'Enable'}>
                 {s.enabled ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
               </button>

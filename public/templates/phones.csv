@@ -1,0 +1,2 @@
+brand,model,releaseDate,pakistanPrice,ptaApproved,thumbnail,display,chipset,ram,storage,rearCamera,frontCamera,battery,charging,os,sourceUrl,sourceRecordId
+Example Brand,Example Model,2026-01-15,99999,true,https://licensed.example/images/model.jpg,6.7 inch OLED,Example Chipset,8 GB,256 GB,50 MP,16 MP,5000 mAh,67 W,Android 16,https://licensed.example/feed,example-001

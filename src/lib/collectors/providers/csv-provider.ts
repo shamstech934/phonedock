@@ -12,7 +12,7 @@ export class CsvUrlProvider extends BaseProvider {
       return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
     }
 
-    const text = await response.text();
+    const text = await this.readTextLimited(response);
     const mapping = this.config.mappingRules || {};
 
     return new Promise((resolve) => {

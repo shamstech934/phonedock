@@ -9,7 +9,7 @@ const CollectorJobSchema = new Schema({
   sourceId: { type: Schema.Types.ObjectId, ref: 'CollectorSource' },
   sourceName: { type: String, default: '' },
   trigger: { type: String, enum: ['manual', 'scheduled', 'api'], default: 'manual' },
-  mode: { type: String, enum: ['single_brand', 'single_source', 'all_sources', 'date_range', 'model_specific'], default: 'single_source' },
+  mode: { type: String, enum: ['incremental', 'full', 'single_brand', 'single_source', 'all_sources', 'date_range', 'model_specific'], default: 'incremental' },
   filterBrand: { type: String, default: '' },
   filterModel: { type: String, default: '' },
   filterDateFrom: { type: String, default: '' },
@@ -39,10 +39,13 @@ const CollectorJobSchema = new Schema({
 
   // Resume support
   resumeToken: { type: String, default: '' },
+  retryCount: { type: Number, default: 0 },
+  requestId: { type: String, default: '' },
 }, { timestamps: true });
 
 CollectorJobSchema.index({ status: 1 });
 CollectorJobSchema.index({ createdAt: -1 });
 CollectorJobSchema.index({ sourceId: 1 });
+CollectorJobSchema.index({ sourceId: 1, status: 1 });
 
 export const CollectorJob = mongoose.models.CollectorJob || mongoose.model('CollectorJob', CollectorJobSchema);

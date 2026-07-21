@@ -1,4 +1,5 @@
 import { NormalizedPhone, ProviderConfig, FieldProvenance } from '../types';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
 export interface ProviderFetchResult {
   phones: NormalizedPhone[];
@@ -73,6 +74,8 @@ export abstract class BaseProvider {
   }
 
   protected async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 30000): Promise<Response> {
+    const validation = await validateUrlForFetch(url, this.config.allowedDomains || []);
+    if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -92,10 +95,18 @@ export abstract class BaseProvider {
           headers['Authorization'] = `Bearer ${key}`;
         }
       }
-      const response = await fetch(url, { ...options, headers, signal: controller.signal });
+      const response = await fetch(url, { ...options, headers, signal: controller.signal, redirect: 'error' });
+      const declaredLength = Number(response.headers.get('content-length') || 0);
+      if (declaredLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
       return response;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  protected async readTextLimited(response: Response): Promise<string> {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
+    return text;
   }
 }

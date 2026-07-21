@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CollectorSource, CollectorJob, CollectedPhone, Brand, Phone, PhoneSpecs, ActivityLog } from '@/lib/models';
-import { connectDB, getAdminFromRequest, requirePermission, escapeRegex } from './helpers';
-import { flattenCollectedPhoneSpecs } from '@/lib/normalize-specs';
+import { CollectorSource, CollectorJob, CollectedPhone, ActivityLog } from '@/lib/models';
+import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
+import { createProvider } from '@/lib/collectors/providers';
+import { startJob, approveAndImport } from '@/lib/collectors/job-runner';
+import type { ProviderConfig, ProviderType } from '@/lib/collectors/types';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { randomUUID } from 'node:crypto';
+
+const PROVIDER_TYPES: ProviderType[] = ['json_url', 'csv_url', 'api', 'xml_feed', 'rss_feed', 'manufacturer', 'manual_url', 'file_upload'];
+
+function sourceConfig(source: Record<string, unknown>): ProviderConfig {
+  return {
+    type: source.type as ProviderType, endpoint: String(source.endpoint || ''), apiKeyEnvVar: String(source.apiKeyEnvVar || ''),
+    headers: Object.fromEntries(Object.entries((source.headers as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    brandFilter: (source.brandFilter as string[]) || [], allowedDomains: (source.allowedDomains as string[]) || [],
+    dataPath: String(source.dataPath || ''), mappingRules: Object.fromEntries(Object.entries((source.mappingRules as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    timeoutMs: Number(source.timeoutMs || 30000), maxResponseBytes: Number(source.maxResponseBytes || 5242880), enabled: source.enabled !== false,
+    pagination: { pageSize: Number(source.paginationPageSize || 50), maxPages: Number(source.paginationMaxPages || 10), pageParam: String(source.paginationPageParam || 'page') },
+  };
+}
 
 // ============ COLLECTOR GET ============
 
@@ -15,7 +32,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
       CollectorSource.countDocuments(),
       CollectorSource.countDocuments({ enabled: true }),
       CollectorJob.countDocuments(),
-      CollectedPhone.countDocuments({ status: 'pending_review' }),
+      CollectedPhone.countDocuments({ status: { $in: ['pending', 'needs_review'] } }),
       CollectorJob.countDocuments({ status: { $in: ['completed', 'failed'] } }),
     ]);
     return NextResponse.json({ totalSources, activeSources, totalJobs, pendingReview, completedJobs });
@@ -50,9 +67,15 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
-    const { name: srcName, type: srcType, endpoint: srcEndpoint, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, paginationConfig, brandFilter: srcBrandFilter } = body;
+    const { name: srcName, type: srcType, endpoint: bodyEndpoint, url, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, brandFilter: srcBrandFilter, allowedDomains, dataPath, pollingSchedule } = body;
+    const srcEndpoint = String(bodyEndpoint || url || '').trim();
     if (!srcName || !srcType) return NextResponse.json({ error: 'name and type required' }, { status: 400 });
-    const source = await CollectorSource.create({ name: srcName, type: srcType, endpoint: srcEndpoint || '', enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers, paginationConfig, brandFilter: srcBrandFilter });
+    if (!PROVIDER_TYPES.includes(srcType)) return NextResponse.json({ error: 'Unsupported provider type' }, { status: 400 });
+    if (srcType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
+    if (srcType !== 'file_upload') { const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []); if (!checked.safe) return NextResponse.json({ error: checked.reason }, { status: 400 }); }
+    const safeHeaders = Object.fromEntries(Object.entries((headers || {}) as Record<string, string>).filter(([key]) => !/authorization|api-key|cookie/i.test(key)));
+    const normalizedBrands = Array.isArray(srcBrandFilter) ? srcBrandFilter : String(srcBrandFilter || '').split(',').map(value => value.trim()).filter(Boolean);
+    const source = await CollectorSource.create({ name: String(srcName).trim(), type: srcType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, id: source._id });
   }
@@ -62,10 +85,15 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
-    const { sourceId: jobSourceId, provider: jobProvider, maxItems, mode: jobMode, brandFilter: jobBrandFilter } = body;
+    const { sourceId: jobSourceId, mode: jobMode, brandFilter: jobBrandFilter } = body;
     if (!jobSourceId) return NextResponse.json({ error: 'sourceId required' }, { status: 400 });
-    const job = await CollectorJob.create({ sourceId: jobSourceId, provider: jobProvider || '', maxItems: maxItems || 100, mode: jobMode || 'full', brandFilter: jobBrandFilter, status: 'pending', startedAt: new Date() });
+    const active = await CollectorJob.exists({ sourceId: jobSourceId, status: { $in: ['queued', 'running'] } });
+    if (active) return NextResponse.json({ error: 'A job is already active for this source.' }, { status: 409 });
+    const source = await CollectorSource.findById(jobSourceId);
+    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+    const job = await CollectorJob.create({ sourceId: jobSourceId, sourceName: source.name, mode: jobMode === 'full' ? 'full' : 'incremental', filterBrand: jobBrandFilter || '', status: 'queued', requestId: req.headers.get('x-request-id') || randomUUID() });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_job', details: `Created job for source ${jobSourceId}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
+    await startJob(job._id.toString());
     return NextResponse.json({ success: true, id: job._id });
   }
 
@@ -79,35 +107,11 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     if (action === 'approve') {
-      const brand = await Brand.findOne({ name: new RegExp(`^${escapeRegex(item.brandName)}$`, 'i') });
-      if (!brand) return NextResponse.json({ error: `Brand "${item.brandName}" not found` }, { status: 400 });
-      const phone = await Phone.create({
-        brandId: brand._id, modelName: item.model, slug: item.slug,
-        pricePKR: item.pakistanPrice || 0, thumbnail: item.thumbnail || '',
-        description: item.description || '', status: 'published', active: true,
-        featured: false, trending: false, upcoming: item.deviceStatus === 'upcoming' || item.upcoming === true,
-        releaseDate: item.releaseDate || '',
-        ptaApproved: item.ptaApproved === true,
-        ptaStatus: item.ptaStatus || 'Unknown',
-      });
-
-      // Flatten nested CollectedPhone specs into PhoneSpecs child document
-      const flatSpecs = flattenCollectedPhoneSpecs(item.toObject ? item.toObject() : item);
-      if (Object.keys(flatSpecs).length > 0) {
-        try {
-          await PhoneSpecs.findOneAndUpdate(
-            { phoneId: phone._id },
-            { $set: flatSpecs, phoneId: phone._id },
-            { upsert: true, new: true, strict: false },
-          );
-        } catch (e) { console.error('[Collector] Failed to create PhoneSpecs:', e); }
-      }
-
-      item.status = 'approved';
-      item.approvedPhoneId = phone._id;
-      await item.save();
+      if (!item.isValid) return NextResponse.json({ error: 'Invalid records cannot be approved.' }, { status: 409 });
+      const result = await approveAndImport(item._id.toString(), body.adminEdits);
+      if (!result.success) return NextResponse.json({ error: result.error || 'Import failed' }, { status: 409 });
       try { await ActivityLog.create({ adminId: admin._id, action: 'collector_approve', details: `Approved: ${item.brandName} ${item.model}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
-      return NextResponse.json({ success: true, phoneId: phone._id });
+      return NextResponse.json({ success: true, phoneId: result.phoneId });
     } else if (action === 'reject') {
       item.status = 'rejected';
       await item.save();
@@ -120,7 +124,13 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
   if (segments.length === 4 && segments[0] === 'collector' && segments[1] === 'sources' && segments[3] === 'test') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    return NextResponse.json({ success: false, error: 'Collector source testing not yet implemented.' }, { status: 501 });
+    await connectDB();
+    const source = await CollectorSource.findById(segments[2]).lean();
+    if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+    const provider = createProvider(sourceConfig(source as unknown as Record<string, unknown>), String(source._id), String(source.name));
+    const result = await provider.test();
+    await CollectorSource.updateOne({ _id: source._id }, { $set: result.success ? { lastSuccessfulSyncAt: new Date(), lastError: '' } : { lastError: result.message } });
+    return NextResponse.json({ ...result, sample: result.success ? (await provider.fetch(1)).phones.slice(0, 5) : [] }, { status: result.success ? 200 : 422 });
   }
 
   return undefined;
@@ -152,6 +162,15 @@ export async function handleCollectorDelete(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
     await CollectorJob.findByIdAndDelete(body.jobId);
+    return NextResponse.json({ success: true });
+  }
+
+  if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    const active = await CollectorJob.exists({ sourceId: segments[2], status: { $in: ['queued', 'running'] } });
+    if (active) return NextResponse.json({ error: 'Cancel the active job before deleting this source.' }, { status: 409 });
+    await Promise.all([CollectorSource.findByIdAndDelete(segments[2]), CollectorJob.deleteMany({ sourceId: segments[2] })]);
     return NextResponse.json({ success: true });
   }
 

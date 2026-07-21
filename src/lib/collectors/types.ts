@@ -1,7 +1,7 @@
 // ============ COLLECTOR SYSTEM TYPES ============
 
 // ---- Provider Types ----
-export type ProviderType = 'json_url' | 'csv_url' | 'api' | 'manufacturer' | 'manual_url' | 'file_upload';
+export type ProviderType = 'json_url' | 'csv_url' | 'api' | 'xml_feed' | 'rss_feed' | 'manufacturer' | 'manual_url' | 'file_upload';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -9,6 +9,9 @@ export interface ProviderConfig {
   apiKeyEnvVar?: string;        // e.g. 'PHONE_DATA_API_KEY'
   apiKeyHeader?: string;        // 'Authorization' (default) or 'x-api-key'
   headers?: Record<string, string>;
+  allowedDomains?: string[];
+  timeoutMs?: number;
+  maxResponseBytes?: number;
   brandFilter?: string[];       // e.g. ['Samsung', 'Apple']
   countryFilter?: string;       // e.g. 'Pakistan'
   region?: string;              // e.g. 'South Asia'
@@ -16,6 +19,7 @@ export interface ProviderConfig {
   pagination?: { pageSize: number; pageParam?: string; maxPages?: number };
   dataPath?: string;            // JSON path to phone array, e.g. 'data.phones'
   mappingRules?: Record<string, string>; // provider field → our field
+  defaultValues?: Record<string, unknown>;
   enabled: boolean;
 }
 

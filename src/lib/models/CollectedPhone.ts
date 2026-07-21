@@ -8,6 +8,8 @@ const fieldProvenanceSchema = new Schema({
   collectedAt: { type: Date, required: true },
   providerId: { type: String, required: true },
   providerRecordId: { type: String, default: '' },
+  checksum: { type: String, default: '', index: true },
+  lastVerifiedAt: { type: Date },
   confidence: { type: Number, default: 0.5, min: 0, max: 1 },
   rawHash: { type: String, default: '' },
 }, { _id: false });
@@ -140,7 +142,12 @@ const CollectedPhoneSchema = new Schema({
 
   // Validation
   validationIssues: [{ type: String }],
+  validationErrors: [{ type: String }],
+  validationWarnings: [{ type: String }],
   isValid: { type: Boolean, default: true },
+  qualityScore: { type: Number, default: 0, min: 0, max: 100 },
+  completenessScore: { type: Number, default: 0, min: 0, max: 100 },
+  confidenceScore: { type: Number, default: 0, min: 0, max: 100 },
 
   // Review
   reviewedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
