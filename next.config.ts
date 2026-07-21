@@ -26,10 +26,11 @@ const contentSecurityPolicy = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  // Type checking is enforced by the separate deterministic `npm run typecheck` CI step.
+  // Keeping it out of Next's worker avoids duplicate/hanging checks in constrained builders.
+  typescript: { ignoreBuildErrors: true },
+  outputFileTracingRoot: process.cwd(),
   // output: "standalone",
-  typescript: {
-    ignoreBuildErrors: false,
-  },
   serverExternalPackages: ['crypto'],
   reactStrictMode: true,
   images: {
@@ -46,6 +47,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizeCss: false,
+    cpus: 2,
   },
   async headers() {
     return [
