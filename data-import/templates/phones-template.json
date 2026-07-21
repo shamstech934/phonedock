@@ -1,0 +1,19 @@
+[
+  {
+    "brand": "Example Brand",
+    "model": "Example Phone",
+    "slug": "example-brand-example-phone",
+    "releaseDate": "2026-01-01",
+    "price": 99999,
+    "ptaApproved": true,
+    "marketAvailability": "available",
+    "imageUrl": "https://example.com/image.jpg",
+    "specs": {
+      "display": { "size": "6.7 inches", "type": "AMOLED", "refreshRate": "120Hz" },
+      "processor": { "chipset": "Example Chipset" },
+      "memory": { "ram": "8GB", "storage": "256GB" },
+      "battery": { "capacity": "5000mAh", "charging": "67W" }
+    },
+    "sourceUrl": "https://example.com/source"
+  }
+]

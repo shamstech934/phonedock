@@ -1,0 +1,2 @@
+brand,model,slug,releaseDate,price,ptaApproved,marketAvailability,imageUrl,displaySize,displayType,refreshRate,chipset,ram,storage,mainCamera,selfieCamera,battery,charging,os,sourceUrl
+Example Brand,Example Phone,example-brand-example-phone,2026-01-01,99999,true,available,https://example.com/image.jpg,6.7,AMOLED,120,Example Chipset,8GB,256GB,50MP,16MP,5000mAh,67W,Android 16,https://example.com/source
