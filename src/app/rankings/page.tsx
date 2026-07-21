@@ -64,7 +64,7 @@ export default async function RankingsPage() {
                         <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{item.score}/100</span>
                       </div>
                       <div className="relative mx-auto mb-3 h-32 w-full">
-                        <SafePhoneImage src={item.phone.thumbnail} alt={item.phone.modelName} fill className="object-contain transition group-hover:scale-105" sizes="(max-width: 1024px) 50vw, 20vw" />
+                        <SafePhoneImage src={item.phone.thumbnail} alt={item.phone.modelName} width={220} height={128} className="h-32 w-full object-contain transition group-hover:scale-105" sizes="(max-width: 1024px) 50vw, 20vw" />
                       </div>
                       <h3 className="line-clamp-2 font-semibold text-slate-900">{item.phone.modelName}</h3>
                       <p className="mt-1 text-sm font-bold text-blue-600">{formatPrice(item.phone.pricePKR)}</p>
