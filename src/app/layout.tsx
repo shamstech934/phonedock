@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { getBaseUrl } from "@/lib/urls";
+import { GrowthScripts } from "@/components/monetization/GrowthScripts";
+import { CookieConsent } from "@/components/monetization/CookieConsent";
 
 const BASE_URL = getBaseUrl();
 
@@ -41,6 +43,12 @@ export const metadata: Metadata = {
   category: "technology",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/logo.svg", shortcut: "/logo.svg", apple: "/logo.svg" },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+    other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
+      ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
+      : undefined,
+  },
 };
 
 export const viewport: Viewport = {
@@ -102,12 +110,14 @@ export default function RootLayout({
         ))}
       </head>
       <body className="font-sans antialiased">
+        <GrowthScripts />
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <main id="main-content" tabIndex={-1}>
             {children}
           </main>
         </ThemeProvider>
+        <CookieConsent />
       </body>
     </html>
   );

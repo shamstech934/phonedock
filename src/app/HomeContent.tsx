@@ -19,6 +19,7 @@ import { formatPrice } from '@/components/shared/formatPrice';
 import { HomeHeroSearch } from '@/components/home/HomeHeroSearch';
 import { HomeNewsletter } from '@/components/home/HomeNewsletter';
 import { HomeVideoSection } from '@/components/home/HomeVideoSection';
+import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 
 // ============ QUICK CATEGORY STRIP ============
@@ -384,6 +385,8 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {/* ===== 3. PAKISTAN TRUST BAR ===== */}
             <PakistanTrustBar />
 
+            <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
+
             {/* ===== 4. POPULAR BRANDS ===== */}
             {visible('brands') && <BrandsGrid brands={data.brands} />}
 
@@ -401,6 +404,8 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             {/* ===== 9. BEST BATTERY PHONES ===== */}
             {visible('battery') && <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" />}
+
+            <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
 
             {/* ===== 10. BUDGET CHAMPIONS ===== */}
             {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} gradient="from-green-500 to-emerald-600" link="/best-budget-phone" />}
