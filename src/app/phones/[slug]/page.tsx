@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     image: thumbnail || undefined,
     keywords: [brand, model, `${brand} ${model} price in Pakistan`, `${brand} ${model} specs`, 'PTA approved phone'].filter(Boolean),
   });
-}}
+}
 
 export default async function PhoneDetailPage({ params }: Props) {
   const { slug } = await params;
