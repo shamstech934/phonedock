@@ -81,15 +81,15 @@ function PakistanTrustBar() {
 // ============ COLORED CATEGORY SYSTEM ============
 type CategoryTone = 'sky' | 'rose' | 'violet' | 'indigo' | 'emerald' | 'amber' | 'orange' | 'fuchsia' | 'cyan';
 const CATEGORY_TONES: Record<CategoryTone, string> = {
-  sky: 'border-sky-200/60 bg-gradient-to-br from-sky-100/75 via-blue-50/45 to-cyan-100/55 shadow-sky-200/20',
-  rose: 'border-rose-200/60 bg-gradient-to-br from-rose-100/75 via-pink-50/45 to-orange-100/45 shadow-rose-200/20',
-  violet: 'border-violet-200/60 bg-gradient-to-br from-violet-100/75 via-purple-50/45 to-fuchsia-100/45 shadow-violet-200/20',
-  indigo: 'border-indigo-200/60 bg-gradient-to-br from-indigo-100/75 via-blue-50/45 to-violet-100/50 shadow-indigo-200/20',
-  emerald: 'border-emerald-200/60 bg-gradient-to-br from-emerald-100/75 via-green-50/45 to-teal-100/50 shadow-emerald-200/20',
-  amber: 'border-amber-200/60 bg-gradient-to-br from-amber-100/80 via-yellow-50/45 to-orange-100/45 shadow-amber-200/20',
-  orange: 'border-orange-200/60 bg-gradient-to-br from-orange-100/75 via-amber-50/45 to-rose-100/45 shadow-orange-200/20',
-  fuchsia: 'border-fuchsia-200/60 bg-gradient-to-br from-fuchsia-100/70 via-pink-50/45 to-violet-100/50 shadow-fuchsia-200/20',
-  cyan: 'border-cyan-200/60 bg-gradient-to-br from-cyan-100/75 via-sky-50/45 to-teal-100/50 shadow-cyan-200/20',
+  sky: 'border-sky-300/75 bg-gradient-to-br from-sky-200/90 via-blue-100/70 to-cyan-200/75 shadow-sky-300/30',
+  rose: 'border-rose-300/75 bg-gradient-to-br from-rose-200/90 via-pink-100/70 to-orange-200/65 shadow-rose-300/30',
+  violet: 'border-violet-300/75 bg-gradient-to-br from-violet-200/90 via-purple-100/70 to-fuchsia-200/65 shadow-violet-300/30',
+  indigo: 'border-indigo-300/75 bg-gradient-to-br from-indigo-200/90 via-blue-100/70 to-violet-200/70 shadow-indigo-300/30',
+  emerald: 'border-emerald-300/75 bg-gradient-to-br from-emerald-200/90 via-green-100/70 to-teal-200/70 shadow-emerald-300/30',
+  amber: 'border-amber-300/80 bg-gradient-to-br from-amber-200/95 via-yellow-100/75 to-orange-200/70 shadow-amber-300/30',
+  orange: 'border-orange-300/75 bg-gradient-to-br from-orange-200/90 via-amber-100/70 to-rose-200/65 shadow-orange-300/30',
+  fuchsia: 'border-fuchsia-300/75 bg-gradient-to-br from-fuchsia-200/85 via-pink-100/70 to-violet-200/70 shadow-fuchsia-300/30',
+  cyan: 'border-cyan-300/75 bg-gradient-to-br from-cyan-200/90 via-sky-100/70 to-teal-200/70 shadow-cyan-300/30',
 };
 
 // ============ PHONE SECTION (full card grid) ============
