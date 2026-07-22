@@ -28,6 +28,13 @@ assert.match(client, /aria-label="Price categories"/);
 assert.match(client, /lg:hidden/);
 assert.match(client, /params\.delete\('price'\)/);
 
+const home = read('src/app/HomeContent.tsx');
+assert.match(home, /function PriceCategorySidebar\(\)/);
+assert.match(home, /Phones by Price/);
+assert.match(home, /priceCategory=\$\{category\.key\}/);
+assert.match(home, /lg:grid-cols-\[minmax\(0,1fr\)_260px\]/);
+assert.match(home, /aria-label="Browse phones by price category"/);
+
 const listing = read('src/lib/fetch-public-listings.ts');
 assert.match(listing, /getPriceCategory\(params\.priceCategory\)/);
 assert.match(listing, /apiParams\.set\('priceMissing', 'true'\)/);

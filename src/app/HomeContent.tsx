@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, Newspaper, BarChart3, Target,
+  Check, Newspaper, BarChart3, Target, CircleDollarSign, ChevronRight,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { HomeNewsletter } from '@/components/home/HomeNewsletter';
 import { HomeVideoSection } from '@/components/home/HomeVideoSection';
 import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
+import { PRICE_CATEGORIES } from '@/lib/price-categories';
 
 // ============ QUICK CATEGORY STRIP ============
 const QUICK_CATEGORIES = [
@@ -174,6 +175,45 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
         </Link>
       </div>
     </section>
+  );
+}
+
+// ============ SHOP BY PRICE SIDEBAR ============
+function PriceCategorySidebar() {
+  const categories = PRICE_CATEGORIES.filter(category => !category.missing);
+
+  return (
+    <aside className="card-premium h-fit p-4 sm:p-5 lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
+      <div className="mb-3 flex items-center gap-2">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+          <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900">Phones by Price</h2>
+          <p className="text-[11px] text-muted-foreground">Choose your budget</p>
+        </div>
+      </div>
+
+      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1" aria-label="Browse phones by price category">
+        {categories.map(category => (
+          <Link
+            key={category.key}
+            href={`/phones?priceCategory=${category.key}`}
+            className="group flex min-h-12 items-center justify-between gap-2 rounded-xl border border-gray-200/70 bg-white/55 px-3 py-2 transition-colors hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span>
+              <span className="block text-[10px] text-muted-foreground">{category.shortLabel}</span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500" aria-hidden="true" />
+          </Link>
+        ))}
+      </nav>
+
+      <Link href="/price-ranges" className="mt-3 flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+        View all price ranges
+      </Link>
+    </aside>
   );
 }
 
@@ -355,8 +395,13 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
 
-            {/* ===== 4. POPULAR BRANDS ===== */}
-            {visible('brands') && <BrandsGrid brands={data.brands} />}
+            {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_260px] xl:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="min-w-0">
+                {visible('brands') && <BrandsGrid brands={data.brands} />}
+              </div>
+              <PriceCategorySidebar />
+            </div>
 
             {/* ===== 5. LATEST PHONES ===== */}
             {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
