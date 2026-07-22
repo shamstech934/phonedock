@@ -29,3 +29,10 @@
 - External mobile API compatibility is not guaranteed in 1.0.
 
 No intentional breaking API change is declared; integrations with internal catch-all handlers remain unsupported.
+
+## v5.1.0 — AI Phone Finder
+- Added reusable Roman Urdu and English natural-language query parser.
+- Added `k`, `lakh/lac`, plain PKR budget recognition.
+- Added typo/alias-aware brand detection, multi-intent detection, AMOLED, PTA, NFC, 5G and chipset filters.
+- Added parser confidence display and local recent-search history.
+- Added automated parser regression tests.
