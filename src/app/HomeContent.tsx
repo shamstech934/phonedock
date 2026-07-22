@@ -374,7 +374,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   </div>
 
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
-                  <div className="h-[190px] w-full flex-shrink-0 sm:h-[240px] lg:h-[270px] lg:w-[55%]">
+                  <div className="h-[330px] w-full flex-shrink-0 sm:h-[390px] lg:h-[470px] lg:w-[55%]">
                     {heroPhones.length > 0 ? (
                       <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} />
                     ) : (
