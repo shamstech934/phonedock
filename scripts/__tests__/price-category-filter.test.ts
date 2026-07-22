@@ -27,6 +27,10 @@ assert.match(client, /lg:grid-cols-\[220px_minmax\(0,1fr\)\]/);
 assert.match(client, /aria-label="Price categories"/);
 assert.match(client, /lg:hidden/);
 assert.match(client, /params\.delete\('price'\)/);
+assert.match(client, /aria-controls="phone-advanced-filters"/);
+assert.match(client, /aria-expanded=\{showFilters\}/);
+assert.match(client, /showFilters && <div id="phone-advanced-filters"/);
+assert.match(client, /setShowFilters\(current => !current\)/);
 
 const home = read('src/app/HomeContent.tsx');
 assert.match(home, /function PriceCategorySidebar\(\)/);

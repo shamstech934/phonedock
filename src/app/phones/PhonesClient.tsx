@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Smartphone, ChevronLeft, ChevronRight, CircleDollarSign } from 'lucide-react';
+import { Search, Smartphone, ChevronLeft, ChevronRight, CircleDollarSign, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
@@ -39,6 +39,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const [brands] = useState<Brand[]>(initialBrands);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(initialTotal);
+  const [showFilters, setShowFilters] = useState(false);
   const hydratedQueryKey = useRef(initialQueryKey);
 
   const q = searchParams.get('q') || '';
@@ -188,7 +189,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') updateParam('q', search); }} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2">
                 <select value={sortParam} onChange={e => updateParam('sort', e.target.value)} className="h-11 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                   <option value="newest">Newest</option>
                   <option value="trending">Trending</option>
@@ -197,11 +198,23 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                   <option value="rating">Top Rated</option>
                   <option value="name">Name A-Z</option>
                 </select>
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(current => !current)}
+                  aria-expanded={showFilters}
+                  aria-controls="phone-advanced-filters"
+                  className={`h-11 inline-flex items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${showFilters ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                  <span>Filters</span>
+                  {activeFilterCount > 0 && <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-blue-600 px-1.5 text-[10px] font-bold text-white" aria-label={`${activeFilterCount} active filters`}>{activeFilterCount}</span>}
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
               </div>
             </div>
 
             {/* Filter Rows */}
-            <div className="flex flex-wrap gap-2">
+            {showFilters && <div id="phone-advanced-filters" className="flex flex-wrap gap-2 border-t border-gray-200/70 pt-4">
               <select value={brandParam} onChange={e => updateParam('brand', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="all">All Brands</option>
                 {brands.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
@@ -246,7 +259,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
               <select value={chipsetParam} onChange={e => updateParam('chipset', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 {CHIPSET_OPTIONS.map(value => <option key={value} value={value}>{value === 'all' ? 'Chipset: All' : value}</option>)}
               </select>
-            </div>
+            </div>}
 
             {/* Active Filters */}
             {activeFilterCount > 0 && (
