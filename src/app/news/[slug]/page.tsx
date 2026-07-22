@@ -8,6 +8,7 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { connectDB } from '@/lib/mongodb';
 import { News } from '@/lib/models';
+import { serializeJsonLd } from '@/lib/json-ld';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
@@ -224,8 +225,8 @@ export default async function NewsArticlePage({
       <Header />
       <main className="flex-1">
         {/* JSON-LD */}
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />
 
         <div className="max-w-4xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}

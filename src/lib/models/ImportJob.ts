@@ -55,7 +55,7 @@ export interface IImportJob {
 }
 
 const ImportJobSchema = new Schema<IImportJob>({
-  importId: { type: String, required: true, unique: true, index: true },
+  importId: { type: String, required: true, unique: true },
   fileName: { type: String, required: true },
   fileType: { type: String, enum: ['json', 'csv', 'xlsx', 'zip'], required: true },
   fileSize: { type: Number, required: true },

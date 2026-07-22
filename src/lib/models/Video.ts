@@ -28,7 +28,7 @@ export interface IVideo extends Document {
 
 const VideoSchema = new Schema<IVideo>(
   {
-    youtubeId: { type: String, required: true, unique: true, index: true },
+    youtubeId: { type: String, required: true, unique: true },
     title: { type: String, required: true },
     description: { type: String, default: '' },
     thumbnailUrl: { type: String, required: true },

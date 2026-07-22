@@ -158,7 +158,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       await connectDB();
-      const alerts = await PriceAlert.find({ status: 'confirmed', notified: false }).populate('phoneId').lean();
+      // Bound each invocation so a large subscriber collection cannot exhaust a
+      // serverless worker. Remaining alerts are picked up by the next cron run.
+      const alerts = await PriceAlert.find({ status: 'confirmed', notified: false })
+        .sort({ createdAt: 1 })
+        .limit(500)
+        .populate('phoneId')
+        .lean();
       let sent = 0;
       // Batch-fetch latest prices for all alerted phones
       const phoneIds = alerts.map(a => {
@@ -205,7 +211,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
           } catch (e) { console.error('[PriceAlert email]', e); }
         }
       }
-      return NextResponse.json({ checked: alerts.length, sent });
+      return NextResponse.json({ checked: alerts.length, sent, batchLimit: 500, hasMore: alerts.length === 500 });
     }
 
     // Price alert confirmation: /api/price-alerts/confirm?token=xxx&email=xxx

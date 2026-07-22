@@ -35,6 +35,7 @@ function SearchContent() {
   const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
   const [loading, setLoading] = useState(true);
   const [searchError, setSearchError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!query) { setLoading(false); setSearchError(false); return; }
@@ -48,7 +49,7 @@ function SearchContent() {
       if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); }
     }).catch(() => { if (!cancelled) { setLoading(false); setSearchError(true); } });
     return () => { cancelled = true; };
-  }, [query]);
+  }, [query, retryNonce]);
 
   const total = results.brands.length + results.phones.length;
 
@@ -130,7 +131,7 @@ function SearchContent() {
           <AlertCircle className="w-14 h-14 mx-auto mb-4 text-amber-400" />
           <h3 className="text-lg font-bold text-gray-900 mb-1">Something went wrong</h3>
           <p className="text-sm mb-4">Unable to load search results. Please try again.</p>
-          <Button variant="outline" className="rounded-xl" onClick={() => window.location.reload()}>Try Again</Button>
+          <Button variant="outline" className="rounded-xl" onClick={() => setRetryNonce(value => value + 1)}>Try Again</Button>
         </div>
       )}
 

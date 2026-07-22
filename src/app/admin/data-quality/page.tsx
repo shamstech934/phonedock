@@ -793,7 +793,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [onRefresh]);
+  }, []);
 
   useEffect(() => { fetchDuplicates(); }, [fetchDuplicates]);
 

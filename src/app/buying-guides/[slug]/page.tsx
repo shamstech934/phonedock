@@ -9,6 +9,7 @@ import { getTopPhones } from '@/lib/get-top-phones';
 import { Phone } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import type { Phone as PhoneType } from '@/components/shared/types';
+import { serializeJsonLd } from '@/lib/json-ld';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 const guides = {
@@ -40,7 +41,7 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
   const phones = await getPhones(slug as GuideSlug);
   const jsonLd = { '@context': 'https://schema.org', '@type': 'ItemList', name: guide.title, itemListElement: phones.map((p, i) => ({ '@type': 'ListItem', position: i + 1, url: `${BASE_URL}/phones/${p.slug}`, name: p.modelName })) };
   return <div className="min-h-screen flex flex-col"><Header /><main className="flex-1 bg-slate-50/60">
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
     <div className="mx-auto max-w-7xl px-4 py-8">
       <nav className="flex items-center gap-1 text-xs text-gray-500"><Link href="/buying-guides">Buying Guides</Link><ChevronRight className="h-3 w-3" /><span>{guide.title}</span></nav>
       <div className="mt-5 rounded-3xl bg-white p-6 shadow-sm sm:p-8">

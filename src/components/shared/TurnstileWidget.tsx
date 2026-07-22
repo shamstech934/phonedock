@@ -27,7 +27,12 @@ interface TurnstileWidgetProps {
 export function TurnstileWidget({ siteKey, onVerify, onError, theme = 'auto', size = 'normal', className = '' }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const onVerifyRef = useRef(onVerify);
+  const onErrorRef = useRef(onError);
   const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => { onVerifyRef.current = onVerify; }, [onVerify]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -54,8 +59,8 @@ export function TurnstileWidget({ siteKey, onVerify, onError, theme = 'auto', si
       sitekey: siteKey,
       theme,
       size,
-      callback: (token: string) => onVerify(token),
-      'error-callback': () => onError?.(),
+      callback: (token: string) => onVerifyRef.current(token),
+      'error-callback': () => onErrorRef.current?.(),
       'expired-callback': () => {
         if (widgetIdRef.current) window.turnstile?.reset(widgetIdRef.current);
       },

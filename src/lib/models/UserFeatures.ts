@@ -18,7 +18,7 @@ RecentlyViewedSchema.index({ userId: 1, viewedAt: -1 });
 const CompareHistorySchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   phoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone', required: true }],
-  shareId: { type: String, required: true, unique: true, index: true },
+  shareId: { type: String, required: true, unique: true },
 }, { timestamps: true });
 CompareHistorySchema.index({ userId: 1, createdAt: -1 });
 

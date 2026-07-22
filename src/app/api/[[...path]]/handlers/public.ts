@@ -784,7 +784,6 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
         console.error('[Contact] Email send failed:', emailErr instanceof Error ? emailErr.message : 'Unknown error');
         // Still return success — don't expose email failure
       }
-    } else {
     }
 
     // Always return generic success (never reveal if email was actually sent)

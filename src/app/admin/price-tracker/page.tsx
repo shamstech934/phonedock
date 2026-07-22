@@ -224,6 +224,11 @@ export default function AdminPriceTrackerPage() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  const responseError = async (response: Response, fallback: string) => {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    return body.error || (response.status === 401 ? 'Authentication expired. Please sign in again.' : fallback);
+  };
+
   /* ── Debounced search for phones ── */
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -244,6 +249,8 @@ export default function AdminPriceTrackerPage() {
         fetch('/api/admin/price-tracker/overview', { credentials: 'include' }),
         fetch('/api/admin/price-tracker/changes?limit=10', { credentials: 'include' }),
       ]);
+      if (!statsRes.ok) throw new Error(await responseError(statsRes, 'Failed to load price overview'));
+      if (!changesRes.ok) throw new Error(await responseError(changesRes, 'Failed to load recent price changes'));
       if (statsRes.ok) {
         const d = await statsRes.json();
         setOverviewStats(d.stats || d);
@@ -252,7 +259,7 @@ export default function AdminPriceTrackerPage() {
         const d = await changesRes.json();
         setRecentChanges(d.changes || d.data || []);
       }
-    } catch {}
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price overview'); }
   }, []);
 
   const fetchPhones = useCallback(async () => {
@@ -276,11 +283,10 @@ export default function AdminPriceTrackerPage() {
   const fetchSources = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/price-tracker/sources', { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setSources(d.sources || d.data || []);
-      }
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load price sources'));
+      const d = await res.json();
+      setSources(d.sources || d.data || []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price sources'); }
   }, []);
 
   const fetchChanges = useCallback(async () => {
@@ -289,53 +295,48 @@ export default function AdminPriceTrackerPage() {
       if (changesFilter !== 'all') params.set('changeType', changesFilter);
       if (changesSourceType !== 'all') params.set('sourceType', changesSourceType);
       const res = await fetch(`/api/admin/price-tracker/changes?${params}`, { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setChanges(d.changes || d.data || []);
-      }
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load price changes'));
+      const d = await res.json();
+      setChanges(d.changes || d.data || []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price changes'); }
   }, [changesFilter, changesSourceType]);
 
   const fetchPending = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/price-tracker/pending', { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setPending(d.pending || d.data || []);
-      }
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load pending price reviews'));
+      const d = await res.json();
+      setPending(d.pending || d.data || []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load pending price reviews'); }
   }, []);
 
   const fetchPhoneOptions = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/price-tracker/phones?limit=200&fields=name,brand', { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setPhoneOptions(d.phones || d.data || []);
-      }
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load phone options'));
+      const d = await res.json();
+      setPhoneOptions(d.phones || d.data || []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load phone options'); }
   }, []);
 
   const fetchPriceHistory = useCallback(async (phoneId: string) => {
     if (!phoneId) { setPriceHistory([]); return; }
     try {
       const res = await fetch(`/api/admin/price-tracker/history/${phoneId}`, { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setPriceHistory(d.history || d.data || []);
-      }
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load price history'));
+      const d = await res.json();
+      setPriceHistory(d.history || d.data || []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price history'); }
   }, []);
 
   const fetchSettings = useCallback(async () => {
     setSettingsLoading(true);
     try {
       const res = await fetch('/api/admin/price-tracker/settings', { credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
-      }
-    } catch {} finally { setSettingsLoading(false); }
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load price tracker settings'));
+      const d = await res.json();
+      setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price tracker settings'); } finally { setSettingsLoading(false); }
   }, []);
 
   const saveSettings = useCallback(async () => {
@@ -343,11 +344,10 @@ export default function AdminPriceTrackerPage() {
     setSettingsSaved(false);
     try {
       const res = await fetch('/api/admin/price-tracker/settings', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
-      if (res.ok) {
-        setSettingsSaved(true);
-        setTimeout(() => setSettingsSaved(false), 3000);
-      }
-    } catch {} finally { setSettingsSaving(false); }
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to save price tracker settings'));
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save price tracker settings'); } finally { setSettingsSaving(false); }
   }, [settings]);
 
   // ── Load data on tab change ──
@@ -471,8 +471,9 @@ export default function AdminPriceTrackerPage() {
       const res = await fetch(`/api/admin/price-tracker/sources/${id}/toggle`, {
         method: 'POST', credentials: 'include',
       });
-      if (res.ok) fetchSources();
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to update source'));
+      fetchSources();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update source'); }
   };
 
   const handleApproveReject = async (changeId: string, action: 'approve' | 'reject') => {
@@ -484,11 +485,10 @@ export default function AdminPriceTrackerPage() {
         credentials: 'include',
         body: JSON.stringify({ changeId, action }),
       });
-      if (res.ok) {
-        fetchPending();
-        if (activeTab === 'overview') fetchOverview();
-      }
-    } catch {} finally { setActionLoading(''); }
+      if (!res.ok) throw new Error(await responseError(res, `Failed to ${action} price change`));
+      fetchPending();
+      if (activeTab === 'overview') fetchOverview();
+    } catch (e) { setError(e instanceof Error ? e.message : `Failed to ${action} price change`); } finally { setActionLoading(''); }
   };
 
   const handleToggleTracking = async (phoneId: string) => {
@@ -496,8 +496,9 @@ export default function AdminPriceTrackerPage() {
       const res = await fetch(`/api/admin/price-tracker/phones/${phoneId}/toggle`, {
         method: 'POST', credentials: 'include',
       });
-      if (res.ok) fetchPhones();
-    } catch {}
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to update phone tracking'));
+      fetchPhones();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update phone tracking'); }
   };
 
   const openEditPriceModal = (phone: PhonePrice) => {
@@ -1737,7 +1738,9 @@ export default function AdminPriceTrackerPage() {
       {renderHeader()}
       {renderTabs()}
 
-      {error && !editPriceModal && !addListingModal && activeTab === 'phones' ? null : null}
+      {error && !editPriceModal && !addListingModal && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
 
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'phones' && renderPhones()}

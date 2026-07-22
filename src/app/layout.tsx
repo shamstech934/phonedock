@@ -6,6 +6,7 @@ import { GrowthScripts } from "@/components/monetization/GrowthScripts";
 import { CookieConsent } from "@/components/monetization/CookieConsent";
 import { UserProvider } from "@/lib/useUser";
 import { WebVitalsReporter } from "@/components/observability/WebVitalsReporter";
+import { serializeJsonLd } from "@/lib/json-ld";
 
 const BASE_URL = getBaseUrl();
 
@@ -107,7 +108,7 @@ export default function RootLayout({
           <script
             key={i}
             type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: JSON.stringify(item) }}
+            dangerouslySetInnerHTML={{ __html: serializeJsonLd(item) }}
           />
         ))}
       </head>

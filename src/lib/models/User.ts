@@ -2,7 +2,7 @@ import mongoose, { Schema } from 'mongoose';
 
 const UserSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true, select: false },
   emailVerified: { type: Boolean, default: false },
   status: { type: String, enum: ['active', 'blocked'], default: 'active', index: true },

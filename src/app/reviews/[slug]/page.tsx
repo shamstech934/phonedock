@@ -16,6 +16,7 @@ export const revalidate = 900;
 import { connectDB } from '@/lib/mongodb';
 import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models';
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
+import { serializeJsonLd } from '@/lib/json-ld';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
@@ -308,8 +309,8 @@ export default async function PhoneReviewPage({
       <Header />
       <main className="flex-1">
         {/* JSON-LD */}
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />
 
         <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}

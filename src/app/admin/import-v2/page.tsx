@@ -162,7 +162,7 @@ function batchStatusColor(status: BatchStatus): string {
 }
 
 function saveJobToStorage(job: JobProgress) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(job)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(job)); } catch { /* Storage may be disabled or full; the server remains the source of truth. */ }
 }
 
 function loadJobFromStorage(): JobProgress | null {
@@ -173,7 +173,7 @@ function loadJobFromStorage(): JobProgress | null {
 }
 
 function clearJobStorage() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be disabled; clearing the server-side job is still valid. */ }
 }
 
 function toUiStatus(status: unknown): JobStatus {

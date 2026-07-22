@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import PhoneDetailClient from './PhoneDetailClient';
 import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
+import { serializeJsonLd } from '@/lib/json-ld';
 
 // Render on demand and refresh cached phone pages hourly. This avoids a database
 // round-trip on every visit while still keeping prices and specifications fresh.
@@ -104,8 +105,8 @@ export default async function PhoneDetailPage({ params }: Props) {
 
   return (
     <>
-      {productJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />}
-      {breadcrumbJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />}
+      {productJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(productJsonLd) }} />}
+      {breadcrumbJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />}
       <PhoneDetailClient slug={slug} initialData={data} />
     </>
   );

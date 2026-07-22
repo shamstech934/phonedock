@@ -246,7 +246,7 @@ export default function AdminUsersPage() {
       if (res.ok) setStats(await res.json());
     } catch (e) { console.error('[stats]', e); showToast('Failed to load stats', 'error'); }
     setStatsLoading(false);
-  }, []);
+  }, [showToast]);
 
   // Fetch users
   const fetchUsers = useCallback(async () => {

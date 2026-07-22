@@ -6,7 +6,7 @@ export type AnalyticsEvent = {
   [key: string]: string | number | boolean | undefined;
 };
 
-type AnalyticsDispatcher = (...args: unknown[]) => void; // eslint-disable-line no-unused-vars
+type AnalyticsDispatcher = (...args: unknown[]) => void;  
 
 declare global {
   interface Window {

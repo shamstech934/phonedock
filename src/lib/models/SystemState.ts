@@ -7,7 +7,7 @@ import mongoose, { Schema } from 'mongoose';
  * function-instance recycling on Vercel / other serverless platforms.
  */
 const SystemStateSchema = new Schema({
-  key: { type: String, required: true, unique: true, index: true },
+  key: { type: String, required: true, unique: true },
   completed: { type: Boolean, default: false },
   completedAt: { type: Date, default: null },
   completedByAdminId: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
