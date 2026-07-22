@@ -7,7 +7,7 @@ import {
   BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
   ChevronDown, DollarSign, Database, Zap, Key, Play, TrendingDown,
-  ShieldCheck, Rocket,
+  ShieldCheck, Rocket, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
@@ -30,6 +30,7 @@ const adminLinks: NavLink[] = [
   { label: 'Price Tracker', href: '/admin/price-tracker', icon: TrendingDown, permission: 'prices:read' },
   { label: 'Videos', href: '/admin/videos', icon: Play, permission: 'videos:read' },
   { label: 'Reviews', href: '/admin/reviews', icon: Star, permission: 'phones:read' },
+  { label: 'Review Engine', href: '/admin/review-engine', icon: Sparkles, permission: 'phones:edit' },
   { label: 'Activity', href: '/admin/activity', icon: Clock, permission: 'activity:read' },
   { label: 'Import', href: '/admin/import', icon: Upload, permission: 'imports:read' },
   { label: 'Collector', href: '/admin/collector', icon: Radio, permission: 'collectors:read', children: [
