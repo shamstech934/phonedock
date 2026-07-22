@@ -348,7 +348,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
               </div>
 
               {/* Content — can overflow for floating phone effect */}
-              <div className="relative z-10 p-4 sm:p-7 lg:p-[34px]">
+              <div className="relative z-10 p-4 sm:p-6 lg:p-7">
                 <div className="relative flex flex-col lg:flex-row items-center gap-8 lg:gap-6">
                   {/* Left side — 45% */}
                   <div className="w-full lg:w-[45%]">
@@ -374,7 +374,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   </div>
 
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
-                  <div className="w-full lg:w-[55%] h-[200px] sm:h-[280px] lg:h-[320px] flex-shrink-0 -mb-4 sm:-mb-6 lg:-mb-10">
+                  <div className="h-[190px] w-full flex-shrink-0 sm:h-[240px] lg:h-[270px] lg:w-[55%]">
                     {heroPhones.length > 0 ? (
                       <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} />
                     ) : (
