@@ -208,13 +208,16 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
 
 export function PhoneCardSkeleton() {
   return (
-    <div className="h-[440px] animate-pulse rounded-2xl border border-slate-200 bg-white p-3 sm:h-[472px] sm:p-4" aria-hidden="true">
-      <div className="aspect-square rounded-2xl bg-slate-100" />
-      <div className="mt-3 h-3 w-1/3 rounded bg-slate-100" />
-      <div className="mt-2 h-10 rounded bg-slate-100" />
-      <div className="mt-2 h-4 w-2/3 rounded bg-slate-100" />
-      <div className="mt-4 h-12 rounded bg-slate-100" />
-      <div className="mt-3 h-11 rounded-xl bg-slate-100" />
+    <div
+      className="h-[440px] rounded-2xl border border-slate-200/80 bg-white/75 p-3 shadow-sm backdrop-blur-sm sm:h-[472px] sm:p-4 dark:border-slate-700/80 dark:bg-slate-900/70"
+      aria-hidden="true"
+    >
+      <div className="skeleton-shimmer aspect-square rounded-2xl" />
+      <div className="skeleton-shimmer mt-3 h-3 w-1/3 rounded" />
+      <div className="skeleton-shimmer mt-2 h-10 rounded" />
+      <div className="skeleton-shimmer mt-2 h-4 w-2/3 rounded" />
+      <div className="skeleton-shimmer mt-4 h-12 rounded" />
+      <div className="skeleton-shimmer mt-3 h-11 rounded-xl" />
     </div>
   );
 }
