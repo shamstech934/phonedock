@@ -8,7 +8,7 @@ const homePage = readFileSync('src/app/page.tsx', 'utf8');
 
 assert.match(showcase, /\[perspective:1100px\]/, 'floating stage should preserve perspective depth');
 assert.match(showcase, /rotateX\(64deg\)/, 'floating stage must include its perspective platform');
-assert.match(showcase, /bottom-\[116px\]/, 'hero image must reserve space for the podium and caption');
+assert.match(showcase, /bottom-\[120px\]/, 'hero image must reserve space for the podium and caption');
 assert.match(showcase, /fill[\s\S]*object-contain/, 'source images must remain contained without destructive cropping');
 assert.match(showcase, />PTA</, 'PTA state must be shown in the horizontal caption');
 assert.doesNotMatch(showcase, /specItems/, 'legacy narrow specs card must stay removed');

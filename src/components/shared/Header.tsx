@@ -123,20 +123,21 @@ export function Header() {
 
   const navLinks = [
     { label: 'Home', href: '/' },
+    { label: 'Phones', href: '/phones' },
     { label: 'Brands', href: '/brands' },
     { label: 'Compare', href: '/compare' },
-    { label: 'News', href: '/news' },
-    { label: 'About', href: '/about' },
-    { label: 'Contact', href: '/contact' },
+    { label: 'Rankings', href: '/rankings' },
+    { label: 'Reviews', href: '/reviews' },
   ];
 
   const moreLinks = [
-    { label: 'Smart Rankings', href: '/rankings', icon: Trophy },
     { label: 'Buying Guides', href: '/buying-guides', icon: BookOpen },
-    { label: 'Reviews', href: '/reviews', icon: Star },
     { label: 'Videos', href: '/videos', icon: Play },
-    { label: 'PTA Status', href: '/phones', icon: Shield },
+    { label: 'PTA Approved', href: '/phones?pta=approved', icon: Shield },
     { label: 'Price Tracker', href: '/price-ranges', icon: BarChart3 },
+    { label: 'News', href: '/news', icon: Newspaper },
+    { label: 'About PhoneDock', href: '/about', icon: Info },
+    { label: 'Contact', href: '/contact', icon: Mail },
     { label: 'Wishlist', href: '/wishlist', icon: Heart },
     { label: 'Recently Viewed', href: '/recently-viewed', icon: Clock3 },
   ];
@@ -149,12 +150,12 @@ export function Header() {
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
               <Smartphone className="w-5 h-5 text-white" />
             </div>
-            <span className="font-extrabold text-lg text-gray-900 hidden sm:block">Phone<span className="text-blue-700">Dock</span></span>
+            <span className="font-extrabold text-base text-gray-900 sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-0.5">
             {navLinks.map(item => (
-              <Link key={item.href} href={item.href} className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200">
+              <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${pathname === item.href ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'}`}>
                 {item.label}
               </Link>
             ))}
@@ -182,8 +183,8 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-1">
-            <Link href={user ? "/account" : "/login"} className={`px-3.5 py-2 text-sm font-medium rounded-xl transition-all duration-200 flex items-center gap-1.5 ${user ? 'text-white bg-blue-500 hover:bg-blue-600 shadow-sm shadow-blue-500/25' : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'}`}>
-              <UserRound className="w-4 h-4" />{user ? 'Account' : 'Sign in'}
+            <Link href={user ? "/account" : "/login"} aria-label={user ? 'Account' : 'Sign in'} className={`px-2.5 py-2 text-sm font-medium rounded-xl transition-all duration-200 flex items-center gap-1.5 sm:px-3.5 ${user ? 'text-white bg-blue-500 hover:bg-blue-600 shadow-sm shadow-blue-500/25' : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'}`}>
+              <UserRound className="w-4 h-4" /><span className="hidden sm:inline">{user ? 'Account' : 'Sign in'}</span>
             </Link>
             <div className="relative" ref={searchContainerRef}>
               <button onClick={() => setSearchOpen(!searchOpen)} aria-label="Search" className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
@@ -300,26 +301,30 @@ export function Header() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="lg:hidden glass-modal border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200" role="navigation" aria-label="Main navigation" onKeyDown={(e) => { if (e.key === 'Escape') setMobileOpen(false); }}>
-          <nav className="flex flex-col p-4 gap-1">
+        <div className="lg:hidden glass-modal max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-t border-white/30 animate-in fade-in slide-in-from-top-1 duration-200" role="navigation" aria-label="Main navigation" onKeyDown={(e) => { if (e.key === 'Escape') setMobileOpen(false); }}>
+          <nav className="p-4">
+            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Explore smartphones</p>
+            <div className="grid grid-cols-2 gap-2">
             {navLinks.map(item => (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className={`flex items-center gap-2.5 px-3 py-3 rounded-xl border text-sm font-semibold transition-all duration-200 ${pathname === item.href ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-white/50 bg-white/40 text-gray-700 hover:bg-white/70'}`}>
                 {item.label === 'Home' && <Home className="w-4 h-4 text-gray-400" />}
+                {item.label === 'Phones' && <Smartphone className="w-4 h-4 text-gray-400" />}
                 {item.label === 'Brands' && <Layers className="w-4 h-4 text-gray-400" />}
                 {item.label === 'Compare' && <GitCompare className="w-4 h-4 text-gray-400" />}
-                {item.label === 'News' && <Newspaper className="w-4 h-4 text-gray-400" />}
-                {item.label === 'About' && <Info className="w-4 h-4 text-gray-400" />}
-                {item.label === 'Contact' && <Mail className="w-4 h-4 text-gray-400" />}
+                {item.label === 'Rankings' && <Trophy className="w-4 h-4 text-gray-400" />}
+                {item.label === 'Reviews' && <Star className="w-4 h-4 text-gray-400" />}
                 {item.label}
               </Link>
             ))}
+            </div>
             {/* More links in mobile */}
-            {moreLinks.map(item => (
+            <p className="mb-2 mt-5 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Tools & resources</p>
+            <div className="grid grid-cols-2 gap-1">{moreLinks.map(item => (
               <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
                 <item.icon className="w-4 h-4 text-gray-400" />
                 {item.label}
               </Link>
-            ))}
+            ))}</div>
             <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
               <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
             </Link>

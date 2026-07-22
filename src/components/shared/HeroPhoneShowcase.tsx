@@ -61,12 +61,12 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         <div className="absolute inset-x-[14%] bottom-[43px] h-[54px] rounded-[50%] border border-sky-200/60 bg-[radial-gradient(ellipse,rgba(125,211,252,.5)_0%,rgba(30,64,175,.34)_48%,rgba(2,6,23,.82)_76%)] shadow-[0_0_28px_rgba(56,189,248,.65)] [transform:rotateX(59deg)]" />
       </div>
 
-      <div className="absolute inset-x-8 top-0 bottom-[116px] [perspective:1100px]">
+      <div className="absolute inset-x-8 top-4 bottom-[120px] overflow-visible [perspective:1100px] sm:top-5 lg:top-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={phone.id}
-            initial={{ opacity: 0, y: 25, rotateY: -24, rotateZ: -2, scale: .88 }}
-            animate={{ opacity: 1, y: [0, -8, 0], rotateY: -14, rotateZ: 3, scale: 1 }}
+            initial={{ opacity: 0, y: 25, rotateY: -24, rotateZ: -2, scale: .86 }}
+            animate={{ opacity: 1, y: [5, -2, 5], rotateY: -14, rotateZ: 3, scale: .94 }}
             exit={{ opacity: 0, y: -15, rotateY: 18, scale: .9 }}
             transition={{ opacity: { duration: .35 }, scale: { duration: .45 }, rotateY: { duration: .5 }, rotateZ: { duration: .5 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
             className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
@@ -79,7 +79,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                 sizes="(max-width: 640px) 190px, 290px"
                 priority={current === 0}
                 unoptimized
-                className="object-contain mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)]"
+                className="object-contain p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1"
               />
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-slate-300">No image</div>
