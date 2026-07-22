@@ -142,18 +142,19 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
     return (b._count?.phones || 0) - (a._count?.phones || 0);
   });
 
-  const displayBrands = sorted.slice(0, 14);
+  // Keep the final "All Brands" tile inside the same two-row desktop grid.
+  const displayBrands = sorted.slice(0, 13);
   if (!displayBrands.length) return null;
 
   return (
-    <section className="space-y-4">
+    <section>
       <SectionHeader title="Popular Brands" icon={Layers} link="/brands" linkText="All Brands" />
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-3">
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-6 xl:grid-cols-7">
         {displayBrands.map(brand => {
           const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
           return (
-            <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium p-3 sm:p-4 flex flex-col items-center justify-center gap-2 group hover:shadow-lg hover:shadow-black/5 transition-all duration-300 text-center">
-              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gray-100 flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+            <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 transition-colors group-hover:bg-blue-50 sm:h-11 sm:w-11">
                 {logoSrc ? (
                   <Image src={logoSrc} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
                 ) : (
@@ -166,8 +167,8 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
           );
         })}
         {/* All Brands card */}
-        <Link href="/brands" className="card-premium p-3 sm:p-4 flex flex-col items-center justify-center gap-2 group hover:shadow-lg hover:shadow-black/5 transition-all duration-300 text-center">
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-50 flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+        <Link href="/brands" className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 transition-colors group-hover:bg-blue-100 sm:h-11 sm:w-11">
             <Layers className="w-5 h-5 text-blue-500 group-hover:text-blue-600 transition-colors" />
           </div>
           <span className="text-[11px] sm:text-xs font-semibold text-blue-600 group-hover:text-blue-700 transition-colors">All Brands</span>
@@ -183,7 +184,7 @@ function PriceCategorySidebar() {
   const categories = PRICE_CATEGORIES.filter(category => !category.missing);
 
   return (
-    <aside className="card-premium h-fit p-4 sm:p-5 lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
+    <aside className="card-premium h-fit p-4 lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
       <div className="mb-3 flex items-center gap-2">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
           <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
@@ -194,18 +195,18 @@ function PriceCategorySidebar() {
         </div>
       </div>
 
-      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1" aria-label="Browse phones by price category">
+      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2" aria-label="Browse phones by price category">
         {categories.map(category => (
           <Link
             key={category.key}
             href={`/phones?priceCategory=${category.key}`}
-            className="group flex min-h-12 items-center justify-between gap-2 rounded-xl border border-gray-200/70 bg-white/55 px-3 py-2 transition-colors hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="group flex min-h-[54px] items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 bg-white/55 px-2.5 py-2 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             <span className="min-w-0">
               <span className="block truncate text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span>
               <span className="block text-[10px] text-muted-foreground">{category.shortLabel}</span>
             </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500" aria-hidden="true" />
+            <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500 xl:block" aria-hidden="true" />
           </Link>
         ))}
       </nav>
@@ -396,7 +397,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
 
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_260px] xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="min-w-0">
                 {visible('brands') && <BrandsGrid brands={data.brands} />}
               </div>

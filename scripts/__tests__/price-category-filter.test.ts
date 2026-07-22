@@ -38,7 +38,9 @@ const home = read('src/app/HomeContent.tsx');
 assert.match(home, /function PriceCategorySidebar\(\)/);
 assert.match(home, /Phones by Price/);
 assert.match(home, /priceCategory=\$\{category\.key\}/);
-assert.match(home, /lg:grid-cols-\[minmax\(0,1fr\)_260px\]/);
+assert.match(home, /lg:grid-cols-\[minmax\(0,1fr\)_320px\]/);
+assert.match(home, /xl:grid-cols-\[minmax\(0,1fr\)_340px\]/);
+assert.match(home, /sm:grid-cols-3 lg:grid-cols-2/, 'desktop sidebar should use a compact two-column price grid');
 assert.match(home, /aria-label="Browse phones by price category"/);
 
 const listing = read('src/lib/fetch-public-listings.ts');
