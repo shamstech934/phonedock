@@ -175,8 +175,8 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+      <main className="flex-1 pt-24 sm:pt-28">
+        <div className="max-w-7xl mx-auto px-4 pb-6 animate-fade-in space-y-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
@@ -284,20 +284,31 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
             )}
           </div>
 
-          <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-5">
-            <aside className="hidden lg:block sticky top-24 card-premium p-4" aria-label="Price categories">
-              <div className="flex items-center gap-2 mb-3">
-                <CircleDollarSign className="h-4 w-4 text-blue-600" />
-                <h2 className="text-sm font-bold text-gray-900">Price Category</h2>
+          <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
+            <aside className="hidden lg:block sticky top-28 overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.28)]" aria-label="Price categories">
+              <div className="border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
+                    <CircleDollarSign className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">Price Category</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Browse phones by budget</p>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1" role="navigation" aria-label="Filter phones by price category">
-                <button type="button" onClick={() => updateParam('priceCategory', 'all')} aria-pressed={priceCategoryParam === 'all'} className={`w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${priceCategoryParam === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'}`}>
-                  All Phones
+              <div className="max-h-[calc(100vh-9rem)] space-y-1.5 overflow-y-auto p-3" role="navigation" aria-label="Filter phones by price category">
+                <button type="button" onClick={() => updateParam('priceCategory', 'all')} aria-pressed={priceCategoryParam === 'all'} className={`group w-full rounded-2xl border px-3.5 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${priceCategoryParam === 'all' ? 'border-blue-500 bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20' : 'border-transparent text-slate-700 hover:border-blue-100 hover:bg-blue-50/80 dark:text-slate-200 dark:hover:border-blue-500/20 dark:hover:bg-blue-500/10'}`}>
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold">All Phones</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${priceCategoryParam === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{total}</span>
+                  </span>
+                  <span className={`mt-1 block text-[11px] ${priceCategoryParam === 'all' ? 'text-blue-50' : 'text-slate-500 dark:text-slate-400'}`}>Complete phone catalogue</span>
                 </button>
                 {PRICE_CATEGORIES.map(category => (
-                  <button key={category.key} type="button" onClick={() => updateParam('priceCategory', category.key)} aria-pressed={priceCategoryParam === category.key} className={`w-full rounded-xl px-3 py-2.5 text-left transition-colors ${priceCategoryParam === category.key ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'}`}>
-                    <span className="block text-sm font-semibold">{category.label}</span>
-                    <span className={`block text-[11px] mt-0.5 ${priceCategoryParam === category.key ? 'text-blue-100' : 'text-gray-500'}`}>{category.shortLabel}</span>
+                  <button key={category.key} type="button" onClick={() => updateParam('priceCategory', category.key)} aria-pressed={priceCategoryParam === category.key} className={`group w-full rounded-2xl border px-3.5 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${priceCategoryParam === category.key ? 'border-blue-500 bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20' : 'border-transparent text-slate-700 hover:border-blue-100 hover:bg-blue-50/80 dark:text-slate-200 dark:hover:border-blue-500/20 dark:hover:bg-blue-500/10'}`}>
+                    <span className="block text-sm font-bold leading-tight">{category.label}</span>
+                    <span className={`mt-1 block text-[11px] leading-tight ${priceCategoryParam === category.key ? 'text-blue-50' : 'text-slate-500 dark:text-slate-400'}`}>{category.shortLabel}</span>
                   </button>
                 ))}
               </div>
