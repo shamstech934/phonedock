@@ -285,7 +285,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
           </div>
 
           <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-5">
-            <aside className="hidden lg:block sticky top-20 card-premium p-4" aria-label="Price categories">
+            <aside className="hidden lg:block sticky top-24 card-premium p-4" aria-label="Price categories">
               <div className="flex items-center gap-2 mb-3">
                 <CircleDollarSign className="h-4 w-4 text-blue-600" />
                 <h2 className="text-sm font-bold text-gray-900">Price Category</h2>
@@ -304,10 +304,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
             </aside>
             <div className="min-w-0 mt-5 lg:mt-0">
           {loading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
           ) : phones.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                 {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
               </div>
               {totalPages > 1 && (

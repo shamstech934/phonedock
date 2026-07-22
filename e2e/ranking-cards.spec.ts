@@ -2,6 +2,27 @@ import { test, expect } from '@playwright/test';
 
 const widths = [320, 375, 768, 1024, 1440, 1920];
 
+for (const width of [768, 1024, 1440, 1920]) {
+  test(`catalogue card actions stay inside the card with price sidebar at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto('/phones?priceCategory=mid-range', { waitUntil: 'domcontentloaded' });
+    const cards = page.getByTestId('phone-card');
+    test.skip(await cards.count() === 0, 'Requires seeded catalogue records.');
+
+    const containment = await cards.evaluateAll(nodes => nodes.slice(0, 8).map(node => {
+      const card = node.getBoundingClientRect();
+      const actions = node.querySelector('[data-testid="phone-card-actions"]')!.getBoundingClientRect();
+      const quickView = node.querySelector('[data-testid="quick-view-action"]')?.getBoundingClientRect();
+      return {
+        actionsInside: actions.left >= card.left - 1 && actions.right <= card.right + 1,
+        quickViewInside: !quickView || quickView.right <= card.right + 1,
+      };
+    }));
+
+    expect(containment.every(result => result.actionsInside && result.quickViewInside)).toBeTruthy();
+  });
+}
+
 for (const width of widths) {
   test(`camera ranking cards align and remain clickable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });

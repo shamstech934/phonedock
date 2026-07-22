@@ -145,13 +145,13 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
           </div>
           </Link>
           {/* Action buttons row */}
-          <div data-testid="phone-card-actions" className="mt-auto flex h-11 min-h-11 items-center gap-1.5 pt-0 sm:gap-2">
+          <div data-testid="phone-card-actions" className="mt-auto flex h-11 min-h-11 min-w-0 items-center gap-1.5 pt-0">
             <Link
               href={`/phones/${phone.slug}`}
               onClick={() => onSelect?.(phone.id)}
-              className="flex min-h-11 flex-1 items-center justify-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-bold text-white shadow-sm shadow-sky-500/20 transition hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+              className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden rounded-xl bg-sky-500 px-2 text-xs font-bold text-white shadow-sm shadow-sky-500/20 transition hover:bg-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
             >
-              <span className="hidden xl:inline">View Details</span><span className="xl:hidden">View</span> <ChevronRight className="h-3.5 w-3.5" />
+              <span className="truncate">View</span> <ChevronRight className="h-3.5 w-3.5 shrink-0" />
             </Link>
             <button
               type="button"
@@ -159,7 +159,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
               aria-label={`${wishlisted ? 'Remove' : 'Add'} ${phone.modelName} ${wishlisted ? 'from' : 'to'} wishlist`}
               aria-pressed={wishlisted}
               data-testid="wishlist-action"
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
+              className={`flex h-11 w-9 shrink-0 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 ${wishlisted ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white/60 text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'}`}
               title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
             >
               <Heart className={`w-3.5 h-3.5 ${wishlisted ? 'fill-current' : ''}`} />
@@ -168,7 +168,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             <Link
               href={`/compare?p=${phone.slug}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:h-11 sm:w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+              className="flex h-11 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Compare"
               aria-label={`Compare ${phone.modelName}`}
               data-testid="compare-action"
@@ -185,7 +185,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
               aria-expanded={qvOpen}
               aria-haspopup="dialog"
               data-testid="quick-view-action"
-              className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
+              className="hidden h-11 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white/60 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-600 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
               title="Quick View"
             >
               <Eye className="w-3.5 h-3.5" />

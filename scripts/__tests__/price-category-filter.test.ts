@@ -31,6 +31,8 @@ assert.match(client, /aria-controls="phone-advanced-filters"/);
 assert.match(client, /aria-expanded=\{showFilters\}/);
 assert.match(client, /showFilters && <div id="phone-advanced-filters"/);
 assert.match(client, /setShowFilters\(current => !current\)/);
+assert.match(client, /grid-cols-2 md:grid-cols-3 xl:grid-cols-4/, 'sidebar listings must not force four narrow columns at lg');
+assert.match(client, /sticky top-24/, 'price sidebar must remain below the sticky header');
 
 const home = read('src/app/HomeContent.tsx');
 assert.match(home, /function PriceCategorySidebar\(\)/);
