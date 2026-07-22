@@ -5,7 +5,7 @@ import {
   Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
   Check, Newspaper, BarChart3, Target, CircleDollarSign, ChevronRight,
-  Zap,
+  Search, GitCompareArrows, BadgeDollarSign, ShieldCheck, ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -294,28 +294,75 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
   );
 }
 
-// ============ COMING SOON TEASERS ============
-const COMING_SOON = [
-  { title: 'Price Tracker', description: 'Track price history over time and get drop alerts', icon: BarChart3, color: 'text-blue-500', bg: 'bg-blue-50' },
-  { title: 'Benchmarks', description: 'AnTuTu, Geekbench & gaming FPS scores compared', icon: Target, color: 'text-violet-500', bg: 'bg-violet-50' },
-  { title: 'Camera Samples', description: 'Real sample photos from every phone camera', icon: Camera, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-  { title: 'PTA Updates', description: 'Official PTA approval status & IMEI verification', icon: Shield, color: 'text-amber-500', bg: 'bg-amber-50' },
+// ============ EXPLORE PHONEDOCK TOOLS ============
+const PHONEDOCK_TOOLS = [
+  {
+    title: 'Phone Finder',
+    description: 'Answer a few simple questions and discover phones that match your budget and priorities.',
+    icon: Search,
+    href: '/phone-finder',
+    accent: 'from-blue-600 via-blue-700 to-slate-900',
+    glow: 'bg-cyan-400/25',
+  },
+  {
+    title: 'Compare Phones',
+    description: 'Compare specifications, ratings and Pakistan prices side by side before you buy.',
+    icon: GitCompareArrows,
+    href: '/compare',
+    accent: 'from-violet-600 via-indigo-700 to-slate-900',
+    glow: 'bg-fuchsia-400/20',
+  },
+  {
+    title: 'Price Ranges',
+    description: 'Browse the strongest phone options in Pakistan across every practical budget range.',
+    icon: BadgeDollarSign,
+    href: '/price-ranges',
+    accent: 'from-emerald-600 via-teal-700 to-slate-900',
+    glow: 'bg-lime-300/20',
+  },
+  {
+    title: 'PTA Approved Phones',
+    description: 'Quickly find PTA-approved devices and avoid uncertainty before purchasing a phone.',
+    icon: ShieldCheck,
+    href: '/phones?pta=approved',
+    accent: 'from-amber-500 via-orange-600 to-slate-900',
+    glow: 'bg-yellow-200/25',
+  },
 ];
 
-function ComingSoonTeasers() {
+function ExplorePhoneDockTools() {
   return (
-    <section className="space-y-4">
-      <SectionHeader title="New Features" icon={Zap} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {COMING_SOON.map(t => (
-          <div key={t.title} className="card-premium p-4 hover:shadow-lg hover:shadow-black/5 transition-all duration-300">
-            <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center mb-3`}>
-              <t.icon className={`w-5 h-5 ${t.color}`} />
+    <section id="phonedock-tools" className="scroll-mt-28 space-y-5" aria-labelledby="phonedock-tools-title">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-600">Useful shortcuts</p>
+          <h2 id="phonedock-tools-title" className="font-display text-xl font-extrabold tracking-tight text-gray-950 sm:text-2xl">Explore PhoneDock Tools</h2>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">Working tools designed to make smartphone research faster and easier.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {PHONEDOCK_TOOLS.map(tool => (
+          <Link
+            key={tool.title}
+            href={tool.href}
+            aria-label={`Explore ${tool.title}`}
+            className={`group relative min-h-[210px] overflow-hidden rounded-3xl bg-gradient-to-br ${tool.accent} p-4 text-white shadow-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 sm:min-h-[230px] sm:p-5`}
+          >
+            <div className={`absolute -right-8 -top-8 h-32 w-32 rounded-full ${tool.glow} blur-2xl transition-transform duration-500 group-hover:scale-125`} />
+            <div className="relative flex h-full flex-col">
+              <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/12 shadow-lg backdrop-blur-md sm:h-14 sm:w-14">
+                <tool.icon className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden="true" />
+              </div>
+              <div className="mt-auto">
+                <h3 className="text-sm font-extrabold leading-tight sm:text-lg">{tool.title}</h3>
+                <p className="mt-2 line-clamp-3 text-[10px] leading-relaxed text-white/72 sm:text-xs">{tool.description}</p>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-[11px] font-bold text-white sm:text-xs">
+                  Explore <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+                </span>
+              </div>
             </div>
-            <h3 className="font-bold text-sm text-gray-900 mb-1">{t.title}</h3>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">{t.description}</p>
-            <Badge variant="secondary" className="mt-2.5 text-[9px] bg-gray-100 text-gray-500 font-medium">Coming Soon</Badge>
-          </div>
+          </Link>
         ))}
       </div>
     </section>
@@ -468,7 +515,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             )}
 
             {/* ===== 16-18. COMING SOON TEASERS ===== */}
-            <ComingSoonTeasers />
+            <ExplorePhoneDockTools />
 
             {/* ===== 19. SPONSOR BANNER ===== */}
             {visible('sponsors') && data.sponsors && data.sponsors.length > 0 && (

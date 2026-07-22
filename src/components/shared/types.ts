@@ -161,6 +161,8 @@ export interface HomeVideo {
   title: string;
   thumbnailUrl: string;
   publishedAt: string;
+  duration?: string;
+  category?: string;
   phone: {
     id?: string;
     modelName: string;

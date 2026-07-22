@@ -53,6 +53,8 @@ interface HomeVideoLeanDoc {
   title: string;
   thumbnailUrl: string;
   publishedAt: Date;
+  duration?: string;
+  category?: string;
   phoneId?: {
     _id?: Types.ObjectId;
     modelName?: string;
@@ -87,7 +89,7 @@ async function fetchHomeDataUncached() {
     Phone.find({ active: true, status: 'published', batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     Phone.find({ active: true, status: 'published', upcoming: true }).sort({ createdAt: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     News.find({ published: true, status: 'published' }).select('title slug excerpt category author image published createdAt').sort({ createdAt: -1 }).limit(6).lean(),
-    Video.find({ active: true }).select('youtubeId title thumbnailUrl publishedAt phoneId').sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brandId').lean(),
+    Video.find({ active: true }).select('youtubeId title thumbnailUrl publishedAt duration category phoneId').sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brandId').lean(),
   ]);
 
   const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors, totalPhones, totalBrands] = await Promise.all([
@@ -195,6 +197,8 @@ async function fetchHomeDataUncached() {
       title: v.title,
       thumbnailUrl: v.thumbnailUrl,
       publishedAt: v.publishedAt?.toISOString?.() || String(v.publishedAt || ''),
+      duration: v.duration || '',
+      category: v.category || '',
       phone: v.phoneId ? {
         id: v.phoneId._id?.toString(),
         modelName: v.phoneId.modelName || '',
