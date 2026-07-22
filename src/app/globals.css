@@ -796,3 +796,197 @@ select,
 textarea {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ============================================
+   COMPLETE DARK THEME COMPATIBILITY LAYER
+   Keeps legacy hard-coded utility colors readable when .dark is active.
+   ============================================ */
+html.dark {
+  color-scheme: dark;
+  background: var(--background);
+}
+
+html.dark body,
+html.dark main {
+  color: var(--foreground);
+}
+
+html.dark ::selection {
+  background: rgba(56, 189, 248, 0.35);
+  color: #f8fafc;
+}
+
+/* Legacy text utilities used across public pages */
+.dark .text-gray-950,
+.dark .text-gray-900,
+.dark .text-gray-800 {
+  color: #f8fafc !important;
+}
+.dark .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+.dark .text-gray-500 {
+  color: #a8b3c5 !important;
+}
+.dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+.dark .text-gray-300 {
+  color: #cbd5e1 !important;
+}
+
+/* Legacy white/light surfaces */
+.dark .bg-white,
+.dark .bg-white\/95,
+.dark .bg-white\/90,
+.dark .bg-white\/80,
+.dark .bg-white\/70,
+.dark .bg-white\/60,
+.dark .bg-white\/55,
+.dark .bg-white\/40 {
+  background-color: rgba(17, 24, 39, 0.94) !important;
+}
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #172033 !important;
+}
+.dark .bg-blue-50 {
+  background-color: rgba(14, 165, 233, 0.14) !important;
+}
+.dark .bg-blue-100 {
+  background-color: rgba(14, 165, 233, 0.22) !important;
+}
+
+/* Borders and dividers */
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-200\/60,
+.dark .border-gray-200\/70 {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+/* Header and dropdown interaction states */
+.dark .glass-nav a:hover,
+.dark .glass-nav button:hover {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+.dark .glass-nav .bg-blue-50 {
+  background-color: rgba(14, 165, 233, 0.18) !important;
+}
+.dark .glass-nav .text-blue-700 {
+  color: #38bdf8 !important;
+}
+.dark .glass-nav input {
+  color: #f8fafc;
+}
+.dark .glass-nav input::placeholder {
+  color: #94a3b8;
+}
+
+/* Cards, menus, forms and tables */
+.dark .card-premium,
+.dark [data-slot="card"],
+.dark [role="dialog"],
+.dark [role="menu"],
+.dark [role="listbox"] {
+  color: var(--card-foreground);
+}
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark textarea,
+.dark select {
+  color: #f8fafc;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8;
+}
+.dark table,
+.dark thead,
+.dark tbody,
+.dark tr,
+.dark td,
+.dark th {
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+/* Common hover utilities that otherwise flash white in dark mode */
+.dark .hover\:bg-white\/60:hover,
+.dark .hover\:bg-white\/70:hover,
+.dark .hover\:bg-white:hover,
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+.dark .hover\:text-gray-900:hover,
+.dark .hover\:text-gray-800:hover {
+  color: #ffffff !important;
+}
+
+/* Homepage liquid-glass sections */
+.dark .category-card,
+.dark .price-card,
+.dark .ranking-card {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+/* Ensure the page changes as one coherent theme */
+body,
+.glass-nav,
+.card-premium,
+input,
+textarea,
+select,
+button,
+a {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+/* Additional slate/gray compatibility used by secondary pages and skeletons */
+.dark .text-slate-950,
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+.dark .text-slate-700,
+.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+.dark .text-slate-500 {
+  color: #a8b3c5 !important;
+}
+.dark .bg-slate-100,
+.dark .bg-slate-200,
+.dark .bg-gray-200,
+.dark .bg-gray-300 {
+  background-color: #1e293b !important;
+}
+.dark .border-slate-200,
+.dark .border-slate-200\/50,
+.dark .border-slate-300 {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+.dark .from-white,
+.dark .from-gray-50,
+.dark .from-slate-50 {
+  --tw-gradient-from: rgba(17, 24, 39, 0.96) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(17, 24, 39, 0) var(--tw-gradient-to-position) !important;
+}
+.dark .via-white,
+.dark .via-gray-50,
+.dark .via-slate-50 {
+  --tw-gradient-via: rgba(20, 30, 48, 0.92) var(--tw-gradient-via-position) !important;
+}
+.dark .to-white,
+.dark .to-gray-50,
+.dark .to-slate-50 {
+  --tw-gradient-to: rgba(11, 17, 32, 0.96) var(--tw-gradient-to-position) !important;
+}

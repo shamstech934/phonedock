@@ -169,14 +169,14 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
           const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
           return (
             <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 transition-colors group-hover:bg-blue-50 sm:h-11 sm:w-11">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 transition-colors group-hover:bg-blue-50 dark:group-hover:bg-sky-500/15 sm:h-11 sm:w-11">
                 {logoSrc ? (
                   <Image src={logoSrc} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
                 ) : (
                   <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
                 )}
               </div>
-              <span className="text-[11px] sm:text-xs font-semibold text-gray-700 group-hover:text-blue-600 transition-colors line-clamp-1">{brand.name}</span>
+              <span className="text-[11px] sm:text-xs font-semibold text-gray-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-sky-300 transition-colors line-clamp-1">{brand.name}</span>
               <span className="text-[10px] text-muted-foreground">{brand._count?.phones || 0} phones</span>
             </Link>
           );
@@ -205,7 +205,7 @@ function PriceCategorySidebar() {
           <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
         </div>
         <div>
-          <h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900">Phones by Price</h2>
+          <h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900 dark:text-white">Phones by Price</h2>
           <p className="text-[11px] text-muted-foreground">Choose your budget</p>
         </div>
       </div>
@@ -215,10 +215,10 @@ function PriceCategorySidebar() {
           <Link
             key={category.key}
             href={`/phones?priceCategory=${category.key}`}
-            className="group flex min-h-12 items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 bg-white/55 px-2.5 py-1.5 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="group flex min-h-12 items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 dark:border-slate-700/70 bg-white/55 dark:bg-slate-900/65 px-2.5 py-1.5 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             <span className="min-w-0">
-              <span className="block truncate text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span>
+              <span className="block truncate text-xs font-semibold text-gray-800 dark:text-slate-100 group-hover:text-blue-700 dark:group-hover:text-sky-300">{category.label}</span>
               <span className="block text-[10px] text-muted-foreground">{category.shortLabel}</span>
             </span>
             <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500 xl:block" aria-hidden="true" />

@@ -150,12 +150,12 @@ export function Header() {
             <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
               <Smartphone className="w-5 h-5 text-white" />
             </div>
-            <span className="font-extrabold text-base text-gray-900 sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
+            <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-0.5">
             {navLinks.map(item => (
-              <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${pathname === item.href ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'}`}>
+              <Link key={item.href} href={item.href} aria-current={pathname === item.href ? 'page' : undefined} className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${pathname === item.href ? 'bg-blue-50 dark:bg-sky-500/15 text-blue-700 dark:text-sky-300 shadow-sm' : 'text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-white/10'}`}>
                 {item.label}
               </Link>
             ))}
@@ -163,16 +163,16 @@ export function Header() {
             <div ref={moreRef} className="relative">
               <button
                 onClick={() => setMoreOpen(!moreOpen)}
-                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-white/60 transition-all duration-200 flex items-center gap-1"
+                className="px-3 py-2 text-sm font-medium text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-white/60 dark:hover:bg-white/10 transition-all duration-200 flex items-center gap-1"
                 aria-label="More navigation"
                 aria-expanded={moreOpen}
               >
                 More <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`} />
               </button>
               {moreOpen && (
-                <div role="menu" className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 py-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div role="menu" className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl shadow-black/10 dark:shadow-black/40 border border-gray-200/60 dark:border-slate-700 py-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
                   {moreLinks.map(item => (
-                    <Link role="menuitem" key={item.href} href={item.href} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors">
+                    <Link role="menuitem" key={item.href} href={item.href} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors">
                       <item.icon className="w-4 h-4 text-gray-400" />
                       {item.label}
                     </Link>
@@ -187,14 +187,14 @@ export function Header() {
               <UserRound className="w-4 h-4" /><span className="hidden sm:inline">{user ? 'Account' : 'Sign in'}</span>
             </Link>
             <div className="relative" ref={searchContainerRef}>
-              <button onClick={() => setSearchOpen(!searchOpen)} aria-label="Search" className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+              <button onClick={() => setSearchOpen(!searchOpen)} aria-label="Search" className="p-2 rounded-xl hover:bg-white/60 dark:hover:bg-white/10 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white transition-all duration-200">
                 <Search className="w-[18px] h-[18px]" />
               </button>
             </div>
-            <button onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200">
+            <button onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} className="p-2 rounded-xl hover:bg-white/60 dark:hover:bg-white/10 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white transition-all duration-200">
               {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
             </button>
-            <button className="p-2 rounded-xl hover:bg-white/60 text-gray-600 hover:text-gray-900 transition-all duration-200 lg:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? 'Close menu' : 'Open menu'} aria-expanded={mobileOpen}>
+            <button className="p-2 rounded-xl hover:bg-white/60 dark:hover:bg-white/10 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white transition-all duration-200 lg:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? 'Close menu' : 'Open menu'} aria-expanded={mobileOpen}>
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
@@ -225,7 +225,7 @@ export function Header() {
 
             {/* Autocomplete dropdown */}
             {showDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 max-h-[340px] overflow-y-auto z-50">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 rounded-xl shadow-xl shadow-black/10 border border-gray-200/60 max-h-[340px] overflow-y-auto z-50">
                 {autocompleteLoading && (
                   <div className="px-3.5 py-4 text-sm text-gray-500">Searching phones...</div>
                 )}
@@ -241,9 +241,9 @@ export function Header() {
                       <button
                         key={p.id}
                         onClick={() => { saveRecentSearch(p.modelName); router.push(`/phones/${p.slug}`); setSearchOpen(false); setShowDropdown(false); setSearchQ(''); }}
-                        className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-gray-50 transition-colors text-left"
+                        className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors text-left"
                       >
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
                           {p.thumbnail ? (
                             <Image src={p.thumbnail} alt={p.modelName} width={24} height={24} className="object-contain" unoptimized />
                           ) : (
@@ -251,7 +251,7 @@ export function Header() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{p.modelName}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{p.modelName}</p>
                           <p className="text-[10px] text-gray-500">{p.brand?.name || ''}{p.pricePKR ? ` · Rs ${p.pricePKR.toLocaleString()}` : ''}</p>
                         </div>
                       </button>
