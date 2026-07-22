@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Smartphone, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Smartphone, ChevronLeft, ChevronRight, CircleDollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Phone, Brand } from '@/components/shared/types';
+import { PRICE_CATEGORIES, getPriceCategory } from '@/lib/price-categories';
 
 const PER_PAGE = 20;
 
@@ -43,6 +44,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const q = searchParams.get('q') || '';
   const brandParam = searchParams.get('brand') || 'all';
   const priceParam = searchParams.get('price') || 'all';
+  const priceCategoryParam = searchParams.get('priceCategory') || 'all';
   const ramParam = searchParams.get('ram') || 'All';
   const storageParam = searchParams.get('storage') || 'All';
   const sortParam = searchParams.get('sort') || 'newest';
@@ -78,6 +80,12 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
     const pr = PRICE_RANGES.find(r => r.label.toLowerCase().replace(/\s+/g, '') === priceParam.replace(/\s+/g, ''));
     if (pr && pr.min > 0) params.set('priceMin', String(pr.min));
     if (pr && pr.max > 0) params.set('priceMax', String(pr.max));
+    const priceCategory = getPriceCategory(priceCategoryParam);
+    if (priceCategory?.missing) params.set('priceMissing', 'true');
+    else if (priceCategory) {
+      if (priceCategory.min !== undefined) params.set('priceMin', String(priceCategory.min));
+      if (priceCategory.max !== undefined) params.set('priceMax', String(priceCategory.max));
+    }
 
     // RAM
     if (ramParam !== 'All') params.set('ramMin', ramParam);
@@ -134,10 +142,12 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
+  }, [pageParam, q, brandParam, priceParam, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
+    if (key === 'priceCategory') params.delete('price');
+    if (key === 'price') params.delete('priceCategory');
     if (value === 'all' || value === '' || key === 'page') {
       if (key === 'page') {
         params.set(key, value);
@@ -157,7 +167,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const activeFilterCount = [brandParam, priceParam, priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
@@ -196,8 +206,9 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 <option value="all">All Brands</option>
                 {brands.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
               </select>
-              <select value={priceParam} onChange={e => updateParam('price', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                {PRICE_RANGES.map(r => <option key={r.label} value={r.label.toLowerCase().replace(/\s+/g, '')}>{r.label}</option>)}
+              <select aria-label="Price category" value={priceCategoryParam} onChange={e => updateParam('priceCategory', e.target.value)} className="lg:hidden h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <option value="all">All Price Categories</option>
+                {PRICE_CATEGORIES.map(category => <option key={category.key} value={category.key}>{category.label} — {category.shortLabel}</option>)}
               </select>
               <select value={ramParam} onChange={e => updateParam('ram', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 {RAM_OPTIONS.map(r => <option key={r} value={r}>{r === 'All' ? 'All RAM' : `${r}GB`}</option>)}
@@ -244,6 +255,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                 {search && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => { setSearch(''); updateParam('q', ''); }}><Search className="w-3 h-3" />{search}<span className="ml-1">&times;</span></Badge>}
                 {brandParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('brand', 'all')}>Brand: {brands.find(b => b.slug === brandParam)?.name || brandParam}<span className="ml-1">&times;</span></Badge>}
                 {priceParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('price', 'all')}>Price: {PRICE_RANGES.find(r => r.label.toLowerCase().replace(/\s+/g, '') === priceParam)?.label || priceParam}<span className="ml-1">&times;</span></Badge>}
+                {priceCategoryParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('priceCategory', 'all')}>Category: {getPriceCategory(priceCategoryParam)?.label || priceCategoryParam}<span className="ml-1">&times;</span></Badge>}
                 {ramParam !== 'All' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('ram', 'All')}>RAM: {ramParam}GB<span className="ml-1">&times;</span></Badge>}
                 {storageParam !== 'All' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('storage', 'All')}>Storage: {storageParam === '1024' ? '1TB' : `${storageParam}GB`}<span className="ml-1">&times;</span></Badge>}
                 {fiveGParam !== 'all' && <Badge variant="secondary" className="text-xs gap-1 cursor-pointer" onClick={() => updateParam('5g', 'all')}>5G: {fiveGParam}<span className="ml-1">&times;</span></Badge>}
@@ -259,6 +271,25 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
             )}
           </div>
 
+          <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-5">
+            <aside className="hidden lg:block sticky top-20 card-premium p-4" aria-label="Price categories">
+              <div className="flex items-center gap-2 mb-3">
+                <CircleDollarSign className="h-4 w-4 text-blue-600" />
+                <h2 className="text-sm font-bold text-gray-900">Price Category</h2>
+              </div>
+              <div className="space-y-1" role="navigation" aria-label="Filter phones by price category">
+                <button type="button" onClick={() => updateParam('priceCategory', 'all')} aria-pressed={priceCategoryParam === 'all'} className={`w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${priceCategoryParam === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'}`}>
+                  All Phones
+                </button>
+                {PRICE_CATEGORIES.map(category => (
+                  <button key={category.key} type="button" onClick={() => updateParam('priceCategory', category.key)} aria-pressed={priceCategoryParam === category.key} className={`w-full rounded-xl px-3 py-2.5 text-left transition-colors ${priceCategoryParam === category.key ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'}`}>
+                    <span className="block text-sm font-semibold">{category.label}</span>
+                    <span className={`block text-[11px] mt-0.5 ${priceCategoryParam === category.key ? 'text-blue-100' : 'text-gray-500'}`}>{category.shortLabel}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+            <div className="min-w-0 mt-5 lg:mt-0">
           {loading ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
           ) : phones.length > 0 ? (
@@ -305,6 +336,8 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
               <Button variant="outline" className="rounded-xl" onClick={clearAll}>Clear All Filters</Button>
             </div>
           )}
+            </div>
+          </div>
         </div>
       </main>
       <Footer />

@@ -249,6 +249,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const screenMax = parseFloat(url.searchParams.get('screenMax') || '');
     const priceMin = parseFloat(url.searchParams.get('priceMin') || '');
     const priceMax = parseFloat(url.searchParams.get('priceMax') || '');
+    const priceMissing = url.searchParams.get('priceMissing') === 'true';
     const cameraMin = parseFloat(url.searchParams.get('cameraMin') || '');
     const batteryMin = parseFloat(url.searchParams.get('batteryMin') || '');
     const displayType = (url.searchParams.get('displayType') || '').trim();
@@ -256,8 +257,12 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
     const chipset = (url.searchParams.get('chipset') || '').trim();
 
     // Price range filter on Phone model
-    if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
-    if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
+    if (priceMissing) {
+      filter.$and = [{ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] }];
+    } else {
+      if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
+      if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
+    }
 
     // Numeric spec filters require joining with PhoneSpecs
     const hasSpecFilters = !isNaN(ramMin) || !isNaN(ramMax) || !isNaN(storageMin) || !isNaN(storageMax) || !isNaN(screenMin) || !isNaN(screenMax) || !isNaN(cameraMin) || !isNaN(batteryMin) || !isNaN(refreshMin) || displayType !== '' || chipset !== '' || fiveGFilter !== '' || nfcFilter !== '';

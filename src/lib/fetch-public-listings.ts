@@ -5,12 +5,14 @@ import { connectDB } from '@/lib/mongodb';
 import { escapeRegex } from '@/lib/sanitize';
 import { buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import type { Brand as BrandType, Phone as PhoneType } from '@/components/shared/types';
+import { getPriceCategory } from '@/lib/price-categories';
 
 export interface PhoneListParams {
   page?: string;
   q?: string;
   brand?: string;
   price?: string;
+  priceCategory?: string;
   ram?: string;
   storage?: string;
   sort?: string;
@@ -76,7 +78,15 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     if (brand) filter.brandId = brand._id;
   }
   const range = params.price ? PRICE_RANGES[params.price] : undefined;
-  if (range?.min || range?.max) {
+  const category = getPriceCategory(params.priceCategory);
+  if (category?.missing) {
+    filter.$and = [{ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] }];
+  } else if (category) {
+    filter.pricePKR = {
+      ...(category.min !== undefined ? { $gte: category.min } : {}),
+      ...(category.max !== undefined ? { $lte: category.max } : {}),
+    };
+  } else if (range?.min || range?.max) {
     filter.pricePKR = {
       ...(range.min ? { $gte: range.min } : {}),
       ...(range.max ? { $lte: range.max } : {}),
@@ -134,6 +144,11 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (params.brand && params.brand !== 'all') apiParams.set('brand', params.brand);
   if (range?.min) apiParams.set('priceMin', String(range.min));
   if (range?.max) apiParams.set('priceMax', String(range.max));
+  if (category?.missing) apiParams.set('priceMissing', 'true');
+  else if (category) {
+    if (category.min !== undefined) apiParams.set('priceMin', String(category.min));
+    if (category.max !== undefined) apiParams.set('priceMax', String(category.max));
+  }
   if (Number.isFinite(ram)) apiParams.set('ramMin', String(ram));
   if (Number.isFinite(storage)) apiParams.set('storageMin', String(storage));
   apiParams.set('sort', sorting.field);
