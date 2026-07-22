@@ -78,12 +78,26 @@ function PakistanTrustBar() {
   );
 }
 
+// ============ COLORED CATEGORY SYSTEM ============
+type CategoryTone = 'sky' | 'rose' | 'violet' | 'indigo' | 'emerald' | 'amber' | 'orange' | 'fuchsia' | 'cyan';
+const CATEGORY_TONES: Record<CategoryTone, string> = {
+  sky: 'border-sky-200/60 bg-gradient-to-br from-sky-100/75 via-blue-50/45 to-cyan-100/55 shadow-sky-200/20',
+  rose: 'border-rose-200/60 bg-gradient-to-br from-rose-100/75 via-pink-50/45 to-orange-100/45 shadow-rose-200/20',
+  violet: 'border-violet-200/60 bg-gradient-to-br from-violet-100/75 via-purple-50/45 to-fuchsia-100/45 shadow-violet-200/20',
+  indigo: 'border-indigo-200/60 bg-gradient-to-br from-indigo-100/75 via-blue-50/45 to-violet-100/50 shadow-indigo-200/20',
+  emerald: 'border-emerald-200/60 bg-gradient-to-br from-emerald-100/75 via-green-50/45 to-teal-100/50 shadow-emerald-200/20',
+  amber: 'border-amber-200/60 bg-gradient-to-br from-amber-100/80 via-yellow-50/45 to-orange-100/45 shadow-amber-200/20',
+  orange: 'border-orange-200/60 bg-gradient-to-br from-orange-100/75 via-amber-50/45 to-rose-100/45 shadow-orange-200/20',
+  fuchsia: 'border-fuchsia-200/60 bg-gradient-to-br from-fuchsia-100/70 via-pink-50/45 to-violet-100/50 shadow-fuchsia-200/20',
+  cyan: 'border-cyan-200/60 bg-gradient-to-br from-cyan-100/75 via-sky-50/45 to-teal-100/50 shadow-cyan-200/20',
+};
+
 // ============ PHONE SECTION (full card grid) ============
-function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean }) {
+function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky' }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone }) {
   if (!phones.length) {
     if (!showEmpty) return null;
     return (
-      <section className="space-y-4">
+      <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
         <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
         <div className="text-center py-12 card-premium">
           <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
@@ -94,7 +108,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
     );
   }
   return (
-    <section className="space-y-4">
+    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
       <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
         {phones.slice(0, 8).map(p => (
@@ -108,10 +122,10 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty }: 
 }
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
-function CompactTopPhones({ phones, title, icon: Icon, link, linkText }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string }) {
+function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky' }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone }) {
   if (!phones.length) return null;
   return (
-    <section className="space-y-4">
+    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {phones.slice(0, 4).map(p => <PhoneCard key={p.id} phone={p} />)}
@@ -271,7 +285,7 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
   if (!reviewedPhones.length) return null;
 
   return (
-    <section className="space-y-4">
+    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.fuchsia}`}>
       <SectionHeader title="Latest Reviews" icon={Star} link="/reviews" linkText="All Reviews" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {reviewedPhones.map(p => <PhoneCard key={p.id} phone={p} />)}
@@ -405,30 +419,30 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             </div>
 
             {/* ===== 5. LATEST PHONES ===== */}
-            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty />}
+            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty tone="sky" />}
 
             {/* ===== 6. TRENDING PHONES ===== */}
-            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty />}
+            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty tone="rose" />}
 
             {/* ===== 7. BEST CAMERA PHONES ===== */}
-            {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" />}
+            {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" tone="violet" />}
 
             {/* ===== 8. BEST GAMING PHONES ===== */}
-            {visible('gaming') && <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" />}
+            {visible('gaming') && <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" tone="indigo" />}
 
             {/* ===== 9. BEST BATTERY PHONES ===== */}
-            {visible('battery') && <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" />}
+            {visible('battery') && <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" tone="emerald" />}
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
 
             {/* ===== 10. BUDGET CHAMPIONS ===== */}
-            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" />}
+            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" tone="amber" />}
 
             {/* ===== 11. PREMIUM FLAGSHIPS ===== */}
-            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" />}
+            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" tone="orange" />}
 
             {/* ===== 12. UPCOMING PHONES ===== */}
-            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" />}
+            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" tone="cyan" />}
 
             {/* ===== 13. LATEST REVIEWS ===== */}
             {visible('reviews') && <HomeReviewsSection phones={data.featured} />}
@@ -438,7 +452,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             {/* ===== 15. LATEST NEWS ===== */}
             {visible('news') && data.news.length > 0 && (
-              <section className="space-y-5">
+              <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.orange}`}>
                 <SectionHeader title={titles.news || 'Latest News'} icon={Newspaper} link="/news" linkText="All News" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {data.news.slice(0, 4).map(n => (
