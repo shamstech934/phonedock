@@ -18,6 +18,7 @@ export interface PhoneComparisonInsight {
   wins: number;
   strengths: string[];
   tradeoffs: string[];
+  bestFor: string[];
   dataConfidence: number;
 }
 
@@ -94,7 +95,16 @@ export function buildSmartComparison(phones: Phone[]) {
     if (!phone.specs?.storage) tradeoffs.push('Storage data is missing');
     if (!phone.specs?.battery) tradeoffs.push('Battery data is missing');
     if (phone.compareScoresEstimated) tradeoffs.push('Some scores are estimated');
-    return { phone, wins: winMap.get(phone.id) || 0, strengths, tradeoffs, dataConfidence: confidence };
+    const bestFor: string[] = [];
+    const gaming = scoreFor(phone, 'gaming').score;
+    const camera = scoreFor(phone, 'camera').score;
+    const battery = scoreFor(phone, 'battery').score;
+    const value = scoreFor(phone, 'value').score;
+    if (gaming >= 78) bestFor.push('Gamers');
+    if (camera >= 78) bestFor.push('Camera users');
+    if (battery >= 78) bestFor.push('Heavy users');
+    if (value >= 78) bestFor.push('Value buyers');
+    return { phone, wins: winMap.get(phone.id) || 0, strengths, tradeoffs, bestFor, dataConfidence: confidence }; 
   });
 
   const recommended = [...insights].sort((a, b) => b.wins - a.wins || b.dataConfidence - a.dataConfidence || ((a.phone.pricePKR || Infinity) - (b.phone.pricePKR || Infinity)))[0];

@@ -42,6 +42,12 @@ const label: Record<PreferenceKey, string> = {
 const finiteScore = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 100 ? value : null;
 const safeScore = (value: unknown) => finiteScore(value) ?? 0;
 
+
+function deviceClass(phone: RecommendationCandidate) {
+  const haystack = `${phone.modelName} ${phone.specs?.display || ''}`.toLowerCase();
+  return /tablet|tab|ipad/.test(haystack) ? 'tablet' : 'phone';
+}
+
 function weightedScore(phone: RecommendationCandidate, preferences: PreferenceKey[]) {
   const values = preferences.map(pref => safeScore(phone[field[pref]])).filter(Boolean);
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : safeScore(phone.overallRating);
@@ -49,7 +55,8 @@ function weightedScore(phone: RecommendationCandidate, preferences: PreferenceKe
 
 function findAlternatives(current: RecommendationCandidate, ranked: RecommendationCandidate[], preferences: PreferenceKey[]): RecommendationAlternative[] {
   const currentScore = weightedScore(current, preferences);
-  const others = ranked.filter(item => item.id !== current.id && item.slug !== current.slug && item.pricePKR > 0);
+  const currentClass = deviceClass(current);
+  const others = ranked.filter(item => item.id !== current.id && item.slug !== current.slug && item.pricePKR > 0 && deviceClass(item) === currentClass);
   const cheaper = others
     .filter(item => item.pricePKR < current.pricePKR && weightedScore(item, preferences) >= currentScore - 7)
     .sort((a, b) => weightedScore(b, preferences) - weightedScore(a, preferences) || b.pricePKR - a.pricePKR)[0];

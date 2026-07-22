@@ -56,6 +56,7 @@ export function SmartComparisonSummary({ phones }: { phones: Phone[] }) {
               <span className="shrink-0 text-[10px] font-semibold text-gray-500">{insight.dataConfidence}% data</span>
             </div>
             {insight.strengths.length > 0 && <p className="mt-2 flex items-start gap-1.5 text-xs text-emerald-700"><BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Strong in {insight.strengths.join(', ')}</p>}
+            {insight.bestFor.length > 0 && <p className="mt-1.5 text-xs font-medium text-blue-700">Best for: {insight.bestFor.join(', ')}</p>}
             {insight.tradeoffs.length > 0 && <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {insight.tradeoffs.slice(0, 2).join(' · ')}</p>}
           </div>
         ))}
