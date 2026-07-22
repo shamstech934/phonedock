@@ -120,6 +120,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       );
     }
 
+    if (segments.length === 2 && segments[0] === 'newsletter' && ['confirm', 'unsubscribe'].includes(segments[1])) {
+      await connectDB();
+      const rawToken = req.nextUrl.searchParams.get('token') || '';
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const action = segments[1];
+      const filter = action === 'confirm'
+        ? { confirmTokenHash: tokenHash, confirmTokenExpires: { $gt: new Date() }, status: 'pending' }
+        : { unsubscribeTokenHash: tokenHash, status: 'confirmed' };
+      const update = action === 'confirm'
+        ? { status: 'confirmed', active: true, confirmedAt: new Date(), confirmTokenHash: null, confirmTokenExpires: null }
+        : { status: 'unsubscribed', active: false, unsubscribedAt: new Date() };
+      const subscriber = await NewsletterSubscriber.findOneAndUpdate(filter, { $set: update });
+      return NextResponse.redirect(new URL(subscriber ? `/?newsletter=${action === 'confirm' ? 'confirmed' : 'unsubscribed'}` : '/?newsletter=invalid', req.url));
+    }
+
     // Cron: /api/cron/update-prices — protected by CRON_SECRET, NO rate limiting
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
       const cronResult = await handleCronUpdatePrices(req);
@@ -404,8 +419,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
       }
       try {
-        await NewsletterSubscriber.create({ email });
-        return NextResponse.json({ success: true, message: 'Subscribed successfully!' });
+        const existingConfirmed = await NewsletterSubscriber.findOne({ email, status: 'confirmed' }).select('_id').lean();
+        if (existingConfirmed) return NextResponse.json({ success: true, message: 'You are already subscribed!' });
+        const rawConfirm = crypto.randomUUID(); const rawUnsubscribe = crypto.randomUUID();
+        const confirmTokenHash = crypto.createHash('sha256').update(rawConfirm).digest('hex');
+        const unsubscribeTokenHash = crypto.createHash('sha256').update(rawUnsubscribe).digest('hex');
+        const subscriber = await NewsletterSubscriber.findOneAndUpdate({ email }, { $set: { status: 'pending', active: true, confirmTokenHash, confirmTokenExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), unsubscribeTokenHash }, $setOnInsert: { email, segments: ['general'] } }, { upsert: true, new: true });
+        if (subscriber.status !== 'confirmed' && isEmailConfigured()) {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
+          const transporter = await getEmailTransporter();
+          await transporter.sendMail({ from: `"PhoneDock" <${process.env.EMAIL_USER}>`, to: email, subject: 'Confirm your PhoneDock newsletter subscription', text: `Confirm: ${baseUrl}/api/newsletter/confirm?token=${encodeURIComponent(rawConfirm)}\n\nUnsubscribe: ${baseUrl}/api/newsletter/unsubscribe?token=${encodeURIComponent(rawUnsubscribe)}` });
+        }
+        return NextResponse.json({ success: true, message: isEmailConfigured() ? 'Check your email to confirm your subscription.' : 'Subscription saved pending email verification.' });
       } catch (e: unknown) {
         if (e && typeof e === 'object' && 'code' in e && (e as { code: number }).code === 11000) {
           return NextResponse.json({ success: true, message: 'You are already subscribed!' });

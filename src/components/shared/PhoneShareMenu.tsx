@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Copy, Facebook, Mail, Share2 } from 'lucide-react';
+import { Check, Copy, Facebook, Linkedin, Mail, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -38,6 +38,7 @@ export function PhoneShareMenu({ title, text, url, compact = false }: Props) {
         <DropdownMenuItem onClick={() => { const x=encoded(); open(`https://www.facebook.com/sharer/sharer.php?u=${x.u}`); }}><Facebook className="mr-2 h-4 w-4" /> Facebook</DropdownMenuItem>
         <DropdownMenuItem onClick={() => { const x=encoded(); open(`https://twitter.com/intent/tweet?text=${x.t}&url=${x.u}`); }}><span className="mr-2 font-bold">X</span> X / Twitter</DropdownMenuItem>
         <DropdownMenuItem onClick={() => { const x=encoded(); open(`https://t.me/share/url?url=${x.u}&text=${x.t}`); }}><span className="mr-2 font-bold text-sky-500">T</span> Telegram</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => { const x=encoded(); open(`https://www.linkedin.com/sharing/share-offsite/?url=${x.u}`); }}><Linkedin className="mr-2 h-4 w-4 text-blue-700" /> LinkedIn</DropdownMenuItem>
         <DropdownMenuItem onClick={() => { const x=encoded(); window.location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${x.t}%0A%0A${x.u}`; }}><Mail className="mr-2 h-4 w-4" /> Email</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={copy}>{copied ? <Check className="mr-2 h-4 w-4 text-emerald-600" /> : <Copy className="mr-2 h-4 w-4" />}{copied ? 'Link copied' : 'Copy link'}</DropdownMenuItem>

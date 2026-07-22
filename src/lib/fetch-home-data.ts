@@ -102,7 +102,7 @@ async function fetchHomeDataUncached() {
       { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
       { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
     ]),
-    Sponsor.find({ active: true }).select('name image url position active').lean().catch(() => []),
+    Sponsor.find({ active: true, $and: [{ $or: [{ startDate: '' }, { startDate: { $lte: new Date().toISOString().slice(0, 10) } }] }, { $or: [{ endDate: '' }, { endDate: { $gte: new Date().toISOString().slice(0, 10) } }] }] }).select('name image url position active campaign utmCampaign priority').sort({ priority: -1 }).lean().catch(() => []),
     Phone.countDocuments({ active: true, status: 'published' }),
     Brand.countDocuments({ active: true }),
   ]);

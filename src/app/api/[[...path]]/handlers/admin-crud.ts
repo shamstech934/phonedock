@@ -1183,10 +1183,10 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
-    const { name, image, url, position, active, startDate, endDate } = body;
+    const { name, image, url, position, active, startDate, endDate, priority, campaign, utmCampaign, phoneId, brandId } = body;
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
     const { Sponsor } = await import('@/lib/models/Other');
-    const sponsor = await Sponsor.create({ name, image: image || '', url: url || '', position: position || 'sidebar', active: active !== false, startDate: startDate || '', endDate: endDate || '' });
+    const sponsor = await Sponsor.create({ name, image: image || '', url: url || '', position: position || 'sidebar', active: active !== false, startDate: startDate || '', endDate: endDate || '', priority: Number.isFinite(Number(priority)) ? Number(priority) : 0, campaign: campaign || '', utmCampaign: utmCampaign || '', phoneId: phoneId || null, brandId: brandId || null });
     return NextResponse.json({ success: true, id: sponsor._id?.toString() });
   }
 
@@ -1623,7 +1623,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
     const body = await req.json();
-    const { name, image, url, position, active, startDate, endDate } = body;
+    const { name, image, url, position, active, startDate, endDate, priority, campaign, utmCampaign, phoneId, brandId } = body;
     const { Sponsor } = await import('@/lib/models/Other');
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
@@ -1633,6 +1633,11 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (active !== undefined) updateData.active = active;
     if (startDate !== undefined) updateData.startDate = startDate;
     if (endDate !== undefined) updateData.endDate = endDate;
+    if (priority !== undefined) updateData.priority = Number(priority) || 0;
+    if (campaign !== undefined) updateData.campaign = String(campaign).slice(0, 120);
+    if (utmCampaign !== undefined) updateData.utmCampaign = String(utmCampaign).slice(0, 120);
+    if (phoneId !== undefined) updateData.phoneId = phoneId || null;
+    if (brandId !== undefined) updateData.brandId = brandId || null;
     const updated = await Sponsor.findByIdAndUpdate(segments[2], { $set: updateData }, { new: true }).lean();
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     revalidatePublicContent({ includeSponsors: true });

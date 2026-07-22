@@ -1,10 +1,23 @@
+'use client';
+
 import Script from 'next/script';
+import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+
+const CONSENT_KEY = 'phonedock_cookie_consent_v1';
 
 export function GrowthScripts() {
+  const pathname = usePathname();
+  const [consented, setConsented] = useState(false);
+  useEffect(() => {
+    const sync = () => setConsented(localStorage.getItem(CONSENT_KEY) === 'accepted');
+    sync(); window.addEventListener('phonedock:consent', sync); return () => window.removeEventListener('phonedock:consent', sync);
+  }, []);
   const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT?.trim();
   const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
   const clarityId = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID?.trim();
 
+  if (!consented || pathname.startsWith('/admin')) return null;
   return (
     <>
       {adsenseClient ? (

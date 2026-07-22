@@ -33,10 +33,15 @@ const SponsorSchema = new Schema({
   impressions: { type: Number, default: 0 },
   startDate: { type: String, default: '' },
   endDate: { type: String, default: '' },
+  priority: { type: Number, default: 0 },
+  campaign: { type: String, default: '', maxlength: 120 },
+  utmCampaign: { type: String, default: '', maxlength: 120 },
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', default: null },
+  brandId: { type: Schema.Types.ObjectId, ref: 'Brand', default: null },
 }, { timestamps: true });
 
-SponsorSchema.index({ active: 1 });
-SponsorSchema.index({ position: 1 });
+SponsorSchema.index({ active: 1, position: 1, priority: -1 });
+SponsorSchema.index({ startDate: 1, endDate: 1 });
 
 export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', SponsorSchema);
 
@@ -155,8 +160,16 @@ export const PriceAlert = mongoose.models.PriceAlert || mongoose.model('PriceAle
 const NewsletterSubscriberSchema = new Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
   active: { type: Boolean, default: true },
+  status: { type: String, enum: ['pending', 'confirmed', 'unsubscribed'], default: 'pending', index: true },
+  segments: { type: [String], default: ['general'] },
+  confirmTokenHash: { type: String, default: null, select: false },
+  confirmTokenExpires: { type: Date, default: null, select: false },
+  unsubscribeTokenHash: { type: String, default: null, select: false },
+  confirmedAt: { type: Date, default: null },
+  unsubscribedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 NewsletterSubscriberSchema.index({ email: 1 }, { unique: true });
+NewsletterSubscriberSchema.index({ status: 1, segments: 1, createdAt: -1 });
 
 export const NewsletterSubscriber = mongoose.models.NewsletterSubscriber || mongoose.model('NewsletterSubscriber', NewsletterSubscriberSchema);

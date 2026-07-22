@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 declare global {
   interface Window {
@@ -16,19 +17,24 @@ type AdSlotProps = {
 };
 
 export function AdSlot({ slot, format = 'auto', className = '', label = 'Advertisement' }: AdSlotProps) {
+  const pathname = usePathname();
+  const [consented, setConsented] = useState(false);
   const client = process.env.NEXT_PUBLIC_ADSENSE_CLIENT?.trim();
   const resolvedSlot = slot?.trim();
 
   useEffect(() => {
-    if (!client || !resolvedSlot) return;
+    const sync = () => setConsented(localStorage.getItem('phonedock_cookie_consent_v1') === 'accepted');
+    sync(); window.addEventListener('phonedock:consent', sync);
+    if (!client || !resolvedSlot || !consented || pathname.startsWith('/admin')) return () => window.removeEventListener('phonedock:consent', sync);
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch {
       // Ad blockers and delayed AdSense loading should never break the page.
     }
-  }, [client, resolvedSlot]);
+    return () => window.removeEventListener('phonedock:consent', sync);
+  }, [client, resolvedSlot, consented, pathname]);
 
-  if (!client || !resolvedSlot) return null;
+  if (!client || !resolvedSlot || !consented || pathname.startsWith('/admin')) return null;
 
   return (
     <aside aria-label={label} className={`w-full overflow-hidden ${className}`}>
