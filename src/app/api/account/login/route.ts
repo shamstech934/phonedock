@@ -3,11 +3,11 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { connectDB } from '@/lib/mongodb';
 import { User } from '@/lib/models/User';
-import { createUserToken, isUserEmailVerificationRequired, USER_COOKIE, userCookieOptions } from '@/lib/user-auth';
+import { createUserToken, isUserEmailVerificationRequired, USER_COOKIE, userCookieOptionsFor } from '@/lib/user-auth';
 import { recordSecurityEvent } from '@/lib/security-events';
 import { enforceUserAuthRateLimit, getRequestSecurityContext } from '@/lib/user-security';
 
-const schema = z.object({ email: z.string().trim().email().transform(v => v.toLowerCase()), password: z.string().min(1).max(128) });
+const schema = z.object({ email: z.string().trim().email().transform(v => v.toLowerCase()), password: z.string().min(1).max(128), remember: z.boolean().optional().default(false) });
 
 export async function POST(req: NextRequest) {
   const { ip, userAgent } = getRequestSecurityContext(req);
@@ -30,9 +30,9 @@ export async function POST(req: NextRequest) {
     }
     user.lastLoginAt = new Date();
     await user.save();
-    const token = await createUserToken({ id: String(user._id), email: user.email, name: user.name, sessionVersion: user.sessionVersion ?? 0 });
+    const token = await createUserToken({ id: String(user._id), email: user.email, name: user.name, sessionVersion: user.sessionVersion ?? 0 }, parsed.data.remember);
     const res = NextResponse.json({ user: { id: String(user._id), name: user.name, email: user.email } });
-    res.cookies.set(USER_COOKIE, token, userCookieOptions);
+    res.cookies.set(USER_COOKIE, token, userCookieOptionsFor(parsed.data.remember));
     await recordSecurityEvent({ action: 'user_login_success', ip, userAgent });
     return res;
   } catch (error) {

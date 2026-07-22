@@ -8,6 +8,22 @@ const UserSchema = new Schema({
   status: { type: String, enum: ['active', 'blocked'], default: 'active', index: true },
   lastLoginAt: { type: Date, default: null },
   sessionVersion: { type: Number, default: 0, min: 0 },
+  avatarUrl: { type: String, default: '', maxlength: 500 },
+  country: { type: String, default: 'PK', maxlength: 2, uppercase: true },
+  timezone: { type: String, default: 'Asia/Karachi', maxlength: 80 },
+  preferredCurrency: { type: String, default: 'PKR', maxlength: 3, uppercase: true },
+  preferredLanguage: { type: String, default: 'en', maxlength: 10 },
+  notificationSettings: {
+    email: { type: Boolean, default: true },
+    priceDrops: { type: Boolean, default: true },
+    ptaChanges: { type: Boolean, default: true },
+    restock: { type: Boolean, default: true },
+  },
+  privacySettings: {
+    saveHistory: { type: Boolean, default: true },
+    personalization: { type: Boolean, default: true },
+  },
+  deletedAt: { type: Date, default: null, select: false },
 }, { timestamps: true });
 
 export interface IUser extends mongoose.Document {
@@ -18,6 +34,11 @@ export interface IUser extends mongoose.Document {
   status: 'active' | 'blocked';
   lastLoginAt: Date | null;
   sessionVersion: number;
+  avatarUrl: string;
+  country: string;
+  timezone: string;
+  preferredCurrency: string;
+  preferredLanguage: string;
   createdAt: Date;
   updatedAt: Date;
 }

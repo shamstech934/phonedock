@@ -5,7 +5,8 @@ import { User } from '@/lib/models/User';
 
 export const USER_COOKIE = 'pd_user_session';
 // Seven days limits exposure while still keeping a practical consumer session.
-const MAX_AGE = 60 * 60 * 24 * 7;
+const DEFAULT_MAX_AGE = 60 * 60 * 24 * 7;
+const REMEMBER_MAX_AGE = 60 * 60 * 24 * 30;
 const ISSUER = 'phonedock';
 const AUDIENCE = 'phonedock-user';
 const MAX_TOKEN_LENGTH = 4096;
@@ -20,14 +21,15 @@ export function isUserEmailVerificationRequired(): boolean {
   return process.env.REQUIRE_USER_EMAIL_VERIFICATION === 'true';
 }
 
-export async function createUserToken(user: { id: string; email: string; name: string; sessionVersion?: number }) {
+export async function createUserToken(user: { id: string; email: string; name: string; sessionVersion?: number }, remember = false) {
+  const maxAge = remember ? REMEMBER_MAX_AGE : DEFAULT_MAX_AGE;
   return new SignJWT({ email: user.email, name: user.name, type: 'user', sessionVersion: user.sessionVersion ?? 0 })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(user.id)
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE}s`)
+    .setExpirationTime(`${maxAge}s`)
     .sign(secret());
 }
 
@@ -62,10 +64,11 @@ export async function getUserId(req: NextRequest) {
   return (await getUserSession(req))?.sub || null;
 }
 
-export const userCookieOptions = {
+export function userCookieOptionsFor(remember = false) { return {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
   path: '/',
-  maxAge: MAX_AGE,
-};
+  maxAge: remember ? REMEMBER_MAX_AGE : DEFAULT_MAX_AGE,
+}; }
+export const userCookieOptions = userCookieOptionsFor(false);
