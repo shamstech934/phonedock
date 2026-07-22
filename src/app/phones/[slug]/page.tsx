@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import PhoneDetailClient from './PhoneDetailClient';
 import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
 import { serializeJsonLd } from '@/lib/json-ld';
+import { buildPageMetadata } from '@/lib/seo';
 
 // Render on demand and refresh cached phone pages hourly. This avoids a database
 // round-trip on every visit while still keeping prices and specifications fresh.
@@ -34,26 +35,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ? `${brand} ${model} Price in Pakistan - ${price.toLocaleString()} PKR`
     : `${brand} ${model} - Specs, Reviews & Price`;
 
-  return {
+  return buildPageMetadata({
     title,
-    description: description.slice(0, 160),
-    openGraph: {
-      title,
-      description: description.slice(0, 160),
-      images: thumbnail ? [{ url: thumbnail, width: 400, height: 400, alt: `${brand} ${model}` }] : [],
-      type: 'website',
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title,
-      description: description.slice(0, 160),
-      images: thumbnail ? [thumbnail] : [],
-    },
-    alternates: {
-      canonical: `/phones/${slug}`,
-    },
-  };
-}
+    description,
+    path: `/phones/${slug}`,
+    image: thumbnail || undefined,
+    keywords: [brand, model, `${brand} ${model} price in Pakistan`, `${brand} ${model} specs`, 'PTA approved phone'].filter(Boolean),
+  });
+}}
 
 export default async function PhoneDetailPage({ params }: Props) {
   const { slug } = await params;

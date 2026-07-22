@@ -26,6 +26,8 @@ const contentSecurityPolicy = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  compress: true,
   // Type checking is enforced by the separate deterministic `npm run typecheck` CI step.
   // Keeping it out of Next's worker avoids duplicate/hanging checks in constrained builders.
   typescript: { ignoreBuildErrors: true },
@@ -47,6 +49,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizeCss: false,
+    optimizePackageImports: ['lucide-react', 'framer-motion'],
     cpus: 2,
   },
   async headers() {
@@ -66,6 +69,27 @@ const nextConfig: NextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           { key: 'Content-Security-Policy', value: contentSecurityPolicy },
+        ],
+      },
+      {
+        source: '/api/phones/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=300, stale-while-revalidate=1800' },
+          { key: 'CDN-Cache-Control', value: 'public, s-maxage=300, stale-while-revalidate=1800' },
+        ],
+      },
+      {
+        source: '/api/brands/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=1800, stale-while-revalidate=86400' },
+          { key: 'CDN-Cache-Control', value: 'public, s-maxage=1800, stale-while-revalidate=86400' },
+        ],
+      },
+      {
+        source: '/api/news/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=300, stale-while-revalidate=1800' },
+          { key: 'CDN-Cache-Control', value: 'public, s-maxage=300, stale-while-revalidate=1800' },
         ],
       },
       {
