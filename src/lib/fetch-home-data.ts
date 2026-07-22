@@ -230,15 +230,23 @@ export const fetchHomeData = unstable_cache(
 
 // ============ HERO PHONES (with specs) ============
 
-export async function fetchHeroPhones() {
+export async function fetchHeroPhones(selectedSlugs: string[] = []) {
   await connectDB();
 
-  let phones = await Phone.find({ active: true, status: 'published', featured: true })
-    .sort({ createdAt: -1 }).limit(6).populate('brand').lean();
+  const slugs = [...new Set(selectedSlugs.map(slug => slug.trim()).filter(Boolean))].slice(0, 6);
+  let phones = slugs.length
+    ? await Phone.find({ active: true, status: 'published', slug: { $in: slugs } }).select(HOME_PHONE_PROJECTION).populate('brand').lean()
+    : await Phone.find({ active: true, status: 'published', featured: true })
+      .sort({ createdAt: -1 }).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
+
+  if (slugs.length) {
+    const order = new Map(slugs.map((slug, index) => [slug, index]));
+    phones.sort((a, b) => (order.get(a.slug) ?? 999) - (order.get(b.slug) ?? 999));
+  }
 
   if (phones.length === 0) {
     phones = await Phone.find({ active: true, status: 'published', pricePKR: { $gt: 150000 } })
-      .sort({ createdAt: -1 }).limit(6).populate('brand').lean();
+      .sort({ createdAt: -1 }).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
   }
 
   const ids = phones.map(p => p._id);

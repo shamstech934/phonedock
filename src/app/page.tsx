@@ -1,7 +1,7 @@
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import HomeContent from './HomeContent';
-import { fetchHomeData } from '@/lib/fetch-home-data';
+import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { getSettings } from '@/lib/models/Settings';
 import type { HomeData } from '@/components/shared/types';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
@@ -28,6 +28,13 @@ export default async function HomePage() {
     try {
       const settings = await getSettings();
       siteSettings = JSON.parse(JSON.stringify(settings));
+      const homepage = settings.homepage as { heroPhoneSlugs?: unknown };
+      const selectedSlugs = Array.isArray(homepage?.heroPhoneSlugs)
+        ? homepage.heroPhoneSlugs.filter((slug): slug is string => typeof slug === 'string')
+        : [];
+      if (selectedSlugs.length) {
+        heroPhones = await fetchHeroPhones(selectedSlugs) as unknown as HeroPhone[];
+      }
     } catch (error) {
       console.error('[homepage] Failed to load optional site settings', error);
       siteSettings = null;

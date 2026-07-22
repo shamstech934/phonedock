@@ -1764,6 +1764,13 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
     }
+    if (body.homepage && typeof body.homepage === 'object') {
+      const homepage = { ...body.homepage } as Record<string, unknown>;
+      homepage.heroPhoneSlugs = Array.isArray(homepage.heroPhoneSlugs)
+        ? [...new Set(homepage.heroPhoneSlugs.filter((slug): slug is string => typeof slug === 'string').map(slug => slug.trim()).filter(Boolean))].slice(0, 6)
+        : [];
+      update.homepage = homepage;
+    }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
     // Make CMS changes visible immediately instead of waiting for the homepage cache window.
     const { revalidatePath } = await import('next/cache');

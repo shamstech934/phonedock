@@ -1,209 +1,42 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Shield } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 import { formatPrice } from './formatPrice';
 
 export interface HeroPhone {
-  id: string;
-  modelName: string;
-  slug: string;
-  thumbnail: string;
-  pricePKR: number;
-  ptaStatus: string;
-  ptaApproved: boolean;
-  brand?: { name: string; logo: string };
-  specs?: {
-    ram?: string;
-    mainCamera?: string;
-    battery?: string;
-    chipset?: string;
-    display?: string;
-    storage?: string;
-  } | null;
+  id: string; modelName: string; slug: string; thumbnail: string; pricePKR: number;
+  ptaStatus: string; ptaApproved: boolean; brand?: { name: string; logo: string };
+  specs?: { ram?: string; mainCamera?: string; battery?: string; chipset?: string; display?: string; storage?: string } | null;
 }
 
-interface HeroPhoneShowcaseProps {
-  phones: HeroPhone[];
-  autoplay?: boolean;
-  intervalMs?: number;
-  showInfo?: boolean;
-}
+interface Props { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; showInfo?: boolean }
 
-export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true }: HeroPhoneShowcaseProps) {
-  const [current, setCurrent] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const [progressKey, setProgressKey] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
-
-  const goNext = useCallback(() => {
-    setCurrent(previous => (previous + 1) % phones.length);
-    setProgressKey(previous => previous + 1);
-  }, [phones.length]);
-
-  const goPrev = useCallback(() => {
-    setCurrent(previous => (previous - 1 + phones.length) % phones.length);
-    setProgressKey(previous => previous + 1);
-  }, [phones.length]);
-
-  const goTo = useCallback((index: number) => {
-    setCurrent(index);
-    setProgressKey(previous => previous + 1);
-  }, []);
-
-  useEffect(() => {
-    if (!autoplay || isPaused || phones.length <= 1) return;
-    timerRef.current = setInterval(goNext, Math.max(2000, intervalMs));
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [autoplay, goNext, intervalMs, isPaused, phones.length]);
-
-  useEffect(() => {
-    if (!isPaused) setProgressKey(previous => previous + 1);
-  }, [isPaused]);
-
-  if (!phones.length) return null;
-
-  const phone = phones[current];
-  const specItems: string[] = [];
-  if (phone.specs) {
-    if (phone.specs.ram) specItems.push(phone.specs.ram);
-    if (phone.specs.mainCamera) specItems.push(phone.specs.mainCamera);
-    if (phone.specs.battery) specItems.push(phone.specs.battery);
-    if (specItems.length < 3 && phone.specs.chipset) specItems.push(phone.specs.chipset);
-    if (specItems.length < 3 && phone.specs.display) specItems.push(phone.specs.display);
-  }
-
-  const onTouchEnd = (event: React.TouchEvent) => {
-    touchEndX.current = event.changedTouches[0].screenX;
-    const difference = touchStartX.current - touchEndX.current;
-    if (Math.abs(difference) > 50) {
-      if (difference > 0) goNext();
-      else goPrev();
-    }
-  };
-
-  return (
-    <div
-      className="relative flex h-full w-full select-none items-center justify-center"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onTouchStart={event => { touchStartX.current = event.changedTouches[0].screenX; }}
-      onTouchEnd={onTouchEnd}
-    >
-      <motion.div
-        className="pointer-events-none absolute right-[4%] top-[4%] h-60 w-60 rounded-full bg-[radial-gradient(circle,rgba(56,189,248,0.4)_0%,rgba(59,130,246,0.16)_42%,transparent_72%)] blur-[38px]"
-        animate={{ opacity: [0.4, 0.75, 0.4], scale: [0.95, 1.08, 0.95] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-      />
-
-      <div className="relative mx-auto flex w-full max-w-[520px] items-center justify-center gap-3 px-8 sm:gap-4 sm:px-10">
-        {showInfo && (
-          <div className="relative z-20 w-[116px] shrink-0 sm:w-[142px]">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`card-${phone.id}-${progressKey}`}
-                initial={{ opacity: 0, x: -16, rotateY: 8 }}
-                animate={{ opacity: 1, x: 0, rotateY: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden rounded-2xl border border-white/15 bg-slate-950/35 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:p-3.5"
-              >
-                <div className="mb-2 flex items-center justify-between gap-1.5">
-                  <p className="min-w-0 truncate text-[8px] font-bold uppercase tracking-[0.14em] text-sky-300 sm:text-[9px]">
-                    {phone.brand?.name || 'Featured'}
-                  </p>
-                  {phone.ptaApproved && (
-                    <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-emerald-300/20 bg-emerald-400/15 px-1.5 py-1 text-[7px] font-bold leading-none text-emerald-200">
-                      <Shield className="h-2.5 w-2.5" aria-hidden="true" /> PTA
-                    </span>
-                  )}
-                </div>
-                <h3 className="mb-2 line-clamp-2 min-h-8 text-[11px] font-extrabold leading-4 text-white sm:text-xs">
-                  {phone.modelName}
-                </h3>
-                <p className="mb-2 truncate text-[11px] font-extrabold tracking-tight text-white sm:text-sm" title={formatPrice(phone.pricePKR)}>
-                  {formatPrice(phone.pricePKR)}
-                </p>
-                {specItems.length > 0 && (
-                  <div className="mb-2.5 space-y-1">
-                    {specItems.slice(0, 3).map((spec, index) => (
-                      <span key={`${spec}-${index}`} className="block truncate rounded-md border border-white/[0.07] bg-white/[0.06] px-1.5 py-1 text-[8px] leading-tight text-slate-300" title={spec}>
-                        {spec}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <Link
-                  href={`/phones/${phone.slug}`}
-                  className="flex min-h-8 items-center justify-center rounded-lg border border-sky-300/20 bg-sky-400/15 px-2 text-[9px] font-bold text-white transition hover:border-sky-200/40 hover:bg-sky-400/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                >
-                  View Details
-                </Link>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        )}
-
-        <div className="relative z-10 min-w-0 flex-1 [perspective:900px]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`image-${phone.id}-${progressKey}`}
-              initial={{ opacity: 0, scale: 0.92, rotateY: -10 }}
-              animate={{ opacity: 1, scale: 1, rotateY: -5 }}
-              exit={{ opacity: 0, scale: 0.92, rotateY: 8 }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-              className="relative mx-auto h-[176px] w-full max-w-[250px] rounded-[26px] border border-white/20 bg-gradient-to-br from-white/20 via-white/8 to-sky-400/10 p-2 shadow-[0_28px_65px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.22)] backdrop-blur-md sm:h-[226px] lg:h-[250px]"
-              style={{ transformStyle: 'preserve-3d' }}
-            >
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                className="relative h-full w-full overflow-hidden rounded-[20px] bg-white/95 shadow-inner"
-              >
-                {phone.thumbnail ? (
-                  <Image
-                    src={phone.thumbnail}
-                    alt={phone.modelName}
-                    fill
-                    sizes="(max-width: 640px) 180px, 250px"
-                    className="object-contain p-2 drop-shadow-[0_16px_30px_rgba(15,23,42,0.28)]"
-                    priority={current === 0}
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-white/[0.07]">
-                    <span className="text-xs text-slate-400">No Image</span>
-                  </div>
-                )}
-              </motion.div>
-              <div className="pointer-events-none absolute inset-x-8 -bottom-4 h-5 rounded-full bg-black/35 blur-xl" aria-hidden="true" />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {phones.length > 1 && (
-        <>
-          <button onClick={goPrev} className="absolute left-0 top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-slate-950/25 backdrop-blur-md transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" aria-label="Previous phone">
-            <ChevronLeft className="h-4 w-4 text-white/80" />
-          </button>
-          <button onClick={goNext} className="absolute right-0 top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-slate-950/25 backdrop-blur-md transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" aria-label="Next phone">
-            <ChevronRight className="h-4 w-4 text-white/80" />
-          </button>
-          <div className="absolute -bottom-1 left-1/2 z-30 flex -translate-x-1/2 gap-1.5">
-            {phones.map((item, index) => (
-              <button key={item.id} onClick={() => goTo(index)} className={`h-1 rounded-full transition-all ${index === current ? 'w-6 bg-sky-300' : 'w-1.5 bg-white/35 hover:bg-white/60'}`} aria-label={`Go to slide ${index + 1}`} aria-current={index === current ? 'true' : undefined} />
-            ))}
-          </div>
-        </>
-      )}
+export function HeroPhoneShowcase({ phones, autoplay=true, intervalMs=5000, showInfo=true }: Props) {
+  const [current,setCurrent]=useState(0); const [paused,setPaused]=useState(false); const touch=useRef(0);
+  const next=useCallback(()=>setCurrent(value=>(value+1)%phones.length),[phones.length]);
+  const previous=useCallback(()=>setCurrent(value=>(value-1+phones.length)%phones.length),[phones.length]);
+  useEffect(()=>{if(!autoplay||paused||phones.length<2)return;const timer=setInterval(next,Math.max(2000,intervalMs));return()=>clearInterval(timer)},[autoplay,intervalMs,next,paused,phones.length]);
+  if(!phones.length)return null;
+  const phone=phones[current];
+  return <div className="relative flex h-full min-h-[290px] w-full select-none items-center justify-center overflow-hidden" onMouseEnter={()=>setPaused(true)} onMouseLeave={()=>setPaused(false)} onTouchStart={e=>{touch.current=e.changedTouches[0].screenX}} onTouchEnd={e=>{const d=touch.current-e.changedTouches[0].screenX;if(Math.abs(d)>50)(d>0?next:previous)()}}>
+    <div className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/20 blur-3xl" />
+    <div className="relative flex h-full w-full items-center justify-center [perspective:1100px]">
+      <div className="pointer-events-none absolute bottom-[56px] left-1/2 h-20 w-[76%] max-w-[390px] -translate-x-1/2 rounded-[50%] border border-cyan-300/45 bg-[radial-gradient(ellipse,rgba(34,211,238,.38)_0%,rgba(59,130,246,.18)_42%,transparent_72%)] shadow-[0_0_45px_rgba(34,211,238,.28),inset_0_0_26px_rgba(125,211,252,.24)] [transform:translateX(-50%)_rotateX(66deg)]" />
+      <div className="pointer-events-none absolute bottom-[72px] left-1/2 h-12 w-[55%] max-w-[285px] -translate-x-1/2 rounded-[50%] border border-white/30 [transform:translateX(-50%)_rotateX(66deg)]" />
+      <AnimatePresence mode="wait">
+        <motion.div key={phone.id} initial={{opacity:0,y:18,rotateY:-22,scale:.9}} animate={{opacity:1,y:[0,-7,0],rotateY:-12,rotateX:2,scale:1}} exit={{opacity:0,y:-10,rotateY:18,scale:.92}} transition={{opacity:{duration:.3},scale:{duration:.4},rotateY:{duration:.5},y:{duration:4,repeat:Infinity,ease:'easeInOut'}}} className="absolute top-2 h-[205px] w-[170px] sm:h-[245px] sm:w-[205px] lg:h-[270px] lg:w-[225px] [transform-style:preserve-3d]">
+          {phone.thumbnail?<Image src={phone.thumbnail} alt={phone.modelName} fill sizes="225px" priority={current===0} unoptimized className="object-contain drop-shadow-[0_30px_28px_rgba(0,0,0,.48)]"/>:<div className="flex h-full items-center justify-center rounded-[28px] border border-white/15 bg-white/10 text-xs text-slate-300">No image</div>}
+        </motion.div>
+      </AnimatePresence>
+      {showInfo&&<AnimatePresence mode="wait"><motion.div key={`caption-${phone.id}`} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:6}} className="absolute bottom-1 left-1/2 z-20 flex w-[88%] max-w-[430px] -translate-x-1/2 items-center justify-between gap-3 rounded-2xl border border-white/15 bg-slate-950/45 px-4 py-2.5 shadow-xl backdrop-blur-xl">
+        <Link href={`/phones/${phone.slug}`} className="min-w-0"><p className="truncate text-[9px] font-bold uppercase tracking-[.16em] text-cyan-300">{phone.brand?.name||'Featured phone'}</p><p className="truncate text-sm font-extrabold text-white">{phone.modelName}</p></Link>
+        <div className="shrink-0 text-right"><p className="text-sm font-black text-white">{formatPrice(phone.pricePKR)}</p>{phone.ptaApproved&&<span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300"><ShieldCheck className="h-3 w-3"/>PTA Approved</span>}</div>
+      </motion.div></AnimatePresence>}
     </div>
-  );
+    {phones.length>1&&<><button onClick={previous} aria-label="Previous phone" className="absolute left-1 top-1/2 z-30 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/35 text-white backdrop-blur hover:bg-white/15"><ChevronLeft className="h-4 w-4"/></button><button onClick={next} aria-label="Next phone" className="absolute right-1 top-1/2 z-30 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/35 text-white backdrop-blur hover:bg-white/15"><ChevronRight className="h-4 w-4"/></button><div className="absolute bottom-[-10px] left-1/2 z-30 flex -translate-x-1/2 gap-1.5">{phones.map((item,index)=><button key={item.id} onClick={()=>setCurrent(index)} aria-label={`Go to slide ${index+1}`} aria-current={index===current?'true':undefined} className={`h-1.5 rounded-full transition-all ${index===current?'w-7 bg-cyan-300':'w-1.5 bg-white/35'}`}/>)}</div></>}
+  </div>;
 }
