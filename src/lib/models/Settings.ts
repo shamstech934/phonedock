@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { connectDB } from '@/lib/mongodb';
 
 export interface ISettings extends Document {
   siteName: string;
@@ -54,6 +55,7 @@ export const Settings = (mongoose.models.Settings as mongoose.Model<ISettings>) 
 
 // Helper: get settings, create defaults if not exist
 export async function getSettings(): Promise<ISettings> {
+  await connectDB();
   let settings: ISettings | null = await Settings.findOne().lean() as ISettings | null;
   if (!settings) {
     const created = await Settings.create({});

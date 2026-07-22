@@ -14,12 +14,24 @@ export default async function HomePage() {
   let siteSettings: unknown = null;
 
   try {
-    const [raw, settings] = await Promise.all([fetchHomeData(), getSettings()]);
+    const raw = await fetchHomeData();
     homeData = raw as unknown as HomeData;
     heroPhones = raw.featured.slice(0, 6) as unknown as HeroPhone[];
-    siteSettings = JSON.parse(JSON.stringify(settings));
-  } catch {
+  } catch (error) {
+    console.error('[homepage] Failed to load primary homepage data', error);
     homeData = null;
+  }
+
+  // CMS settings are optional presentation data. A settings query must never
+  // take down otherwise valid homepage content during a serverless cold start.
+  if (homeData) {
+    try {
+      const settings = await getSettings();
+      siteSettings = JSON.parse(JSON.stringify(settings));
+    } catch (error) {
+      console.error('[homepage] Failed to load optional site settings', error);
+      siteSettings = null;
+    }
   }
 
   if (!homeData) {
