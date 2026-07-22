@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -14,6 +14,7 @@ export default function AdminCollectorSourcesPage() {
   useAdmin();
   const [sources, setSources] = useState<CollectorSource[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<string>('newest');
@@ -24,22 +25,44 @@ export default function AdminCollectorSourcesPage() {
 
   const fetchSources = useCallback(() => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     fetch('/api/collector/sources', { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error('Failed to fetch sources'); return r.json(); })
       .then(d => { setSources(d.sources || []); setLoading(false); })
-      .catch((e) => { setError(e?.message || 'Failed to load sources. Please try again.'); setLoading(false); });
+      .catch((e) => { setLoadError(e?.message || 'Failed to load sources. Please try again.'); setLoading(false); });
   }, []);
 
   useEffect(() => { fetchSources(); }, [fetchSources]);
 
-  const handleAdd = async () => {
-    if (!form.name.trim()) return;
+  const handleAdd = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving) return;
+    setError(null);
+    const name = form.name.trim();
+    const endpoint = form.endpoint.trim();
+    if (!name) { setError('Name is required'); return; }
+    if (form.type !== 'file_upload' && !endpoint) { setError('URL / Endpoint is required for this source type'); return; }
+    if (endpoint) {
+      try {
+        const url = new URL(endpoint);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error();
+      } catch { setError('Invalid endpoint. Use a valid http or https URL.'); return; }
+    }
     setSaving(true);
     try {
-      const response = await fetch('/api/collector/sources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(form) });
-      if (!response.ok) throw new Error('Failed to add collector source');
-      setForm({ name: '', type: 'api', endpoint: '', dataPath: '', brandFilter: '', pollingSchedule: 'manual', apiKeyEnvVar: '' }); setShowForm(false); fetchSources();
+      const response = await fetch('/api/collector/sources', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ ...form, name, endpoint, enabled: true }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string; source?: CollectorSource };
+      if (!response.ok) {
+        const fallback = response.status === 401 ? 'Authentication expired. Please sign in again.' : 'Failed to save source';
+        throw new Error(result.error || fallback);
+      }
+      if (!result.source) throw new Error('Source was saved but the server returned an invalid response');
+      setSources(current => [result.source!, ...current.filter(source => source.id !== result.source!.id)]);
+      setForm({ name: '', type: 'api', endpoint: '', dataPath: '', brandFilter: '', pollingSchedule: 'manual', apiKeyEnvVar: '' });
+      setShowForm(false);
     } catch (error) { setError(error instanceof Error ? error.message : 'Failed to add collector source'); } finally { setSaving(false); }
   };
 
@@ -95,7 +118,7 @@ export default function AdminCollectorSourcesPage() {
       }
     });
 
-  if (error) return (
+  if (loadError) return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
@@ -106,7 +129,7 @@ export default function AdminCollectorSourcesPage() {
       <div className="card-premium p-6 text-center">
         <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><AlertTriangle className="w-7 h-7 text-red-500" /></div>
         <p className="text-sm font-semibold text-gray-900 mb-1">Unable to Load Sources</p>
-        <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto">{error}</p>
+        <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto">{loadError}</p>
         <button onClick={fetchSources} className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors">
           <RotateCcw className="w-3.5 h-3.5" /> Retry
         </button>
@@ -123,10 +146,12 @@ export default function AdminCollectorSourcesPage() {
           <h1 className="text-xl font-extrabold text-gray-900">Collector Sources</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{sources.length} sources configured. Official manufacturer feeds require a vendor-approved adapter.</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
+        <button type="button" onClick={() => { setShowForm(current => !current); setError(null); }} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
           <Plus className="w-3.5 h-3.5" /> Add Source
         </button>
       </div>
+
+      {error && !showForm && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</div>}
 
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="font-semibold text-gray-700">Templates:</span>
@@ -176,20 +201,20 @@ export default function AdminCollectorSourcesPage() {
       </div>
 
       {showForm && (
-        <div className="card-premium p-5 animate-fade-in">
+        <form onSubmit={handleAdd} className="card-premium p-5 animate-fade-in" noValidate>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-sm text-gray-900">New Source</h2>
-            <button onClick={() => setShowForm(false)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400"><X className="w-4 h-4" /></button>
+            <button type="button" onClick={() => { setShowForm(false); setError(null); }} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400" aria-label="Close new source form"><X className="w-4 h-4" /></button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Name *</label>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder="Source name" />
+              <label htmlFor="collector-source-name" className="text-xs font-medium text-gray-700 mb-1 block">Name *</label>
+              <input id="collector-source-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder="Source name" />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Type</label>
-              <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white">
-                <option value="api">API</option>
+              <label htmlFor="collector-source-type" className="text-xs font-medium text-gray-700 mb-1 block">Type</label>
+              <select id="collector-source-type" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white">
+                <option value="api">JSON API</option>
                 <option value="json_url">JSON URL</option>
                 <option value="csv_url">CSV URL</option>
                 <option value="xml_feed">XML Feed</option>
@@ -200,21 +225,22 @@ export default function AdminCollectorSourcesPage() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">URL / Endpoint</label>
-              <input value={form.endpoint} onChange={e => setForm({ ...form, endpoint: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder="https://..." />
+              <label htmlFor="collector-source-endpoint" className="text-xs font-medium text-gray-700 mb-1 block">URL / Endpoint{form.type !== 'file_upload' ? ' *' : ''}</label>
+              <input id="collector-source-endpoint" type="url" required={form.type !== 'file_upload'} value={form.endpoint} onChange={e => setForm({ ...form, endpoint: e.target.value })} className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" placeholder={form.type === 'file_upload' ? 'Not required for uploads' : 'https://...'} />
             </div>
             <div><label className="text-xs font-medium text-gray-700 mb-1 block">JSON data path</label><input value={form.dataPath} onChange={e => setForm({ ...form, dataPath: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="data.phones" /></div>
             <div><label className="text-xs font-medium text-gray-700 mb-1 block">Supported brands</label><input value={form.brandFilter} onChange={e => setForm({ ...form, brandFilter: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="Samsung, Apple" /></div>
             <div><label className="text-xs font-medium text-gray-700 mb-1 block">Secret environment variable</label><input value={form.apiKeyEnvVar} onChange={e => setForm({ ...form, apiKeyEnvVar: e.target.value })} className="w-full px-3 py-2 text-sm border rounded-xl" placeholder="VENDOR_API_KEY" autoComplete="off" /></div>
           </div>
+          {error && <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</div>}
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
-            <button onClick={handleAdd} disabled={saving || !form.name.trim()} className="px-4 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+            <button type="button" onClick={() => { setShowForm(false); setError(null); }} className="px-4 py-2 text-xs font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+            <button type="submit" disabled={saving || !form.name.trim()} className="px-4 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
               {saving && <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              <Check className="w-3.5 h-3.5" /> Add
+              {!saving && <Check className="w-3.5 h-3.5" />} {saving ? 'Adding…' : 'Add'}
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       <div className="space-y-2">

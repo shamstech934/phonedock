@@ -66,18 +66,34 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     const { name: srcName, type: srcType, endpoint: bodyEndpoint, url, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, brandFilter: srcBrandFilter, allowedDomains, dataPath, pollingSchedule } = body;
     const srcEndpoint = String(bodyEndpoint || url || '').trim();
-    if (!srcName || !srcType) return NextResponse.json({ error: 'name and type required' }, { status: 400 });
-    if (!PROVIDER_TYPES.includes(srcType)) return NextResponse.json({ error: 'Unsupported provider type' }, { status: 400 });
+    const normalizedName = String(srcName || '').trim();
+    if (!normalizedName) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    if (!srcType) return NextResponse.json({ error: 'Source type is required' }, { status: 400 });
+    if (!PROVIDER_TYPES.includes(srcType)) return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
     if (srcType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
-    if (srcType !== 'file_upload') { const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []); if (!checked.safe) return NextResponse.json({ error: checked.reason }, { status: 400 }); }
+    if (srcType !== 'file_upload') {
+      if (!srcEndpoint) return NextResponse.json({ error: 'URL / Endpoint is required for this source type' }, { status: 400 });
+      const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []);
+      if (!checked.safe) return NextResponse.json({ error: checked.reason || 'Invalid endpoint' }, { status: 400 });
+    }
     const safeHeaders = Object.fromEntries(Object.entries((headers || {}) as Record<string, string>).filter(([key]) => !/authorization|api-key|cookie/i.test(key)));
     const normalizedBrands = Array.isArray(srcBrandFilter) ? srcBrandFilter : String(srcBrandFilter || '').split(',').map(value => value.trim()).filter(Boolean);
-    const source = await CollectorSource.create({ name: String(srcName).trim(), type: srcType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
+    const duplicate = await CollectorSource.exists({ name: { $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+    if (duplicate) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
+    let source;
+    try {
+      source = await CollectorSource.create({ name: normalizedName, type: srcType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
+      throw error;
+    }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, id: source._id });
+    const created = source.toObject();
+    return NextResponse.json({ success: true, source: { ...created, id: source._id.toString() } }, { status: 201 });
   }
 
   // ---- /api/collector/jobs ----
