@@ -871,16 +871,40 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
               ) : null}
 
               {/* Price History Chart (legacy — keep if tracker has no data) */}
-              {!priceTracker && priceHistory.length >= 2 && (
-                <div className="card-premium p-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-blue-500" /> Price History
-                  </h3>
-                  <div className="h-40">
-                    <PriceHistoryChart history={priceHistory} />
+              {!priceTracker && priceHistory.length >= 2 && (() => {
+                const baseHistory = priceHistory.filter(item => item.storeName === null && Number(item.price) > 0);
+                if (baseHistory.length < 2) return null;
+                const values = baseHistory.map(item => Number(item.price));
+                const current = values[values.length - 1];
+                const first = values[0];
+                const lowest = Math.min(...values);
+                const highest = Math.max(...values);
+                const changePct = first > 0 ? Math.round(((current - first) / first) * 1000) / 10 : 0;
+                return (
+                  <div className="card-premium p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-blue-500" /> Price History
+                      </h3>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${changePct < 0 ? 'bg-emerald-50 text-emerald-700' : changePct > 0 ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {changePct === 0 ? 'Stable' : `${changePct > 0 ? '+' : ''}${changePct}%`}
+                      </span>
+                    </div>
+                    <div className="mb-3 grid grid-cols-3 gap-2">
+                      {[['Current', current], ['Lowest', lowest], ['Highest', highest]].map(([label, value]) => (
+                        <div key={String(label)} className="rounded-xl border border-gray-100 bg-gray-50/70 p-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+                          <p className="mt-1 text-xs font-bold text-gray-900">{formatPrice(Number(value))}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="h-40">
+                      <PriceHistoryChart history={priceHistory} />
+                    </div>
+                    <p className="mt-2 text-[10px] text-muted-foreground">Based on {baseHistory.length} recorded price points. Retail prices may vary by seller and city.</p>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Right Column: Details */}
