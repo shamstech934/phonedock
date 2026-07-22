@@ -22,6 +22,14 @@ interface DashboardStats {
   totalSponsors: number;
   totalAdmins: number;
   priceDistribution: Array<{ range: string; count: number }>;
+  dataHealth?: {
+    publishedPhones: number;
+    phonesMissingPrice: number;
+    phonesMissingThumbnail: number;
+    phonesMissingSpecs: number;
+    phonesMissingImages: number;
+    completenessPercent: number;
+  };
   recentActivity: Array<{
     action?: string;
     details?: string;
@@ -121,6 +129,34 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       )}
+
+      <div className="card-premium p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Production Data Health</h3>
+            <p className="text-xs text-muted-foreground mt-1">Published phone records that are ready for visitors, search and recommendations.</p>
+          </div>
+          <Link href="/admin/data-quality" className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">Open Data Quality <ArrowRight className="w-3 h-3" /></Link>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+            <p className="text-2xl font-extrabold text-emerald-700">{stats.dataHealth?.completenessPercent ?? 0}%</p>
+            <p className="text-xs font-medium text-emerald-800 mt-1">Overall completeness</p>
+          </div>
+          {[
+            { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices' },
+            { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
+            { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs' },
+            { label: 'Missing gallery', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
+          ].map(item => (
+            <Link key={item.label} href={item.href} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
+              <div className="flex items-center justify-between gap-2"><item.icon className="w-4 h-4 text-gray-500" /><span className={`text-xs font-semibold ${(item.value || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{(item.value || 0) > 0 ? 'Needs work' : 'Clear'}</span></div>
+              <p className="text-xl font-extrabold text-gray-900 mt-3">{item.value}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{item.label}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
         {quickActions.map(a => (

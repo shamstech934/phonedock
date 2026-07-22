@@ -41,7 +41,11 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'dashboard:read'); if (permCheck) return permCheck;
     await connectDB();
-    const [totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity, totalVideos, totalReviews, totalAdmins, totalSponsors] = await Promise.all([
+    const [
+      totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity,
+      totalVideos, totalReviews, totalAdmins, totalSponsors, publishedPhones,
+      phonesMissingPrice, phonesMissingThumbnail, phonesWithSpecs, phonesWithImages,
+    ] = await Promise.all([
       Phone.countDocuments({ active: true }),
       Brand.countDocuments({ active: true }),
       Phone.countDocuments({ active: true, trending: true }),
@@ -52,6 +56,11 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       UserReview.estimatedDocumentCount(),
       Admin.countDocuments({ active: true }),
       Sponsor.estimatedDocumentCount(),
+      Phone.countDocuments({ active: true, status: 'published' }),
+      Phone.countDocuments({ active: true, status: 'published', $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] }),
+      Phone.countDocuments({ active: true, status: 'published', $or: [{ thumbnail: { $exists: false } }, { thumbnail: '' }, { thumbnail: null }] }),
+      PhoneSpecs.distinct('phoneId'),
+      PhoneImage.distinct('phoneId'),
     ]);
     const priceResult = await Phone.aggregate([
       { $match: { active: true, pricePKR: { $gt: 0 } } },
@@ -72,6 +81,16 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     return NextResponse.json({
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount, totalVideos, totalReviews, totalAdmins, totalSponsors,
       avgPrice: priceResult[0]?.avg || 0,
+      dataHealth: {
+        publishedPhones,
+        phonesMissingPrice,
+        phonesMissingThumbnail,
+        phonesMissingSpecs: Math.max(publishedPhones - phonesWithSpecs.length, 0),
+        phonesMissingImages: Math.max(publishedPhones - phonesWithImages.length, 0),
+        completenessPercent: publishedPhones > 0
+          ? Math.max(0, Math.round((1 - ((phonesMissingPrice + phonesMissingThumbnail + Math.max(publishedPhones - phonesWithSpecs.length, 0)) / (publishedPhones * 3))) * 100))
+          : 100,
+      },
       priceDistribution: priceDistribution.map((d: AggBucketResult, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
       recentActivity: recentActivity.map((l: Record<string, unknown>) => ({
         ...l,
