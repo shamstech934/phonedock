@@ -6,6 +6,7 @@ import {
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
   Check, Newspaper, BarChart3, Target, CircleDollarSign, ChevronRight,
   Search, GitCompareArrows, BadgeDollarSign, ShieldCheck, ArrowRight,
+  BellRing, BadgeCheck, Store, SearchCheck, FlaskConical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -236,44 +237,128 @@ function PriceCategorySidebar() {
 function TrustSection({ totalPhones, totalBrands }: { totalPhones?: number; totalBrands?: number }) {
   const tp = totalPhones || 0;
   const tb = totalBrands || 0;
-  const stats = [
-    { icon: Smartphone, label: 'Phones Listed', value: tp > 0 ? `${tp.toLocaleString()}+` : '4,500+' },
-    { icon: Layers, label: 'Brands Covered', value: tb > 0 ? `${tb}+` : '120+' },
-    { icon: Star, label: 'Expert Reviews', value: '500+' },
-    { icon: Target, label: 'Prices Tracked', value: 'Daily' },
+  const trustSignals = [
+    {
+      icon: BadgeCheck,
+      title: 'Verified Pakistan Prices',
+      description: 'Market prices checked against trusted Pakistani retailers.',
+      tone: 'from-blue-500/20 to-cyan-400/10 text-cyan-200 border-cyan-300/15',
+    },
+    {
+      icon: FlaskConical,
+      title: 'Real Performance Data',
+      description: 'Benchmarks and gaming results presented with clear context.',
+      tone: 'from-violet-500/20 to-fuchsia-400/10 text-violet-200 border-violet-300/15',
+    },
+    {
+      icon: SearchCheck,
+      title: 'PTA Status Guidance',
+      description: 'Practical approval and availability information for Pakistan.',
+      tone: 'from-emerald-500/20 to-teal-400/10 text-emerald-200 border-emerald-300/15',
+    },
+    {
+      icon: Star,
+      title: 'Useful Buying Advice',
+      description: 'Specs translated into simple pros, cons and recommendations.',
+      tone: 'from-amber-500/20 to-orange-400/10 text-amber-100 border-amber-300/15',
+    },
   ];
-  const methods = [
-    { icon: Check, text: 'Prices verified from authorized retailers across Pakistan' },
-    { icon: Check, text: 'PTA approval status checked with official PTA database' },
-    { icon: Check, text: 'Benchmark scores from standardized testing procedures' },
-    { icon: Check, text: 'Editorial reviews based on hands-on testing experience' },
-    { icon: Check, text: 'Specs sourced from official manufacturer documentation' },
+
+  const methodology = [
+    {
+      number: '01',
+      icon: Store,
+      title: 'Collect',
+      description: 'We gather launch, price and availability data from reliable sources.',
+    },
+    {
+      number: '02',
+      icon: SearchCheck,
+      title: 'Verify',
+      description: 'Core specifications, pricing and PTA information are cross-checked.',
+    },
+    {
+      number: '03',
+      icon: Shield,
+      title: 'Review',
+      description: 'Editorial checks remove duplicates, unclear claims and bad records.',
+    },
+    {
+      number: '04',
+      icon: BellRing,
+      title: 'Update',
+      description: 'Important price and availability changes are refreshed over time.',
+    },
   ];
 
   return (
-    <section className="space-y-5">
-      <SectionHeader title="Why PhoneDock?" icon={Shield} />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {stats.map(stat => (
-          <div key={stat.label} className="card-premium p-5 text-center">
-            <stat.icon className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-            <p className="text-2xl font-extrabold text-gray-900 font-display">{stat.value}</p>
-            <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>
+    <section className="scroll-mt-28 space-y-5" aria-labelledby="why-phonedock-title">
+      <div className="relative overflow-hidden rounded-[2rem] border border-slate-700/70 bg-slate-950 px-4 py-5 shadow-2xl shadow-blue-950/20 sm:px-6 sm:py-7 lg:px-8">
+        <div className="pointer-events-none absolute -left-24 top-0 h-72 w-72 rounded-full bg-blue-600/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 bottom-0 h-72 w-72 rounded-full bg-cyan-400/15 blur-3xl" />
+
+        <div className="relative">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
+                <Shield className="h-3.5 w-3.5" aria-hidden="true" />
+                Built for Pakistani buyers
+              </div>
+              <h2 id="why-phonedock-title" className="font-display text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                Why people use PhoneDock
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                Clear phone data, useful buying tools and Pakistan-focused guidance in one place.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{tp > 0 ? `${tp.toLocaleString()}+ phones` : 'Growing phone database'}</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{tb > 0 ? `${tb}+ brands` : 'Popular brands covered'}</span>
+            </div>
           </div>
-        ))}
-      </div>
-      <div className="card-premium p-5 sm:p-6">
-        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-blue-500" /> Our Data Methodology
-        </h3>
-        <ul className="space-y-2.5">
-          {methods.map((m, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-sm text-muted-foreground">
-              <m.icon className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-              <span>{m.text}</span>
-            </li>
-          ))}
-        </ul>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {trustSignals.map(signal => (
+              <article key={signal.title} className={`group rounded-2xl border bg-gradient-to-br p-4 transition duration-300 hover:-translate-y-1 hover:bg-white/[0.07] ${signal.tone}`}>
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/10 shadow-inner shadow-white/5">
+                  <signal.icon className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <h3 className="text-sm font-bold text-white">{signal.title}</h3>
+                <p className="mt-1.5 text-xs leading-5 text-slate-300">{signal.description}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.045] p-4 sm:p-5 lg:p-6">
+            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-300">Our data methodology</p>
+                <h3 className="mt-1 text-xl font-bold text-white">From source to useful phone listing</h3>
+              </div>
+              <Link href="/about" className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60">
+                Learn more <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              {methodology.map((step, index) => (
+                <div key={step.title} className="relative rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-200">
+                      <step.icon className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <span className="font-display text-xl font-black text-white/15">{step.number}</span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white">{step.title}</h4>
+                  <p className="mt-1.5 text-xs leading-5 text-slate-400">{step.description}</p>
+                  {index < methodology.length - 1 && (
+                    <ChevronRight className="absolute -right-2 top-1/2 z-10 hidden h-4 w-4 -translate-y-1/2 text-blue-300/50 lg:block" aria-hidden="true" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
