@@ -21,7 +21,7 @@ export default function AboutPage() {
               <Smartphone className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">About PhoneDock</h1>
-            <p className="text-sm text-muted-foreground mt-2 max-w-lg mx-auto">Pakistan&apos;s most trusted smartphone database, helping millions make informed purchasing decisions.</p>
+            <p className="text-sm text-muted-foreground mt-2 max-w-lg mx-auto">A growing smartphone database built to help Pakistani buyers compare available specifications, prices and features.</p>
           </div>
 
           <div className="space-y-6 animate-fade-in">

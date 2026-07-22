@@ -49,10 +49,16 @@ const loadPhoneDetail = cache(async (slug: string): Promise<PhoneDetailData | nu
       active: true,
       status: 'published',
       _id: { $ne: phone._id },
-      $or: [
-        { brandId: phone.brandId },
-        { pricePKR: { $gte: Math.max(0, (phone.pricePKR || 0) * 0.72), $lte: (phone.pricePKR || 0) * 1.28 } },
-      ],
+      modelName: { $not: /\b(tablet|tab|pad)\b/i },
+      ...(Number(phone.pricePKR) > 0
+        ? {
+            pricePKR: {
+              $gt: 0,
+              $gte: Math.max(1, Number(phone.pricePKR) * 0.72),
+              $lte: Number(phone.pricePKR) * 1.28,
+            },
+          }
+        : { brandId: phone.brandId }),
     })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .sort({ overallRating: -1, valueScore: -1, createdAt: -1 })

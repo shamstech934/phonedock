@@ -16,7 +16,7 @@ export function Footer() {
               </div>
               <span className="font-display font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
             </Link>
-            <p className="text-sm leading-relaxed text-gray-400">Pakistan&apos;s #1 smartphone database. Compare specs, prices, and find your perfect phone.</p>
+            <p className="text-sm leading-relaxed text-gray-400">A growing smartphone database for Pakistan. Compare available specs and prices before buying.</p>
           </div>
           <div>
             <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
@@ -74,7 +74,7 @@ export function Footer() {
         </div>
         <div className="divider-glass mb-6" />
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-400">
-          <p>&copy; 2025 PhoneDock. All rights reserved. Made for Pakistan.</p>
+          <p>&copy; {new Date().getFullYear()} PhoneDock. All rights reserved. Made for Pakistan.</p>
           <p className="text-cyan-300 font-medium">Phone prices may vary. Check with retailers.</p>
           {process.env.NEXT_PUBLIC_BUILD_ID && (
             <p className="text-gray-700 text-[10px]">Build: {process.env.NEXT_PUBLIC_BUILD_ID}</p>

@@ -21,7 +21,7 @@ export default function AdvertisePage() {
               <Megaphone className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">Advertise with PhoneDock</h1>
-            <p className="text-sm text-muted-foreground mt-2">Reach millions of smartphone buyers in Pakistan</p>
+            <p className="text-sm text-muted-foreground mt-2">Reach smartphone buyers exploring phones in Pakistan</p>
           </div>
 
           <div className="space-y-5 animate-fade-in">

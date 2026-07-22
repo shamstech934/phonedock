@@ -253,6 +253,15 @@ function BuyingInsight({ phone }: { phone: Phone }) {
 }
 
 function ScoreBar({ score, label, mini }: { score: number; label: string; mini?: boolean }) {
+  const validScore = Number.isFinite(Number(score)) && Number(score) > 0;
+  if (!validScore) {
+    return (
+      <div className={mini ? 'flex items-center justify-between gap-2' : 'space-y-1.5'}>
+        <span className={mini ? 'w-14 shrink-0 text-xs text-muted-foreground' : 'text-sm text-muted-foreground'}>{label}</span>
+        <span className='text-xs font-medium text-muted-foreground'>Not rated yet</span>
+      </div>
+    );
+  }
   if (mini) {
     return (
       <div className="flex items-center gap-2">
@@ -907,8 +916,10 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                       <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/25">
                           <div className="text-center">
-                            <span className="text-xl font-extrabold">{p.overallRating}</span>
-                            <span className="text-[10px] block opacity-70">/ 10</span>
+                            {Number(p.overallRating) > 0 ? (<>
+                              <span className="text-xl font-extrabold">{p.overallRating}</span>
+                              <span className="text-[10px] block opacity-70">/ 10</span>
+                            </>) : <span className="px-2 text-center text-[10px] font-bold leading-tight">Not rated yet</span>}
                           </div>
                         </div>
                         <div>
@@ -1043,9 +1054,11 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-gray-900">Ratings & Scores</h3>
                   <div className="flex items-center gap-1.5">
-                    <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-                    <span className="text-2xl font-extrabold text-gray-900">{p.overallRating}</span>
-                    <span className="text-sm text-muted-foreground">/ 10</span>
+                    {Number(p.overallRating) > 0 ? (<>
+                      <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
+                      <span className="text-2xl font-extrabold text-gray-900">{p.overallRating}</span>
+                      <span className="text-sm text-muted-foreground">/ 10</span>
+                    </>) : <span className="text-sm font-semibold text-muted-foreground">Not rated yet</span>}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
@@ -1056,7 +1069,9 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     <ScoreBar score={p.displayScore} label="Display" />
                     <ScoreBar score={p.valueScore} label="Value" />
                   </div>
-                  <ScoreRadar phone={p} />
+                  {[p.performanceScore, p.cameraScore, p.batteryScore, p.displayScore, p.valueScore].some(score => Number(score) > 0) ? <ScoreRadar phone={p} /> : (
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-muted-foreground">Detailed score chart will appear after ratings are added.</div>
+                  )}
                 </div>
               </div>
 
