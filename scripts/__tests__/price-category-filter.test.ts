@@ -41,6 +41,7 @@ assert.match(home, /priceCategory=\$\{category\.key\}/);
 assert.match(home, /lg:grid-cols-\[minmax\(0,1fr\)_320px\]/);
 assert.match(home, /xl:grid-cols-\[minmax\(0,1fr\)_340px\]/);
 assert.match(home, /sm:grid-cols-3 lg:grid-cols-2/, 'desktop sidebar should use a compact two-column price grid');
+assert.match(home, /lg:-mt-10 lg:self-start/, 'homepage price sidebar should align with the first brand-card row');
 assert.match(home, /aria-label="Browse phones by price category"/);
 
 const listing = read('src/lib/fetch-public-listings.ts');

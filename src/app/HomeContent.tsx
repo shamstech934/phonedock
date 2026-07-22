@@ -184,8 +184,8 @@ function PriceCategorySidebar() {
   const categories = PRICE_CATEGORIES.filter(category => !category.missing);
 
   return (
-    <aside className="card-premium h-fit p-4 lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
-      <div className="mb-3 flex items-center gap-2">
+    <aside className="card-premium h-fit p-3.5 lg:-mt-10 lg:self-start lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
+      <div className="mb-2.5 flex items-center gap-2">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
           <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
         </div>
@@ -200,7 +200,7 @@ function PriceCategorySidebar() {
           <Link
             key={category.key}
             href={`/phones?priceCategory=${category.key}`}
-            className="group flex min-h-[54px] items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 bg-white/55 px-2.5 py-2 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="group flex min-h-12 items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 bg-white/55 px-2.5 py-1.5 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
             <span className="min-w-0">
               <span className="block truncate text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span>
@@ -211,7 +211,7 @@ function PriceCategorySidebar() {
         ))}
       </nav>
 
-      <Link href="/price-ranges" className="mt-3 flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+      <Link href="/price-ranges" className="mt-2.5 flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
         View all price ranges
       </Link>
     </aside>
