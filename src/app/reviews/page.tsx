@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+export const revalidate = 900;
 
 import { Star, MessageSquare } from 'lucide-react';
 import Link from 'next/link';

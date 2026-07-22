@@ -5,6 +5,7 @@ import { getBaseUrl } from "@/lib/urls";
 import { GrowthScripts } from "@/components/monetization/GrowthScripts";
 import { CookieConsent } from "@/components/monetization/CookieConsent";
 import { UserProvider } from "@/lib/useUser";
+import { WebVitalsReporter } from "@/components/observability/WebVitalsReporter";
 
 const BASE_URL = getBaseUrl();
 
@@ -111,6 +112,7 @@ export default function RootLayout({
         ))}
       </head>
       <body className="font-sans antialiased">
+        <WebVitalsReporter />
         <GrowthScripts />
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>

@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic';
+export const revalidate = 900;
 import Link from 'next/link';
 import { Tag, ChevronRight } from 'lucide-react';
 import type { Metadata } from 'next';

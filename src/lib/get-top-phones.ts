@@ -7,6 +7,7 @@ import { Phone, PhoneSpecs, Brand } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { serializePhoneSpecs } from '@/app/api/[[...path]]/handlers/helpers';
 import type { Phone as PhoneType, PhoneSpecs as PhoneSpecsType } from '@/components/shared/types';
+import { unstable_cache } from 'next/cache';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LeanDoc = any;
@@ -53,7 +54,7 @@ function mapPhone(p: LeanDoc, brandMap: Map<string, LeanDoc>, specsMap: Map<stri
  * All queries are optimized: lean, select, limit, indexed filter, bulk $in specs.
  * No N+1 — brands and specs fetched in 2 bulk queries via Promise.all.
  */
-export async function getTopPhones(
+async function loadTopPhones(
   sort: string,
   limit = 20,
 ): Promise<PhoneType[]> {
@@ -89,10 +90,12 @@ export async function getTopPhones(
   return phones.map((p: LeanDoc) => mapPhone(p, brandMap, specsMap));
 }
 
+export const getTopPhones = unstable_cache(loadTopPhones, ['top-phones-v1'], { revalidate: 300, tags: ['phones', 'rankings'] });
+export const getUpcomingPhones = unstable_cache(loadUpcomingPhones, ['upcoming-phones-v1'], { revalidate: 300, tags: ['phones', 'rankings'] });
 /**
  * Fetch upcoming phones with bulk-attached specs.
  */
-export async function getUpcomingPhones(limit = 20): Promise<PhoneType[]> {
+async function loadUpcomingPhones(limit = 20): Promise<PhoneType[]> {
   await connectDB();
 
   const phones = await Phone.find({ active: true, upcoming: true })

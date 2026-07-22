@@ -8,7 +8,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 // Rankings are database-backed and should be rendered on demand. Keeping this
 // boundary local allows the rest of the application to use static rendering.
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: 'Best Phones in Pakistan 2026 – Smart Rankings | PhoneDock',

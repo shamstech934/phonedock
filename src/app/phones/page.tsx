@@ -1,8 +1,6 @@
 import PhonesClient from './PhonesClient';
 import { fetchPhoneListing, fetchPublicBrands, type PhoneListParams } from '@/lib/fetch-public-listings';
 
-export const dynamic = 'force-dynamic';
-
 export const revalidate = 300;
 
 export default async function PhonesPage({ searchParams }: { searchParams: Promise<PhoneListParams> }) {

@@ -59,6 +59,9 @@ export function revalidatePublicContent(options: {
 } = {}) {
   try {
     revalidateTag('home-data', 'max');
+    revalidateTag('phones', 'max');
+    revalidateTag('rankings', 'max');
+    revalidateTag('sitemap', 'max');
   } catch (e) {
     console.warn('[revalidate] Failed to revalidate home-data tag:', e);
   }
@@ -72,8 +75,14 @@ export function revalidatePublicContent(options: {
     paths.add('/upcoming');
     paths.add('/price-ranges');
   }
-  if (options.includeBrands) paths.add('/brands');
-  if (options.includeNews) paths.add('/news');
+  if (options.includeBrands) {
+    paths.add('/brands');
+    try { revalidateTag('brands', 'max'); } catch (e) { console.warn('[revalidate] Failed to revalidate brands tag:', e); }
+  }
+  if (options.includeNews) {
+    paths.add('/news');
+    try { revalidateTag('news', 'max'); } catch (e) { console.warn('[revalidate] Failed to revalidate news tag:', e); }
+  }
   if (options.includeVideos) paths.add('/videos');
   if (options.includeSponsors) paths.add('/advertise');
 

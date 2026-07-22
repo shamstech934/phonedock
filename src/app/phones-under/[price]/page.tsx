@@ -9,7 +9,7 @@ import type { Phone } from '@/components/shared/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ price: string }> }): Promise<Metadata> {
   const { price } = await params;

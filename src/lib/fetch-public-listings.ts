@@ -1,4 +1,5 @@
 import { cache } from 'react';
+import { unstable_cache } from 'next/cache';
 import { Brand, Phone, PhoneSpecs } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { escapeRegex } from '@/lib/sanitize';
@@ -28,7 +29,7 @@ const PRICE_RANGES: Record<string, { min?: number; max?: number }> = {
   above100k: { min: 100000 },
 };
 
-export const fetchPublicBrands = cache(async (): Promise<BrandType[]> => {
+const loadPublicBrands = cache(async (): Promise<BrandType[]> => {
   await connectDB();
   const [brands, counts] = await Promise.all([
     Brand.find({ active: true })
@@ -51,8 +52,9 @@ export const fetchPublicBrands = cache(async (): Promise<BrandType[]> => {
     _count: { phones: countMap.get(brand._id.toString()) || 0 },
   }));
 });
+export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v1'], { revalidate: 900, tags: ['brands', 'phones'] });
 
-export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phones: PhoneType[]; total: number; queryKey: string }> {
+async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: PhoneType[]; total: number; queryKey: string }> {
   await connectDB();
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
   const limit = 20;
@@ -144,3 +146,4 @@ export async function fetchPhoneListing(params: PhoneListParams): Promise<{ phon
 
   return { phones, total, queryKey: apiParams.toString() };
 }
+export const fetchPhoneListing = unstable_cache(loadPhoneListing, ['public-phone-listing-v1'], { revalidate: 300, tags: ['phones'] });

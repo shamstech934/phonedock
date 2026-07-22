@@ -5,6 +5,7 @@
  */
 
 import { cache } from 'react';
+import { unstable_cache } from 'next/cache';
 import {
   Phone,
   PhoneSpecs,
@@ -30,7 +31,7 @@ export interface PhoneDetailData {
   related: PhoneJson[];
 }
 
-export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailData | null> => {
+const loadPhoneDetail = cache(async (slug: string): Promise<PhoneDetailData | null> => {
   await connectDB();
 
   const phone = await Phone.findOne({ slug, active: true, status: 'published' })
@@ -105,6 +106,7 @@ export const fetchPhoneDetail = cache(async (slug: string): Promise<PhoneDetailD
 
   return { phone: phoneJSON, related: relatedJSON };
 });
+export const fetchPhoneDetail = unstable_cache(loadPhoneDetail, ['public-phone-detail-v1'], { revalidate: 300, tags: ['phones', 'reviews', 'prices'] });
 
 /** Backwards-compatible metadata helper. */
 export async function fetchPhoneDetailForMetadata(slug: string) {
