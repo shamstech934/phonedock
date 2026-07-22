@@ -285,7 +285,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
           </div>
 
           <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
-            <aside className="hidden lg:block sticky top-28 overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.28)]" aria-label="Price categories">
+            <aside className="hidden lg:flex sticky top-24 max-h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.28)]" aria-label="Price categories">
               <div className="border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
                 <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">
@@ -297,7 +297,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                   </div>
                 </div>
               </div>
-              <div className="max-h-[calc(100vh-9rem)] space-y-1.5 overflow-y-auto p-3" role="navigation" aria-label="Filter phones by price category">
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain p-3 pb-5 [scrollbar-gutter:stable]" role="navigation" aria-label="Filter phones by price category">
                 <button type="button" onClick={() => updateParam('priceCategory', 'all')} aria-pressed={priceCategoryParam === 'all'} className={`group w-full rounded-2xl border px-3.5 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${priceCategoryParam === 'all' ? 'border-blue-500 bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20' : 'border-transparent text-slate-700 hover:border-blue-100 hover:bg-blue-50/80 dark:text-slate-200 dark:hover:border-blue-500/20 dark:hover:bg-blue-500/10'}`}>
                   <span className="flex items-center justify-between gap-3">
                     <span className="text-sm font-bold">All Phones</span>
