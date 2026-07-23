@@ -39,19 +39,39 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const totalOpen = critical + high + medium + low + info;
 
-    // Queue counts
-    const [missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices] = await Promise.all([
-      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_MISSING_SPECS', 'SPECS_EMPTY', 'SPECS_MISSING_KEY_FIELDS'] } }),
-      DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_MISSING_PRIMARY_IMAGE' }),
-      DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_MISSING_PRICE', 'PHONE_INVALID_PRICE'] } }),
+    // Live catalog completeness counts. These must be computed from the source
+    // collections, not from DataQualityIssue, because the issue table can be empty
+    // before a scan finishes (or when a large serverless scan times out).
+    const publishedPhoneIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+    const [phonesWithSpecs, phonesWithImages] = await Promise.all([
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+    ]);
+
+    const specPhoneIdSet = new Set(phonesWithSpecs.map(id => id.toString()));
+    const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
+
+    const [publishedPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+      Phone.find({ _id: { $in: publishedPhoneIds } })
+        .select('_id thumbnail pricePKR')
+        .lean(),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
     ]);
 
+    const missingSpecs = publishedPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
+    const missingImages = publishedPhoneRows.filter(phone => {
+      const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
+      return !thumbnail && !imagePhoneIdSet.has(phone._id.toString());
+    }).length;
+    const missingPrices = publishedPhoneRows.filter(phone => {
+      const price = Number(phone.pricePKR || 0);
+      return !Number.isFinite(price) || price <= 0;
+    }).length;
+
     // Specs completeness
-    const phonesWithSpecs = await PhoneSpecs.distinct('phoneId');
-    const specsComplete = publishedPhones > 0 ? phonesWithSpecs.length : 0;
+    const specsComplete = phonesWithSpecs.length;
 
     // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
