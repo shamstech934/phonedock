@@ -11,6 +11,23 @@ import { aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // GET /api/admin/data-quality/ai-status
+  // Returns booleans only; secrets are never exposed to the browser.
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-status') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+    const openAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
+    const tavily = Boolean(process.env.TAVILY_API_KEY);
+    const imageSearch = Boolean(process.env.AI_IMAGE_SEARCH_URL);
+    return NextResponse.json({
+      configured: { specs: openAI && tavily, prices: openAI && tavily, images: openAI && (tavily || imageSearch) },
+      providers: { openAI, tavily, imageSearch },
+      model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
+      maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '500', 500, 1, 10000),
+    }, { headers: { 'Cache-Control': 'no-store' } });
+  }
   // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review&page=1&limit=20&q=
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts') {
     const authResult = await getAdminFromRequest(req);

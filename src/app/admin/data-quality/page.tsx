@@ -495,6 +495,7 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
   const [jobType, setJobType] = useState<AIDraftType>('specs');
   const [jobLimit, setJobLimit] = useState(100);
   const [message, setMessage] = useState('');
+  const [config, setConfig] = useState<any>(null);
 
   const loadDrafts = useCallback(async () => {
     setLoading(true);
@@ -510,12 +511,26 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
   }, [type, status, page, query]);
 
   const loadJobs = useCallback(async () => {
-    const res = await fetch('/api/admin/data-quality/ai-jobs', { credentials: 'include' });
-    if (res.ok) setJobs((await res.json()).jobs || []);
+    try {
+      const res = await fetch('/api/admin/data-quality/ai-jobs', { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to load AI jobs');
+      setJobs(data.jobs || []);
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load AI jobs'); }
+  }, []);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/data-quality/ai-status', { credentials: 'include', cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to check AI configuration');
+      setConfig(data);
+      if (data.maxJobPhones) setJobLimit((current: number) => Math.min(current, data.maxJobPhones));
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to check AI configuration'); }
   }, []);
 
   useEffect(() => { loadDrafts(); }, [loadDrafts]);
-  useEffect(() => { loadJobs(); }, [loadJobs]);
+  useEffect(() => { loadJobs(); loadConfig(); }, [loadJobs, loadConfig]);
 
   const updateEdit = (id: string, key: string, value: any) => setEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [key]: value } }));
   const current = (draft: AIDraft, key: string, fallback: any = '') => edits[draft._id]?.[key] ?? fallback;
@@ -535,18 +550,20 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
     finally { setBusy(''); }
   };
 
-  const createJob = async () => {
+  async function createJob() {
     if (!confirm(`Create AI research job for up to ${jobLimit} missing ${jobType} records? API usage may have a cost.`)) return;
     setBusy('create-job'); setMessage('');
     try {
       const res = await fetch('/api/admin/data-quality/ai-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ type: jobType, maxPhones: jobLimit, batchSize: 5 }) });
       const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Unable to create job');
-      setMessage(`Job created for ${data.total} phones. Use Run next batch or Auto run.`); await loadJobs();
+      setMessage(`Job created for ${data.total} phones. Starting the first batch now…`);
+      await loadJobs();
+      await runJob(data.jobId, false);
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to create job'); }
     finally { setBusy(''); }
-  };
+  }
 
-  const runJob = async (jobId: string, automatic = false) => {
+  async function runJob(jobId: string, automatic = false) {
     setBusy(jobId); setMessage('');
     try {
       let done = false; let batches = 0;
@@ -560,7 +577,7 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
       await loadDrafts();
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Job failed'); }
     finally { setBusy(''); }
-  };
+  }
 
   const jobCommand = async (jobId: string, command: 'retry' | 'cancel') => {
     setBusy(jobId);
@@ -572,10 +589,18 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
   return <div className="space-y-5">
     <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5">
       <div className="flex items-start gap-3"><WandSparkles className="w-6 h-6 text-violet-600 mt-0.5" /><div><h2 className="font-semibold text-violet-950">AI Research Control Center</h2><p className="text-sm text-violet-700 mt-1">Research creates review drafts only. Live specs, images and prices change only after explicit approval.</p></div></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4 text-xs">
+        <div className={`rounded-xl border p-3 ${config?.providers?.openAI ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>OpenAI:</b> {config ? (config.providers.openAI ? 'Ready' : 'Missing key') : 'Checking…'}</div>
+        <div className={`rounded-xl border p-3 ${config?.providers?.tavily ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>Tavily:</b> {config ? (config.providers.tavily ? 'Ready' : 'Missing key') : 'Checking…'}</div>
+        <div className={`rounded-xl border p-3 ${config?.configured?.[jobType] ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}><b>{jobType} research:</b> {config ? (config.configured[jobType] ? 'Ready' : 'Not configured') : 'Checking…'}</div>
+        <button onClick={() => { loadConfig(); loadJobs(); loadDrafts(); }} className="rounded-xl border border-violet-200 bg-white p-3 text-violet-700 font-medium">Refresh status</button>
+      </div>
+      {!config?.providers?.openAI && config && <p className="mt-3 text-xs text-red-700">Add OPENAI_API_KEY (or legacy AI_ENRICHMENT_API_KEY) in Vercel Environment Variables and redeploy.</p>}
+      {!config?.providers?.tavily && config && <p className="mt-1 text-xs text-red-700">Add TAVILY_API_KEY in Vercel Environment Variables for specs and price research, then redeploy.</p>}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
         <select value={jobType} onChange={e => setJobType(e.target.value as AIDraftType)} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm"><option value="specs">Missing specs</option><option value="images">Missing images</option><option value="prices">Missing prices</option></select>
         <input type="number" min={1} max={10000} value={jobLimit} onChange={e => setJobLimit(Math.max(1, Math.min(10000, Number(e.target.value) || 1)))} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm" />
-        <button onClick={createJob} disabled={busy === 'create-job'} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create bulk research job'}</button>
+        <button onClick={createJob} disabled={busy === 'create-job' || config?.configured?.[jobType] === false} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create bulk research job'}</button>
         <button onClick={loadJobs} className="h-10 rounded-xl border border-violet-200 bg-white text-violet-700 text-sm font-medium">Refresh jobs</button>
       </div>
     </div>
@@ -583,6 +608,7 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
     {message && <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3 text-sm">{message}</div>}
 
     {jobs.length > 0 && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden"><div className="px-4 py-3 bg-gray-50 font-semibold text-sm">Recent AI research jobs</div>{jobs.slice(0, 8).map(job => { const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0; return <div key={job._id} className="px-4 py-3 border-t border-gray-100"><div className="flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-medium text-sm capitalize">{job.type}</span><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{job.status}</span></div><p className="text-xs text-gray-500 mt-1">{job.processed}/{job.total} processed · {job.generated} drafts · {job.failed} failed</p><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-1.5 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} /></div></div><div className="flex flex-wrap gap-2"><button onClick={() => runJob(job._id, false)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 bg-violet-600 text-white rounded-lg text-xs disabled:opacity-40">Run next batch</button><button onClick={() => runJob(job._id, true)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 border border-violet-200 text-violet-700 rounded-lg text-xs disabled:opacity-40">Auto run 20 batches</button>{job.failed > 0 && <button onClick={() => jobCommand(job._id, 'retry')} className="h-8 px-3 border border-amber-200 text-amber-700 rounded-lg text-xs">Retry failed</button>} {!['completed','cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'cancel')} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Cancel</button>}</div></div></div>; })}</div>}
+    {jobs.length === 0 && <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-6 text-center"><p className="font-medium text-gray-800">No AI research jobs yet</p><p className="text-sm text-gray-500 mt-1">Choose a queue above and press Create bulk research job. The first batch will run automatically.</p></div>}
 
     <div className="flex flex-col lg:flex-row lg:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4">
       <select value={type} onChange={e => { setType(e.target.value as AIDraftType); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="specs">Specs drafts</option><option value="images">Image drafts</option><option value="prices">Price drafts</option></select>

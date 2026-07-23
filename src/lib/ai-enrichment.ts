@@ -205,7 +205,7 @@ async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhone
 }
 
 export function aiEnrichmentConfigured(type: EnrichmentType): boolean {
-  const hasAI = Boolean(process.env.OPENAI_API_KEY || (process.env.AI_ENRICHMENT_API_KEY && process.env.AI_ENRICHMENT_API_URL));
+  const hasAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
   const hasResearch = Boolean(process.env.TAVILY_API_KEY);
   if (type === 'images') return hasAI && (hasResearch || Boolean(process.env.AI_IMAGE_SEARCH_URL));
   return hasAI && hasResearch;
