@@ -92,7 +92,10 @@ async function tavilySearch(query: string, includeImages = false): Promise<{ sou
     signal: AbortSignal.timeout(30000),
     cache: 'no-store',
   });
-  if (!response.ok) throw new Error(`Research search failed (${response.status})`);
+  if (!response.ok) {
+    const detail = cleanText(await response.text().catch(() => ''), 500);
+    throw new Error(`Tavily search failed (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
   const payload = await response.json() as TavilyPayload;
 
   const sources = (payload.results || [])
@@ -166,10 +169,19 @@ async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhone
     signal: AbortSignal.timeout(60000),
     cache: 'no-store',
   });
-  if (!response.ok) throw new Error(`AI synthesis failed (${response.status})`);
+  if (!response.ok) {
+    const detail = cleanText(await response.text().catch(() => ''), 700);
+    throw new Error(`OpenAI synthesis failed (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
   const payload = await response.json() as any;
   const content = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
-  const parsed = typeof content === 'string' ? parseJsonObject(content) : payload;
+  if (!content) throw new Error('OpenAI returned no message content');
+  let parsed: any;
+  try { parsed = typeof content === 'string' ? parseJsonObject(content) : payload; }
+  catch (error) {
+    const excerpt = cleanText(typeof content === 'string' ? content : JSON.stringify(content), 400);
+    throw new Error(`${error instanceof Error ? error.message : 'Invalid AI JSON'}${excerpt ? `; response: ${excerpt}` : ''}`);
+  }
 
   const approvedSourceUrls = new Set(sources.map(source => source.url));
   const candidateImageUrls = new Set(imageCandidates.map(image => image.url));
@@ -223,15 +235,31 @@ export async function generateEnrichmentSuggestions(type: EnrichmentType, phones
         ? `${name} official product image specifications`
         : `${name} official specifications display chipset RAM storage battery camera 5G`;
 
-    const research = process.env.TAVILY_API_KEY
+    let research;
+    try {
+      research = process.env.TAVILY_API_KEY
       ? await tavilySearch(query, type === 'images')
       : { sources: [] as ResearchSource[], images: [] as Array<{ url: string; sourceUrl?: string; title?: string }> };
+    } catch (error) {
+      throw new Error(`[research:${name}] ${error instanceof Error ? error.message : 'Search failed'}`);
+    }
+    if (type !== 'images' && !research.sources.length) throw new Error(`[research:${name}] No usable web sources returned`);
     const providerImages = type === 'images' ? await directImageSearch(`${name} official product phone image`) : [];
     const imageCandidates = [...providerImages, ...research.images]
       .filter((image, index, rows) => rows.findIndex(item => item.url === image.url) === index)
       .slice(0, 8);
 
-    results.push(await synthesizeWithOpenAI(type, phone, research.sources, imageCandidates));
+    try {
+      const suggestion = await synthesizeWithOpenAI(type, phone, research.sources, imageCandidates);
+      const hasUsefulData = type === 'specs'
+        ? Object.values(suggestion.specs || {}).some(Boolean)
+        : type === 'images' ? Boolean(suggestion.images?.length)
+        : Boolean(suggestion.price?.valuePKR);
+      if (!hasUsefulData) throw new Error('AI returned no usable fields for this research type');
+      results.push(suggestion);
+    } catch (error) {
+      throw new Error(`[synthesis:${name}] ${error instanceof Error ? error.message : 'AI synthesis failed'}`);
+    }
   }
   return results;
 }
