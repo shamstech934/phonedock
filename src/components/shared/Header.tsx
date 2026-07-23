@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompare, Newspaper, Info, Mail, ChevronDown, Play, Star, BarChart3, Heart, Clock3, BookOpen, Trophy, UserRound } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useUser } from '@/lib/useUser';
+import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
 interface AutocompleteResult {
   id: string;
@@ -111,7 +112,13 @@ export function Header() {
     const q = (query || searchQ).trim();
     if (q) {
       saveRecentSearch(q);
-      router.push(`/search?q=${encodeURIComponent(q)}`);
+      const smartIntent = parseSmartSearch(q);
+      const hasSmartFilters = smartIntent.detected.length > 0 && (
+        smartIntent.maxPrice || smartIntent.minPrice || smartIntent.ram || smartIntent.storage ||
+        smartIntent.display || smartIntent.refresh || smartIntent.camera || smartIntent.battery ||
+        smartIntent.chipset || smartIntent.fiveG || smartIntent.nfc || smartIntent.pta || smartIntent.sort
+      );
+      router.push(hasSmartFilters ? smartSearchToPhonesUrl(smartIntent) : `/search?q=${encodeURIComponent(q)}`);
       setSearchOpen(false);
       setSearchQ('');
       setAutocompleteResults([]);

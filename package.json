@@ -36,7 +36,8 @@
     "test:v5.3": "tsx scripts/__tests__/recommendation-engine-v5.3.test.ts",
     "test:v5.4": "tsx scripts/__tests__/review-engine-v5.4.test.ts",
     "test:v6": "tsx scripts/__tests__/seo-performance-v6.test.ts",
-    "audit:seo": "tsx scripts/__tests__/seo-performance-v6.test.ts"
+    "audit:seo": "tsx scripts/__tests__/seo-performance-v6.test.ts",
+    "test:v8-rc5": "tsx scripts/__tests__/v8-rc5-search.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

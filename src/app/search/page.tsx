@@ -1,15 +1,16 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Search, Smartphone, Layers, AlertCircle } from 'lucide-react';
+import { Search, Smartphone, Layers, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Brand, Phone } from '@/components/shared/types';
+import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
 function HighlightText({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
@@ -31,6 +32,8 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 function SearchContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q') || '';
+  const smartIntent = useMemo(() => parseSmartSearch(query), [query]);
+  const smartUrl = useMemo(() => smartSearchToPhonesUrl(smartIntent), [smartIntent]);
 
   const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
   const [loading, setLoading] = useState(true);
@@ -95,6 +98,20 @@ function SearchContent() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
       </div>
+
+      {smartIntent.detected.length > 0 && (
+        <section className="rounded-2xl border border-blue-200/70 bg-gradient-to-r from-blue-50 to-cyan-50 p-4 sm:p-5 dark:border-blue-500/20 dark:from-blue-500/10 dark:to-cyan-500/10">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-bold text-blue-700 dark:text-blue-300"><Sparkles className="h-4 w-4" /> Smart filters detected</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {smartIntent.detected.map(item => <span key={item} className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:bg-slate-900/70 dark:text-slate-200">{item}</span>)}
+              </div>
+            </div>
+            <Button asChild className="rounded-xl shrink-0"><Link href={smartUrl}>Apply smart filters <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          </div>
+        </section>
+      )}
 
       {results.brands.length > 0 && (
         <section className="space-y-4">

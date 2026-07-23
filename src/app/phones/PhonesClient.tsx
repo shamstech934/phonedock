@@ -45,6 +45,8 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const q = searchParams.get('q') || '';
   const brandParam = searchParams.get('brand') || 'all';
   const priceParam = searchParams.get('price') || 'all';
+  const directPriceMin = searchParams.get('priceMin') || '';
+  const directPriceMax = searchParams.get('priceMax') || '';
   const priceCategoryParam = searchParams.get('priceCategory') || 'all';
   const ramParam = searchParams.get('ram') || 'All';
   const storageParam = searchParams.get('storage') || 'All';
@@ -79,6 +81,8 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
 
     // Price range
     const pr = PRICE_RANGES.find(r => r.label.toLowerCase().replace(/\s+/g, '') === priceParam.replace(/\s+/g, ''));
+    if (directPriceMin) params.set('priceMin', directPriceMin);
+    if (directPriceMax) params.set('priceMax', directPriceMax);
     if (pr && pr.min > 0) params.set('priceMin', String(pr.min));
     if (pr && pr.max > 0) params.set('priceMax', String(pr.max));
     const priceCategory = getPriceCategory(priceCategoryParam);
@@ -102,6 +106,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       'rating': 'overallRating',
       'name': 'modelName',
       'trending': 'trending',
+      'camera': 'cameraScore',
+      'performance': 'performanceScore',
+      'battery': 'batteryScore',
+      'value': 'valueScore',
     };
     if (sortMap[sortParam]) {
       params.set('sort', sortMap[sortParam]);
@@ -143,7 +151,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
       }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageParam, q, brandParam, priceParam, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
+  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -168,7 +176,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
@@ -196,6 +204,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
                   <option value="price-low">Price: Low to High</option>
                   <option value="price-high">Price: High to Low</option>
                   <option value="rating">Top Rated</option>
+                  <option value="performance">Best Performance</option>
+                  <option value="camera">Best Camera</option>
+                  <option value="battery">Best Battery</option>
+                  <option value="value">Best Value</option>
                   <option value="name">Name A-Z</option>
                 </select>
                 <button
