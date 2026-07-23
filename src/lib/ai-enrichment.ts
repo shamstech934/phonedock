@@ -23,6 +23,15 @@ type ProviderConfig = {
 };
 
 function cleanText(value: unknown, max = 1000): string { return String(value ?? '').trim().slice(0, max); }
+function readEnv(names: string[], max = 1000): { value: string; source: string | null } {
+  for (const name of names) {
+    const raw = process.env[name];
+    if (raw == null) continue;
+    const value = cleanText(raw, max).replace(/^(['"])([\s\S]*)\1$/, '$2').trim();
+    if (value && value !== '...' && !/^your[-_ ]/i.test(value)) return { value, source: name };
+  }
+  return { value: '', source: null };
+}
 function isHttpUrl(value: unknown): boolean {
   try { const url = new URL(String(value ?? '')); return url.protocol === 'http:' || url.protocol === 'https:'; }
   catch { return false; }
@@ -46,24 +55,24 @@ function sourcePriority(url: string): number {
 }
 
 export function getAIProviderConfig(): ProviderConfig | null {
-  const requested = cleanText(process.env.AI_PROVIDER || 'openrouter', 30).toLowerCase();
+  const requested = readEnv(['AI_PROVIDER'], 30).value.toLowerCase() || 'openrouter';
   if (requested === 'openrouter') {
-    const apiKey = cleanText(process.env.OPENROUTER_API_KEY, 500);
-    if (!apiKey) return null;
+    const key = readEnv(['OPENROUTER_API_KEY', 'OPENROUTER_KEY', 'OPEN_ROUTER_API_KEY'], 500);
+    if (!key.value) return null;
     return {
-      provider: 'openrouter', apiKey,
-      model: cleanText(process.env.OPENROUTER_MODEL || 'openrouter/free', 200),
-      endpoint: cleanText(process.env.OPENROUTER_CHAT_COMPLETIONS_URL || 'https://openrouter.ai/api/v1/chat/completions', 1000),
+      provider: 'openrouter', apiKey: key.value,
+      model: readEnv(['OPENROUTER_MODEL', 'AI_MODEL'], 200).value || 'openrouter/free',
+      endpoint: readEnv(['OPENROUTER_CHAT_COMPLETIONS_URL'], 1000).value || 'https://openrouter.ai/api/v1/chat/completions',
       displayName: 'OpenRouter',
     };
   }
   if (requested === 'openai') {
-    const apiKey = cleanText(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY, 500);
-    if (!apiKey) return null;
+    const key = readEnv(['OPENAI_API_KEY', 'AI_ENRICHMENT_API_KEY'], 500);
+    if (!key.value) return null;
     return {
-      provider: 'openai', apiKey,
-      model: cleanText(process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini', 200),
-      endpoint: cleanText(process.env.OPENAI_CHAT_COMPLETIONS_URL || process.env.AI_ENRICHMENT_API_URL || 'https://api.openai.com/v1/chat/completions', 1000),
+      provider: 'openai', apiKey: key.value,
+      model: readEnv(['OPENAI_MODEL', 'AI_ENRICHMENT_MODEL', 'AI_MODEL'], 200).value || 'gpt-4.1-mini',
+      endpoint: readEnv(['OPENAI_CHAT_COMPLETIONS_URL', 'AI_ENRICHMENT_API_URL'], 1000).value || 'https://api.openai.com/v1/chat/completions',
       displayName: 'OpenAI',
     };
   }
@@ -71,26 +80,31 @@ export function getAIProviderConfig(): ProviderConfig | null {
 }
 
 export function getAIStatus() {
-  const requestedProvider = cleanText(process.env.AI_PROVIDER || 'openrouter', 30).toLowerCase();
+  const requestedProvider = readEnv(['AI_PROVIDER'], 30).value.toLowerCase() || 'openrouter';
+  const openRouterKey = readEnv(['OPENROUTER_API_KEY', 'OPENROUTER_KEY', 'OPEN_ROUTER_API_KEY'], 500);
+  const openAIKey = readEnv(['OPENAI_API_KEY', 'AI_ENRICHMENT_API_KEY'], 500);
+  const tavilyKey = readEnv(['TAVILY_API_KEY'], 500);
+  const imageSearchUrl = readEnv(['AI_IMAGE_SEARCH_URL'], 1000);
   const config = getAIProviderConfig();
-  const tavily = Boolean(cleanText(process.env.TAVILY_API_KEY, 500));
-  const imageSearch = Boolean(cleanText(process.env.AI_IMAGE_SEARCH_URL, 1000));
   return {
     requestedProvider,
     activeProvider: config?.provider || null,
     providerName: config?.displayName || null,
-    model: config?.model || (requestedProvider === 'openai' ? (process.env.OPENAI_MODEL || 'gpt-4.1-mini') : (process.env.OPENROUTER_MODEL || 'openrouter/free')),
-    providerConfigured: Boolean(config), tavily, imageSearch,
-    configured: { specs: Boolean(config) && tavily, prices: Boolean(config) && tavily, images: Boolean(config) && (tavily || imageSearch) },
+    model: config?.model || (requestedProvider === 'openai' ? (readEnv(['OPENAI_MODEL', 'AI_MODEL'], 200).value || 'gpt-4.1-mini') : (readEnv(['OPENROUTER_MODEL', 'AI_MODEL'], 200).value || 'openrouter/free')),
+    providerConfigured: Boolean(config),
+    providerKeySource: requestedProvider === 'openrouter' ? openRouterKey.source : requestedProvider === 'openai' ? openAIKey.source : null,
+    tavily: Boolean(tavilyKey.value), tavilyKeySource: tavilyKey.source,
+    imageSearch: Boolean(imageSearchUrl.value),
+    configured: { specs: Boolean(config) && Boolean(tavilyKey.value), prices: Boolean(config) && Boolean(tavilyKey.value), images: Boolean(config) && (Boolean(tavilyKey.value) || Boolean(imageSearchUrl.value)) },
   };
 }
 
 async function tavilySearch(query: string, includeImages = false) {
-  const apiKey = process.env.TAVILY_API_KEY;
+  const apiKey = readEnv(['TAVILY_API_KEY'], 500).value;
   if (!apiKey) throw new Error('TAVILY_API_KEY is not configured');
   const response = await fetch(process.env.TAVILY_SEARCH_URL || 'https://api.tavily.com/search', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ query, search_depth: process.env.TAVILY_SEARCH_DEPTH || 'advanced', max_results: 8, include_answer: false, include_raw_content: false, include_images: includeImages, topic: 'general' }),
+    body: JSON.stringify({ api_key: apiKey, query, search_depth: process.env.TAVILY_SEARCH_DEPTH || 'advanced', max_results: 8, include_answer: false, include_raw_content: false, include_images: includeImages, topic: 'general' }),
     signal: AbortSignal.timeout(30000), cache: 'no-store',
   });
   if (!response.ok) { const detail = cleanText(await response.text().catch(() => ''), 500); throw new Error(`Tavily search failed (${response.status})${detail ? `: ${detail}` : ''}`); }
@@ -132,9 +146,14 @@ async function synthesize(type: EnrichmentType, phone: EnrichmentPhoneInput, sou
     headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock-pi.vercel.app';
     headers['X-Title'] = 'PhoneDock';
   }
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ task: type, phone, evidence, imageCandidates }) }];
+  const requestBody: Record<string, unknown> = { model: config.model, temperature: 0, messages };
+  // OpenRouter free models vary in response_format support. Strict JSON is already
+  // required by the prompt, so only request JSON mode from OpenAI.
+  if (config.provider === 'openai') requestBody.response_format = { type: 'json_object' };
   const response = await fetch(config.endpoint, {
     method: 'POST', headers,
-    body: JSON.stringify({ model: config.model, temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ task: type, phone, evidence, imageCandidates }) }] }),
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(60000), cache: 'no-store',
   });
   if (!response.ok) {
@@ -143,7 +162,8 @@ async function synthesize(type: EnrichmentType, phone: EnrichmentPhoneInput, sou
     throw new Error(`${config.displayName} synthesis failed (${response.status})${retryAfter ? ` retry-after=${retryAfter}s` : ''}${detail ? `: ${detail}` : ''}`);
   }
   const payload = await response.json() as any;
-  const content = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
+  const rawContent = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
+  const content = Array.isArray(rawContent) ? rawContent.map((part: any) => typeof part === 'string' ? part : part?.text || '').join('') : rawContent;
   if (!content) throw new Error(`${config.displayName} returned no message content`);
   let parsed: any;
   try { parsed = typeof content === 'string' ? parseJsonObject(content) : content; }

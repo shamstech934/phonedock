@@ -22,8 +22,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     return NextResponse.json({
       ...status,
       providers: {
-        openRouter: Boolean(process.env.OPENROUTER_API_KEY),
-        openAI: Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY),
+        openRouter: status.requestedProvider === 'openrouter' ? status.providerConfigured : Boolean(process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.OPEN_ROUTER_API_KEY),
+        openAI: status.requestedProvider === 'openai' ? status.providerConfigured : Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY),
         tavily: status.tavily,
         imageSearch: status.imageSearch,
       },
@@ -61,7 +61,10 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const jobs = await AIResearchJob.find({}).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
+    const { searchParams } = new URL(req.url);
+    const includeFinished = searchParams.get('includeFinished') === 'true';
+    const filter = includeFinished ? {} : { status: { $nin: ['completed', 'completed_with_errors', 'cancelled'] } };
+    const jobs = await AIResearchJob.find(filter).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
     return NextResponse.json({ jobs });
   }
   // GET /api/admin/data-quality/summary
@@ -686,13 +689,25 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     return NextResponse.json({ action, approved, rejected, saved, failed, results });
   }
 
+  // POST /api/admin/data-quality/ai-jobs/cleanup - remove finished job history only.
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs' && segments[3] === 'cleanup') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
+    const result = await AIResearchJob.deleteMany({ status: { $in: ['completed', 'completed_with_errors', 'cancelled'] } });
+    return NextResponse.json({ deleted: result.deletedCount || 0 });
+  }
+
   // POST /api/admin/data-quality/ai-jobs - create a persistent bulk research job.
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
     const body = await req.json(); const type = String(body.type || '');
     if (!['specs','images','prices'].includes(type)) return NextResponse.json({ error: 'Invalid job type' }, { status: 400 });
-    if (!aiEnrichmentConfigured(type as any)) return NextResponse.json({ error: 'AI research providers are not configured' }, { status: 503 });
+    if (!aiEnrichmentConfigured(type)) {
+      const status = getAIStatus();
+      const missing = [!status.providerConfigured ? `${status.requestedProvider} API key` : '', !status.tavily && type !== 'images' ? 'TAVILY_API_KEY' : '', type === 'images' && !status.tavily && !status.imageSearch ? 'TAVILY_API_KEY or AI_IMAGE_SEARCH_URL' : ''].filter(Boolean);
+      return NextResponse.json({ error: `AI ${type} research is not configured. Missing: ${missing.join(', ') || 'provider configuration'}.` }, { status: 503 });
+    }
     const requested = Array.isArray(body.phoneIds) ? body.phoneIds.map(String).filter(Types.ObjectId.isValid) : [];
     const maxPhones = parseBoundedInt(String(body.maxPhones || process.env.AI_RESEARCH_MAX_JOB_PHONES || 10), 10, 1, 10);
     let phoneIds: any[] = requested.slice(0, maxPhones).map((id: string) => new Types.ObjectId(id));
@@ -757,8 +772,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!aiEnrichmentConfigured(type)) {
       return NextResponse.json({
         error: type === 'images'
-          ? 'Configure OPENAI_API_KEY plus TAVILY_API_KEY or AI_IMAGE_SEARCH_URL.'
-          : 'Configure OPENAI_API_KEY and TAVILY_API_KEY.',
+          ? 'Configure the selected AI provider key plus TAVILY_API_KEY or AI_IMAGE_SEARCH_URL.'
+          : 'Configure the selected AI provider key and TAVILY_API_KEY.',
       }, { status: 503 });
     }
 
