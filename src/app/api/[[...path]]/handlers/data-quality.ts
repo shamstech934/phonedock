@@ -4,7 +4,7 @@ import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, 
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
-import { aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-enrichment';
+import { activeAIProvider, aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -20,14 +20,16 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (permCheck) return permCheck;
     const openAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
     const openRouter = Boolean(process.env.OPENROUTER_API_KEY);
-    const hasAI = openRouter || openAI;
     const tavily = Boolean(process.env.TAVILY_API_KEY);
     const imageSearch = Boolean(process.env.AI_IMAGE_SEARCH_URL);
+    const selectedProvider = activeAIProvider();
+    const selectedReady = selectedProvider === 'openrouter' ? openRouter : selectedProvider === 'openai' ? openAI : false;
     return NextResponse.json({
-      configured: { specs: hasAI && tavily, prices: hasAI && tavily, images: hasAI && (tavily || imageSearch) },
+      configured: { specs: selectedReady && tavily, prices: selectedReady && tavily, images: selectedReady && (tavily || imageSearch) },
       providers: { openAI, openRouter, tavily, imageSearch },
-      activeProvider: openRouter ? 'OpenRouter' : openAI ? 'OpenAI' : 'None',
-      model: openRouter ? (process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free') : (process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini'),
+      activeProvider: selectedProvider === 'openrouter' ? 'OpenRouter' : selectedProvider === 'openai' ? 'OpenAI' : 'None',
+      requestedProvider: String(process.env.AI_PROVIDER || 'openrouter').toLowerCase(),
+      model: selectedProvider === 'openrouter' ? (process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free') : (process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini'),
       maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '10', 10, 1, 10),
     }, { headers: { 'Cache-Control': 'no-store' } });
   }

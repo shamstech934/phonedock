@@ -140,22 +140,24 @@ async function directImageSearch(query: string): Promise<Array<{ url: string; so
 type AIProvider = 'openrouter' | 'openai';
 
 function configuredAIProviders(): AIProvider[] {
-  const preferred = String(process.env.AI_PROVIDER || 'auto').toLowerCase();
-  const available: AIProvider[] = [];
-  const add = (provider: AIProvider, configured: boolean) => { if (configured && !available.includes(provider)) available.push(provider); };
+  const preferred = String(process.env.AI_PROVIDER || 'openrouter').trim().toLowerCase();
+  const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
 
-  if (preferred === 'openrouter') {
-    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
-    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
-  } else if (preferred === 'openai') {
-    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
-    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
-  } else {
-    // Prefer OpenRouter for lightweight deployments; OpenAI remains a fallback.
-    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
-    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
-  }
+  // Explicit provider selection is strict. This prevents an OpenRouter job from
+  // silently falling back to an out-of-quota OpenAI account.
+  if (preferred === 'openrouter') return hasOpenRouter ? ['openrouter'] : [];
+  if (preferred === 'openai') return hasOpenAI ? ['openai'] : [];
+
+  // Fallback is opt-in only via AI_PROVIDER=auto.
+  const available: AIProvider[] = [];
+  if (hasOpenRouter) available.push('openrouter');
+  if (hasOpenAI) available.push('openai');
   return available;
+}
+
+export function activeAIProvider(): AIProvider | 'none' {
+  return configuredAIProviders()[0] || 'none';
 }
 
 function providerConfig(provider: AIProvider) {
@@ -257,7 +259,10 @@ async function synthesizeWithProvider(provider: AIProvider, type: EnrichmentType
 
 async function synthesizeWithAI(type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
   const providers = configuredAIProviders();
-  if (!providers.length) throw new Error('Configure OPENROUTER_API_KEY or OPENAI_API_KEY');
+  if (!providers.length) {
+    const preferred = String(process.env.AI_PROVIDER || 'openrouter').trim().toLowerCase();
+    throw new Error(preferred === 'openai' ? 'AI_PROVIDER=openai but OPENAI_API_KEY is missing' : 'AI_PROVIDER=openrouter but OPENROUTER_API_KEY is missing');
+  }
   const failures: string[] = [];
   for (const provider of providers) {
     try { return await synthesizeWithProvider(provider, type, phone, sources, imageCandidates); }
