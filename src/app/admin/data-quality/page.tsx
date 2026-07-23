@@ -496,16 +496,13 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
   const [jobLimit, setJobLimit] = useState(5);
   const [message, setMessage] = useState('');
   const [config, setConfig] = useState<any>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
   const loadDrafts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ type, status, page: String(page), limit: '20' });
       if (query.trim()) params.set('q', query.trim());
-      const res = await fetch(`/api/admin/data-quality/ai-drafts?${params}`, { credentials: 'include' });
+      const res = await fetch(`/api/admin/data-quality/ai-drafts?${params}&t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unable to load AI drafts');
       setDrafts(data.drafts || []); setPages(data.pages || 1); setSelected(new Set());
@@ -515,12 +512,12 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
 
   const loadJobs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin/data-quality/ai-jobs?history=${showHistory ? '1' : '0'}&_=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
+      const res = await fetch(`/api/admin/data-quality/ai-jobs?t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unable to load AI jobs');
       setJobs(data.jobs || []);
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load AI jobs'); }
-  }, [showHistory]);
+  }, []);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -534,35 +531,6 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
 
   useEffect(() => { loadDrafts(); }, [loadDrafts]);
   useEffect(() => { loadJobs(); loadConfig(); }, [loadJobs, loadConfig]);
-
-
-  const refreshAll = useCallback(async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    setMessage('');
-    try {
-      await Promise.all([loadConfig(), loadJobs(), loadDrafts()]);
-      setLastRefreshedAt(new Date());
-      setMessage('AI Research data refreshed successfully.');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Refresh failed');
-    } finally {
-      setRefreshing(false);
-    }
-  }, [refreshing, loadConfig, loadJobs, loadDrafts]);
-
-  const clearFinishedHistory = async () => {
-    if (!confirm('Remove completed and cancelled AI job history? Pending drafts and active jobs will not be deleted.')) return;
-    setBusy('cleanup'); setMessage('');
-    try {
-      const res = await fetch('/api/admin/data-quality/ai-jobs/cleanup', { method: 'POST', credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to clear history');
-      setMessage(`${data.deleted || 0} finished job(s) removed.`);
-      await loadJobs();
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to clear history'); }
-    finally { setBusy(''); }
-  };
 
   const updateEdit = (id: string, key: string, value: any) => setEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [key]: value } }));
   const current = (draft: AIDraft, key: string, fallback: any = '') => edits[draft._id]?.[key] ?? fallback;
@@ -588,7 +556,7 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
     try {
       const res = await fetch('/api/admin/data-quality/ai-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ type: jobType, maxPhones: jobLimit, batchSize: 5 }) });
       const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Unable to create job');
-      setMessage(`Job created for ${data.total} phones. Press Run next batch when you are ready.`);
+      setMessage(`Job created for ${data.total} phones. Press Run next batch to start research.`);
       await loadJobs();
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to create job'); }
     finally { setBusy(''); }
@@ -619,35 +587,27 @@ function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
 
   return <div className="space-y-5">
     <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5">
-      <div className="flex items-start gap-3"><WandSparkles className="w-6 h-6 text-violet-600 mt-0.5" /><div><h2 className="font-semibold text-violet-950">AI Research Control Center</h2><p className="text-sm text-violet-700 mt-1">Lightweight admin-only research. Maximum 10 phones per job and 5 per batch. Live data changes only after explicit approval.</p></div></div>
+      <div className="flex items-start gap-3"><WandSparkles className="w-6 h-6 text-violet-600 mt-0.5" /><div><h2 className="font-semibold text-violet-950">AI Research Control Center</h2><p className="text-sm text-violet-700 mt-1">Research creates review drafts only. Live specs, images and prices change only after explicit approval.</p></div></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4 text-xs">
-        <div className={`rounded-xl border p-3 ${(config?.providers?.openRouter || config?.providers?.openAI) ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>AI:</b> {config ? (config.activeProvider ? `${config.activeProvider} · ${config.model}` : 'Missing key') : 'Checking…'}</div>
+        <div className={`rounded-xl border p-3 ${config?.provider && config.provider !== 'none' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>AI:</b> {config ? `${config.provider === 'openrouter' ? 'OpenRouter' : config.provider === 'openai' ? 'OpenAI' : 'None'}${config.model ? ` · ${config.model}` : ''}` : 'Checking…'}</div>
         <div className={`rounded-xl border p-3 ${config?.providers?.tavily ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>Tavily:</b> {config ? (config.providers.tavily ? 'Configured' : 'Missing key') : 'Checking…'}</div>
         <div className={`rounded-xl border p-3 ${config?.configured?.[jobType] ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}><b>{jobType} research:</b> {config ? (config.configured[jobType] ? 'Ready' : 'Not configured') : 'Checking…'}</div>
-        <button onClick={refreshAll} disabled={refreshing} className="rounded-xl border border-violet-200 bg-white p-3 text-violet-700 font-medium disabled:opacity-50 flex items-center justify-center gap-2">{refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}{refreshing ? 'Refreshing…' : 'Refresh all'}</button>
+        <button onClick={() => { loadConfig(); loadJobs(); loadDrafts(); }} className="rounded-xl border border-violet-200 bg-white p-3 text-violet-700 font-medium">Refresh status</button>
       </div>
-      {!config?.providers?.openRouter && !config?.providers?.openAI && config && <p className="mt-3 text-xs text-red-700">Add OPENROUTER_API_KEY (recommended) or OPENAI_API_KEY in Vercel Environment Variables, then redeploy.</p>}
+      {config?.provider === 'none' && config && <p className="mt-3 text-xs text-red-700">Set AI_PROVIDER=openrouter and OPENROUTER_API_KEY, or AI_PROVIDER=openai and OPENAI_API_KEY, then redeploy.</p>}
       {!config?.providers?.tavily && config && <p className="mt-1 text-xs text-red-700">Add TAVILY_API_KEY in Vercel Environment Variables for specs and price research, then redeploy.</p>}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
         <select value={jobType} onChange={e => setJobType(e.target.value as AIDraftType)} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm"><option value="specs">Missing specs</option><option value="images">Missing images</option><option value="prices">Missing prices</option></select>
         <input type="number" min={1} max={10} value={jobLimit} onChange={e => setJobLimit(Math.max(1, Math.min(10, Number(e.target.value) || 1)))} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm" />
-        <button onClick={createJob} disabled={busy === 'create-job' || config?.configured?.[jobType] === false} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create lightweight research job'}</button>
-        <button onClick={refreshAll} disabled={refreshing} className="h-10 rounded-xl border border-violet-200 bg-white text-violet-700 text-sm font-medium disabled:opacity-50">{refreshing ? 'Refreshing…' : 'Refresh jobs'}</button>
+        <button onClick={createJob} disabled={busy === 'create-job' || config?.configured?.[jobType] === false} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create bulk research job'}</button>
+        <button onClick={loadJobs} className="h-10 rounded-xl border border-violet-200 bg-white text-violet-700 text-sm font-medium">Refresh jobs</button>
       </div>
     </div>
 
     {message && <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3 text-sm">{message}</div>}
 
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="text-xs text-gray-500">{lastRefreshedAt ? `Last refreshed ${lastRefreshedAt.toLocaleTimeString()}` : 'Use Refresh all to reload live status, jobs and drafts.'}</div>
-      <div className="flex gap-2">
-        <button onClick={() => setShowHistory(v => !v)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs">{showHistory ? 'Hide finished history' : 'Show finished history'}</button>
-        {showHistory && <button onClick={clearFinishedHistory} disabled={busy === 'cleanup'} className="h-8 px-3 rounded-lg border border-red-200 text-red-600 text-xs disabled:opacity-50">{busy === 'cleanup' ? 'Clearing…' : 'Clear finished history'}</button>}
-      </div>
-    </div>
-
-    {jobs.length > 0 && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden"><div className="px-4 py-3 bg-gray-50 font-semibold text-sm">{showHistory ? 'AI research job history' : 'Active AI research jobs'}</div>{jobs.slice(0, 8).map(job => { const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0; return <div key={job._id} className="px-4 py-3 border-t border-gray-100"><div className="flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-medium text-sm capitalize">{job.type}</span><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{job.status}</span></div><p className="text-xs text-gray-500 mt-1">{job.processed}/{job.total} processed · {job.generated} drafts · {job.failed} failed</p><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-1.5 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} /></div>{job.failures?.length ? <div className="mt-2 rounded-lg bg-red-50 border border-red-100 p-2"><p className="text-xs font-medium text-red-700">Latest failures</p>{job.failures.slice(-3).map((failure: any, index: number) => <p key={index} className="text-xs text-red-600 mt-1 break-words">{failure.message || 'Research failed'}</p>)}</div> : null}</div><div className="flex flex-wrap gap-2"><button onClick={() => runJob(job._id, false)} disabled={busy === job._id || ['completed','completed_with_errors','cancelled'].includes(job.status)} className="h-8 px-3 bg-violet-600 text-white rounded-lg text-xs disabled:opacity-40">Run next batch</button>{job.failed > 0 && !['cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'retry')} className="h-8 px-3 border border-amber-200 text-amber-700 rounded-lg text-xs">Retry failed</button>} {!['completed','cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'cancel')} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Cancel</button>}</div></div></div>; })}</div>}
-    {jobs.length === 0 && <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-6 text-center"><p className="font-medium text-gray-800">No AI research jobs yet</p><p className="text-sm text-gray-500 mt-1">Choose a queue above and press Create lightweight research job. Run each batch manually to keep load and API usage controlled.</p></div>}
+    {jobs.length > 0 && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden"><div className="px-4 py-3 bg-gray-50 font-semibold text-sm">Recent AI research jobs</div>{jobs.slice(0, 8).map(job => { const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0; return <div key={job._id} className="px-4 py-3 border-t border-gray-100"><div className="flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-medium text-sm capitalize">{job.type}</span><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{job.status}</span></div><p className="text-xs text-gray-500 mt-1">{job.processed}/{job.total} processed · {job.generated} drafts · {job.failed} failed</p><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-1.5 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} /></div>{job.failures?.length ? <div className="mt-2 rounded-lg bg-red-50 border border-red-100 p-2"><p className="text-xs font-medium text-red-700">Latest failures</p>{job.failures.slice(-3).map((failure: any, index: number) => <p key={index} className="text-xs text-red-600 mt-1 break-words">{failure.message || 'Research failed'}</p>)}</div> : null}</div><div className="flex flex-wrap gap-2"><button onClick={() => runJob(job._id, false)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 bg-violet-600 text-white rounded-lg text-xs disabled:opacity-40">Run next batch</button>{job.failed > 0 && <button onClick={() => jobCommand(job._id, 'retry')} className="h-8 px-3 border border-amber-200 text-amber-700 rounded-lg text-xs">Retry failed</button>} {!['completed','cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'cancel')} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Cancel</button>}</div></div></div>; })}</div>}
+    {jobs.length === 0 && <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-6 text-center"><p className="font-medium text-gray-800">No AI research jobs yet</p><p className="text-sm text-gray-500 mt-1">Choose a queue above and create a job. Run each batch manually to keep load controlled.</p></div>}
 
     <div className="flex flex-col lg:flex-row lg:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4">
       <select value={type} onChange={e => { setType(e.target.value as AIDraftType); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="specs">Specs drafts</option><option value="images">Image drafts</option><option value="prices">Price drafts</option></select>

@@ -137,54 +137,58 @@ async function directImageSearch(query: string): Promise<Array<{ url: string; so
   })).filter((row: { url: string }) => isHttpUrl(row.url));
 }
 
-type AIProvider = 'openrouter' | 'openai';
+type AIProviderName = 'openrouter' | 'openai';
 
-function configuredAIProviders(): AIProvider[] {
-  const preferred = String(process.env.AI_PROVIDER || 'openrouter').trim().toLowerCase();
-  const hasOpenRouter = Boolean(process.env.OPENROUTER_API_KEY);
-  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
-
-  // Explicit provider selection is strict. This prevents an OpenRouter job from
-  // silently falling back to an out-of-quota OpenAI account.
-  if (preferred === 'openrouter') return hasOpenRouter ? ['openrouter'] : [];
-  if (preferred === 'openai') return hasOpenAI ? ['openai'] : [];
-
-  // Fallback is opt-in only via AI_PROVIDER=auto.
-  const available: AIProvider[] = [];
-  if (hasOpenRouter) available.push('openrouter');
-  if (hasOpenAI) available.push('openai');
-  return available;
+export interface AIProviderStatus {
+  selected: AIProviderName | 'none';
+  configured: boolean;
+  model: string;
+  endpoint: string;
+  providers: { openrouter: boolean; openai: boolean };
 }
 
-export function activeAIProvider(): AIProvider | 'none' {
-  return configuredAIProviders()[0] || 'none';
-}
+export function getAIProviderStatus(): AIProviderStatus {
+  const requested = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
+  const openrouter = Boolean(process.env.OPENROUTER_API_KEY);
+  const openai = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
 
-function providerConfig(provider: AIProvider) {
-  if (provider === 'openrouter') {
+  let selected: AIProviderName | 'none' = 'none';
+  if (requested === 'openrouter') selected = openrouter ? 'openrouter' : 'none';
+  else if (requested === 'openai') selected = openai ? 'openai' : 'none';
+  else if (openrouter) selected = 'openrouter';
+  else if (openai) selected = 'openai';
+
+  if (selected === 'openrouter') {
     return {
-      apiKey: process.env.OPENROUTER_API_KEY || '',
-      model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free',
+      selected,
+      configured: true,
+      model: process.env.OPENROUTER_MODEL || 'openrouter/free',
       endpoint: process.env.OPENROUTER_CHAT_COMPLETIONS_URL || 'https://openrouter.ai/api/v1/chat/completions',
-      headers: {
-        'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || 'https://phonedock.pk',
-        'X-OpenRouter-Title': 'PhoneDock AI Research',
-      },
-      label: 'OpenRouter',
+      providers: { openrouter, openai },
     };
   }
-  return {
-    apiKey: process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY || '',
-    model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
-    endpoint: process.env.OPENAI_CHAT_COMPLETIONS_URL || process.env.AI_ENRICHMENT_API_URL || 'https://api.openai.com/v1/chat/completions',
-    headers: {},
-    label: 'OpenAI',
-  };
+  if (selected === 'openai') {
+    return {
+      selected,
+      configured: true,
+      model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
+      endpoint: process.env.OPENAI_CHAT_COMPLETIONS_URL || process.env.AI_ENRICHMENT_API_URL || 'https://api.openai.com/v1/chat/completions',
+      providers: { openrouter, openai },
+    };
+  }
+  return { selected: 'none', configured: false, model: '', endpoint: '', providers: { openrouter, openai } };
 }
 
-async function synthesizeWithProvider(provider: AIProvider, type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
-  const config = providerConfig(provider);
-  if (!config.apiKey) throw new Error(`${config.label} API key is not configured`);
+async function synthesizeWithAI(type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
+  const provider = getAIProviderStatus();
+  if (!provider.configured || provider.selected === 'none') {
+    throw new Error('No AI provider configured. Set AI_PROVIDER=openrouter with OPENROUTER_API_KEY, or AI_PROVIDER=openai with OPENAI_API_KEY.');
+  }
+
+  const apiKey = provider.selected === 'openrouter'
+    ? process.env.OPENROUTER_API_KEY
+    : (process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
+  if (!apiKey) throw new Error(`${provider.selected} API key is not configured`);
 
   const evidence = sources.map((source, index) => ({ id: index + 1, ...source }));
   const system = [
@@ -194,39 +198,47 @@ async function synthesizeWithProvider(provider: AIProvider, type: EnrichmentType
     'When sources disagree, keep the most authoritative value and list the conflict.',
     'A price is acceptable only when the evidence explicitly describes a current Pakistan PKR price.',
     'Return strict JSON only. Do not use markdown.',
-    'Shape: {"confidence":0..1,"sourceNotes":"...","conflicts":["..."],"specs":{"display":"","chipset":"","ram":"","storage":"","battery":"","mainCamera":"","fiveG":""},"images":[{"url":"","sourceUrl":"","title":""}],"price":{"valuePKR":null,"sourceName":"","sourceUrl":""}}.',
+    'Shape: {"confidence":0,"sourceNotes":"","conflicts":[],"specs":{"display":"","chipset":"","ram":"","storage":"","battery":"","mainCamera":"","fiveG":""},"images":[],"price":{"valuePKR":null,"sourceName":"","sourceUrl":""}}.',
   ].join(' ');
 
-  const body: Record<string, unknown> = {
-    model: config.model,
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (provider.selected === 'openrouter') {
+    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.app';
+    headers['X-Title'] = 'PhoneDock';
+  }
+
+  const requestBody: Record<string, unknown> = {
+    model: provider.model,
     temperature: 0,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: JSON.stringify({ task: type, phone, evidence, imageCandidates }) },
     ],
   };
-  // OpenAI supports strict JSON mode. OpenRouter models differ, so the prompt remains the portable guarantee.
-  if (provider === 'openai') body.response_format = { type: 'json_object' };
+  // OpenAI supports response_format consistently. Some free OpenRouter models do not.
+  if (provider.selected === 'openai') requestBody.response_format = { type: 'json_object' };
 
-  const response = await fetch(config.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, ...config.headers },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000),
-    cache: 'no-store',
+  const response = await fetch(provider.endpoint, {
+    method: 'POST', headers, body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(60000), cache: 'no-store',
   });
   if (!response.ok) {
-    const detail = cleanText(await response.text().catch(() => ''), 700);
-    throw new Error(`${config.label} synthesis failed (${response.status})${detail ? `: ${detail}` : ''}`);
+    const detail = cleanText(await response.text().catch(() => ''), 900);
+    const label = provider.selected === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+    throw new Error(`${label} synthesis failed (${response.status})${detail ? `: ${detail}` : ''}`);
   }
+
   const payload = await response.json() as any;
   const content = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
-  if (!content) throw new Error(`${config.label} returned no message content`);
+  if (!content) throw new Error(`${provider.selected} returned no message content`);
   let parsed: any;
-  try { parsed = typeof content === 'string' ? parseJsonObject(content) : payload; }
+  try { parsed = typeof content === 'string' ? parseJsonObject(content) : content; }
   catch (error) {
-    const excerpt = cleanText(typeof content === 'string' ? content : JSON.stringify(content), 400);
-    throw new Error(`${config.label}: ${error instanceof Error ? error.message : 'Invalid AI JSON'}${excerpt ? `; response: ${excerpt}` : ''}`);
+    const excerpt = cleanText(typeof content === 'string' ? content : JSON.stringify(content), 500);
+    throw new Error(`${error instanceof Error ? error.message : 'Invalid AI JSON'}${excerpt ? `; response: ${excerpt}` : ''}`);
   }
 
   const approvedSourceUrls = new Set(sources.map(source => source.url));
@@ -249,30 +261,12 @@ async function synthesizeWithProvider(provider: AIProvider, type: EnrichmentType
       battery: cleanText(parsed.specs?.battery), mainCamera: cleanText(parsed.specs?.mainCamera), fiveG: cleanText(parsed.specs?.fiveG),
     } : undefined,
     images: type === 'images' ? images : undefined,
-    price: type === 'prices' ? {
-      valuePKR: validPrice ? valuePKR : undefined,
-      sourceName: validPrice ? cleanText(parsed.price?.sourceName, 120) : '',
-      sourceUrl: validPrice ? priceSourceUrl : '',
-    } : undefined,
+    price: type === 'prices' ? { valuePKR: validPrice ? valuePKR : undefined, sourceName: validPrice ? cleanText(parsed.price?.sourceName, 120) : '', sourceUrl: validPrice ? priceSourceUrl : '' } : undefined,
   };
 }
 
-async function synthesizeWithAI(type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
-  const providers = configuredAIProviders();
-  if (!providers.length) {
-    const preferred = String(process.env.AI_PROVIDER || 'openrouter').trim().toLowerCase();
-    throw new Error(preferred === 'openai' ? 'AI_PROVIDER=openai but OPENAI_API_KEY is missing' : 'AI_PROVIDER=openrouter but OPENROUTER_API_KEY is missing');
-  }
-  const failures: string[] = [];
-  for (const provider of providers) {
-    try { return await synthesizeWithProvider(provider, type, phone, sources, imageCandidates); }
-    catch (error) { failures.push(error instanceof Error ? error.message : `${provider} failed`); }
-  }
-  throw new Error(failures.join(' | fallback: '));
-}
-
 export function aiEnrichmentConfigured(type: EnrichmentType): boolean {
-  const hasAI = configuredAIProviders().length > 0;
+  const hasAI = getAIProviderStatus().configured;
   const hasResearch = Boolean(process.env.TAVILY_API_KEY);
   if (type === 'images') return hasAI && (hasResearch || Boolean(process.env.AI_IMAGE_SEARCH_URL));
   return hasAI && hasResearch;
@@ -282,7 +276,7 @@ export async function generateEnrichmentSuggestions(type: EnrichmentType, phones
   if (!phones.length) return [];
 
   const results: EnrichmentSuggestion[] = [];
-  for (const phone of phones.slice(0, 5)) {
+  for (const phone of phones.slice(0, 10)) {
     const name = `${phone.brand} ${phone.model}`.trim();
     const query = type === 'prices'
       ? `${name} current price in Pakistan PKR official retailer`

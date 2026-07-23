@@ -4,7 +4,7 @@ import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, 
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
-import { activeAIProvider, aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-enrichment';
+import { aiEnrichmentConfigured, generateEnrichmentSuggestions, getAIProviderStatus } from '@/lib/ai-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -18,20 +18,16 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const openAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
-    const openRouter = Boolean(process.env.OPENROUTER_API_KEY);
+    const ai = getAIProviderStatus();
     const tavily = Boolean(process.env.TAVILY_API_KEY);
     const imageSearch = Boolean(process.env.AI_IMAGE_SEARCH_URL);
-    const selectedProvider = activeAIProvider();
-    const selectedReady = selectedProvider === 'openrouter' ? openRouter : selectedProvider === 'openai' ? openAI : false;
     return NextResponse.json({
-      configured: { specs: selectedReady && tavily, prices: selectedReady && tavily, images: selectedReady && (tavily || imageSearch) },
-      providers: { openAI, openRouter, tavily, imageSearch },
-      activeProvider: selectedProvider === 'openrouter' ? 'OpenRouter' : selectedProvider === 'openai' ? 'OpenAI' : 'None',
-      requestedProvider: String(process.env.AI_PROVIDER || 'openrouter').toLowerCase(),
-      model: selectedProvider === 'openrouter' ? (process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free') : (process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini'),
+      configured: { specs: ai.configured && tavily, prices: ai.configured && tavily, images: ai.configured && (tavily || imageSearch) },
+      provider: ai.selected,
+      providers: { openrouter: ai.providers.openrouter, openAI: ai.providers.openai, tavily, imageSearch },
+      model: ai.model,
       maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '10', 10, 1, 10),
-    }, { headers: { 'Cache-Control': 'no-store' } });
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
   }
   // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review&page=1&limit=20&q=
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts') {
@@ -64,13 +60,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const { searchParams } = new URL(req.url);
-    const includeHistory = searchParams.get('history') === '1';
-    const query = includeHistory
-      ? {}
-      : { status: { $nin: ['completed', 'completed_with_errors', 'cancelled'] } };
-    const jobs = await AIResearchJob.find(query).select('-phoneIds').sort({ createdAt: -1 }).limit(includeHistory ? 50 : 25).lean();
-    return NextResponse.json({ jobs, includeHistory }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
+    const jobs = await AIResearchJob.find({}).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
+    return NextResponse.json({ jobs });
   }
   // GET /api/admin/data-quality/summary
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'summary') {
@@ -692,14 +683,6 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
     try { await ActivityLog.create({ adminId: authResult.admin._id, action: `ai_drafts_${action}`, details: `${action}: ${approved + rejected + saved} successful, ${failed} failed`, entityType: 'data_quality', entityId: '' }); } catch {}
     return NextResponse.json({ action, approved, rejected, saved, failed, results });
-  }
-
-  // POST /api/admin/data-quality/ai-jobs/cleanup - remove finished history only.
-  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs' && segments[3] === 'cleanup') {
-    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
-    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
-    const result = await AIResearchJob.deleteMany({ status: { $in: ['completed', 'completed_with_errors', 'cancelled'] } });
-    return NextResponse.json({ deleted: result.deletedCount || 0 });
   }
 
   // POST /api/admin/data-quality/ai-jobs - create a persistent bulk research job.
