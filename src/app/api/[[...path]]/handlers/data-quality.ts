@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
-import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand } from '@/lib/models';
+import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, DeviceSpecDataset } from '@/lib/models';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
-import { searchFreeSpecs } from '@/lib/free-spec-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -549,27 +548,77 @@ function csvSafe(val: string): string {
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
 
 
+  // POST /api/admin/data-quality/spec-dataset/import
+  // Imports normalized rows into PhoneDock's own MongoDB dataset. No runtime
+  // dependency on third-party APIs is used after import.
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-dataset' && segments[3] === 'import') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+    const body = await req.json();
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    if (!rows.length || rows.length > 1000) return NextResponse.json({ error: 'Provide 1 to 1000 dataset rows per batch' }, { status: 400 });
+    const clean = (v: unknown, max = 700) => String(v ?? '').trim().slice(0, max);
+    const normalize = (v: unknown) => clean(v, 300).toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    let imported = 0, skipped = 0;
+    for (const row of rows) {
+      const brand = clean(row.brand ?? row.Brand ?? row.manufacturer ?? row.Manufacturer, 120);
+      const model = clean(row.model ?? row.Model ?? row.modelName ?? row['Model Name'] ?? row.name ?? row.Name, 240);
+      if (!model) { skipped++; continue; }
+      const normalizedModel = normalize(model);
+      if (!normalizedModel) { skipped++; continue; }
+      const specs = {
+        display: clean(row.display ?? row.Display), chipset: clean(row.chipset ?? row.Chipset ?? row.processor ?? row.Processor),
+        ram: clean(row.ram ?? row.RAM), storage: clean(row.storage ?? row.Storage), battery: clean(row.battery ?? row.Battery),
+        mainCamera: clean(row.mainCamera ?? row['Main Camera'] ?? row.camera ?? row.Camera),
+        fiveG: clean(row.fiveG ?? row['5G'] ?? row.network5g ?? row.Network5G, 40),
+        sourceName: clean(row.sourceName ?? row.Source ?? row['Source Name'], 120) || 'Imported dataset',
+        sourceUrl: clean(row.sourceUrl ?? row['Source URL'], 1000),
+      };
+      await DeviceSpecDataset.updateOne(
+        { normalizedBrand: normalize(brand), normalizedModel },
+        { $set: { brand, model, normalizedBrand: normalize(brand), normalizedModel, ...specs } },
+        { upsert: true },
+      );
+      imported++;
+    }
+    return NextResponse.json({ success: true, imported, skipped, total: rows.length });
+  }
+
   // POST /api/admin/data-quality/spec-enrichment/search
-  // Searches a configurable, free community phone-spec provider. Results are
-  // preview-only and never touch MongoDB until the admin explicitly applies one.
+  // Searches PhoneDock's local imported dataset only.
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'search') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-
     const body = await req.json();
     const phoneId = String(body.phoneId || '').trim();
     if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
     const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as any;
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
-
-    try {
-      const candidates = await searchFreeSpecs(phone.brandId?.name || '', phone.modelName || '');
-      return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'Free community phone-spec API' });
-    } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : 'Specifications search failed', hint: 'The free provider may be temporarily unavailable. Try again later or use the CSV repair import.' }, { status: 502 });
-    }
+    const normalize = (v: unknown) => String(v ?? '').toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    const queryModel = normalize(phone.modelName);
+    const queryBrand = normalize(phone.brandId?.name || '');
+    const tokens = queryModel.split(' ').filter((t: string) => t.length > 1);
+    const regex = tokens.length ? new RegExp(tokens.slice(0, 4).map((t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i') : /.^/;
+    const rows = await DeviceSpecDataset.find({ $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])] }).limit(80).lean() as any[];
+    const score = (candidate: any) => {
+      const a = new Set(queryModel.split(' ').filter(Boolean)); const b = new Set(String(candidate.normalizedModel || '').split(' ').filter(Boolean));
+      const common = [...a].filter(x => b.has(x)).length; const union = new Set([...a, ...b]).size || 1;
+      let value = Math.round((common / union) * 85);
+      if (queryBrand && candidate.normalizedBrand === queryBrand) value += 15;
+      if (candidate.normalizedModel === queryModel) value = 100;
+      return Math.min(100, value);
+    };
+    const candidates = rows.map(row => ({
+      name: `${row.brand || ''} ${row.model}`.trim(), slug: String(row._id), image: '', sourceUrl: row.sourceUrl || '', score: score(row),
+      specs: { display: row.display || '', chipset: row.chipset || '', ram: row.ram || '', storage: row.storage || '', battery: row.battery || '', mainCamera: row.mainCamera || '', fiveG: row.fiveG || '' },
+      sourceName: row.sourceName || 'Imported dataset',
+    })).filter(c => c.score >= 25).sort((a, b) => b.score - a.score).slice(0, 10);
+    const datasetCount = await DeviceSpecDataset.countDocuments();
+    return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'PhoneDock local dataset', datasetCount });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/apply
@@ -578,7 +627,6 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
     if (permCheck) return permCheck;
-
     const body = await req.json();
     const phoneId = String(body.phoneId || '').trim();
     if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
@@ -586,31 +634,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
     const raw = body.specs && typeof body.specs === 'object' ? body.specs : {};
     const clean = (value: unknown, max = 600) => String(value ?? '').trim().slice(0, max);
-    const update: Record<string, unknown> = {
-      display: clean(raw.display), chipset: clean(raw.chipset), ram: clean(raw.ram), storage: clean(raw.storage),
-      battery: clean(raw.battery), mainCamera: clean(raw.mainCamera), fiveG: clean(raw.fiveG, 20),
-    };
+    const update: Record<string, unknown> = { display: clean(raw.display), chipset: clean(raw.chipset), ram: clean(raw.ram), storage: clean(raw.storage), battery: clean(raw.battery), mainCamera: clean(raw.mainCamera), fiveG: clean(raw.fiveG, 20) };
     if (!Object.values(update).some(Boolean)) return NextResponse.json({ error: 'No specification values supplied' }, { status: 400 });
     const numeric = (value: unknown, pattern: RegExp) => { const match = String(value || '').match(pattern); return match ? Number(match[1]) : null; };
-    const ramGB = numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i);
-    const storageGB = numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i);
-    const batteryMAh = numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i);
-    const mainCameraMP = numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i);
-    const screenSizeInch = numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i);
-    if (ramGB) update.ramGB = ramGB;
-    if (storageGB) update.storageGB = storageGB;
-    if (batteryMAh) update.batteryMAh = batteryMAh;
-    if (mainCameraMP) update.mainCameraMP = mainCameraMP;
-    if (screenSizeInch) update.screenSizeInch = screenSizeInch;
-
+    const numbers = { ramGB: numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i), storageGB: numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i), batteryMAh: numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i), mainCameraMP: numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i), screenSizeInch: numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i) };
+    Object.entries(numbers).forEach(([k,v]) => { if (v) update[k] = v; });
     await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
-    phone.sourceName = clean(body.sourceName, 120) || 'Free community phone-spec API';
-    phone.sourceUrl = clean(body.sourceUrl, 1000);
-    phone.lastVerifiedAt = new Date();
-    phone.dataConfidence = 'auto-imported';
-    phone.updatedBy = authResult.admin._id;
-    await phone.save();
-    try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'free_specs_applied', details: `Applied reviewed free specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
+    phone.sourceName = clean(body.sourceName, 120) || 'PhoneDock local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = authResult.admin._id; await phone.save();
+    try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_applied', details: `Applied reviewed local dataset specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, phoneId, updatedFields: Object.keys(update).filter(key => update[key] !== '' && update[key] != null) });
   }
 
