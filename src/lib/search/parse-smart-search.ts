@@ -142,3 +142,103 @@ export function smartSearchToPhonesUrl(intent: SmartSearchIntent): string {
   if (intent.sort) { params.set('sort', intent.sort); params.set('order', 'desc'); }
   return `/phones${params.size ? `?${params.toString()}` : ''}`;
 }
+
+export type SmartSearchPlan = {
+  label: string;
+  url: string;
+  removed: string[];
+  isExact: boolean;
+};
+
+/**
+ * Build progressively broader searches while keeping the user's budget and
+ * primary ranking intent. Filters most likely to be missing in legacy records
+ * are relaxed first, so users still receive useful nearby matches.
+ */
+export function buildSmartSearchPlans(intent: SmartSearchIntent): SmartSearchPlan[] {
+  const plans: SmartSearchPlan[] = [];
+  const seen = new Set<string>();
+
+  const addPlan = (label: string, next: SmartSearchIntent, removed: string[], isExact = false) => {
+    const url = smartSearchToPhonesUrl(next);
+    if (seen.has(url)) return;
+    seen.add(url);
+    plans.push({ label, url, removed, isExact });
+  };
+
+  addPlan('Exact match', { ...intent }, [], true);
+
+  // Connectivity flags are frequently absent on imported legacy records.
+  if (intent.fiveG || intent.nfc || intent.pta) {
+    addPlan(
+      'Closest matches',
+      { ...intent, fiveG: undefined, nfc: undefined, pta: undefined },
+      [intent.fiveG ? '5G' : '', intent.nfc ? 'NFC' : '', intent.pta ? 'PTA status' : ''].filter(Boolean),
+    );
+  }
+
+  // Display and chipset text varies heavily between data sources.
+  if (intent.display || intent.refresh || intent.chipset || intent.camera || intent.battery) {
+    addPlan(
+      'Best available alternatives',
+      {
+        ...intent,
+        fiveG: undefined,
+        nfc: undefined,
+        pta: undefined,
+        display: undefined,
+        refresh: undefined,
+        chipset: undefined,
+        camera: undefined,
+        battery: undefined,
+      },
+      [
+        intent.fiveG ? '5G' : '', intent.nfc ? 'NFC' : '', intent.pta ? 'PTA status' : '',
+        intent.display ? 'display type' : '', intent.refresh ? 'refresh rate' : '', intent.chipset ? 'chipset' : '',
+        intent.camera ? 'camera threshold' : '', intent.battery ? 'battery threshold' : '',
+      ].filter(Boolean),
+    );
+  }
+
+  // RAM/storage may be absent even when the phone otherwise fits the request.
+  if (intent.ram || intent.storage) {
+    addPlan(
+      'Budget and priority matches',
+      {
+        ...intent,
+        fiveG: undefined,
+        nfc: undefined,
+        pta: undefined,
+        display: undefined,
+        refresh: undefined,
+        chipset: undefined,
+        camera: undefined,
+        battery: undefined,
+        ram: undefined,
+        storage: undefined,
+      },
+      [
+        intent.fiveG ? '5G' : '', intent.nfc ? 'NFC' : '', intent.pta ? 'PTA status' : '',
+        intent.display ? 'display type' : '', intent.refresh ? 'refresh rate' : '', intent.chipset ? 'chipset' : '',
+        intent.camera ? 'camera threshold' : '', intent.battery ? 'battery threshold' : '',
+        intent.ram ? 'RAM' : '', intent.storage ? 'storage' : '',
+      ].filter(Boolean),
+    );
+  }
+
+  // Final safe fallback: preserve price boundaries and the ranking intent only.
+  addPlan(
+    'Broad recommendations',
+    {
+      original: intent.original,
+      text: '',
+      minPrice: intent.minPrice,
+      maxPrice: intent.maxPrice,
+      sort: intent.sort,
+      detected: intent.detected,
+    },
+    ['detailed specifications'],
+  );
+
+  return plans;
+}

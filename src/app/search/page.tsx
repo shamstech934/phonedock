@@ -10,7 +10,7 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Brand, Phone } from '@/components/shared/types';
-import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
+import { buildSmartSearchPlans, parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
 function HighlightText({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
@@ -40,34 +40,64 @@ function SearchContent() {
   const [loading, setLoading] = useState(true);
   const [searchError, setSearchError] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [matchMode, setMatchMode] = useState<{ label: string; removed: string[]; isExact: boolean } | null>(null);
 
   useEffect(() => {
-    if (!query) { setLoading(false); setSearchError(false); return; }
+    if (!query) { setLoading(false); setSearchError(false); setMatchMode(null); return; }
     let cancelled = false;
     setLoading(true);
     setSearchError(false);
-    const requestUrl = (() => {
-      if (!hasSmartIntent) return `/api/search?q=${encodeURIComponent(query)}`;
-      const [, rawQuery = ''] = smartUrl.split('?');
+    setMatchMode(null);
+
+    const toApiUrl = (phonesUrl: string) => {
+      const [, rawQuery = ''] = phonesUrl.split('?');
       const params = new URLSearchParams(rawQuery);
       // Public phone API uses explicit numeric range names.
       if (params.has('ram')) { params.set('ramMin', params.get('ram') || ''); params.delete('ram'); }
       if (params.has('storage')) { params.set('storageMin', params.get('storage') || ''); params.delete('storage'); }
       params.set('limit', '24');
       return `/api/phones?${params.toString()}`;
-    })();
+    };
 
-    fetch(requestUrl).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    }).then(d => {
-      if (!cancelled) {
-        setResults({ brands: hasSmartIntent ? [] : (d.brands || []), phones: d.phones || [] });
-        setLoading(false);
+    const load = async () => {
+      try {
+        if (!hasSmartIntent) {
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (!cancelled) {
+            setResults({ brands: data.brands || [], phones: data.phones || [] });
+            setLoading(false);
+          }
+          return;
+        }
+
+        const plans = buildSmartSearchPlans(smartIntent);
+        let finalData: { phones?: Phone[] } = { phones: [] };
+        let finalPlan = plans[0];
+
+        for (const plan of plans) {
+          const response = await fetch(toApiUrl(plan.url));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          finalData = data;
+          finalPlan = plan;
+          if ((data.phones || []).length > 0) break;
+        }
+
+        if (!cancelled) {
+          setResults({ brands: [], phones: finalData.phones || [] });
+          setMatchMode({ label: finalPlan.label, removed: finalPlan.removed, isExact: finalPlan.isExact });
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) { setLoading(false); setSearchError(true); }
       }
-    }).catch(() => { if (!cancelled) { setLoading(false); setSearchError(true); } });
+    };
+
+    void load();
     return () => { cancelled = true; };
-  }, [query, retryNonce, hasSmartIntent, smartUrl]);
+  }, [query, retryNonce, hasSmartIntent, smartIntent]);
 
   const total = results.brands.length + results.phones.length;
 
@@ -111,7 +141,7 @@ function SearchContent() {
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">
           {hasSmartIntent ? 'Smart recommendations for ' : 'Search Results for '}&ldquo;<span className="text-blue-500">{query}</span>&rdquo;
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">{total} matching option{total !== 1 ? 's' : ''} found{hasSmartIntent ? ' using your detected preferences' : ''}</p>
+        <p className="text-sm text-muted-foreground mt-1">{total} matching option{total !== 1 ? 's' : ''} found{hasSmartIntent ? (matchMode?.isExact ? ' using every detected preference' : ' using the closest available match') : ''}</p>
       </div>
 
       {smartIntent.detected.length > 0 && (
@@ -124,6 +154,20 @@ function SearchContent() {
               </div>
             </div>
             <Button asChild className="rounded-xl shrink-0"><Link href={smartUrl}>View all filtered phones <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+          </div>
+        </section>
+      )}
+
+      {hasSmartIntent && matchMode && !matchMode.isExact && results.phones.length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <div>
+              <h2 className="text-sm font-bold text-amber-900 dark:text-amber-200">Exact match nahi mila — closest options dikhaye gaye hain</h2>
+              <p className="mt-1 text-xs leading-relaxed text-amber-800/80 dark:text-amber-200/80">
+                Budget aur aapki main priority preserve ki gayi hai. {matchMode.removed.length > 0 ? `Broader results ke liye ${matchMode.removed.join(', ')} temporarily relax kiya gaya.` : ''}
+              </p>
+            </div>
           </div>
         </section>
       )}
@@ -171,7 +215,7 @@ function SearchContent() {
         <div className="text-center py-20 text-muted-foreground">
           <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
           <h3 className="text-lg font-bold text-gray-900 mb-1">No results found for &ldquo;{query}&rdquo;</h3>
-          <p className="text-sm mb-4">{hasSmartIntent ? 'No phone matches every selected preference. Remove one filter or browse the closest available options.' : 'Try a different search term or browse our database'}</p>
+          <p className="text-sm mb-4">{hasSmartIntent ? 'Budget ke andar koi published phone record available nahi mila. Price data missing ho sakta hai; Browse All Phones se database check karein.' : 'Try a different search term or browse our database'}</p>
           <div className="flex flex-wrap gap-2 justify-center">
             {suggestions.slice(0, 6).map(s => (
               <Link key={s} href={`/search?q=${encodeURIComponent(s)}`} className="px-3 py-1.5 rounded-lg bg-white/60 border border-gray-200/60 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
