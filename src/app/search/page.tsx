@@ -34,6 +34,7 @@ function SearchContent() {
   const query = searchParams.get('q') || '';
   const smartIntent = useMemo(() => parseSmartSearch(query), [query]);
   const smartUrl = useMemo(() => smartSearchToPhonesUrl(smartIntent), [smartIntent]);
+  const hasSmartIntent = smartIntent.detected.length > 0;
 
   const [results, setResults] = useState<{ brands: Brand[]; phones: Phone[] }>({ brands: [], phones: [] });
   const [loading, setLoading] = useState(true);
@@ -45,14 +46,28 @@ function SearchContent() {
     let cancelled = false;
     setLoading(true);
     setSearchError(false);
-    fetch(`/api/search?q=${encodeURIComponent(query)}`).then(r => {
+    const requestUrl = (() => {
+      if (!hasSmartIntent) return `/api/search?q=${encodeURIComponent(query)}`;
+      const [, rawQuery = ''] = smartUrl.split('?');
+      const params = new URLSearchParams(rawQuery);
+      // Public phone API uses explicit numeric range names.
+      if (params.has('ram')) { params.set('ramMin', params.get('ram') || ''); params.delete('ram'); }
+      if (params.has('storage')) { params.set('storageMin', params.get('storage') || ''); params.delete('storage'); }
+      params.set('limit', '24');
+      return `/api/phones?${params.toString()}`;
+    })();
+
+    fetch(requestUrl).then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     }).then(d => {
-      if (!cancelled) { setResults({ brands: d.brands || [], phones: d.phones || [] }); setLoading(false); }
+      if (!cancelled) {
+        setResults({ brands: hasSmartIntent ? [] : (d.brands || []), phones: d.phones || [] });
+        setLoading(false);
+      }
     }).catch(() => { if (!cancelled) { setLoading(false); setSearchError(true); } });
     return () => { cancelled = true; };
-  }, [query, retryNonce]);
+  }, [query, retryNonce, hasSmartIntent, smartUrl]);
 
   const total = results.brands.length + results.phones.length;
 
@@ -94,21 +109,21 @@ function SearchContent() {
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-8">
       <div>
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">
-          Search Results for &ldquo;<span className="text-blue-500">{query}</span>&rdquo;
+          {hasSmartIntent ? 'Smart recommendations for ' : 'Search Results for '}&ldquo;<span className="text-blue-500">{query}</span>&rdquo;
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">{total} result{total !== 1 ? 's' : ''} found</p>
+        <p className="text-sm text-muted-foreground mt-1">{total} matching option{total !== 1 ? 's' : ''} found{hasSmartIntent ? ' using your detected preferences' : ''}</p>
       </div>
 
       {smartIntent.detected.length > 0 && (
         <section className="rounded-2xl border border-blue-200/70 bg-gradient-to-r from-blue-50 to-cyan-50 p-4 sm:p-5 dark:border-blue-500/20 dark:from-blue-500/10 dark:to-cyan-500/10">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-sm font-bold text-blue-700 dark:text-blue-300"><Sparkles className="h-4 w-4" /> Smart filters detected</div>
+              <div className="flex items-center gap-2 text-sm font-bold text-blue-700 dark:text-blue-300"><Sparkles className="h-4 w-4" /> Preferences understood</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {smartIntent.detected.map(item => <span key={item} className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm dark:bg-slate-900/70 dark:text-slate-200">{item}</span>)}
               </div>
             </div>
-            <Button asChild className="rounded-xl shrink-0"><Link href={smartUrl}>Apply smart filters <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+            <Button asChild className="rounded-xl shrink-0"><Link href={smartUrl}>View all filtered phones <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
           </div>
         </section>
       )}
@@ -134,7 +149,7 @@ function SearchContent() {
 
       {results.phones.length > 0 && (
         <section className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> Phones ({results.phones.length})</h2>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> {hasSmartIntent ? 'Top matches' : 'Phones'} ({results.phones.length})</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {results.phones.map(p => (
               <PhoneCard key={p.id} phone={p} />
@@ -156,7 +171,7 @@ function SearchContent() {
         <div className="text-center py-20 text-muted-foreground">
           <Search className="w-14 h-14 mx-auto mb-4 opacity-15" />
           <h3 className="text-lg font-bold text-gray-900 mb-1">No results found for &ldquo;{query}&rdquo;</h3>
-          <p className="text-sm mb-4">Try a different search term or browse our database</p>
+          <p className="text-sm mb-4">{hasSmartIntent ? 'No phone matches every selected preference. Remove one filter or browse the closest available options.' : 'Try a different search term or browse our database'}</p>
           <div className="flex flex-wrap gap-2 justify-center">
             {suggestions.slice(0, 6).map(s => (
               <Link key={s} href={`/search?q=${encodeURIComponent(s)}`} className="px-3 py-1.5 rounded-lg bg-white/60 border border-gray-200/60 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">

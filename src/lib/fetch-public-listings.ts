@@ -13,6 +13,13 @@ export interface PhoneListParams {
   brand?: string;
   price?: string;
   priceCategory?: string;
+  priceMin?: string;
+  priceMax?: string;
+  displayType?: string;
+  refreshMin?: string;
+  cameraMin?: string;
+  batteryMin?: string;
+  chipset?: string;
   ram?: string;
   storage?: string;
   sort?: string;
@@ -79,8 +86,15 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   }
   const range = params.price ? PRICE_RANGES[params.price] : undefined;
   const category = getPriceCategory(params.priceCategory);
+  const directPriceMin = Number.parseFloat(params.priceMin || '');
+  const directPriceMax = Number.parseFloat(params.priceMax || '');
   if (category?.missing) {
     filter.$and = [{ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] }];
+  } else if (Number.isFinite(directPriceMin) || Number.isFinite(directPriceMax)) {
+    filter.pricePKR = {
+      ...(Number.isFinite(directPriceMin) && directPriceMin > 0 ? { $gte: directPriceMin } : {}),
+      ...(Number.isFinite(directPriceMax) && directPriceMax > 0 ? { $lte: directPriceMax } : {}),
+    };
   } else if (category) {
     filter.pricePKR = {
       ...(category.min !== undefined ? { $gte: category.min } : {}),
@@ -99,8 +113,19 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   const specFilter: Record<string, unknown> = {};
   const ram = Number.parseFloat(params.ram || '');
   const storage = Number.parseFloat(params.storage || '');
+  const refreshMin = Number.parseFloat(params.refreshMin || '');
+  const cameraMin = Number.parseFloat(params.cameraMin || '');
+  const batteryMin = Number.parseFloat(params.batteryMin || '');
   if (Number.isFinite(ram)) specFilter.ramGB = { $gte: ram };
   if (Number.isFinite(storage)) specFilter.storageGB = { $gte: storage };
+  if (Number.isFinite(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
+  if (Number.isFinite(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+  if (params.displayType) specFilter.displayType = { $regex: escapeRegex(params.displayType), $options: 'i' };
+  if (params.chipset) specFilter.chipset = { $regex: escapeRegex(params.chipset), $options: 'i' };
+  if (Number.isFinite(refreshMin)) {
+    const refreshPatterns: Record<number, string> = { 90: '(?:90|120|144|165|180|240)\\s*hz', 120: '(?:120|144|165|180|240)\\s*hz', 144: '(?:144|165|180|240)\\s*hz' };
+    specFilter.refreshRate = { $regex: refreshPatterns[refreshMin] || `${Math.round(refreshMin)}\\s*hz`, $options: 'i' };
+  }
   if (params['5g'] === 'yes') specFilter.fiveG = { $regex: /yes|supported|true/i };
   else if (params['5g'] === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
   if (params.nfc === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
@@ -116,6 +141,10 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     'price-low': { field: 'pricePKR', order: 1 },
     'price-high': { field: 'pricePKR', order: -1 },
     rating: { field: 'overallRating', order: -1 },
+    performance: { field: 'performanceScore', order: -1 },
+    camera: { field: 'cameraScore', order: -1 },
+    battery: { field: 'batteryScore', order: -1 },
+    value: { field: 'valueScore', order: -1 },
     name: { field: 'modelName', order: 1 },
   };
   const sorting = sortMap[params.sort || 'newest'] || sortMap.newest;
@@ -142,8 +171,10 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   apiParams.set('limit', String(limit));
   if (params.q) apiParams.set('search', params.q);
   if (params.brand && params.brand !== 'all') apiParams.set('brand', params.brand);
-  if (range?.min) apiParams.set('priceMin', String(range.min));
-  if (range?.max) apiParams.set('priceMax', String(range.max));
+  if (Number.isFinite(directPriceMin) && directPriceMin > 0) apiParams.set('priceMin', String(directPriceMin));
+  else if (range?.min) apiParams.set('priceMin', String(range.min));
+  if (Number.isFinite(directPriceMax) && directPriceMax > 0) apiParams.set('priceMax', String(directPriceMax));
+  else if (range?.max) apiParams.set('priceMax', String(range.max));
   if (category?.missing) apiParams.set('priceMissing', 'true');
   else if (category) {
     if (category.min !== undefined) apiParams.set('priceMin', String(category.min));
@@ -151,6 +182,11 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   }
   if (Number.isFinite(ram)) apiParams.set('ramMin', String(ram));
   if (Number.isFinite(storage)) apiParams.set('storageMin', String(storage));
+  if (Number.isFinite(refreshMin)) apiParams.set('refreshMin', String(refreshMin));
+  if (Number.isFinite(cameraMin)) apiParams.set('cameraMin', String(cameraMin));
+  if (Number.isFinite(batteryMin)) apiParams.set('batteryMin', String(batteryMin));
+  if (params.displayType) apiParams.set('displayType', params.displayType);
+  if (params.chipset) apiParams.set('chipset', params.chipset);
   apiParams.set('sort', sorting.field);
   apiParams.set('order', sorting.order === 1 ? 'asc' : 'desc');
   if (params.pta && params.pta !== 'all') apiParams.set('pta', params.pta);
