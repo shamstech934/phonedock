@@ -19,12 +19,15 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
     const openAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
+    const openRouter = Boolean(process.env.OPENROUTER_API_KEY);
+    const hasAI = openRouter || openAI;
     const tavily = Boolean(process.env.TAVILY_API_KEY);
     const imageSearch = Boolean(process.env.AI_IMAGE_SEARCH_URL);
     return NextResponse.json({
-      configured: { specs: openAI && tavily, prices: openAI && tavily, images: openAI && (tavily || imageSearch) },
-      providers: { openAI, tavily, imageSearch },
-      model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
+      configured: { specs: hasAI && tavily, prices: hasAI && tavily, images: hasAI && (tavily || imageSearch) },
+      providers: { openAI, openRouter, tavily, imageSearch },
+      activeProvider: openRouter ? 'OpenRouter' : openAI ? 'OpenAI' : 'None',
+      model: openRouter ? (process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free') : (process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini'),
       maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '10', 10, 1, 10),
     }, { headers: { 'Cache-Control': 'no-store' } });
   }

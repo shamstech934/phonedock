@@ -137,11 +137,52 @@ async function directImageSearch(query: string): Promise<Array<{ url: string; so
   })).filter((row: { url: string }) => isHttpUrl(row.url));
 }
 
-async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY;
-  const model = process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini';
-  const endpoint = process.env.OPENAI_CHAT_COMPLETIONS_URL || process.env.AI_ENRICHMENT_API_URL || 'https://api.openai.com/v1/chat/completions';
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
+type AIProvider = 'openrouter' | 'openai';
+
+function configuredAIProviders(): AIProvider[] {
+  const preferred = String(process.env.AI_PROVIDER || 'auto').toLowerCase();
+  const available: AIProvider[] = [];
+  const add = (provider: AIProvider, configured: boolean) => { if (configured && !available.includes(provider)) available.push(provider); };
+
+  if (preferred === 'openrouter') {
+    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
+    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
+  } else if (preferred === 'openai') {
+    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
+    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
+  } else {
+    // Prefer OpenRouter for lightweight deployments; OpenAI remains a fallback.
+    add('openrouter', Boolean(process.env.OPENROUTER_API_KEY));
+    add('openai', Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY));
+  }
+  return available;
+}
+
+function providerConfig(provider: AIProvider) {
+  if (provider === 'openrouter') {
+    return {
+      apiKey: process.env.OPENROUTER_API_KEY || '',
+      model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'openrouter/free',
+      endpoint: process.env.OPENROUTER_CHAT_COMPLETIONS_URL || 'https://openrouter.ai/api/v1/chat/completions',
+      headers: {
+        'HTTP-Referer': process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || 'https://phonedock.pk',
+        'X-OpenRouter-Title': 'PhoneDock AI Research',
+      },
+      label: 'OpenRouter',
+    };
+  }
+  return {
+    apiKey: process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY || '',
+    model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
+    endpoint: process.env.OPENAI_CHAT_COMPLETIONS_URL || process.env.AI_ENRICHMENT_API_URL || 'https://api.openai.com/v1/chat/completions',
+    headers: {},
+    label: 'OpenAI',
+  };
+}
+
+async function synthesizeWithProvider(provider: AIProvider, type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
+  const config = providerConfig(provider);
+  if (!config.apiKey) throw new Error(`${config.label} API key is not configured`);
 
   const evidence = sources.map((source, index) => ({ id: index + 1, ...source }));
   const system = [
@@ -154,41 +195,42 @@ async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhone
     'Shape: {"confidence":0..1,"sourceNotes":"...","conflicts":["..."],"specs":{"display":"","chipset":"","ram":"","storage":"","battery":"","mainCamera":"","fiveG":""},"images":[{"url":"","sourceUrl":"","title":""}],"price":{"valuePKR":null,"sourceName":"","sourceUrl":""}}.',
   ].join(' ');
 
-  const response = await fetch(endpoint, {
+  const body: Record<string, unknown> = {
+    model: config.model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: JSON.stringify({ task: type, phone, evidence, imageCandidates }) },
+    ],
+  };
+  // OpenAI supports strict JSON mode. OpenRouter models differ, so the prompt remains the portable guarantee.
+  if (provider === 'openai') body.response_format = { type: 'json_object' };
+
+  const response = await fetch(config.endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: JSON.stringify({ task: type, phone, evidence, imageCandidates }) },
-      ],
-    }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}`, ...config.headers },
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(60000),
     cache: 'no-store',
   });
   if (!response.ok) {
     const detail = cleanText(await response.text().catch(() => ''), 700);
-    throw new Error(`OpenAI synthesis failed (${response.status})${detail ? `: ${detail}` : ''}`);
+    throw new Error(`${config.label} synthesis failed (${response.status})${detail ? `: ${detail}` : ''}`);
   }
   const payload = await response.json() as any;
   const content = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
-  if (!content) throw new Error('OpenAI returned no message content');
+  if (!content) throw new Error(`${config.label} returned no message content`);
   let parsed: any;
   try { parsed = typeof content === 'string' ? parseJsonObject(content) : payload; }
   catch (error) {
     const excerpt = cleanText(typeof content === 'string' ? content : JSON.stringify(content), 400);
-    throw new Error(`${error instanceof Error ? error.message : 'Invalid AI JSON'}${excerpt ? `; response: ${excerpt}` : ''}`);
+    throw new Error(`${config.label}: ${error instanceof Error ? error.message : 'Invalid AI JSON'}${excerpt ? `; response: ${excerpt}` : ''}`);
   }
 
   const approvedSourceUrls = new Set(sources.map(source => source.url));
   const candidateImageUrls = new Set(imageCandidates.map(image => image.url));
   const images = Array.isArray(parsed.images) ? parsed.images.slice(0, 5).map((image: any) => ({
-    url: cleanText(image.url, 1500),
-    sourceUrl: cleanText(image.sourceUrl, 1500),
-    title: cleanText(image.title, 240),
+    url: cleanText(image.url, 1500), sourceUrl: cleanText(image.sourceUrl, 1500), title: cleanText(image.title, 240),
   })).filter((image: any) => candidateImageUrls.has(image.url) && isHttpUrl(image.url)) : [];
 
   const priceSourceUrl = cleanText(parsed.price?.sourceUrl, 1500);
@@ -196,12 +238,9 @@ async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhone
   const validPrice = Number.isFinite(valuePKR) && valuePKR > 0 && valuePKR <= 10000000 && approvedSourceUrls.has(priceSourceUrl);
 
   return {
-    phoneId: phone.id,
-    brand: phone.brand,
-    model: phone.model,
+    phoneId: phone.id, brand: phone.brand, model: phone.model,
     confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
-    sourceNotes: cleanText(parsed.sourceNotes, 1500),
-    sources,
+    sourceNotes: cleanText(parsed.sourceNotes, 1500), sources,
     conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts.map((item: unknown) => cleanText(item, 500)).filter(Boolean).slice(0, 10) : [],
     specs: type === 'specs' ? {
       display: cleanText(parsed.specs?.display), chipset: cleanText(parsed.specs?.chipset), ram: cleanText(parsed.specs?.ram), storage: cleanText(parsed.specs?.storage),
@@ -216,8 +255,19 @@ async function synthesizeWithOpenAI(type: EnrichmentType, phone: EnrichmentPhone
   };
 }
 
+async function synthesizeWithAI(type: EnrichmentType, phone: EnrichmentPhoneInput, sources: ResearchSource[], imageCandidates: Array<{ url: string; sourceUrl?: string; title?: string }>): Promise<EnrichmentSuggestion> {
+  const providers = configuredAIProviders();
+  if (!providers.length) throw new Error('Configure OPENROUTER_API_KEY or OPENAI_API_KEY');
+  const failures: string[] = [];
+  for (const provider of providers) {
+    try { return await synthesizeWithProvider(provider, type, phone, sources, imageCandidates); }
+    catch (error) { failures.push(error instanceof Error ? error.message : `${provider} failed`); }
+  }
+  throw new Error(failures.join(' | fallback: '));
+}
+
 export function aiEnrichmentConfigured(type: EnrichmentType): boolean {
-  const hasAI = Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY);
+  const hasAI = configuredAIProviders().length > 0;
   const hasResearch = Boolean(process.env.TAVILY_API_KEY);
   if (type === 'images') return hasAI && (hasResearch || Boolean(process.env.AI_IMAGE_SEARCH_URL));
   return hasAI && hasResearch;
@@ -250,7 +300,7 @@ export async function generateEnrichmentSuggestions(type: EnrichmentType, phones
       .slice(0, 8);
 
     try {
-      const suggestion = await synthesizeWithOpenAI(type, phone, research.sources, imageCandidates);
+      const suggestion = await synthesizeWithAI(type, phone, research.sources, imageCandidates);
       const hasUsefulData = type === 'specs'
         ? Object.values(suggestion.specs || {}).some(Boolean)
         : type === 'images' ? Boolean(suggestion.images?.length)
