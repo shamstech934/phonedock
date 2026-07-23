@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
-import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, AIResearchDraft } from '@/lib/models';
+import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, AIResearchDraft, AIResearchJob } from '@/lib/models';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
@@ -11,7 +11,7 @@ import { aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
-  // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review
+  // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review&page=1&limit=20&q=
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -20,10 +20,30 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const status = searchParams.get('status') || 'pending_review';
+    const page = parseBoundedInt(searchParams.get('page'), 1, 1, 100000);
+    const limit = parseBoundedInt(searchParams.get('limit'), 20, 1, 100);
+    const q = (searchParams.get('q') || '').trim();
     const query: Record<string, unknown> = { status };
     if (type && ['specs','images','prices'].includes(type)) query.type = type;
-    const drafts = await AIResearchDraft.find(query).sort({ createdAt: -1 }).limit(100).lean();
-    return NextResponse.json({ drafts, total: await AIResearchDraft.countDocuments(query) });
+    if (q) query.$or = [
+      { brand: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      { model: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+    ];
+    const [drafts, total] = await Promise.all([
+      AIResearchDraft.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('phoneId', 'modelName slug thumbnail pricePKR dataConfidence').lean(),
+      AIResearchDraft.countDocuments(query),
+    ]);
+    return NextResponse.json({ drafts, total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+  }
+
+  // GET /api/admin/data-quality/ai-jobs
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+    const jobs = await AIResearchJob.find({}).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
+    return NextResponse.json({ jobs });
   }
   // GET /api/admin/data-quality/summary
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'summary') {
@@ -561,6 +581,147 @@ function csvSafe(val: string): string {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+
+  // POST /api/admin/data-quality/ai-drafts/action
+  // Review, edit and publish AI drafts. Only explicit approval writes to live data.
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts' && segments[3] === 'action') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+    const body = await req.json();
+    const action = String(body.action || '');
+    const draftIds = Array.isArray(body.draftIds) ? body.draftIds.map(String).filter(Types.ObjectId.isValid).slice(0, 100) : [];
+    if (!['approve', 'reject', 'save'].includes(action) || !draftIds.length) return NextResponse.json({ error: 'Valid action and draftIds are required' }, { status: 400 });
+    const edits = body.edits && typeof body.edits === 'object' ? body.edits : {};
+    let approved = 0, rejected = 0, saved = 0, failed = 0;
+    const results: Array<{ draftId: string; ok: boolean; message: string }> = [];
+    const clean = (value: unknown, max = 1500) => String(value ?? '').trim().slice(0, max);
+    const isHttpUrl = (value: unknown) => { try { const u = new URL(clean(value)); return ['http:', 'https:'].includes(u.protocol); } catch { return false; } };
+
+    for (const draftId of draftIds) {
+      try {
+        const draft: any = await AIResearchDraft.findById(draftId);
+        if (!draft) { failed++; results.push({ draftId, ok: false, message: 'Draft not found' }); continue; }
+        if (draft.status !== 'pending_review' && action !== 'save') { failed++; results.push({ draftId, ok: false, message: 'Draft already reviewed' }); continue; }
+        const patch = edits[draftId] || (draftIds.length === 1 ? edits : {});
+        if (patch && typeof patch === 'object') {
+          if (draft.type === 'specs') {
+            draft.specs = { ...draft.specs?.toObject?.() || draft.specs || {},
+              display: clean(patch.display ?? draft.specs?.display), chipset: clean(patch.chipset ?? draft.specs?.chipset),
+              ram: clean(patch.ram ?? draft.specs?.ram), storage: clean(patch.storage ?? draft.specs?.storage),
+              battery: clean(patch.battery ?? draft.specs?.battery), mainCamera: clean(patch.mainCamera ?? draft.specs?.mainCamera),
+              fiveG: clean(patch.fiveG ?? draft.specs?.fiveG, 50),
+            };
+          } else if (draft.type === 'images' && patch.imageUrl) {
+            if (!isHttpUrl(patch.imageUrl)) throw new Error('Image URL must be http(s)');
+            draft.images = [{ url: clean(patch.imageUrl), sourceUrl: clean(patch.sourceUrl), title: clean(patch.title, 300) }];
+          } else if (draft.type === 'prices' && patch.valuePKR) {
+            const price = Number(patch.valuePKR); if (!Number.isFinite(price) || price <= 0 || price > 10000000) throw new Error('Invalid PKR price');
+            if (patch.sourceUrl && !isHttpUrl(patch.sourceUrl)) throw new Error('Source URL must be http(s)');
+            draft.price = { valuePKR: price, sourceName: clean(patch.sourceName, 200), sourceUrl: clean(patch.sourceUrl) };
+          }
+          draft.editedAt = new Date();
+        }
+        if (action === 'save') { await draft.save(); saved++; results.push({ draftId, ok: true, message: 'Draft edits saved' }); continue; }
+        if (action === 'reject') {
+          draft.status = 'rejected'; draft.reviewedBy = authResult.admin._id; draft.reviewedAt = new Date();
+          await draft.save(); rejected++; results.push({ draftId, ok: true, message: 'Draft rejected' }); continue;
+        }
+
+        const phone: any = await Phone.findOne({ _id: draft.phoneId, deletedAt: null });
+        if (!phone) throw new Error('Phone not found');
+        if (draft.type === 'specs') {
+          const values = draft.specs || {};
+          const update: Record<string, unknown> = {
+            display: clean(values.display), chipset: clean(values.chipset), ram: clean(values.ram), storage: clean(values.storage),
+            battery: clean(values.battery), mainCamera: clean(values.mainCamera), fiveG: clean(values.fiveG, 50),
+          };
+          if (!Object.values(update).some(Boolean)) throw new Error('Draft has no usable specifications');
+          const numberFrom = (v: unknown, re: RegExp) => { const m = clean(v).match(re); return m ? Number(m[1]) : null; };
+          const ramGB = numberFrom(update.ram, /(\d+(?:\.\d+)?)\s*gb/i); if (ramGB) update.ramGB = ramGB;
+          const storageGB = numberFrom(update.storage, /(\d+(?:\.\d+)?)\s*gb/i); if (storageGB) update.storageGB = storageGB;
+          const batteryMAh = numberFrom(update.battery, /(\d+(?:\.\d+)?)\s*mah/i); if (batteryMAh) update.batteryMAh = batteryMAh;
+          const mainCameraMP = numberFrom(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i); if (mainCameraMP) update.mainCameraMP = mainCameraMP;
+          await PhoneSpecs.updateOne({ phoneId: phone._id }, { $set: update, $setOnInsert: { phoneId: phone._id } }, { upsert: true });
+          draft.publishResult = { specs: true, image: false, price: false, message: 'Specifications published' };
+        } else if (draft.type === 'images') {
+          const candidate = draft.images?.[0]; if (!candidate?.url || !isHttpUrl(candidate.url)) throw new Error('No valid image candidate');
+          phone.thumbnail = clean(candidate.url); draft.publishResult = { specs: false, image: true, price: false, message: 'Primary image published' };
+        } else {
+          const value = Number(draft.price?.valuePKR); if (!Number.isFinite(value) || value <= 0) throw new Error('No valid price suggestion');
+          const previous = Number(phone.pricePKR || 0); phone.previousPrice = previous; phone.pricePKR = value; phone.currentPrice = value;
+          phone.lowestPrice = Number(phone.lowestPrice || 0) > 0 ? Math.min(Number(phone.lowestPrice), value) : value;
+          phone.highestPrice = Math.max(Number(phone.highestPrice || 0), value); phone.priceChange = previous > 0 ? value - previous : 0;
+          phone.percentageChange = previous > 0 ? ((value - previous) / previous) * 100 : 0;
+          phone.sourceName = clean(draft.price?.sourceName, 200) || phone.sourceName; phone.sourceUrl = clean(draft.price?.sourceUrl) || phone.sourceUrl;
+          phone.lastPriceCheckedAt = new Date(); if (previous !== value) phone.lastPriceChangedAt = new Date();
+          draft.publishResult = { specs: false, image: false, price: true, message: 'Price published' };
+        }
+        phone.dataConfidence = draft.confidence >= 0.85 ? 'verified' : 'user-submitted'; phone.updatedBy = authResult.admin._id; await phone.save();
+        draft.status = 'approved'; draft.reviewedBy = authResult.admin._id; draft.reviewedAt = new Date(); await draft.save();
+        approved++; results.push({ draftId, ok: true, message: draft.publishResult?.message || 'Approved' });
+      } catch (error) { failed++; results.push({ draftId, ok: false, message: error instanceof Error ? error.message : 'Action failed' }); }
+    }
+    try { await ActivityLog.create({ adminId: authResult.admin._id, action: `ai_drafts_${action}`, details: `${action}: ${approved + rejected + saved} successful, ${failed} failed`, entityType: 'data_quality', entityId: '' }); } catch {}
+    return NextResponse.json({ action, approved, rejected, saved, failed, results });
+  }
+
+  // POST /api/admin/data-quality/ai-jobs - create a persistent bulk research job.
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
+    const body = await req.json(); const type = String(body.type || '');
+    if (!['specs','images','prices'].includes(type)) return NextResponse.json({ error: 'Invalid job type' }, { status: 400 });
+    if (!aiEnrichmentConfigured(type as any)) return NextResponse.json({ error: 'AI research providers are not configured' }, { status: 503 });
+    const requested = Array.isArray(body.phoneIds) ? body.phoneIds.map(String).filter(Types.ObjectId.isValid) : [];
+    const maxPhones = parseBoundedInt(String(body.maxPhones || process.env.AI_RESEARCH_MAX_JOB_PHONES || 500), 500, 1, 10000);
+    let phoneIds: any[] = requested.slice(0, maxPhones).map((id: string) => new Types.ObjectId(id));
+    if (!phoneIds.length) {
+      const base: any = { deletedAt: null, status: 'published' };
+      if (type === 'specs') { const existing = await PhoneSpecs.distinct('phoneId'); base._id = { $nin: existing }; }
+      else if (type === 'images') { const existing = await PhoneImage.distinct('phoneId'); base.$and = [{ $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] }, { _id: { $nin: existing } }]; }
+      else base.$or = [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }];
+      phoneIds = (await Phone.find(base).select('_id').sort({ updatedAt: 1 }).limit(maxPhones).lean()).map((p: any) => p._id);
+    }
+    if (!phoneIds.length) return NextResponse.json({ error: 'No matching phones found' }, { status: 400 });
+    const job = await AIResearchJob.create({ type, phoneIds, total: phoneIds.length, batchSize: parseBoundedInt(String(body.batchSize || 5), 5, 1, 10), createdBy: authResult.admin._id });
+    return NextResponse.json({ jobId: job._id.toString(), total: job.total, status: job.status });
+  }
+
+  // POST /api/admin/data-quality/ai-jobs/:id/run|retry|cancel
+  if (segments.length >= 5 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
+    const jobId = segments[3]; const command = segments[4];
+    if (!Types.ObjectId.isValid(jobId)) return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
+    const job: any = await AIResearchJob.findById(jobId); if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    if (command === 'cancel') { job.status = 'cancelled'; job.completedAt = new Date(); await job.save(); return NextResponse.json({ job }); }
+    if (command === 'retry') {
+      const failedIds = (job.failures || []).map((f: any) => f.phoneId).filter(Boolean); if (!failedIds.length) return NextResponse.json({ error: 'No failed phones to retry' }, { status: 400 });
+      job.phoneIds = failedIds; job.cursor = 0; job.total = failedIds.length; job.processed = 0; job.generated = 0; job.failed = 0; job.failures = []; job.status = 'queued'; job.completedAt = null; await job.save();
+      return NextResponse.json({ job });
+    }
+    if (command !== 'run') return NextResponse.json({ error: 'Unsupported command' }, { status: 400 });
+    if (['completed','cancelled'].includes(job.status)) return NextResponse.json({ job, done: true });
+    const ids = job.phoneIds.slice(job.cursor, job.cursor + job.batchSize); if (!ids.length) { job.status = job.failed ? 'completed_with_errors' : 'completed'; job.completedAt = new Date(); await job.save(); return NextResponse.json({ job, done: true }); }
+    job.status = 'running'; job.startedAt ||= new Date(); job.lastRunAt = new Date(); await job.save();
+    const phones = await Phone.find({ _id: { $in: ids }, deletedAt: null }).select('_id modelName slug brandId').populate('brandId', 'name').lean();
+    for (const phone of phones as any[]) {
+      try {
+        const [suggestion] = await generateEnrichmentSuggestions(job.type, [{ id: phone._id.toString(), brand: phone.brandId?.name || 'Unknown', model: phone.modelName || '', slug: phone.slug || '' }]);
+        if (!suggestion) throw new Error('No suggestion returned');
+        await AIResearchDraft.updateMany({ phoneId: phone._id, type: job.type, status: 'pending_review' }, { $set: { status: 'rejected', reviewedAt: new Date() } });
+        await AIResearchDraft.create({ ...suggestion, phoneId: phone._id, type: job.type, jobId: job._id, status: 'pending_review', createdBy: authResult.admin._id });
+        job.generated += 1;
+      } catch (error) { job.failed += 1; job.failures.push({ phoneId: phone._id, message: error instanceof Error ? error.message : 'Research failed', attempts: 1 }); }
+      job.processed += 1; job.cursor += 1;
+    }
+    if (job.cursor >= job.total) { job.status = job.failed ? 'completed_with_errors' : 'completed'; job.completedAt = new Date(); }
+    else job.status = 'paused';
+    await job.save();
+    return NextResponse.json({ job: { _id: job._id, type: job.type, status: job.status, total: job.total, processed: job.processed, generated: job.generated, failed: job.failed }, done: ['completed','completed_with_errors'].includes(job.status) });
+  }
   // POST /api/admin/data-quality/ai-enrich
   // Creates review-only draft suggestions. Nothing is written to Phone/PhoneSpecs.
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-enrich') {

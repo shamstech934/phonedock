@@ -5,6 +5,7 @@ const AIResearchDraftSchema = new Schema({
   phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
   type: { type: String, enum: ['specs','images','prices'], required: true, index: true },
   status: { type: String, enum: ['pending_review','approved','rejected'], default: 'pending_review', index: true },
+  jobId: { type: Schema.Types.ObjectId, ref: 'AIResearchJob', index: true },
   brand: String,
   model: String,
   confidence: { type: Number, default: 0 },
@@ -17,6 +18,8 @@ const AIResearchDraftSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
   reviewedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },
   reviewedAt: Date,
+  editedAt: Date,
+  publishResult: { specs: Boolean, image: Boolean, price: Boolean, message: String },
 }, { timestamps: true });
 AIResearchDraftSchema.index({ phoneId: 1, type: 1, status: 1, createdAt: -1 });
 export const AIResearchDraft = mongoose.models.AIResearchDraft || mongoose.model('AIResearchDraft', AIResearchDraftSchema);

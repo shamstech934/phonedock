@@ -21,3 +21,5 @@ export { Wishlist, Favorite, RecentlyViewed, CompareHistory, Notification } from
 export { AffiliateLink, AffiliateClick, ContactRequest } from './Commercial';
 
 export { AIResearchDraft } from './AIResearchDraft';
+
+export { AIResearchJob } from './AIResearchJob';

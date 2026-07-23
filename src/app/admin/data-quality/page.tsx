@@ -11,7 +11,7 @@ import {
   ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag, WandSparkles,
 } from 'lucide-react';
 
-type TabId = 'overview' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
+type TabId = 'overview' | 'ai-review' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
 
 interface SummaryData {
   health: {
@@ -28,6 +28,7 @@ interface SummaryData {
 
 const TABS: { id: TabId; label: string; icon: React.ElementType; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'ai-review', label: 'AI Research', icon: WandSparkles },
   { id: 'issues', label: 'All Issues', icon: AlertTriangle },
   { id: 'missing-specs', label: 'Missing Specs', icon: Smartphone, issueTypeFilter: 'PHONE_MISSING_SPECS' },
   { id: 'missing-images', label: 'Missing Images', icon: Image, issueTypeFilter: 'PHONE_MISSING_PRIMARY_IMAGE' },
@@ -234,6 +235,7 @@ export default function DataQualityPage() {
       </div>
 
       {/* Tab Content */}
+      {activeTab === 'ai-review' && <AIResearchReviewTab onPublished={fetchSummary} />}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
       {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
       {activeTab === 'missing-specs' && <LiveQueueTab type="specs" />}
@@ -461,6 +463,143 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       {pages > 1 && <div className="flex items-center justify-center gap-3"><button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500">Page {page} of {pages}</span><button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Next</button></div>}
     </div>
   );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// AI RESEARCH REVIEW + BULK JOBS
+// ═══════════════════════════════════════════════════════════════════
+
+type AIDraftType = 'specs' | 'images' | 'prices';
+interface AIDraft {
+  _id: string; type: AIDraftType; status: string; brand: string; model: string; confidence: number;
+  sourceNotes?: string; conflicts?: string[]; sources?: Array<{ title?: string; url?: string; domain?: string; score?: number }>;
+  specs?: Record<string, string>; images?: Array<{ url: string; sourceUrl?: string; title?: string }>;
+  price?: { valuePKR?: number; sourceName?: string; sourceUrl?: string };
+  phoneId?: { _id?: string; modelName?: string; slug?: string; thumbnail?: string; pricePKR?: number; dataConfidence?: string } | string;
+  createdAt?: string;
+}
+
+function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
+  const [drafts, setDrafts] = useState<AIDraft[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [type, setType] = useState<AIDraftType>('specs');
+  const [status, setStatus] = useState('pending_review');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [edits, setEdits] = useState<Record<string, Record<string, any>>>({});
+  const [jobType, setJobType] = useState<AIDraftType>('specs');
+  const [jobLimit, setJobLimit] = useState(100);
+  const [message, setMessage] = useState('');
+
+  const loadDrafts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ type, status, page: String(page), limit: '20' });
+      if (query.trim()) params.set('q', query.trim());
+      const res = await fetch(`/api/admin/data-quality/ai-drafts?${params}`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to load AI drafts');
+      setDrafts(data.drafts || []); setPages(data.pages || 1); setSelected(new Set());
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load drafts'); }
+    finally { setLoading(false); }
+  }, [type, status, page, query]);
+
+  const loadJobs = useCallback(async () => {
+    const res = await fetch('/api/admin/data-quality/ai-jobs', { credentials: 'include' });
+    if (res.ok) setJobs((await res.json()).jobs || []);
+  }, []);
+
+  useEffect(() => { loadDrafts(); }, [loadDrafts]);
+  useEffect(() => { loadJobs(); }, [loadJobs]);
+
+  const updateEdit = (id: string, key: string, value: any) => setEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [key]: value } }));
+  const current = (draft: AIDraft, key: string, fallback: any = '') => edits[draft._id]?.[key] ?? fallback;
+
+  const act = async (action: 'approve' | 'reject' | 'save', ids?: string[]) => {
+    const draftIds = ids || Array.from(selected);
+    if (!draftIds.length) return;
+    if (action === 'approve' && !confirm(`Publish ${draftIds.length} reviewed AI draft(s) to live phone data?`)) return;
+    setBusy(action); setMessage('');
+    try {
+      const editPayload = Object.fromEntries(draftIds.map(id => [id, edits[id] || {}]));
+      const res = await fetch('/api/admin/data-quality/ai-drafts/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ action, draftIds, edits: editPayload }) });
+      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Action failed');
+      setMessage(`${action}: ${data.approved + data.rejected + data.saved || 0} successful, ${data.failed || 0} failed.`);
+      await loadDrafts(); if (action === 'approve') onPublished();
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Action failed'); }
+    finally { setBusy(''); }
+  };
+
+  const createJob = async () => {
+    if (!confirm(`Create AI research job for up to ${jobLimit} missing ${jobType} records? API usage may have a cost.`)) return;
+    setBusy('create-job'); setMessage('');
+    try {
+      const res = await fetch('/api/admin/data-quality/ai-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ type: jobType, maxPhones: jobLimit, batchSize: 5 }) });
+      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Unable to create job');
+      setMessage(`Job created for ${data.total} phones. Use Run next batch or Auto run.`); await loadJobs();
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to create job'); }
+    finally { setBusy(''); }
+  };
+
+  const runJob = async (jobId: string, automatic = false) => {
+    setBusy(jobId); setMessage('');
+    try {
+      let done = false; let batches = 0;
+      do {
+        const res = await fetch(`/api/admin/data-quality/ai-jobs/${jobId}/run`, { method: 'POST', credentials: 'include' });
+        const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Job batch failed');
+        done = Boolean(data.done); batches++; await loadJobs();
+        if (!automatic || batches >= 20) break;
+      } while (!done);
+      setMessage(done ? 'Research job completed. Drafts are ready for review.' : automatic && batches >= 20 ? '20 batches completed safely. Press Auto run again to continue.' : 'Next research batch completed.');
+      await loadDrafts();
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Job failed'); }
+    finally { setBusy(''); }
+  };
+
+  const jobCommand = async (jobId: string, command: 'retry' | 'cancel') => {
+    setBusy(jobId);
+    try { const res = await fetch(`/api/admin/data-quality/ai-jobs/${jobId}/${command}`, { method: 'POST', credentials: 'include' }); const data = await res.json(); if (!res.ok) throw new Error(data.error || `${command} failed`); await loadJobs(); }
+    catch (e) { setMessage(e instanceof Error ? e.message : `${command} failed`); }
+    finally { setBusy(''); }
+  };
+
+  return <div className="space-y-5">
+    <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5">
+      <div className="flex items-start gap-3"><WandSparkles className="w-6 h-6 text-violet-600 mt-0.5" /><div><h2 className="font-semibold text-violet-950">AI Research Control Center</h2><p className="text-sm text-violet-700 mt-1">Research creates review drafts only. Live specs, images and prices change only after explicit approval.</p></div></div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+        <select value={jobType} onChange={e => setJobType(e.target.value as AIDraftType)} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm"><option value="specs">Missing specs</option><option value="images">Missing images</option><option value="prices">Missing prices</option></select>
+        <input type="number" min={1} max={10000} value={jobLimit} onChange={e => setJobLimit(Math.max(1, Math.min(10000, Number(e.target.value) || 1)))} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm" />
+        <button onClick={createJob} disabled={busy === 'create-job'} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create bulk research job'}</button>
+        <button onClick={loadJobs} className="h-10 rounded-xl border border-violet-200 bg-white text-violet-700 text-sm font-medium">Refresh jobs</button>
+      </div>
+    </div>
+
+    {message && <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3 text-sm">{message}</div>}
+
+    {jobs.length > 0 && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden"><div className="px-4 py-3 bg-gray-50 font-semibold text-sm">Recent AI research jobs</div>{jobs.slice(0, 8).map(job => { const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0; return <div key={job._id} className="px-4 py-3 border-t border-gray-100"><div className="flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-medium text-sm capitalize">{job.type}</span><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{job.status}</span></div><p className="text-xs text-gray-500 mt-1">{job.processed}/{job.total} processed · {job.generated} drafts · {job.failed} failed</p><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-1.5 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} /></div></div><div className="flex flex-wrap gap-2"><button onClick={() => runJob(job._id, false)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 bg-violet-600 text-white rounded-lg text-xs disabled:opacity-40">Run next batch</button><button onClick={() => runJob(job._id, true)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 border border-violet-200 text-violet-700 rounded-lg text-xs disabled:opacity-40">Auto run 20 batches</button>{job.failed > 0 && <button onClick={() => jobCommand(job._id, 'retry')} className="h-8 px-3 border border-amber-200 text-amber-700 rounded-lg text-xs">Retry failed</button>} {!['completed','cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'cancel')} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Cancel</button>}</div></div></div>; })}</div>}
+
+    <div className="flex flex-col lg:flex-row lg:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4">
+      <select value={type} onChange={e => { setType(e.target.value as AIDraftType); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="specs">Specs drafts</option><option value="images">Image drafts</option><option value="prices">Price drafts</option></select>
+      <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+      <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && loadDrafts()} placeholder="Search brand or model" className="h-10 px-3 border border-gray-200 rounded-xl text-sm flex-1" />
+      <button onClick={loadDrafts} className="h-10 px-4 bg-blue-600 text-white rounded-xl text-sm">Search</button>
+      {selected.size > 0 && status === 'pending_review' && <><button onClick={() => act('approve')} disabled={!!busy} className="h-10 px-4 bg-green-600 text-white rounded-xl text-sm">Approve selected</button><button onClick={() => act('reject')} disabled={!!busy} className="h-10 px-4 border border-red-200 text-red-600 rounded-xl text-sm">Reject selected</button></>}
+    </div>
+
+    {loading ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-44 rounded-2xl bg-gray-100 animate-pulse" />)}</div> : drafts.length === 0 ? <div className="py-16 text-center bg-white border border-gray-100 rounded-2xl"><WandSparkles className="w-10 h-10 text-gray-300 mx-auto mb-3" /><p className="text-gray-500">No matching AI drafts.</p></div> : <div className="space-y-4">{drafts.map(draft => {
+      const phone = typeof draft.phoneId === 'object' ? draft.phoneId : undefined; const isPending = draft.status === 'pending_review'; const confidence = Math.round((draft.confidence || 0) * 100);
+      return <div key={draft._id} className="bg-white border border-gray-100 rounded-2xl p-5"><div className="flex flex-col lg:flex-row gap-5"><div className="lg:w-64"><div className="flex gap-2"><input type="checkbox" disabled={!isPending} checked={selected.has(draft._id)} onChange={() => setSelected(prev => { const n = new Set(prev); n.has(draft._id) ? n.delete(draft._id) : n.add(draft._id); return n; })} /><div><h3 className="font-semibold text-gray-900">{draft.brand} {draft.model}</h3><p className="text-xs text-gray-500 mt-1">Current: {phone?.dataConfidence || 'unverified'} · AI confidence {confidence}%</p></div></div>{draft.conflicts?.length ? <div className="mt-3 p-2 bg-amber-50 text-amber-800 text-xs rounded-lg"><strong>Conflicts:</strong> {draft.conflicts.join(' · ')}</div> : null}<div className="mt-3 space-y-1">{(draft.sources || []).slice(0, 5).map((source, i) => source.url ? <a key={i} href={source.url} target="_blank" rel="noreferrer" className="block text-xs text-blue-600 hover:underline truncate">{source.domain || source.title || 'Source'}</a> : null)}</div></div>
+      <div className="flex-1">{draft.type === 'specs' ? <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{[['display','Display'],['chipset','Chipset'],['ram','RAM'],['storage','Storage'],['battery','Battery'],['mainCamera','Main camera'],['fiveG','5G']].map(([key,label]) => <label key={key} className="text-xs text-gray-500">{label}<input disabled={!isPending} value={current(draft, key, draft.specs?.[key] || '')} onChange={e => updateEdit(draft._id, key, e.target.value)} className="mt-1 h-9 w-full px-3 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50" /></label>)}</div> : draft.type === 'images' ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div>{phone?.thumbnail ? <img src={phone.thumbnail} alt="Current" className="h-40 w-full object-contain bg-gray-50 rounded-xl" /> : <div className="h-40 bg-gray-50 rounded-xl flex items-center justify-center text-xs text-gray-400">No current image</div>}<p className="text-xs text-gray-500 mt-1">Current image</p></div><div>{current(draft, 'imageUrl', draft.images?.[0]?.url || '') ? <img src={current(draft, 'imageUrl', draft.images?.[0]?.url || '')} alt="AI candidate" className="h-40 w-full object-contain bg-gray-50 rounded-xl" /> : null}<input disabled={!isPending} value={current(draft, 'imageUrl', draft.images?.[0]?.url || '')} onChange={e => updateEdit(draft._id, 'imageUrl', e.target.value)} className="mt-2 h-9 w-full px-3 border border-gray-200 rounded-lg text-xs" /></div></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="text-xs text-gray-500">Current PKR<input disabled value={phone?.pricePKR || 0} className="mt-1 h-9 w-full px-3 border rounded-lg bg-gray-50" /></label><label className="text-xs text-gray-500">Suggested PKR<input disabled={!isPending} type="number" value={current(draft, 'valuePKR', draft.price?.valuePKR || '')} onChange={e => updateEdit(draft._id, 'valuePKR', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label><label className="text-xs text-gray-500">Source<input disabled={!isPending} value={current(draft, 'sourceName', draft.price?.sourceName || '')} onChange={e => updateEdit(draft._id, 'sourceName', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label><label className="text-xs text-gray-500 md:col-span-3">Source URL<input disabled={!isPending} value={current(draft, 'sourceUrl', draft.price?.sourceUrl || '')} onChange={e => updateEdit(draft._id, 'sourceUrl', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label></div>}
+      {draft.sourceNotes && <p className="text-xs text-gray-500 mt-3">{draft.sourceNotes}</p>}{isPending && <div className="flex flex-wrap gap-2 mt-4"><button onClick={() => act('save', [draft._id])} disabled={!!busy} className="h-8 px-3 border border-blue-200 text-blue-700 rounded-lg text-xs">Save edits</button><button onClick={() => act('approve', [draft._id])} disabled={!!busy} className="h-8 px-3 bg-green-600 text-white rounded-lg text-xs">Approve & publish</button><button onClick={() => act('reject', [draft._id])} disabled={!!busy} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Reject</button>{phone?.slug && <a href={`/phones/${phone.slug}`} target="_blank" className="h-8 px-3 border border-gray-200 rounded-lg text-xs inline-flex items-center">View phone</a>}</div>}</div></div></div>;
+    })}</div>}
+    {pages > 1 && <div className="flex justify-center gap-3"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500 py-2">Page {page} of {pages}</span><button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50">Next</button></div>}
+  </div>;
 }
 
 // ═══════════════════════════════════════════════════════════════════
