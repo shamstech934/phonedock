@@ -64,8 +64,13 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const jobs = await AIResearchJob.find({}).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
-    return NextResponse.json({ jobs });
+    const { searchParams } = new URL(req.url);
+    const includeHistory = searchParams.get('history') === '1';
+    const query = includeHistory
+      ? {}
+      : { status: { $nin: ['completed', 'completed_with_errors', 'cancelled'] } };
+    const jobs = await AIResearchJob.find(query).select('-phoneIds').sort({ createdAt: -1 }).limit(includeHistory ? 50 : 25).lean();
+    return NextResponse.json({ jobs, includeHistory }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
   }
   // GET /api/admin/data-quality/summary
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'summary') {
@@ -687,6 +692,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
     try { await ActivityLog.create({ adminId: authResult.admin._id, action: `ai_drafts_${action}`, details: `${action}: ${approved + rejected + saved} successful, ${failed} failed`, entityType: 'data_quality', entityId: '' }); } catch {}
     return NextResponse.json({ action, approved, rejected, saved, failed, results });
+  }
+
+  // POST /api/admin/data-quality/ai-jobs/cleanup - remove finished history only.
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs' && segments[3] === 'cleanup') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
+    const result = await AIResearchJob.deleteMany({ status: { $in: ['completed', 'completed_with_errors', 'cancelled'] } });
+    return NextResponse.json({ deleted: result.deletedCount || 0 });
   }
 
   // POST /api/admin/data-quality/ai-jobs - create a persistent bulk research job.
