@@ -4,7 +4,7 @@ import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, 
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
-import { aiEnrichmentConfigured, generateEnrichmentSuggestions, getAIProviderStatus } from '@/lib/ai-enrichment';
+import { aiEnrichmentConfigured, generateEnrichmentSuggestions, getAIStatus } from '@/lib/ai-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -18,16 +18,17 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const ai = getAIProviderStatus();
-    const tavily = Boolean(process.env.TAVILY_API_KEY);
-    const imageSearch = Boolean(process.env.AI_IMAGE_SEARCH_URL);
+    const status = getAIStatus();
     return NextResponse.json({
-      configured: { specs: ai.configured && tavily, prices: ai.configured && tavily, images: ai.configured && (tavily || imageSearch) },
-      provider: ai.selected,
-      providers: { openrouter: ai.providers.openrouter, openAI: ai.providers.openai, tavily, imageSearch },
-      model: ai.model,
+      ...status,
+      providers: {
+        openRouter: Boolean(process.env.OPENROUTER_API_KEY),
+        openAI: Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY),
+        tavily: status.tavily,
+        imageSearch: status.imageSearch,
+      },
       maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '10', 10, 1, 10),
-    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache', Expires: '0' } });
   }
   // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review&page=1&limit=20&q=
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts') {
