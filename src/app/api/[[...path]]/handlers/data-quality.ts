@@ -116,6 +116,75 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     });
   }
 
+  // GET /api/admin/data-quality/live-queue?type=specs|images|prices&page=1&limit=50&q=
+  // Lists incomplete phone records directly from source collections. This does
+  // not depend on a completed DataQualityIssue scan, so large catalogs remain
+  // reviewable even when a serverless scan is interrupted.
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'live-queue') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const type = searchParams.get('type') || 'specs';
+    if (!['specs', 'images', 'prices'].includes(type)) {
+      return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
+    }
+    const page = parseBoundedInt(searchParams.get('page'), 1, { min: 1, max: 100000 });
+    const limit = parseBoundedInt(searchParams.get('limit'), 50, { min: 1, max: 100 });
+    const q = (searchParams.get('q') || '').trim();
+
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
+    if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+
+    let missingIds: Types.ObjectId[] | null = null;
+    if (type === 'specs') {
+      const withSpecs = await PhoneSpecs.distinct('phoneId');
+      missingIds = withSpecs.map(id => new Types.ObjectId(id));
+      baseQuery._id = { $nin: missingIds };
+    } else if (type === 'images') {
+      const withImages = await PhoneImage.distinct('phoneId');
+      missingIds = withImages.map(id => new Types.ObjectId(id));
+      baseQuery.$and = [
+        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
+        { _id: { $nin: missingIds } },
+      ];
+    } else {
+      baseQuery.$or = [
+        { pricePKR: { $exists: false } },
+        { pricePKR: null },
+        { pricePKR: { $lte: 0 } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      Phone.find(baseQuery)
+        .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence updatedAt')
+        .populate('brandId', 'name slug')
+        .sort({ updatedAt: -1, modelName: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Phone.countDocuments(baseQuery),
+    ]);
+
+    const items = rows.map((row: any) => ({
+      id: row._id.toString(),
+      modelName: row.modelName || 'Unnamed phone',
+      slug: row.slug || '',
+      brandName: row.brandId?.name || 'Unknown brand',
+      thumbnail: row.thumbnail || '',
+      pricePKR: Number(row.pricePKR || 0),
+      ptaStatus: row.ptaStatus || 'Unknown',
+      dataConfidence: row.dataConfidence || 'unverified',
+      updatedAt: row.updatedAt,
+      missing: type,
+    }));
+
+    return NextResponse.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)), type });
+  }
+
   // GET /api/admin/data-quality/scans/:id
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {
     const authResult = await getAdminFromRequest(req);

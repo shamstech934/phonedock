@@ -236,9 +236,9 @@ export default function DataQualityPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
       {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
-      {activeTab === 'missing-specs' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_SPECS' }} />}
-      {activeTab === 'missing-images' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_PRIMARY_IMAGE' }} />}
-      {activeTab === 'missing-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_MISSING_PRICE' }} />}
+      {activeTab === 'missing-specs' && <LiveQueueTab type="specs" />}
+      {activeTab === 'missing-images' && <LiveQueueTab type="images" />}
+      {activeTab === 'missing-prices' && <LiveQueueTab type="prices" />}
       {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
       {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
       {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ entityType: 'import' }} />}
@@ -263,6 +263,115 @@ function getQueueCountKey(issueType: string): keyof NonNullable<SummaryData['que
     'IMPORT_LOW_CONFIDENCE': 'missingSpecs',
   };
   return map[issueType] || 'missingSpecs';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LIVE SOURCE QUEUE (does not require a completed scan)
+// ═══════════════════════════════════════════════════════════════════
+
+type LiveQueueType = 'specs' | 'images' | 'prices';
+interface LiveQueueItem {
+  id: string;
+  modelName: string;
+  slug: string;
+  brandName: string;
+  thumbnail: string;
+  pricePKR: number;
+  ptaStatus: string;
+  dataConfidence: string;
+  updatedAt?: string;
+  missing: LiveQueueType;
+}
+
+function LiveQueueTab({ type }: { type: LiveQueueType }) {
+  const [items, setItems] = useState<LiveQueueItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [query, setQuery] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const labels = {
+    specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
+    images: { title: 'Phones Missing Images', help: 'These published phones have neither a thumbnail nor an image record.', icon: Image },
+    prices: { title: 'Phones Missing Prices', help: 'These published phones have no valid PKR price.', icon: DollarSign },
+  } as const;
+  const cfg = labels[type];
+  const QueueIcon = cfg.icon;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ type, page: String(page), limit: '50' });
+      if (appliedQuery) params.set('q', appliedQuery);
+      const res = await fetch(`/api/admin/data-quality/live-queue?${params}`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to load queue');
+      setItems(data.items || []);
+      setTotal(data.total || 0);
+      setPages(data.pages || 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load queue');
+    } finally {
+      setLoading(false);
+    }
+  }, [type, page, appliedQuery]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); }, [type]);
+
+  const exportCsv = () => {
+    const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', 'Price PKR', 'PTA Status', 'Confidence', 'Last Updated'];
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = items.map(item => [item.id, item.brandName, item.modelName, item.slug, item.missing, item.pricePKR || '', item.ptaStatus, item.dataConfidence, item.updatedAt || '']);
+    const csv = [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `phonedock-missing-${type}-page-${page}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-100 rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center gap-4">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center"><QueueIcon className="w-5 h-5 text-red-600" /></div>
+          <div><h2 className="font-semibold text-gray-900">{cfg.title}</h2><p className="text-sm text-gray-500 mt-0.5">{cfg.help}</p><p className="text-xs text-gray-400 mt-1">Live source count: {total.toLocaleString()}</p></div>
+        </div>
+        <form onSubmit={e => { e.preventDefault(); setPage(1); setAppliedQuery(query.trim()); }} className="flex gap-2">
+          <div className="relative"><Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search phone name" className="h-9 w-56 pl-9 pr-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400" /></div>
+          <button className="h-9 px-3 bg-blue-600 text-white rounded-xl text-sm font-medium">Search</button>
+          <button type="button" onClick={exportCsv} disabled={!items.length} className="h-9 px-3 border border-gray-200 rounded-xl text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"><Download className="w-4 h-4" /> Export page</button>
+        </form>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
+      {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? (
+        <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p><p className="text-sm text-gray-400 mt-1">Try clearing the search or refresh the queue.</p></div>
+      ) : (
+        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4">Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
+          {items.map(item => (
+            <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0">
+              <div className="md:col-span-4"><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div>
+              <div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div>
+              <div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? (item.pricePKR > 0 ? `PKR ${item.pricePKR.toLocaleString()}` : 'No valid price') : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div>
+              <div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div>
+              <div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pages > 1 && <div className="flex items-center justify-center gap-3"><button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500">Page {page} of {pages}</span><button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Next</button></div>}
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
