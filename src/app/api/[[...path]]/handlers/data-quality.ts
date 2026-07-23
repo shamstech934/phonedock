@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
-import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand } from '@/lib/models';
+import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, AIResearchDraft } from '@/lib/models';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
@@ -11,6 +11,20 @@ import { aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-drafts') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+    const { searchParams } = new URL(req.url);
+    const type = searchParams.get('type');
+    const status = searchParams.get('status') || 'pending_review';
+    const query: Record<string, unknown> = { status };
+    if (type && ['specs','images','prices'].includes(type)) query.type = type;
+    const drafts = await AIResearchDraft.find(query).sort({ createdAt: -1 }).limit(100).lean();
+    return NextResponse.json({ drafts, total: await AIResearchDraft.countDocuments(query) });
+  }
   // GET /api/admin/data-quality/summary
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'summary') {
     const authResult = await getAdminFromRequest(req);
@@ -575,10 +589,15 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const input = phones.map((phone: any) => ({ id: phone._id.toString(), brand: phone.brandId?.name || 'Unknown', model: phone.modelName || '', slug: phone.slug || '' }));
     try {
       const suggestions = await generateEnrichmentSuggestions(type, input);
+      const storedDrafts = [];
+      for (const suggestion of suggestions) {
+        await AIResearchDraft.updateMany({ phoneId: suggestion.phoneId, type, status: 'pending_review' }, { $set: { status: 'rejected', reviewedAt: new Date(), reviewedBy: authResult.admin._id } });
+        storedDrafts.push(await AIResearchDraft.create({ ...suggestion, phoneId: suggestion.phoneId, type, status: 'pending_review', createdBy: authResult.admin._id }));
+      }
       try {
-        await ActivityLog.create({ adminId: authResult.admin._id, action: 'ai_enrichment_draft', details: `Generated ${suggestions.length} review-only ${type} drafts`, entityType: 'data_quality', entityId: '' });
+        await ActivityLog.create({ adminId: authResult.admin._id, action: 'ai_enrichment_draft', details: `Generated and stored ${suggestions.length} review-only ${type} drafts`, entityType: 'data_quality', entityId: '' });
       } catch (e) { console.error('[ActivityLog]', e); }
-      return NextResponse.json({ type, requested: input.length, generated: suggestions.length, suggestions, reviewOnly: true });
+      return NextResponse.json({ type, requested: input.length, generated: suggestions.length, suggestions, draftIds: storedDrafts.map((draft: any) => draft._id.toString()), reviewOnly: true, persisted: true });
     } catch (error) {
       console.error('[AI enrichment]', error);
       return NextResponse.json({ error: error instanceof Error ? error.message : 'AI enrichment failed' }, { status: 502 });
