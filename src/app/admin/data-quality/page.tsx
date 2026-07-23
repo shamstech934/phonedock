@@ -292,6 +292,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [appliedQuery, setAppliedQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -321,21 +322,39 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   }, [type, page, appliedQuery]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); }, [type]);
+  useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); setSelected(new Set()); }, [type]);
+  useEffect(() => { setSelected(new Set()); }, [page, appliedQuery]);
 
-  const exportCsv = () => {
+  const downloadItemsCsv = (rowsToExport: LiveQueueItem[], suffix: string) => {
     const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', 'Price PKR', 'PTA Status', 'Confidence', 'Last Updated'];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = items.map(item => [item.id, item.brandName, item.modelName, item.slug, item.missing, item.pricePKR || '', item.ptaStatus, item.dataConfidence, item.updatedAt || '']);
+    const rows = rowsToExport.map(item => [item.id, item.brandName, item.modelName, item.slug, item.missing, item.pricePKR || '', item.ptaStatus, item.dataConfidence, item.updatedAt || '']);
     const csv = [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `phonedock-missing-${type}-page-${page}.csv`;
+    anchor.download = `phonedock-missing-${type}-${suffix}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
+
+  const exportPageCsv = () => downloadItemsCsv(items, `page-${page}`);
+  const exportSelectedCsv = () => downloadItemsCsv(items.filter(item => selected.has(item.id)), 'selected');
+  const exportAllCsv = () => {
+    const params = new URLSearchParams({ type });
+    if (appliedQuery) params.set('q', appliedQuery);
+    window.open(`/api/admin/data-quality/live-queue.csv?${params}`, '_blank');
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const togglePage = () => setSelected(selected.size === items.length ? new Set() : new Set(items.map(item => item.id)));
 
   return (
     <div className="space-y-4">
@@ -347,19 +366,28 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         <form onSubmit={e => { e.preventDefault(); setPage(1); setAppliedQuery(query.trim()); }} className="flex gap-2">
           <div className="relative"><Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search phone name" className="h-9 w-56 pl-9 pr-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400" /></div>
           <button className="h-9 px-3 bg-blue-600 text-white rounded-xl text-sm font-medium">Search</button>
-          <button type="button" onClick={exportCsv} disabled={!items.length} className="h-9 px-3 border border-gray-200 rounded-xl text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"><Download className="w-4 h-4" /> Export page</button>
+          <button type="button" onClick={exportPageCsv} disabled={!items.length} className="h-9 px-3 border border-gray-200 rounded-xl text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"><Download className="w-4 h-4" /> Export page</button>
+          <button type="button" onClick={exportAllCsv} disabled={!total} className="h-9 px-3 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"><Download className="w-4 h-4" /> Export all</button>
         </form>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
+      {selected.size > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected on this page</span>
+          <button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button>
+          <button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear selection</button>
+          <p className="sm:ml-auto text-xs text-blue-600">Use the CSV as a controlled repair work pack; imported values should still be reviewed before publishing.</p>
+        </div>
+      )}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? (
         <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p><p className="text-sm text-gray-400 mt-1">Try clearing the search or refresh the queue.</p></div>
       ) : (
         <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4">Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
+          <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
           {items.map(item => (
             <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0">
-              <div className="md:col-span-4"><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div>
+              <div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" aria-label={`Select ${item.modelName}`} /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div>
               <div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div>
               <div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? (item.pricePKR > 0 ? `PKR ${item.pricePKR.toLocaleString()}` : 'No valid price') : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div>
               <div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div>

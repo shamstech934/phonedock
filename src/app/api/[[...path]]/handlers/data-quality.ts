@@ -116,6 +116,75 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     });
   }
 
+  // GET /api/admin/data-quality/live-queue.csv?type=specs|images|prices&q=
+  // Exports the complete live repair queue, not only the currently visible page.
+  // This is intentionally read-only: the CSV is a review work pack and does not
+  // auto-publish generated or unverified data.
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'live-queue.csv') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const { searchParams } = new URL(req.url);
+    const type = searchParams.get('type') || 'specs';
+    if (!['specs', 'images', 'prices'].includes(type)) {
+      return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
+    }
+    const q = (searchParams.get('q') || '').trim();
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
+    if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+
+    if (type === 'specs') {
+      const withSpecs = await PhoneSpecs.distinct('phoneId');
+      baseQuery._id = { $nin: withSpecs.map(id => new Types.ObjectId(id)) };
+    } else if (type === 'images') {
+      const withImages = await PhoneImage.distinct('phoneId');
+      baseQuery.$and = [
+        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
+        { _id: { $nin: withImages.map(id => new Types.ObjectId(id)) } },
+      ];
+    } else {
+      baseQuery.$or = [
+        { pricePKR: { $exists: false } },
+        { pricePKR: null },
+        { pricePKR: { $lte: 0 } },
+      ];
+    }
+
+    const rows = await Phone.find(baseQuery)
+      .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence updatedAt')
+      .populate('brandId', 'name slug')
+      .sort({ brandId: 1, modelName: 1 })
+      .lean();
+
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', 'Price PKR', 'PTA Status', 'Confidence', 'Last Updated', 'Admin Editor'];
+    const csvRows = rows.map((row: any) => [
+      row._id.toString(),
+      row.brandId?.name || 'Unknown brand',
+      row.modelName || 'Unnamed phone',
+      row.slug || '',
+      type,
+      Number(row.pricePKR || 0) > 0 ? Number(row.pricePKR) : '',
+      row.ptaStatus || 'Unknown',
+      row.dataConfidence || 'unverified',
+      row.updatedAt ? new Date(row.updatedAt).toISOString() : '',
+      `/admin/phones/${row._id.toString()}/edit`,
+    ]);
+    const csv = '\uFEFF' + [header, ...csvRows].map(row => row.map(quote).join(',')).join('\n');
+    const filename = `phonedock-missing-${type}-all.csv`;
+
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   // GET /api/admin/data-quality/live-queue?type=specs|images|prices&page=1&limit=50&q=
   // Lists incomplete phone records directly from source collections. This does
   // not depend on a completed DataQualityIssue scan, so large catalogs remain
