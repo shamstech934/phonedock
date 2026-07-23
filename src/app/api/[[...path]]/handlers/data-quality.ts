@@ -25,7 +25,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       configured: { specs: openAI && tavily, prices: openAI && tavily, images: openAI && (tavily || imageSearch) },
       providers: { openAI, tavily, imageSearch },
       model: process.env.OPENAI_MODEL || process.env.AI_ENRICHMENT_MODEL || 'gpt-4.1-mini',
-      maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '500', 500, 1, 10000),
+      maxJobPhones: parseBoundedInt(process.env.AI_RESEARCH_MAX_JOB_PHONES || '10', 10, 1, 10),
     }, { headers: { 'Cache-Control': 'no-store' } });
   }
   // GET /api/admin/data-quality/ai-drafts?type=specs&status=pending_review&page=1&limit=20&q=
@@ -692,7 +692,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!['specs','images','prices'].includes(type)) return NextResponse.json({ error: 'Invalid job type' }, { status: 400 });
     if (!aiEnrichmentConfigured(type as any)) return NextResponse.json({ error: 'AI research providers are not configured' }, { status: 503 });
     const requested = Array.isArray(body.phoneIds) ? body.phoneIds.map(String).filter(Types.ObjectId.isValid) : [];
-    const maxPhones = parseBoundedInt(String(body.maxPhones || process.env.AI_RESEARCH_MAX_JOB_PHONES || 500), 500, 1, 10000);
+    const maxPhones = parseBoundedInt(String(body.maxPhones || process.env.AI_RESEARCH_MAX_JOB_PHONES || 10), 10, 1, 10);
     let phoneIds: any[] = requested.slice(0, maxPhones).map((id: string) => new Types.ObjectId(id));
     if (!phoneIds.length) {
       const base: any = { deletedAt: null, status: 'published' };

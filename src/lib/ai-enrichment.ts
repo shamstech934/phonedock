@@ -227,7 +227,7 @@ export async function generateEnrichmentSuggestions(type: EnrichmentType, phones
   if (!phones.length) return [];
 
   const results: EnrichmentSuggestion[] = [];
-  for (const phone of phones.slice(0, 10)) {
+  for (const phone of phones.slice(0, 5)) {
     const name = `${phone.brand} ${phone.model}`.trim();
     const query = type === 'prices'
       ? `${name} current price in Pakistan PKR official retailer`
