@@ -283,6 +283,15 @@ interface LiveQueueItem {
   missing: LiveQueueType;
 }
 
+interface FreeSpecCandidate {
+  name: string;
+  slug: string;
+  image: string;
+  sourceUrl: string;
+  score: number;
+  specs: { display: string; chipset: string; ram: string; storage: string; battery: string; mainCamera: string; fiveG: string };
+}
+
 function parseCsvWorkPack(text: string): Record<string, string>[] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -324,6 +333,13 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [repairFileName, setRepairFileName] = useState('');
   const [repairResult, setRepairResult] = useState<any>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [specSearchPhone, setSpecSearchPhone] = useState<LiveQueueItem | null>(null);
+  const [specCandidates, setSpecCandidates] = useState<FreeSpecCandidate[]>([]);
+  const [specSearchLoading, setSpecSearchLoading] = useState(false);
+  const [specSearchError, setSpecSearchError] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState<FreeSpecCandidate | null>(null);
+  const [editableSpecs, setEditableSpecs] = useState<FreeSpecCandidate['specs'] | null>(null);
+  const [specApplyLoading, setSpecApplyLoading] = useState(false);
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -386,6 +402,39 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     finally { setRepairLoading(false); }
   };
 
+  const searchFreeSpecs = async (phone: LiveQueueItem) => {
+    setSpecSearchPhone(phone); setSpecCandidates([]); setSelectedCandidate(null); setEditableSpecs(null); setSpecSearchError(''); setSpecSearchLoading(true);
+    try {
+      const res = await fetch('/api/admin/data-quality/spec-enrichment/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ phoneId: phone.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Free specifications search failed');
+      setSpecCandidates(data.candidates || []);
+      if (!(data.candidates || []).length) setSpecSearchError('No reliable match was returned. Try the phone editor or CSV import.');
+    } catch (e) { setSpecSearchError(e instanceof Error ? e.message : 'Free specifications search failed'); }
+    finally { setSpecSearchLoading(false); }
+  };
+
+  const chooseSpecCandidate = (candidate: FreeSpecCandidate) => {
+    setSelectedCandidate(candidate); setEditableSpecs({ ...candidate.specs });
+  };
+
+  const applyFreeSpecs = async () => {
+    if (!specSearchPhone || !selectedCandidate || !editableSpecs) return;
+    setSpecApplyLoading(true); setSpecSearchError('');
+    try {
+      const res = await fetch('/api/admin/data-quality/spec-enrichment/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ phoneId: specSearchPhone.id, specs: editableSpecs, sourceName: 'Free community phone-spec API', sourceUrl: selectedCandidate.sourceUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to apply specifications');
+      setSpecSearchPhone(null); setSelectedCandidate(null); setEditableSpecs(null); setSpecCandidates([]); await load();
+    } catch (e) { setSpecSearchError(e instanceof Error ? e.message : 'Unable to apply specifications'); }
+    finally { setSpecApplyLoading(false); }
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white border border-gray-100 rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center gap-4">
@@ -421,7 +470,19 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
-        {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
+        {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex flex-wrap gap-2">{type === 'specs' && <button onClick={() => searchFreeSpecs(item)} className="h-8 px-3 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white rounded-lg text-xs font-medium"><Search className="w-3.5 h-3.5" /> Find specs</button>}<a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
+      </div>}
+      {specSearchPhone && <div className="fixed inset-0 z-50 bg-black/40 p-4 flex items-center justify-center" onMouseDown={e => { if (e.currentTarget === e.target && !specApplyLoading) setSpecSearchPhone(null); }}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between z-10"><div><h3 className="font-bold text-gray-900">Find Missing Specifications</h3><p className="text-sm text-gray-500 mt-1">{specSearchPhone.brandName} {specSearchPhone.modelName} · preview and approve before database update</p></div><button disabled={specApplyLoading} onClick={() => setSpecSearchPhone(null)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50"><X className="w-5 h-5" /></button></div>
+          <div className="p-5 space-y-4">
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">This uses a free community API. Always check the model and variant before pressing Apply. PhoneDock does not update anything automatically.</div>
+            {specSearchLoading && <div className="py-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /><p className="text-sm text-gray-500 mt-3">Searching free specifications source…</p></div>}
+            {specSearchError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{specSearchError}</div>}
+            {!specSearchLoading && !selectedCandidate && specCandidates.length > 0 && <div><h4 className="text-sm font-semibold text-gray-700 mb-3">Choose the correct match</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{specCandidates.map(candidate => <button key={candidate.slug} onClick={() => chooseSpecCandidate(candidate)} className="text-left border border-gray-200 rounded-xl p-4 hover:border-blue-400 hover:bg-blue-50 transition-colors"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-900">{candidate.name}</span><span className={`text-xs px-2 py-1 rounded-full ${candidate.score >= 80 ? 'bg-green-100 text-green-700' : candidate.score >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{candidate.score}% match</span></div><p className="text-xs text-gray-500 mt-2 line-clamp-2">{candidate.specs.chipset || 'Chipset unavailable'} · {candidate.specs.display || 'Display unavailable'}</p></button>)}</div></div>}
+            {selectedCandidate && editableSpecs && <div className="space-y-4"><div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold text-gray-900">Review: {selectedCandidate.name}</h4><p className="text-xs text-gray-500">Match confidence: {selectedCandidate.score}%</p></div><button onClick={() => { setSelectedCandidate(null); setEditableSpecs(null); }} className="text-sm text-blue-600 font-medium">Choose another</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{([['display','Display'],['chipset','Chipset'],['ram','RAM'],['storage','Storage'],['battery','Battery'],['mainCamera','Main Camera'],['fiveG','5G']] as const).map(([key,label]) => <label key={key} className="text-sm text-gray-700"><span className="font-medium">{label}</span><textarea rows={key === 'mainCamera' || key === 'display' ? 3 : 2} value={editableSpecs[key]} onChange={e => setEditableSpecs(prev => prev ? { ...prev, [key]: e.target.value } : prev)} className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400" placeholder={`${label} not found`} /></label>)}</div><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100"><p className="text-xs text-gray-500">Applying creates the PhoneSpecs record and marks data as auto-imported.</p><button onClick={applyFreeSpecs} disabled={specApplyLoading || !Object.values(editableSpecs).some(Boolean)} className="h-10 px-5 bg-green-600 text-white rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50">{specApplyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Apply reviewed specs</button></div></div>}
+          </div>
+        </div>
       </div>}
       {pages > 1 && <div className="flex items-center justify-center gap-3"><button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500">Page {page} of {pages}</span><button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Next</button></div>}
     </div>
@@ -429,19 +490,6 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════
-// AI RESEARCH REVIEW + BULK JOBS
-// ═══════════════════════════════════════════════════════════════════
-
-type AIDraftType = 'specs' | 'images' | 'prices';
-interface AIDraft {
-  _id: string; type: AIDraftType; status: string; brand: string; model: string; confidence: number;
-  sourceNotes?: string; conflicts?: string[]; sources?: Array<{ title?: string; url?: string; domain?: string; score?: number }>;
-  specs?: Record<string, string>; images?: Array<{ url: string; sourceUrl?: string; title?: string }>;
-  price?: { valuePKR?: number; sourceName?: string; sourceUrl?: string };
-  phoneId?: { _id?: string; modelName?: string; slug?: string; thumbnail?: string; pricePKR?: number; dataConfidence?: string } | string;
-  createdAt?: string;
-}
 
 function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | null; loading: boolean; onRefresh: () => void }) {
   if (loading) return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>;

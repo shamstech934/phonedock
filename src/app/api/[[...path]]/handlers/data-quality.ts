@@ -4,6 +4,7 @@ import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, 
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
+import { searchFreeSpecs } from '@/lib/free-spec-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -546,6 +547,72 @@ function csvSafe(val: string): string {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+
+
+  // POST /api/admin/data-quality/spec-enrichment/search
+  // Searches a configurable, free community phone-spec provider. Results are
+  // preview-only and never touch MongoDB until the admin explicitly applies one.
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'search') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const phoneId = String(body.phoneId || '').trim();
+    if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
+    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as any;
+    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+
+    try {
+      const candidates = await searchFreeSpecs(phone.brandId?.name || '', phone.modelName || '');
+      return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'Free community phone-spec API' });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Specifications search failed', hint: 'The free provider may be temporarily unavailable. Try again later or use the CSV repair import.' }, { status: 502 });
+    }
+  }
+
+  // POST /api/admin/data-quality/spec-enrichment/apply
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'apply') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const phoneId = String(body.phoneId || '').trim();
+    if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
+    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null });
+    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+    const raw = body.specs && typeof body.specs === 'object' ? body.specs : {};
+    const clean = (value: unknown, max = 600) => String(value ?? '').trim().slice(0, max);
+    const update: Record<string, unknown> = {
+      display: clean(raw.display), chipset: clean(raw.chipset), ram: clean(raw.ram), storage: clean(raw.storage),
+      battery: clean(raw.battery), mainCamera: clean(raw.mainCamera), fiveG: clean(raw.fiveG, 20),
+    };
+    if (!Object.values(update).some(Boolean)) return NextResponse.json({ error: 'No specification values supplied' }, { status: 400 });
+    const numeric = (value: unknown, pattern: RegExp) => { const match = String(value || '').match(pattern); return match ? Number(match[1]) : null; };
+    const ramGB = numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i);
+    const storageGB = numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i);
+    const batteryMAh = numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i);
+    const mainCameraMP = numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i);
+    const screenSizeInch = numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i);
+    if (ramGB) update.ramGB = ramGB;
+    if (storageGB) update.storageGB = storageGB;
+    if (batteryMAh) update.batteryMAh = batteryMAh;
+    if (mainCameraMP) update.mainCameraMP = mainCameraMP;
+    if (screenSizeInch) update.screenSizeInch = screenSizeInch;
+
+    await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
+    phone.sourceName = clean(body.sourceName, 120) || 'Free community phone-spec API';
+    phone.sourceUrl = clean(body.sourceUrl, 1000);
+    phone.lastVerifiedAt = new Date();
+    phone.dataConfidence = 'auto-imported';
+    phone.updatedBy = authResult.admin._id;
+    await phone.save();
+    try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'free_specs_applied', details: `Applied reviewed free specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, phoneId, updatedFields: Object.keys(update).filter(key => update[key] !== '' && update[key] != null) });
+  }
 
   // POST /api/admin/data-quality/repair-import
   // Applies a reviewed repair work pack. No row is accepted without a valid
