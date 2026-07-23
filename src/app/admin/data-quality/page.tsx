@@ -8,10 +8,10 @@ import {
   Smartphone, Image, DollarSign, Copy, Ghost, Clock, Upload,
   ScanSearch, FileCheck, History, BarChart3,
   CheckCircle, X, Download, Play, Eye, EyeOff, Wrench,
-  ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag, WandSparkles,
+  ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag,
 } from 'lucide-react';
 
-type TabId = 'overview' | 'ai-review' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
+type TabId = 'overview' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
 
 interface SummaryData {
   health: {
@@ -28,7 +28,6 @@ interface SummaryData {
 
 const TABS: { id: TabId; label: string; icon: React.ElementType; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
-  { id: 'ai-review', label: 'AI Research', icon: WandSparkles },
   { id: 'issues', label: 'All Issues', icon: AlertTriangle },
   { id: 'missing-specs', label: 'Missing Specs', icon: Smartphone, issueTypeFilter: 'PHONE_MISSING_SPECS' },
   { id: 'missing-images', label: 'Missing Images', icon: Image, issueTypeFilter: 'PHONE_MISSING_PRIMARY_IMAGE' },
@@ -235,7 +234,6 @@ export default function DataQualityPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'ai-review' && <AIResearchReviewTab onPublished={fetchSummary} />}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
       {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
       {activeTab === 'missing-specs' && <LiveQueueTab type="specs" />}
@@ -326,8 +324,6 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [repairFileName, setRepairFileName] = useState('');
   const [repairResult, setRepairResult] = useState<any>(null);
   const [repairLoading, setRepairLoading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiMessage, setAiMessage] = useState('');
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -373,38 +369,6 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const exportAllCsv = () => { const params = new URLSearchParams({ type }); if (appliedQuery) params.set('q', appliedQuery); window.open(`/api/admin/data-quality/live-queue.csv?${params}`, '_blank'); };
   const toggleSelected = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const togglePage = () => setSelected(selected.size === items.length ? new Set() : new Set(items.map(item => item.id)));
-
-  const generateAiWorkPack = async () => {
-    const phoneIds = Array.from(selected).slice(0, 10);
-    if (!phoneIds.length) { setAiMessage('Select up to 10 phones first.'); return; }
-    setAiLoading(true); setAiMessage('');
-    try {
-      const res = await fetch('/api/admin/data-quality/ai-enrich', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ type, phoneIds }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'AI enrichment failed');
-      const byId = new Map(items.map(item => [item.id, item]));
-      const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', ...repairColumns, 'PTA Status', 'Data Confidence', 'Last Verified At', 'Admin Editor', 'AI Confidence', 'AI Source Notes', 'Research Sources', 'Conflict Warnings'];
-      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-      const rows = (data.suggestions || []).map((suggestion: any) => {
-        const item = byId.get(suggestion.phoneId);
-        const values = type === 'specs'
-          ? [suggestion.specs?.display, suggestion.specs?.chipset, suggestion.specs?.ram, suggestion.specs?.storage, suggestion.specs?.battery, suggestion.specs?.mainCamera, suggestion.specs?.fiveG]
-          : type === 'images'
-            ? [suggestion.images?.[0]?.url || '']
-            : [suggestion.price?.valuePKR || '', suggestion.price?.sourceName || '', suggestion.price?.sourceUrl || ''];
-        return [suggestion.phoneId, suggestion.brand || item?.brandName, suggestion.model || item?.modelName, item?.slug || '', type, ...values, item?.ptaStatus || '', 'ai-draft', '', `/admin/phones/${suggestion.phoneId}/edit`, Math.round((suggestion.confidence || 0) * 100) + '%', suggestion.sourceNotes || '', (suggestion.sources || []).map((source: any) => `${source.title} | ${source.url}`).join(' ; '), (suggestion.conflicts || []).join(' ; ')];
-      });
-      const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-      anchor.href = url; anchor.download = `phonedock-ai-${type}-drafts.csv`; anchor.click(); URL.revokeObjectURL(url);
-      setAiMessage(`${data.generated || 0} research drafts generated with sources. Review the downloaded CSV before importing.`);
-    } catch (e) { setAiMessage(e instanceof Error ? e.message : 'AI enrichment failed'); }
-    finally { setAiLoading(false); }
-  };
 
   const submitRepair = async (dryRun: boolean) => {
     if (!repairRows.length) return;
@@ -453,9 +417,8 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         </div>}
       </div>
 
-      {aiMessage && <div className="bg-violet-50 border border-violet-200 text-violet-800 rounded-xl p-3 text-sm">{aiMessage}</div>}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={generateAiWorkPack} disabled={aiLoading || selected.size > 10} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-violet-600 text-white rounded-lg text-xs font-medium disabled:opacity-50"><WandSparkles className="w-3.5 h-3.5" /> {aiLoading ? 'Generating…' : 'AI research work pack'}</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
         {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
@@ -479,166 +442,6 @@ interface AIDraft {
   phoneId?: { _id?: string; modelName?: string; slug?: string; thumbnail?: string; pricePKR?: number; dataConfidence?: string } | string;
   createdAt?: string;
 }
-
-function AIResearchReviewTab({ onPublished }: { onPublished: () => void }) {
-  const [drafts, setDrafts] = useState<AIDraft[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [type, setType] = useState<AIDraftType>('specs');
-  const [status, setStatus] = useState('pending_review');
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [edits, setEdits] = useState<Record<string, Record<string, any>>>({});
-  const [jobType, setJobType] = useState<AIDraftType>('specs');
-  const [jobLimit, setJobLimit] = useState(5);
-  const [message, setMessage] = useState('');
-  const [config, setConfig] = useState<any>(null);
-
-  const loadDrafts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ type, status, page: String(page), limit: '20' });
-      if (query.trim()) params.set('q', query.trim());
-      const res = await fetch(`/api/admin/data-quality/ai-drafts?${params}&t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to load AI drafts');
-      setDrafts(data.drafts || []); setPages(data.pages || 1); setSelected(new Set());
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load drafts'); }
-    finally { setLoading(false); }
-  }, [type, status, page, query]);
-
-  const loadJobs = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/admin/data-quality/ai-jobs?t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to load AI jobs');
-      setJobs(data.jobs || []);
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to load AI jobs'); }
-  }, []);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/admin/data-quality/ai-status?t=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to check AI configuration');
-      setConfig(data);
-      if (data.maxJobPhones) setJobLimit((current: number) => Math.min(current, data.maxJobPhones));
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to check AI configuration'); }
-  }, []);
-
-  useEffect(() => { loadDrafts(); }, [loadDrafts]);
-  useEffect(() => { loadJobs(); loadConfig(); }, [loadJobs, loadConfig]);
-
-  const updateEdit = (id: string, key: string, value: any) => setEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [key]: value } }));
-  const current = (draft: AIDraft, key: string, fallback: any = '') => edits[draft._id]?.[key] ?? fallback;
-
-  const act = async (action: 'approve' | 'reject' | 'save', ids?: string[]) => {
-    const draftIds = ids || Array.from(selected);
-    if (!draftIds.length) return;
-    if (action === 'approve' && !confirm(`Publish ${draftIds.length} reviewed AI draft(s) to live phone data?`)) return;
-    setBusy(action); setMessage('');
-    try {
-      const editPayload = Object.fromEntries(draftIds.map(id => [id, edits[id] || {}]));
-      const res = await fetch('/api/admin/data-quality/ai-drafts/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ action, draftIds, edits: editPayload }) });
-      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Action failed');
-      setMessage(`${action}: ${data.approved + data.rejected + data.saved || 0} successful, ${data.failed || 0} failed.`);
-      await loadDrafts(); if (action === 'approve') onPublished();
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Action failed'); }
-    finally { setBusy(''); }
-  };
-
-  async function createJob() {
-    if (!confirm(`Create AI research job for up to ${jobLimit} missing ${jobType} records? API usage may have a cost.`)) return;
-    setBusy('create-job'); setMessage('');
-    try {
-      const res = await fetch('/api/admin/data-quality/ai-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ type: jobType, maxPhones: jobLimit, batchSize: 5 }) });
-      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Unable to create job');
-      setMessage(`Job created for ${data.total} phones. Press Run next batch to start research.`);
-      await loadJobs();
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to create job'); }
-    finally { setBusy(''); }
-  }
-
-  async function runJob(jobId: string) {
-    setBusy(jobId); setMessage('');
-    try {
-      const res = await fetch(`/api/admin/data-quality/ai-jobs/${jobId}/run`, { method: 'POST', credentials: 'include', cache: 'no-store' });
-      const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Job batch failed');
-      await Promise.all([loadJobs(), loadDrafts()]);
-      const created = Number(data.generatedThisBatch || 0);
-      const failed = Array.isArray(data.failuresThisBatch) ? data.failuresThisBatch.length : 0;
-      if (created > 0) {
-        setType(data.job?.type || jobType);
-        setStatus('pending_review');
-        setPage(1);
-        setMessage(`${created} AI draft${created === 1 ? '' : 's'} saved and ready for review${failed ? `; ${failed} failed` : ''}.`);
-      } else if (failed > 0) {
-        const firstReason = data.failuresThisBatch?.[0]?.message || 'Research failed';
-        setMessage(`No drafts were created. ${failed} phone${failed === 1 ? '' : 's'} failed. First error: ${firstReason}`);
-      } else if (data.done) {
-        setMessage('Research job completed, but no new drafts were created.');
-      } else {
-        setMessage('Batch finished, but no new drafts were created.');
-      }
-    } catch (e) { setMessage(e instanceof Error ? e.message : 'Job failed'); }
-    finally { setBusy(''); }
-  }
-
-  const jobCommand = async (jobId: string, command: 'retry' | 'cancel') => {
-    setBusy(jobId);
-    try { const res = await fetch(`/api/admin/data-quality/ai-jobs/${jobId}/${command}`, { method: 'POST', credentials: 'include' }); const data = await res.json(); if (!res.ok) throw new Error(data.error || `${command} failed`); await loadJobs(); }
-    catch (e) { setMessage(e instanceof Error ? e.message : `${command} failed`); }
-    finally { setBusy(''); }
-  };
-
-  return <div className="space-y-5">
-    <div className="bg-violet-50 border border-violet-200 rounded-2xl p-5">
-      <div className="flex items-start gap-3"><WandSparkles className="w-6 h-6 text-violet-600 mt-0.5" /><div><h2 className="font-semibold text-violet-950">AI Research Control Center</h2><p className="text-sm text-violet-700 mt-1">Research creates review drafts only. Live specs, images and prices change only after explicit approval.</p></div></div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4 text-xs">
-        <div className={`rounded-xl border p-3 ${config?.providerConfigured ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>AI:</b> {config ? (config.providerConfigured ? `${config.providerName} · ${config.model}` : `${config.requestedProvider || 'provider'} missing key`) : 'Checking…'}</div>
-        <div className={`rounded-xl border p-3 ${config?.providers?.tavily ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'}`}><b>Tavily:</b> {config ? (config.providers.tavily ? 'Configured' : 'Missing key') : 'Checking…'}</div>
-        <div className={`rounded-xl border p-3 ${config?.configured?.[jobType] ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}><b>{jobType} research:</b> {config ? (config.configured[jobType] ? 'Ready' : 'Not configured') : 'Checking…'}</div>
-        <button onClick={() => { loadConfig(); loadJobs(); loadDrafts(); }} className="rounded-xl border border-violet-200 bg-white p-3 text-violet-700 font-medium">Refresh status</button>
-      </div>
-      {!config?.providerConfigured && config && <p className="mt-3 text-xs text-red-700">For OpenRouter set AI_PROVIDER=openrouter and OPENROUTER_API_KEY. For OpenAI set AI_PROVIDER=openai and OPENAI_API_KEY. Then redeploy.</p>}
-      {!config?.providers?.tavily && config && <p className="mt-1 text-xs text-red-700">Add TAVILY_API_KEY in Vercel Environment Variables for specs and price research, then redeploy.</p>}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
-        <select value={jobType} onChange={e => setJobType(e.target.value as AIDraftType)} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm"><option value="specs">Missing specs</option><option value="images">Missing images</option><option value="prices">Missing prices</option></select>
-        <input type="number" min={1} max={10} value={jobLimit} onChange={e => setJobLimit(Math.max(1, Math.min(10, Number(e.target.value) || 1)))} className="h-10 px-3 rounded-xl border border-violet-200 bg-white text-sm" />
-        <button onClick={createJob} disabled={busy === 'create-job' || config?.configured?.[jobType] === false} className="h-10 rounded-xl bg-violet-600 text-white text-sm font-medium disabled:opacity-50">{busy === 'create-job' ? 'Creating…' : 'Create bulk research job'}</button>
-        <button onClick={loadJobs} className="h-10 rounded-xl border border-violet-200 bg-white text-violet-700 text-sm font-medium">Refresh jobs</button>
-      </div>
-    </div>
-
-    {message && <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl p-3 text-sm">{message}</div>}
-
-    {jobs.length > 0 && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden"><div className="px-4 py-3 bg-gray-50 font-semibold text-sm">Recent AI research jobs</div>{jobs.slice(0, 8).map(job => { const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0; return <div key={job._id} className="px-4 py-3 border-t border-gray-100"><div className="flex flex-col lg:flex-row lg:items-center gap-3"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-medium text-sm capitalize">{job.type}</span><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{job.status}</span></div><p className="text-xs text-gray-500 mt-1">{job.processed}/{job.total} processed · {job.generated} drafts · {job.failed} failed</p><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-1.5 bg-violet-500 rounded-full" style={{ width: `${pct}%` }} /></div>{job.failures?.length ? <div className="mt-2 rounded-lg bg-red-50 border border-red-100 p-2"><p className="text-xs font-medium text-red-700">Latest failures</p>{job.failures.slice(-3).map((failure: any, index: number) => <p key={index} className="text-xs text-red-600 mt-1 break-words">{failure.message || 'Research failed'}</p>)}</div> : null}</div><div className="flex flex-wrap gap-2"><button onClick={() => runJob(job._id)} disabled={busy === job._id || ['completed','cancelled'].includes(job.status)} className="h-8 px-3 bg-violet-600 text-white rounded-lg text-xs disabled:opacity-40">Run next batch</button>{job.failed > 0 && <button onClick={() => jobCommand(job._id, 'retry')} className="h-8 px-3 border border-amber-200 text-amber-700 rounded-lg text-xs">Retry failed</button>} {!['completed','cancelled'].includes(job.status) && <button onClick={() => jobCommand(job._id, 'cancel')} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Cancel</button>}</div></div></div>; })}</div>}
-    {jobs.length === 0 && <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-6 text-center"><p className="font-medium text-gray-800">No AI research jobs yet</p><p className="text-sm text-gray-500 mt-1">Choose a queue above, create a lightweight job, then run each batch manually.</p></div>}
-
-    <div className="flex flex-col lg:flex-row lg:items-center gap-3 bg-white border border-gray-100 rounded-2xl p-4">
-      <select value={type} onChange={e => { setType(e.target.value as AIDraftType); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="specs">Specs drafts</option><option value="images">Image drafts</option><option value="prices">Price drafts</option></select>
-      <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="h-10 px-3 border border-gray-200 rounded-xl text-sm"><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
-      <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && loadDrafts()} placeholder="Search brand or model" className="h-10 px-3 border border-gray-200 rounded-xl text-sm flex-1" />
-      <button onClick={loadDrafts} className="h-10 px-4 bg-blue-600 text-white rounded-xl text-sm">Search</button>
-      {selected.size > 0 && status === 'pending_review' && <><button onClick={() => act('approve')} disabled={!!busy} className="h-10 px-4 bg-green-600 text-white rounded-xl text-sm">Approve selected</button><button onClick={() => act('reject')} disabled={!!busy} className="h-10 px-4 border border-red-200 text-red-600 rounded-xl text-sm">Reject selected</button></>}
-    </div>
-
-    {loading ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-44 rounded-2xl bg-gray-100 animate-pulse" />)}</div> : drafts.length === 0 ? <div className="py-16 text-center bg-white border border-gray-100 rounded-2xl"><WandSparkles className="w-10 h-10 text-gray-300 mx-auto mb-3" /><p className="text-gray-500">No matching AI drafts.</p></div> : <div className="space-y-4">{drafts.map(draft => {
-      const phone = typeof draft.phoneId === 'object' ? draft.phoneId : undefined; const isPending = draft.status === 'pending_review'; const confidence = Math.round((draft.confidence || 0) * 100);
-      return <div key={draft._id} className="bg-white border border-gray-100 rounded-2xl p-5"><div className="flex flex-col lg:flex-row gap-5"><div className="lg:w-64"><div className="flex gap-2"><input type="checkbox" disabled={!isPending} checked={selected.has(draft._id)} onChange={() => setSelected(prev => { const n = new Set(prev); n.has(draft._id) ? n.delete(draft._id) : n.add(draft._id); return n; })} /><div><h3 className="font-semibold text-gray-900">{draft.brand} {draft.model}</h3><p className="text-xs text-gray-500 mt-1">Current: {phone?.dataConfidence || 'unverified'} · AI confidence {confidence}%</p></div></div>{draft.conflicts?.length ? <div className="mt-3 p-2 bg-amber-50 text-amber-800 text-xs rounded-lg"><strong>Conflicts:</strong> {draft.conflicts.join(' · ')}</div> : null}<div className="mt-3 space-y-1">{(draft.sources || []).slice(0, 5).map((source, i) => source.url ? <a key={i} href={source.url} target="_blank" rel="noreferrer" className="block text-xs text-blue-600 hover:underline truncate">{source.domain || source.title || 'Source'}</a> : null)}</div></div>
-      <div className="flex-1">{draft.type === 'specs' ? <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{[['display','Display'],['chipset','Chipset'],['ram','RAM'],['storage','Storage'],['battery','Battery'],['mainCamera','Main camera'],['fiveG','5G']].map(([key,label]) => <label key={key} className="text-xs text-gray-500">{label}<input disabled={!isPending} value={current(draft, key, draft.specs?.[key] || '')} onChange={e => updateEdit(draft._id, key, e.target.value)} className="mt-1 h-9 w-full px-3 border border-gray-200 rounded-lg text-sm disabled:bg-gray-50" /></label>)}</div> : draft.type === 'images' ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div>{phone?.thumbnail ? <img src={phone.thumbnail} alt="Current" className="h-40 w-full object-contain bg-gray-50 rounded-xl" /> : <div className="h-40 bg-gray-50 rounded-xl flex items-center justify-center text-xs text-gray-400">No current image</div>}<p className="text-xs text-gray-500 mt-1">Current image</p></div><div>{current(draft, 'imageUrl', draft.images?.[0]?.url || '') ? <img src={current(draft, 'imageUrl', draft.images?.[0]?.url || '')} alt="AI candidate" className="h-40 w-full object-contain bg-gray-50 rounded-xl" /> : null}<input disabled={!isPending} value={current(draft, 'imageUrl', draft.images?.[0]?.url || '')} onChange={e => updateEdit(draft._id, 'imageUrl', e.target.value)} className="mt-2 h-9 w-full px-3 border border-gray-200 rounded-lg text-xs" /></div></div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="text-xs text-gray-500">Current PKR<input disabled value={phone?.pricePKR || 0} className="mt-1 h-9 w-full px-3 border rounded-lg bg-gray-50" /></label><label className="text-xs text-gray-500">Suggested PKR<input disabled={!isPending} type="number" value={current(draft, 'valuePKR', draft.price?.valuePKR || '')} onChange={e => updateEdit(draft._id, 'valuePKR', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label><label className="text-xs text-gray-500">Source<input disabled={!isPending} value={current(draft, 'sourceName', draft.price?.sourceName || '')} onChange={e => updateEdit(draft._id, 'sourceName', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label><label className="text-xs text-gray-500 md:col-span-3">Source URL<input disabled={!isPending} value={current(draft, 'sourceUrl', draft.price?.sourceUrl || '')} onChange={e => updateEdit(draft._id, 'sourceUrl', e.target.value)} className="mt-1 h-9 w-full px-3 border rounded-lg" /></label></div>}
-      {draft.sourceNotes && <p className="text-xs text-gray-500 mt-3">{draft.sourceNotes}</p>}{isPending && <div className="flex flex-wrap gap-2 mt-4"><button onClick={() => act('save', [draft._id])} disabled={!!busy} className="h-8 px-3 border border-blue-200 text-blue-700 rounded-lg text-xs">Save edits</button><button onClick={() => act('approve', [draft._id])} disabled={!!busy} className="h-8 px-3 bg-green-600 text-white rounded-lg text-xs">Approve & publish</button><button onClick={() => act('reject', [draft._id])} disabled={!!busy} className="h-8 px-3 border border-red-200 text-red-600 rounded-lg text-xs">Reject</button>{phone?.slug && <a href={`/phones/${phone.slug}`} target="_blank" className="h-8 px-3 border border-gray-200 rounded-lg text-xs inline-flex items-center">View phone</a>}</div>}</div></div></div>;
-    })}</div>}
-    {pages > 1 && <div className="flex justify-center gap-3"><button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500 py-2">Page {page} of {pages}</span><button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="px-3 py-2 border rounded-lg text-sm disabled:opacity-50">Next</button></div>}
-  </div>;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// OVERVIEW TAB
-// ═══════════════════════════════════════════════════════════════════
 
 function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | null; loading: boolean; onRefresh: () => void }) {
   if (loading) return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}</div>;
