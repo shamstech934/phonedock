@@ -22,8 +22,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     return NextResponse.json({
       ...status,
       providers: {
-        openRouter: status.requestedProvider === 'openrouter' ? status.providerConfigured : Boolean(process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.OPEN_ROUTER_API_KEY),
-        openAI: status.requestedProvider === 'openai' ? status.providerConfigured : Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY),
+        openRouter: Boolean(process.env.OPENROUTER_API_KEY),
+        openAI: Boolean(process.env.OPENAI_API_KEY || process.env.AI_ENRICHMENT_API_KEY),
         tavily: status.tavily,
         imageSearch: status.imageSearch,
       },
@@ -61,10 +61,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:read');
     if (permCheck) return permCheck;
-    const { searchParams } = new URL(req.url);
-    const includeFinished = searchParams.get('includeFinished') === 'true';
-    const filter = includeFinished ? {} : { status: { $nin: ['completed', 'completed_with_errors', 'cancelled'] } };
-    const jobs = await AIResearchJob.find(filter).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
+    const jobs = await AIResearchJob.find({}).select('-phoneIds').sort({ createdAt: -1 }).limit(25).lean();
     return NextResponse.json({ jobs });
   }
   // GET /api/admin/data-quality/summary
@@ -689,25 +686,13 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     return NextResponse.json({ action, approved, rejected, saved, failed, results });
   }
 
-  // POST /api/admin/data-quality/ai-jobs/cleanup - remove finished job history only.
-  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs' && segments[3] === 'cleanup') {
-    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
-    const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
-    const result = await AIResearchJob.deleteMany({ status: { $in: ['completed', 'completed_with_errors', 'cancelled'] } });
-    return NextResponse.json({ deleted: result.deletedCount || 0 });
-  }
-
   // POST /api/admin/data-quality/ai-jobs - create a persistent bulk research job.
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-jobs') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:fix'); if (permCheck) return permCheck;
     const body = await req.json(); const type = String(body.type || '');
     if (!['specs','images','prices'].includes(type)) return NextResponse.json({ error: 'Invalid job type' }, { status: 400 });
-    if (!aiEnrichmentConfigured(type)) {
-      const status = getAIStatus();
-      const missing = [!status.providerConfigured ? `${status.requestedProvider} API key` : '', !status.tavily && type !== 'images' ? 'TAVILY_API_KEY' : '', type === 'images' && !status.tavily && !status.imageSearch ? 'TAVILY_API_KEY or AI_IMAGE_SEARCH_URL' : ''].filter(Boolean);
-      return NextResponse.json({ error: `AI ${type} research is not configured. Missing: ${missing.join(', ') || 'provider configuration'}.` }, { status: 503 });
-    }
+    if (!aiEnrichmentConfigured(type as any)) return NextResponse.json({ error: 'AI research providers are not configured' }, { status: 503 });
     const requested = Array.isArray(body.phoneIds) ? body.phoneIds.map(String).filter(Types.ObjectId.isValid) : [];
     const maxPhones = parseBoundedInt(String(body.maxPhones || process.env.AI_RESEARCH_MAX_JOB_PHONES || 10), 10, 1, 10);
     let phoneIds: any[] = requested.slice(0, maxPhones).map((id: string) => new Types.ObjectId(id));
@@ -738,23 +723,54 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
     if (command !== 'run') return NextResponse.json({ error: 'Unsupported command' }, { status: 400 });
     if (['completed','cancelled'].includes(job.status)) return NextResponse.json({ job, done: true });
-    const ids = job.phoneIds.slice(job.cursor, job.cursor + job.batchSize); if (!ids.length) { job.status = job.failed ? 'completed_with_errors' : 'completed'; job.completedAt = new Date(); await job.save(); return NextResponse.json({ job, done: true }); }
+    const ids = job.phoneIds.slice(job.cursor, job.cursor + job.batchSize);
+    if (!ids.length) {
+      job.status = job.failed ? 'completed_with_errors' : 'completed';
+      job.completedAt = new Date();
+      await job.save();
+      return NextResponse.json({ job, done: true, generatedThisBatch: 0, draftIds: [], failuresThisBatch: [] });
+    }
     job.status = 'running'; job.startedAt ||= new Date(); job.lastRunAt = new Date(); await job.save();
     const phones = await Phone.find({ _id: { $in: ids }, deletedAt: null }).select('_id modelName slug brandId').populate('brandId', 'name').lean();
-    for (const phone of phones as any[]) {
+    const phonesById = new Map((phones as any[]).map(phone => [phone._id.toString(), phone]));
+    const draftIds: string[] = [];
+    const failuresThisBatch: Array<{ phoneId: string; message: string }> = [];
+
+    // Iterate over the queued IDs, not only the phones returned by MongoDB.
+    // This guarantees that missing/deleted IDs still advance the cursor and
+    // cannot leave a job permanently stuck in the running state.
+    for (const queuedId of ids) {
+      const phoneId = queuedId.toString();
+      const phone: any = phonesById.get(phoneId);
       try {
-        const [suggestion] = await generateEnrichmentSuggestions(job.type, [{ id: phone._id.toString(), brand: phone.brandId?.name || 'Unknown', model: phone.modelName || '', slug: phone.slug || '' }]);
+        if (!phone) throw new Error('Phone record no longer exists');
+        const [suggestion] = await generateEnrichmentSuggestions(job.type, [{ id: phoneId, brand: phone.brandId?.name || 'Unknown', model: phone.modelName || '', slug: phone.slug || '' }]);
         if (!suggestion) throw new Error('No suggestion returned');
-        await AIResearchDraft.updateMany({ phoneId: phone._id, type: job.type, status: 'pending_review' }, { $set: { status: 'rejected', reviewedAt: new Date() } });
-        await AIResearchDraft.create({ ...suggestion, phoneId: phone._id, type: job.type, jobId: job._id, status: 'pending_review', createdBy: authResult.admin._id });
+        await AIResearchDraft.updateMany({ phoneId: phone._id, type: job.type, status: 'pending_review' }, { $set: { status: 'rejected', reviewedAt: new Date(), reviewedBy: authResult.admin._id } });
+        const savedDraft: any = await AIResearchDraft.create({ ...suggestion, phoneId: phone._id, type: job.type, jobId: job._id, status: 'pending_review', createdBy: authResult.admin._id });
+        // Verify persistence before counting the result as generated.
+        const persisted = await AIResearchDraft.exists({ _id: savedDraft._id, status: 'pending_review' });
+        if (!persisted) throw new Error('Draft was not persisted');
+        draftIds.push(savedDraft._id.toString());
         job.generated += 1;
-      } catch (error) { job.failed += 1; job.failures.push({ phoneId: phone._id, message: error instanceof Error ? error.message : 'Research failed', attempts: 1 }); }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Research failed';
+        job.failed += 1;
+        job.failures.push({ phoneId: queuedId, message, attempts: 1 });
+        failuresThisBatch.push({ phoneId, message });
+      }
       job.processed += 1; job.cursor += 1;
     }
     if (job.cursor >= job.total) { job.status = job.failed ? 'completed_with_errors' : 'completed'; job.completedAt = new Date(); }
     else job.status = 'paused';
     await job.save();
-    return NextResponse.json({ job: { _id: job._id, type: job.type, status: job.status, total: job.total, processed: job.processed, generated: job.generated, failed: job.failed }, done: ['completed','completed_with_errors'].includes(job.status) });
+    return NextResponse.json({
+      job: { _id: job._id, type: job.type, status: job.status, total: job.total, processed: job.processed, generated: job.generated, failed: job.failed },
+      done: ['completed','completed_with_errors'].includes(job.status),
+      generatedThisBatch: draftIds.length,
+      draftIds,
+      failuresThisBatch,
+    });
   }
   // POST /api/admin/data-quality/ai-enrich
   // Creates review-only draft suggestions. Nothing is written to Phone/PhoneSpecs.
@@ -772,8 +788,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!aiEnrichmentConfigured(type)) {
       return NextResponse.json({
         error: type === 'images'
-          ? 'Configure the selected AI provider key plus TAVILY_API_KEY or AI_IMAGE_SEARCH_URL.'
-          : 'Configure the selected AI provider key and TAVILY_API_KEY.',
+          ? 'Configure OPENAI_API_KEY plus TAVILY_API_KEY or AI_IMAGE_SEARCH_URL.'
+          : 'Configure OPENAI_API_KEY and TAVILY_API_KEY.',
       }, { status: 503 });
     }
 
