@@ -4,6 +4,7 @@ import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, 
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { parseBoundedInt } from '@/lib/http';
+import { aiEnrichmentConfigured, generateEnrichmentSuggestions } from '@/lib/ai-enrichment';
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -546,6 +547,43 @@ function csvSafe(val: string): string {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // POST /api/admin/data-quality/ai-enrich
+  // Creates review-only draft suggestions. Nothing is written to Phone/PhoneSpecs.
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'ai-enrich') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const type = String(body.type || '') as 'specs' | 'images' | 'prices';
+    const phoneIds = Array.isArray(body.phoneIds) ? body.phoneIds.map((id: unknown) => String(id)).filter((id: string) => Types.ObjectId.isValid(id)).slice(0, 10) : [];
+    if (!['specs', 'images', 'prices'].includes(type)) return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
+    if (!phoneIds.length) return NextResponse.json({ error: 'Select between 1 and 10 phones' }, { status: 400 });
+    if (!aiEnrichmentConfigured(type)) {
+      return NextResponse.json({
+        error: type === 'images'
+          ? 'Configure AI_IMAGE_SEARCH_URL (and optional AI_IMAGE_SEARCH_KEY), or configure the AI enrichment provider.'
+          : 'Configure AI_ENRICHMENT_API_URL, AI_ENRICHMENT_API_KEY, and AI_ENRICHMENT_MODEL.',
+      }, { status: 503 });
+    }
+
+    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null })
+      .select('_id modelName slug brandId')
+      .populate('brandId', 'name')
+      .lean();
+    const input = phones.map((phone: any) => ({ id: phone._id.toString(), brand: phone.brandId?.name || 'Unknown', model: phone.modelName || '', slug: phone.slug || '' }));
+    try {
+      const suggestions = await generateEnrichmentSuggestions(type, input);
+      try {
+        await ActivityLog.create({ adminId: authResult.admin._id, action: 'ai_enrichment_draft', details: `Generated ${suggestions.length} review-only ${type} drafts`, entityType: 'data_quality', entityId: '' });
+      } catch (e) { console.error('[ActivityLog]', e); }
+      return NextResponse.json({ type, requested: input.length, generated: suggestions.length, suggestions, reviewOnly: true });
+    } catch (error) {
+      console.error('[AI enrichment]', error);
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'AI enrichment failed' }, { status: 502 });
+    }
+  }
   // POST /api/admin/data-quality/repair-import
   // Applies a reviewed repair work pack. No row is accepted without a valid
   // existing Phone ID, and a dry run is supported before any database write.

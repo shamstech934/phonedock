@@ -8,7 +8,7 @@ import {
   Smartphone, Image, DollarSign, Copy, Ghost, Clock, Upload,
   ScanSearch, FileCheck, History, BarChart3,
   CheckCircle, X, Download, Play, Eye, EyeOff, Wrench,
-  ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag,
+  ChevronRight, Loader2, RefreshCw, Search, Trash2, Tag, WandSparkles,
 } from 'lucide-react';
 
 type TabId = 'overview' | 'issues' | 'missing-specs' | 'missing-images' | 'missing-prices' | 'duplicates' | 'orphans' | 'stale-prices' | 'import-warnings' | 'low-confidence' | 'price-issues' | 'brand-issues' | 'scan-history';
@@ -324,6 +324,8 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [repairFileName, setRepairFileName] = useState('');
   const [repairResult, setRepairResult] = useState<any>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -369,6 +371,38 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const exportAllCsv = () => { const params = new URLSearchParams({ type }); if (appliedQuery) params.set('q', appliedQuery); window.open(`/api/admin/data-quality/live-queue.csv?${params}`, '_blank'); };
   const toggleSelected = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const togglePage = () => setSelected(selected.size === items.length ? new Set() : new Set(items.map(item => item.id)));
+
+  const generateAiWorkPack = async () => {
+    const phoneIds = Array.from(selected).slice(0, 10);
+    if (!phoneIds.length) { setAiMessage('Select up to 10 phones first.'); return; }
+    setAiLoading(true); setAiMessage('');
+    try {
+      const res = await fetch('/api/admin/data-quality/ai-enrich', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ type, phoneIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'AI enrichment failed');
+      const byId = new Map(items.map(item => [item.id, item]));
+      const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', ...repairColumns, 'PTA Status', 'Data Confidence', 'Last Verified At', 'Admin Editor', 'AI Confidence', 'AI Source Notes'];
+      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = (data.suggestions || []).map((suggestion: any) => {
+        const item = byId.get(suggestion.phoneId);
+        const values = type === 'specs'
+          ? [suggestion.specs?.display, suggestion.specs?.chipset, suggestion.specs?.ram, suggestion.specs?.storage, suggestion.specs?.battery, suggestion.specs?.mainCamera, suggestion.specs?.fiveG]
+          : type === 'images'
+            ? [suggestion.images?.[0]?.url || '']
+            : [suggestion.price?.valuePKR || '', suggestion.price?.sourceName || '', suggestion.price?.sourceUrl || ''];
+        return [suggestion.phoneId, suggestion.brand || item?.brandName, suggestion.model || item?.modelName, item?.slug || '', type, ...values, item?.ptaStatus || '', 'ai-draft', '', `/admin/phones/${suggestion.phoneId}/edit`, Math.round((suggestion.confidence || 0) * 100) + '%', suggestion.sourceNotes || ''];
+      });
+      const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = `phonedock-ai-${type}-drafts.csv`; anchor.click(); URL.revokeObjectURL(url);
+      setAiMessage(`${data.generated || 0} AI drafts generated. Review the downloaded CSV before importing.`);
+    } catch (e) { setAiMessage(e instanceof Error ? e.message : 'AI enrichment failed'); }
+    finally { setAiLoading(false); }
+  };
 
   const submitRepair = async (dryRun: boolean) => {
     if (!repairRows.length) return;
@@ -417,8 +451,9 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         </div>}
       </div>
 
+      {aiMessage && <div className="bg-violet-50 border border-violet-200 text-violet-800 rounded-xl p-3 text-sm">{aiMessage}</div>}
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={generateAiWorkPack} disabled={aiLoading || selected.size > 10} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-violet-600 text-white rounded-lg text-xs font-medium disabled:opacity-50"><WandSparkles className="w-3.5 h-3.5" /> {aiLoading ? 'Generating…' : 'AI draft work pack'}</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
         {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
