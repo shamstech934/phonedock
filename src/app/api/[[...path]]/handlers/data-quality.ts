@@ -563,8 +563,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!aiEnrichmentConfigured(type)) {
       return NextResponse.json({
         error: type === 'images'
-          ? 'Configure AI_IMAGE_SEARCH_URL (and optional AI_IMAGE_SEARCH_KEY), or configure the AI enrichment provider.'
-          : 'Configure AI_ENRICHMENT_API_URL, AI_ENRICHMENT_API_KEY, and AI_ENRICHMENT_MODEL.',
+          ? 'Configure OPENAI_API_KEY plus TAVILY_API_KEY or AI_IMAGE_SEARCH_URL.'
+          : 'Configure OPENAI_API_KEY and TAVILY_API_KEY.',
       }, { status: 503 });
     }
 

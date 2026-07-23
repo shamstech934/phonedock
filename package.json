@@ -1,6 +1,6 @@
 {
   "name": "phonedock",
-  "version": "9.0.0-pc.5",
+  "version": "9.0.0-pc.6",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -39,7 +39,8 @@
     "audit:seo": "tsx scripts/__tests__/seo-performance-v6.test.ts",
     "test:v8-rc5": "tsx scripts/__tests__/v8-rc5-search.test.ts",
     "test:v8-rc7": "tsx scripts/__tests__/v8-rc7-smart-relaxation.test.ts",
-    "test:v9-pc5": "tsx scripts/__tests__/v9-pc5-ai-enrichment.test.ts"
+    "test:v9-pc5": "tsx scripts/__tests__/v9-pc5-ai-enrichment.test.ts",
+    "test:v9-pc6": "tsx scripts/__tests__/v9-pc6-ai-research.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
