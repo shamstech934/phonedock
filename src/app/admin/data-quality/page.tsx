@@ -283,6 +283,33 @@ interface LiveQueueItem {
   missing: LiveQueueType;
 }
 
+function parseCsvWorkPack(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (char === '"' && quoted && next === '"') { cell += '"'; i++; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (char === ',' && !quoted) { row.push(cell); cell = ''; continue; }
+    if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.some(value => value.trim())) rows.push(row);
+      row = [];
+      continue;
+    }
+    cell += char;
+  }
+  row.push(cell);
+  if (row.some(value => value.trim())) rows.push(row);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header, index) => (index === 0 ? header.replace(/^\uFEFF/, '') : header).trim());
+  return rows.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, (values[index] || '').trim()])));
+}
+
 function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [items, setItems] = useState<LiveQueueItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -293,6 +320,10 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [repairRows, setRepairRows] = useState<Record<string, string>[]>([]);
+  const [repairFileName, setRepairFileName] = useState('');
+  const [repairResult, setRepairResult] = useState<any>(null);
+  const [repairLoading, setRepairLoading] = useState(false);
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -303,58 +334,57 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const QueueIcon = cfg.icon;
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams({ type, page: String(page), limit: '50' });
       if (appliedQuery) params.set('q', appliedQuery);
       const res = await fetch(`/api/admin/data-quality/live-queue?${params}`, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unable to load queue');
-      setItems(data.items || []);
-      setTotal(data.total || 0);
-      setPages(data.pages || 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load queue');
-    } finally {
-      setLoading(false);
-    }
+      setItems(data.items || []); setTotal(data.total || 0); setPages(data.pages || 1);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load queue'); }
+    finally { setLoading(false); }
   }, [type, page, appliedQuery]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); setSelected(new Set()); }, [type]);
+  useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); setSelected(new Set()); setRepairRows([]); setRepairResult(null); }, [type]);
   useEffect(() => { setSelected(new Set()); }, [page, appliedQuery]);
 
+  const repairColumns = type === 'specs'
+    ? ['Display', 'Chipset', 'RAM', 'Storage', 'Battery', 'Main Camera', '5G']
+    : type === 'images' ? ['Thumbnail URL'] : ['New Price PKR', 'Source Name', 'Source URL'];
+
   const downloadItemsCsv = (rowsToExport: LiveQueueItem[], suffix: string) => {
-    const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', 'Price PKR', 'PTA Status', 'Confidence', 'Last Updated'];
+    const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', ...repairColumns, 'PTA Status', 'Data Confidence', 'Last Verified At', 'Admin Editor'];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = rowsToExport.map(item => [item.id, item.brandName, item.modelName, item.slug, item.missing, item.pricePKR || '', item.ptaStatus, item.dataConfidence, item.updatedAt || '']);
-    const csv = [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
+    const rows = rowsToExport.map(item => [item.id, item.brandName, item.modelName, item.slug, item.missing, ...repairColumns.map(() => ''), item.ptaStatus, item.dataConfidence, '', `/admin/phones/${item.id}/edit`]);
+    const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `phonedock-missing-${type}-${suffix}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `phonedock-missing-${type}-${suffix}.csv`; anchor.click(); URL.revokeObjectURL(url);
   };
 
   const exportPageCsv = () => downloadItemsCsv(items, `page-${page}`);
   const exportSelectedCsv = () => downloadItemsCsv(items.filter(item => selected.has(item.id)), 'selected');
-  const exportAllCsv = () => {
-    const params = new URLSearchParams({ type });
-    if (appliedQuery) params.set('q', appliedQuery);
-    window.open(`/api/admin/data-quality/live-queue.csv?${params}`, '_blank');
-  };
-
-  const toggleSelected = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  const exportAllCsv = () => { const params = new URLSearchParams({ type }); if (appliedQuery) params.set('q', appliedQuery); window.open(`/api/admin/data-quality/live-queue.csv?${params}`, '_blank'); };
+  const toggleSelected = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const togglePage = () => setSelected(selected.size === items.length ? new Set() : new Set(items.map(item => item.id)));
+
+  const submitRepair = async (dryRun: boolean) => {
+    if (!repairRows.length) return;
+    setRepairLoading(true); setRepairResult(null);
+    try {
+      const res = await fetch('/api/admin/data-quality/repair-import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ type, rows: repairRows.slice(0, 500), dryRun }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Repair import failed');
+      setRepairResult(data);
+      if (!dryRun && data.updated > 0) load();
+    } catch (e) { setRepairResult({ failed: repairRows.length, error: e instanceof Error ? e.message : 'Repair import failed' }); }
+    finally { setRepairLoading(false); }
+  };
 
   return (
     <div className="space-y-4">
@@ -363,7 +393,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
           <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center"><QueueIcon className="w-5 h-5 text-red-600" /></div>
           <div><h2 className="font-semibold text-gray-900">{cfg.title}</h2><p className="text-sm text-gray-500 mt-0.5">{cfg.help}</p><p className="text-xs text-gray-400 mt-1">Live source count: {total.toLocaleString()}</p></div>
         </div>
-        <form onSubmit={e => { e.preventDefault(); setPage(1); setAppliedQuery(query.trim()); }} className="flex gap-2">
+        <form onSubmit={e => { e.preventDefault(); setPage(1); setAppliedQuery(query.trim()); }} className="flex flex-wrap gap-2">
           <div className="relative"><Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search phone name" className="h-9 w-56 pl-9 pr-3 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400" /></div>
           <button className="h-9 px-3 bg-blue-600 text-white rounded-xl text-sm font-medium">Search</button>
           <button type="button" onClick={exportPageCsv} disabled={!items.length} className="h-9 px-3 border border-gray-200 rounded-xl text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"><Download className="w-4 h-4" /> Export page</button>
@@ -371,32 +401,28 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         </form>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {selected.size > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-          <span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected on this page</span>
-          <button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button>
-          <button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear selection</button>
-          <p className="sm:ml-auto text-xs text-blue-600">Use the CSV as a controlled repair work pack; imported values should still be reviewed before publishing.</p>
+      <div className="bg-white border border-blue-100 rounded-2xl p-5">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+          <div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-blue-600" /> Import reviewed repair CSV</h3><p className="text-sm text-gray-500 mt-1">Export a work pack, fill only the repair columns, then upload it here. Preview validates every row before apply.</p></div>
+          <label className="h-10 px-4 inline-flex items-center justify-center rounded-xl border border-blue-200 text-blue-700 text-sm font-medium cursor-pointer hover:bg-blue-50">
+            Choose CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; const rows = parseCsvWorkPack(await file.text()); setRepairRows(rows); setRepairFileName(file.name); setRepairResult(null); }} />
+          </label>
+          <button onClick={() => submitRepair(true)} disabled={!repairRows.length || repairLoading} className="h-10 px-4 rounded-xl border border-gray-200 text-sm font-medium disabled:opacity-50">Preview</button>
+          <button onClick={() => { if (confirm(`Apply reviewed ${type} repairs to the database?`)) submitRepair(false); }} disabled={!repairRows.length || repairLoading || !repairResult || repairResult.failed > 0} className="h-10 px-4 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-50">Apply repairs</button>
         </div>
-      )}
-      {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? (
-        <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p><p className="text-sm text-gray-400 mt-1">Try clearing the search or refresh the queue.</p></div>
-      ) : (
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
-          {items.map(item => (
-            <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0">
-              <div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" aria-label={`Select ${item.modelName}`} /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div>
-              <div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div>
-              <div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? (item.pricePKR > 0 ? `PKR ${item.pricePKR.toLocaleString()}` : 'No valid price') : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div>
-              <div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div>
-              <div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div>
-            </div>
-          ))}
-        </div>
-      )}
+        {repairFileName && <p className="text-xs text-gray-500 mt-3">{repairFileName} · {repairRows.length} rows loaded (maximum 500 per batch)</p>}
+        {repairResult && <div className={`mt-3 rounded-xl p-3 text-sm ${repairResult.error || repairResult.failed > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
+          {repairResult.error ? repairResult.error : `${repairResult.dryRun ? 'Preview' : 'Import'}: ${repairResult.ready || 0} ready, ${repairResult.updated || 0} updated, ${repairResult.skipped || 0} skipped, ${repairResult.failed || 0} failed.`}
+          {repairResult.results?.some((r: any) => r.status !== 'ready' && r.status !== 'updated') && <div className="mt-2 text-xs space-y-1">{repairResult.results.filter((r: any) => r.status !== 'ready' && r.status !== 'updated').slice(0, 5).map((r: any) => <p key={`${r.row}-${r.phoneId}`}>Row {r.row}: {r.message}</p>)}</div>}
+        </div>}
+      </div>
 
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
+      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
+        {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex gap-2"><a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Open editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
+      </div>}
       {pages > 1 && <div className="flex items-center justify-center gap-3"><button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Previous</button><span className="text-sm text-gray-500">Page {page} of {pages}</span><button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="px-3 py-2 border border-gray-200 rounded-lg text-sm disabled:opacity-50">Next</button></div>}
     </div>
   );
