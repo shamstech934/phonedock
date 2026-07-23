@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Smartphone, Layers, TrendingUp, Star, Tag, Newspaper,
   Upload, RefreshCw, Eye, BarChart3, Activity, Database, Plus, Edit, Trash2,
-  Video, MessageSquare, HandCoins, ShieldCheck, Cog, Webhook, ArrowRight, AlertTriangle,
+  Video, MessageSquare, HandCoins, ShieldCheck, CheckCircle2, Cog, Webhook, ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
 import { formatPrice } from '@/components/shared/formatPrice';
