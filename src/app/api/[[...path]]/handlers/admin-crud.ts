@@ -8,6 +8,7 @@ import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate'
 import { escapeRegex } from '@/lib/sanitize';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { parseBoundedInt } from '@/lib/http';
+import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
 
 // ============ LOCAL TYPES ============
 
@@ -1248,6 +1249,13 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     for (const item of normalizedRows) {
       try {
         const { raw, brandName, modelName, slug } = item;
+        // Normalize flat CSV/JSON columns (displaySize, chipset, ram, storage,
+        // cameras, battery, charging, os, etc.) into the nested PhoneSpecs
+        // shape expected by MongoDB. The admin preview sends flat rows, so
+        // checking only raw.specs caused successful phone imports with almost
+        // no PhoneSpecs documents.
+        const normalizedImport = normalizePhoneRecord(raw, item.row);
+        const normalizedData = normalizedImport.normalizedData;
         const brandId = brandMap.get(brandName.toLowerCase());
         if (!brandId) throw new Error(`Brand could not be created: ${brandName}`);
 
@@ -1263,15 +1271,15 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
           brandId,
           modelName,
           slug,
-          pricePKR: parseInt(String(raw.pricePKR || ''), 10) || parseInt(String(raw.price || ''), 10) || 0,
-          ptaStatus: raw.ptaStatus || 'Unknown',
-          ptaApproved: raw.ptaApproved === true,
-          releaseDate: raw.releaseDate || '',
-          thumbnail: raw.thumbnail || '',
-          description: raw.description || '',
-          featured: raw.featured === true,
-          trending: raw.trending === true,
-          upcoming: raw.upcoming === true,
+          pricePKR: normalizedData.pricePKR ?? 0,
+          ptaStatus: normalizedData.ptaStatus || 'Unknown',
+          ptaApproved: normalizedData.ptaApproved,
+          releaseDate: normalizedData.releaseDate || '',
+          thumbnail: normalizedData.thumbnail || String(raw.imageUrl || '').trim(),
+          description: normalizedData.description || '',
+          featured: normalizedData.featured,
+          trending: normalizedData.trending,
+          upcoming: normalizedData.upcoming,
           status: 'published',
           active: true,
           cameraScore: parseInt(String(raw.cameraScore || ''), 10) || 0,
@@ -1297,12 +1305,19 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
           existingByBrandModel.set(brandModelKey, compactPhone);
         }
 
-        if (raw.specs && typeof raw.specs === 'object') {
-          const { _id: _specId, __v: _specVersion, phoneId: _ignoredPhoneId, ...safeSpecs } = raw.specs as Record<string, unknown>;
+        const nestedSpecs = raw.specs && typeof raw.specs === 'object'
+          ? raw.specs as Record<string, unknown>
+          : {};
+        const { _id: _specId, __v: _specVersion, phoneId: _ignoredPhoneId, ...safeNestedSpecs } = nestedSpecs;
+        const mergedSpecs = { ...normalizedData.specs, ...safeNestedSpecs };
+        const nonEmptySpecs = Object.fromEntries(
+          Object.entries(mergedSpecs).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== ''),
+        );
+        if (Object.keys(nonEmptySpecs).length > 0) {
           specsOps.push({
             updateOne: {
               filter: { phoneId },
-              update: { $set: { ...safeSpecs, phoneId } },
+              update: { $set: { ...nonEmptySpecs, phoneId } },
               upsert: true,
             },
           });

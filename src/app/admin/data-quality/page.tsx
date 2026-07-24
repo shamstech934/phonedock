@@ -67,14 +67,30 @@ export default function DataQualityPage() {
 
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
+  const [summaryError, setSummaryError] = useState('');
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [scanStatus, setScanStatus] = useState<{ running: boolean; scanId?: string; progress?: { status: string; processed: number; total: number; issuesFound: number } }>({ running: false });
 
   const fetchSummary = useCallback(async () => {
+    setLoadingSummary(true);
+    setSummaryError('');
     try {
-      const res = await fetch('/api/admin/data-quality/summary', { credentials: 'include' });
-      if (res.ok) setSummary(await res.json());
-    } catch (e) { console.error(e); }
-    finally { setLoadingSummary(false); }
+      const res = await fetch(`/api/admin/data-quality/summary?refresh=${Date.now()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(payload?.error || `Refresh failed (${res.status})`);
+      setSummary(payload);
+      setLastRefreshedAt(new Date());
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unable to refresh data quality summary';
+      setSummaryError(message);
+      console.error(e);
+    } finally {
+      setLoadingSummary(false);
+    }
   }, []);
 
   useEffect(() => { if (admin) fetchSummary(); }, [admin, fetchSummary]);
@@ -145,10 +161,13 @@ export default function DataQualityPage() {
             <Eye className="w-4 h-4" /> Dry Run
           </button>
           <button
-            onClick={fetchSummary}
-            className="p-2 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 transition-colors"
+            onClick={() => void fetchSummary()}
+            disabled={loadingSummary}
+            className="p-2 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={lastRefreshedAt ? `Last refreshed ${lastRefreshedAt.toLocaleTimeString()}` : 'Refresh live counts'}
+            aria-label="Refresh live data quality counts"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${loadingSummary ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={async () => {
@@ -174,6 +193,12 @@ export default function DataQualityPage() {
           </button>
         </div>
       </div>
+
+      {summaryError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {summaryError}
+        </div>
+      )}
 
       {/* Scan Progress */}
       {scanStatus.running && scanStatus.progress && (
