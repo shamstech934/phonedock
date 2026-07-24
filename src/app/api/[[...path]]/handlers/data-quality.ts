@@ -530,6 +530,24 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     });
   }
 
+  // GET /api/admin/data-quality/spec-dataset/status
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-dataset' && segments[3] === 'status') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:read');
+    if (permCheck) return permCheck;
+
+    const [count, latest] = await Promise.all([
+      DeviceSpecDataset.countDocuments(),
+      DeviceSpecDataset.findOne().sort({ updatedAt: -1 }).select('updatedAt sourceName').lean() as Promise<any>,
+    ]);
+    return NextResponse.json({
+      count,
+      lastUpdatedAt: latest?.updatedAt || null,
+      latestSource: latest?.sourceName || '',
+    });
+  }
+
   return undefined;
 }
 
@@ -561,29 +579,48 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (!rows.length || rows.length > 1000) return NextResponse.json({ error: 'Provide 1 to 1000 dataset rows per batch' }, { status: 400 });
     const clean = (v: unknown, max = 700) => String(v ?? '').trim().slice(0, max);
     const normalize = (v: unknown) => clean(v, 300).toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
-    let imported = 0, skipped = 0;
+
+    const operations: any[] = [];
+    let skipped = 0;
+    const seen = new Set<string>();
     for (const row of rows) {
       const brand = clean(row.brand ?? row.Brand ?? row.manufacturer ?? row.Manufacturer, 120);
       const model = clean(row.model ?? row.Model ?? row.modelName ?? row['Model Name'] ?? row.name ?? row.Name, 240);
-      if (!model) { skipped++; continue; }
+      const normalizedBrand = normalize(brand);
       const normalizedModel = normalize(model);
-      if (!normalizedModel) { skipped++; continue; }
-      const specs = {
-        display: clean(row.display ?? row.Display), chipset: clean(row.chipset ?? row.Chipset ?? row.processor ?? row.Processor),
-        ram: clean(row.ram ?? row.RAM), storage: clean(row.storage ?? row.Storage), battery: clean(row.battery ?? row.Battery),
-        mainCamera: clean(row.mainCamera ?? row['Main Camera'] ?? row.camera ?? row.Camera),
-        fiveG: clean(row.fiveG ?? row['5G'] ?? row.network5g ?? row.Network5G, 40),
-        sourceName: clean(row.sourceName ?? row.Source ?? row['Source Name'], 120) || 'Imported dataset',
-        sourceUrl: clean(row.sourceUrl ?? row['Source URL'], 1000),
-      };
-      await DeviceSpecDataset.updateOne(
-        { normalizedBrand: normalize(brand), normalizedModel },
-        { $set: { brand, model, normalizedBrand: normalize(brand), normalizedModel, ...specs } },
-        { upsert: true },
-      );
-      imported++;
+      if (!model || !normalizedModel) { skipped++; continue; }
+      const key = `${normalizedBrand}::${normalizedModel}`;
+      if (seen.has(key)) { skipped++; continue; }
+      seen.add(key);
+      operations.push({
+        updateOne: {
+          filter: { normalizedBrand, normalizedModel },
+          update: { $set: {
+            brand, model, normalizedBrand, normalizedModel,
+            display: clean(row.display ?? row.Display),
+            chipset: clean(row.chipset ?? row.Chipset ?? row.processor ?? row.Processor),
+            ram: clean(row.ram ?? row.RAM),
+            storage: clean(row.storage ?? row.Storage),
+            battery: clean(row.battery ?? row.Battery),
+            mainCamera: clean(row.mainCamera ?? row['Main Camera'] ?? row.camera ?? row.Camera),
+            fiveG: clean(row.fiveG ?? row['5G'] ?? row.network5g ?? row.Network5G, 40),
+            sourceName: clean(row.sourceName ?? row.Source ?? row['Source Name'], 120) || 'Imported dataset',
+            sourceUrl: clean(row.sourceUrl ?? row['Source URL'], 1000),
+          } },
+          upsert: true,
+        },
+      });
     }
-    return NextResponse.json({ success: true, imported, skipped, total: rows.length });
+
+    if (!operations.length) return NextResponse.json({ success: true, imported: 0, inserted: 0, updated: 0, skipped, total: rows.length });
+    const result = await DeviceSpecDataset.bulkWrite(operations, { ordered: false });
+    const inserted = result.upsertedCount || 0;
+    const updated = result.modifiedCount || 0;
+    const imported = operations.length;
+    try {
+      await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_dataset_imported', details: `Imported ${imported} local specification rows (${inserted} new, ${updated} updated, ${skipped} skipped)`, entityType: 'import' });
+    } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, imported, inserted, updated, skipped, total: rows.length });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/search
@@ -619,6 +656,101 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     })).filter(c => c.score >= 25).sort((a, b) => b.score - a.score).slice(0, 10);
     const datasetCount = await DeviceSpecDataset.countDocuments();
     return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'PhoneDock local dataset', datasetCount });
+  }
+
+  // POST /api/admin/data-quality/spec-enrichment/batch-apply
+  // Safely applies only high-confidence local dataset matches. Ambiguous rows are
+  // returned for manual review and are never written automatically.
+  if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'batch-apply') {
+    const authResult = await getAdminFromRequest(req);
+    if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
+    if (permCheck) return permCheck;
+
+    const body = await req.json();
+    const phoneIds = Array.isArray(body.phoneIds) ? [...new Set(body.phoneIds.map((id: unknown) => String(id || '').trim()))] : [];
+    const threshold = Math.max(85, Math.min(100, Number(body.threshold || 92)));
+    if (!phoneIds.length || phoneIds.length > 100) {
+      return NextResponse.json({ error: 'Select between 1 and 100 phones' }, { status: 400 });
+    }
+    if (phoneIds.some((id: string) => !Types.ObjectId.isValid(id))) {
+      return NextResponse.json({ error: 'One or more Phone IDs are invalid' }, { status: 400 });
+    }
+
+    const normalize = (v: unknown) => String(v ?? '').toLowerCase()
+      .replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ')
+      .replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ').trim();
+    const scoreCandidate = (queryModel: string, queryBrand: string, candidate: any) => {
+      const a = new Set(queryModel.split(' ').filter(Boolean));
+      const b = new Set(String(candidate.normalizedModel || '').split(' ').filter(Boolean));
+      const common = [...a].filter(x => b.has(x)).length;
+      const union = new Set([...a, ...b]).size || 1;
+      let value = Math.round((common / union) * 85);
+      if (queryBrand && candidate.normalizedBrand === queryBrand) value += 15;
+      if (candidate.normalizedModel === queryModel) value = 100;
+      return Math.min(100, value);
+    };
+    const clean = (value: unknown, max = 700) => String(value ?? '').trim().slice(0, max);
+    const numeric = (value: unknown, pattern: RegExp) => { const match = String(value || '').match(pattern); return match ? Number(match[1]) : null; };
+
+    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as any[];
+    const results: any[] = [];
+    let applied = 0, review = 0, notFound = 0, failed = 0;
+
+    for (const phone of phones) {
+      try {
+        const queryModel = normalize(phone.modelName);
+        const queryBrand = normalize(phone.brandId?.name || '');
+        const tokens = queryModel.split(' ').filter((t: string) => t.length > 1);
+        const regex = tokens.length ? new RegExp(tokens.slice(0, 5).map((t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i') : /.^/;
+        const rows = await DeviceSpecDataset.find({
+          $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])],
+        }).limit(100).lean() as any[];
+        const ranked = rows.map(row => ({ row, score: scoreCandidate(queryModel, queryBrand, row) })).sort((a, b) => b.score - a.score);
+        const best = ranked[0];
+        const second = ranked[1];
+        if (!best || best.score < 25) {
+          notFound++;
+          results.push({ phoneId: String(phone._id), modelName: phone.modelName, status: 'not_found' });
+          continue;
+        }
+        const margin = second ? best.score - second.score : best.score;
+        const source = best.row;
+        const update: Record<string, unknown> = {
+          display: clean(source.display), chipset: clean(source.chipset), ram: clean(source.ram), storage: clean(source.storage),
+          battery: clean(source.battery), mainCamera: clean(source.mainCamera), fiveG: clean(source.fiveG, 20),
+        };
+        const populatedFields = Object.values(update).filter(Boolean).length;
+        if (best.score < threshold || margin < 8 || populatedFields < 3) {
+          review++;
+          results.push({ phoneId: String(phone._id), modelName: phone.modelName, status: 'needs_review', score: best.score, margin, candidate: `${source.brand || ''} ${source.model || ''}`.trim() });
+          continue;
+        }
+        const numbers = {
+          ramGB: numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i), storageGB: numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i),
+          batteryMAh: numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i), mainCameraMP: numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i),
+          screenSizeInch: numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i),
+        };
+        Object.entries(numbers).forEach(([key, value]) => { if (value) update[key] = value; });
+        await PhoneSpecs.updateOne({ phoneId: phone._id }, { $set: update, $setOnInsert: { phoneId: phone._id } }, { upsert: true });
+        await Phone.updateOne({ _id: phone._id }, { $set: {
+          sourceName: clean(source.sourceName, 120) || 'PhoneDock local dataset', sourceUrl: clean(source.sourceUrl, 1000),
+          lastVerifiedAt: new Date(), dataConfidence: 'auto-imported', updatedBy: authResult.admin._id,
+        }});
+        applied++;
+        results.push({ phoneId: String(phone._id), modelName: phone.modelName, status: 'applied', score: best.score, candidate: `${source.brand || ''} ${source.model || ''}`.trim() });
+      } catch (error) {
+        failed++;
+        results.push({ phoneId: String(phone._id), modelName: phone.modelName, status: 'failed', message: error instanceof Error ? error.message : 'Unknown error' });
+      }
+    }
+
+    try {
+      await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_batch_applied', details: `Batch local specs: ${applied} applied, ${review} review, ${notFound} not found, ${failed} failed`, entityType: 'phone' });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, selected: phoneIds.length, processed: phones.length, threshold, applied, review, notFound, failed, results });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/apply

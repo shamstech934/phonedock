@@ -343,6 +343,11 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [specApplyLoading, setSpecApplyLoading] = useState(false);
   const [datasetImportLoading, setDatasetImportLoading] = useState(false);
   const [datasetImportResult, setDatasetImportResult] = useState('');
+  const [batchMatchLoading, setBatchMatchLoading] = useState(false);
+  const [batchMatchResult, setBatchMatchResult] = useState<any>(null);
+  const [matchThreshold, setMatchThreshold] = useState(92);
+  const [datasetStatus, setDatasetStatus] = useState<{ count: number; lastUpdatedAt: string | null; latestSource: string } | null>(null);
+  const [datasetProgress, setDatasetProgress] = useState<{ done: number; total: number } | null>(null);
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -368,6 +373,14 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); setAppliedQuery(''); setQuery(''); setSelected(new Set()); setRepairRows([]); setRepairResult(null); }, [type]);
   useEffect(() => { setSelected(new Set()); }, [page, appliedQuery]);
+  const loadDatasetStatus = useCallback(async () => {
+    if (type !== 'specs') return;
+    try {
+      const res = await fetch('/api/admin/data-quality/spec-dataset/status', { credentials: 'include', cache: 'no-store' });
+      if (res.ok) setDatasetStatus(await res.json());
+    } catch { /* status is informational */ }
+  }, [type]);
+  useEffect(() => { loadDatasetStatus(); }, [loadDatasetStatus]);
 
   const repairColumns = type === 'specs'
     ? ['Display', 'Chipset', 'RAM', 'Storage', 'Battery', 'Main Camera', '5G']
@@ -410,15 +423,37 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     try {
       const rows = parseCsvWorkPack(await file.text());
       if (!rows.length) throw new Error('CSV has no data rows');
-      let imported = 0, skipped = 0;
+      let imported = 0, inserted = 0, updated = 0, skipped = 0;
+      setDatasetProgress({ done: 0, total: rows.length });
       for (let i = 0; i < rows.length; i += 500) {
-        const res = await fetch('/api/admin/data-quality/spec-dataset/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ rows: rows.slice(i, i + 500) }) });
+        const batch = rows.slice(i, i + 500);
+        const res = await fetch('/api/admin/data-quality/spec-dataset/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ rows: batch }) });
         const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Dataset import failed');
-        imported += data.imported || 0; skipped += data.skipped || 0;
+        imported += data.imported || 0; inserted += data.inserted || 0; updated += data.updated || 0; skipped += data.skipped || 0;
+        setDatasetProgress({ done: Math.min(i + batch.length, rows.length), total: rows.length });
       }
-      setDatasetImportResult(`Dataset ready: ${imported.toLocaleString()} imported/updated, ${skipped.toLocaleString()} skipped.`);
+      setDatasetImportResult(`Dataset ready: ${imported.toLocaleString()} processed · ${inserted.toLocaleString()} new · ${updated.toLocaleString()} updated · ${skipped.toLocaleString()} skipped.`);
+      await loadDatasetStatus();
     } catch (e) { setDatasetImportResult(e instanceof Error ? e.message : 'Dataset import failed'); }
-    finally { setDatasetImportLoading(false); }
+    finally { setDatasetImportLoading(false); setDatasetProgress(null); }
+  };
+
+  const autoMatchSelected = async () => {
+    if (selected.size === 0) return;
+    setBatchMatchLoading(true); setBatchMatchResult(null);
+    try {
+      const res = await fetch('/api/admin/data-quality/spec-enrichment/batch-apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ phoneIds: Array.from(selected).slice(0, 100), threshold: matchThreshold }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Automatic matching failed');
+      setBatchMatchResult(data);
+      setSelected(new Set());
+      if (data.applied > 0) await load();
+    } catch (e) {
+      setBatchMatchResult({ error: e instanceof Error ? e.message : 'Automatic matching failed' });
+    } finally { setBatchMatchLoading(false); }
   };
 
   const searchLocalSpecs = async (phone: LiveQueueItem) => {
@@ -470,7 +505,8 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       </div>
 
       {type === 'specs' && <div className="bg-white border border-emerald-200 rounded-2xl p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-4"><div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-emerald-600" /> Import local specifications dataset</h3><p className="text-sm text-gray-500 mt-1">Upload a CSV once. Find specs then searches your own MongoDB—no AI, credits, external API, CORS or fetch failures.</p><p className="text-xs text-gray-400 mt-1">Accepted columns: Brand, Model, Display, Chipset/Processor, RAM, Storage, Battery, Main Camera/Camera, 5G, Source Name, Source URL.</p></div><label className="h-10 px-4 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">{datasetImportLoading ? 'Importing…' : 'Choose dataset CSV'}<input type="file" accept=".csv,text/csv" disabled={datasetImportLoading} className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) importSpecsDataset(file); e.currentTarget.value = ''; }} /></label></div>
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4"><div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-emerald-600" /> Import local specifications dataset</h3><p className="text-sm text-gray-500 mt-1">Upload a CSV once. Find specs then searches your own MongoDB—no AI, credits, external API, CORS or fetch failures.</p><p className="text-xs text-gray-400 mt-1">Accepted columns: Brand, Model, Display, Chipset/Processor, RAM, Storage, Battery, Main Camera/Camera, 5G, Source Name, Source URL.</p>{datasetStatus && <p className="text-xs font-medium text-emerald-700 mt-2">Local dataset: {datasetStatus.count.toLocaleString()} devices{datasetStatus.lastUpdatedAt ? ` · updated ${new Date(datasetStatus.lastUpdatedAt).toLocaleString()}` : ''}</p>}</div><label className="h-10 px-4 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white text-sm font-semibold cursor-pointer disabled:opacity-50">{datasetImportLoading ? 'Importing…' : 'Choose dataset CSV'}<input type="file" accept=".csv,text/csv" disabled={datasetImportLoading} className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) importSpecsDataset(file); e.currentTarget.value = ''; }} /></label></div>
+        {datasetProgress && <div className="mt-3"><div className="flex items-center justify-between text-xs text-gray-600 mb-1"><span>Importing dataset</span><span>{datasetProgress.done.toLocaleString()} / {datasetProgress.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-gray-100 overflow-hidden"><div className="h-full bg-emerald-500 transition-all" style={{ width: `${Math.round((datasetProgress.done / Math.max(1, datasetProgress.total)) * 100)}%` }} /></div></div>}
         {datasetImportResult && <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">{datasetImportResult}</div>}
       </div>}
 
@@ -491,7 +527,8 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span>{type === 'specs' && <><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label><button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title={!datasetStatus?.count ? 'Import a local dataset first' : `Apply only matches at or above ${matchThreshold}%`} >{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button></>}<button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: any) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: any) => row.status !== 'applied').slice(0, 8).map((row: any) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
         {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex flex-wrap gap-2">{type === 'specs' && <button onClick={() => searchLocalSpecs(item)} className="h-8 px-3 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white rounded-lg text-xs font-medium"><Search className="w-3.5 h-3.5" /> Find specs</button>}<a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
