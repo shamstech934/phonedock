@@ -668,12 +668,18 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (permCheck) return permCheck;
 
     const body = await req.json();
-    const phoneIds = Array.isArray(body.phoneIds) ? [...new Set(body.phoneIds.map((id: unknown) => String(id || '').trim()))] : [];
-    const threshold = Math.max(85, Math.min(100, Number(body.threshold || 92)));
+    const rawPhoneIds: unknown[] = Array.isArray(body?.phoneIds) ? body.phoneIds : [];
+    const phoneIds: string[] = [...new Set(
+      rawPhoneIds
+        .filter((id): id is string => typeof id === 'string')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    )];
+    const threshold = Math.max(85, Math.min(100, Number(body?.threshold || 92)));
     if (!phoneIds.length || phoneIds.length > 100) {
       return NextResponse.json({ error: 'Select between 1 and 100 phones' }, { status: 400 });
     }
-    if (phoneIds.some((id: string) => !Types.ObjectId.isValid(id))) {
+    if (phoneIds.some((id) => !Types.ObjectId.isValid(id))) {
       return NextResponse.json({ error: 'One or more Phone IDs are invalid' }, { status: 400 });
     }
 
