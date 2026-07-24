@@ -763,7 +763,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
         await PhoneSpecs.updateOne({ phoneId: phone._id }, { $set: update, $setOnInsert: { phoneId: phone._id } }, { upsert: true });
         await Phone.updateOne({ _id: phone._id }, { $set: {
           sourceName: clean(source.sourceName, 120) || 'PhoneDock local dataset', sourceUrl: clean(source.sourceUrl, 1000),
-          lastVerifiedAt: new Date(), dataConfidence: 'auto-imported', updatedBy: authResult.admin._id,
+          lastVerifiedAt: new Date(), dataConfidence: 'auto-imported', updatedBy: new Types.ObjectId(authResult.admin._id.toString()),
         }});
         applied++;
         results.push({ phoneId: String(phone._id), modelName: phone.modelName, status: 'applied', score: best.score, candidate: `${source.brand || ''} ${source.model || ''}`.trim() });
@@ -799,7 +799,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const numbers = { ramGB: numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i), storageGB: numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i), batteryMAh: numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i), mainCameraMP: numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i), screenSizeInch: numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i) };
     Object.entries(numbers).forEach(([k,v]) => { if (v) update[k] = v; });
     await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
-    phone.sourceName = clean(body.sourceName, 120) || 'PhoneDock local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = authResult.admin._id; await phone.save();
+    phone.sourceName = clean(body.sourceName, 120) || 'PhoneDock local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString()); await phone.save();
     try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_applied', details: `Applied reviewed local dataset specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, phoneId, updatedFields: Object.keys(update).filter(key => update[key] !== '' && update[key] != null) });
   }
@@ -873,7 +873,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
             phone.lastPriceCheckedAt = new Date();
             phone.lastPriceChangedAt = previous !== price ? new Date() : phone.lastPriceChangedAt;
             phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = authResult.admin._id;
+            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
             await phone.save();
           }
         } else if (type === 'images') {
@@ -884,7 +884,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
           if (!dryRun) {
             phone.thumbnail = thumbnail;
             phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = authResult.admin._id;
+            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
             await phone.save();
           }
         } else {
@@ -916,7 +916,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
             if (mainCameraMP) update.mainCameraMP = mainCameraMP;
             await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
             phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = authResult.admin._id;
+            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
             await phone.save();
           }
         }
