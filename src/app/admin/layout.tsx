@@ -22,6 +22,7 @@ interface NavLink {
 
 const adminLinks: NavLink[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
+  { label: 'Analytics', href: '/admin/analytics', icon: Activity, permission: 'settings:read' },
   { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
   { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
   { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },

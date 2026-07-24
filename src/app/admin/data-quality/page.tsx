@@ -97,15 +97,35 @@ export default function DataQualityPage() {
   useEffect(() => { if (admin) fetchSummary(); }, [admin, fetchSummary]);
 
   const refreshAll = useCallback(async () => {
+    if (loadingSummary || scanStatus.running) return;
     const startedAt = Date.now();
-    setRefreshMessage('Refreshing database counts...');
-    await fetchSummary();
-    router.refresh();
-    const elapsed = Date.now() - startedAt;
-    if (elapsed < 600) await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
-    setRefreshMessage('Live database counts refreshed');
-    window.setTimeout(() => setRefreshMessage(''), 2500);
-  }, [fetchSummary, router]);
+    setSummaryError('');
+    setRefreshMessage('Rechecking MongoDB and refreshing live counts...');
+    try {
+      // Start an incremental scan so the refresh control does real work instead
+      // of only repainting the same cached summary. The summary endpoint itself
+      // reads directly from source collections and is refreshed immediately.
+      const scanRes = await fetch('/api/admin/data-quality/scans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ type: 'incremental', dryRun: false, execute: true }),
+      });
+      const scanPayload = await scanRes.json().catch(() => null);
+      if (!scanRes.ok) throw new Error(scanPayload?.error || `Scan could not start (${scanRes.status})`);
+      setScanStatus({ running: true, scanId: scanPayload.scanId });
+      await fetchSummary();
+      router.refresh();
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 600) await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
+      setRefreshMessage(`Refresh started successfully at ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Refresh failed';
+      setSummaryError(message);
+      setRefreshMessage('');
+    }
+  }, [fetchSummary, loadingSummary, router, scanStatus.running]);
 
   // Poll scan status if running
   useEffect(() => {

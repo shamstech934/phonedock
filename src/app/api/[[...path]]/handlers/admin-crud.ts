@@ -37,6 +37,44 @@ interface PhoneUpdateBody {
 // ============ ADMIN CRUD GET ============
 
 export async function handleAdminCrudGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/analytics ----
+  if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'analytics') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'settings:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const { AffiliateClick } = await import('@/lib/models/Commercial');
+    const { ContactRequest } = await import('@/lib/models/Commercial');
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [phoneViews, topPhones, affiliateClicks, affiliateByStore, sponsorTotals, newsViews, reviews, contacts] = await Promise.all([
+      Phone.aggregate([{ $match: { deletedAt: null, status: 'published' } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$views', 0] } } } }]),
+      Phone.find({ deletedAt: null, status: 'published' }).select('modelName slug views').sort({ views: -1 }).limit(10).lean(),
+      AffiliateClick.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: null, total: { $sum: '$count' } } }]),
+      AffiliateClick.aggregate([{ $match: { createdAt: { $gte: since } } }, { $group: { _id: '$storeKey', clicks: { $sum: '$count' } } }, { $sort: { clicks: -1 } }, { $limit: 10 }]),
+      Sponsor.aggregate([{ $group: { _id: null, clicks: { $sum: { $ifNull: ['$clicks', 0] } }, impressions: { $sum: { $ifNull: ['$impressions', 0] } } } }]),
+      News.aggregate([{ $match: { status: 'published' } }, { $group: { _id: null, total: { $sum: { $ifNull: ['$views', 0] } } } }]),
+      UserReview.countDocuments({ createdAt: { $gte: since } }),
+      ContactRequest.countDocuments({ createdAt: { $gte: since } }),
+    ]);
+    return NextResponse.json({
+      rangeDays: 30,
+      totals: {
+        phoneViews: phoneViews[0]?.total || 0,
+        newsViews: newsViews[0]?.total || 0,
+        affiliateClicks: affiliateClicks[0]?.total || 0,
+        sponsorClicks: sponsorTotals[0]?.clicks || 0,
+        sponsorImpressions: sponsorTotals[0]?.impressions || 0,
+        reviews,
+        contacts,
+      },
+      topPhones: topPhones.map((phone: any) => ({ id: phone._id.toString(), modelName: phone.modelName, slug: phone.slug, views: phone.views || 0 })),
+      affiliateByStore: affiliateByStore.map((row: any) => ({ store: row._id || 'unknown', clicks: row.clicks || 0 })),
+      integrations: {
+        googleAnalytics: Boolean(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID),
+        microsoftClarity: Boolean(process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID),
+      },
+      generatedAt: new Date().toISOString(),
+    }, { headers: { 'Cache-Control': 'no-store' } });
+  }
   // ---- /api/admin/stats ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'stats') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
@@ -1240,6 +1278,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
 
     const phoneOps: Array<Record<string, unknown>> = [];
     const specsOps: Array<Record<string, unknown>> = [];
+    const expectedSpecPhoneIds: mongoose.Types.ObjectId[] = [];
     const benchmarkOps: Array<Record<string, unknown>> = [];
     const imageDocs: Array<Record<string, unknown>> = [];
     const priceDocs: Array<Record<string, unknown>> = [];
@@ -1315,6 +1354,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
           Object.entries(mergedSpecs).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== ''),
         );
         if (Object.keys(nonEmptySpecs).length > 0) {
+          expectedSpecPhoneIds.push(phoneId);
           specsOps.push({
             updateOne: {
               filter: { phoneId },
@@ -1355,6 +1395,25 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     try {
       await runBulkInChunks(Phone as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, phoneOps);
       await runBulkInChunks(PhoneSpecs as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, specsOps);
+
+      // Verify that the spec upserts really reached MongoDB. Some production
+      // incidents returned a successful phone import while only a handful of
+      // PhoneSpecs documents were present. Re-run only the missing upserts so
+      // the request cannot silently report success with unsaved specifications.
+      if (expectedSpecPhoneIds.length > 0) {
+        const persistedSpecIds = new Set(
+          (await PhoneSpecs.distinct('phoneId', { phoneId: { $in: expectedSpecPhoneIds } }))
+            .map((id: mongoose.Types.ObjectId) => id.toString()),
+        );
+        const missingSpecOps = specsOps.filter((operation) => {
+          const phoneId = (operation as { updateOne?: { filter?: { phoneId?: mongoose.Types.ObjectId } } }).updateOne?.filter?.phoneId;
+          return Boolean(phoneId && !persistedSpecIds.has(phoneId.toString()));
+        });
+        if (missingSpecOps.length > 0) {
+          await runBulkInChunks(PhoneSpecs as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, missingSpecOps);
+        }
+      }
+
       await runBulkInChunks(PhoneBenchmark as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, benchmarkOps);
       for (let i = 0; i < imageDocs.length; i += BULK_BATCH_SIZE) {
         await PhoneImage.insertMany(imageDocs.slice(i, i + BULK_BATCH_SIZE), { ordered: false });
@@ -1425,9 +1484,20 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     } catch (error) {
       console.error('[ActivityLog]', error);
     }
+    const persistedSpecs = expectedSpecPhoneIds.length > 0
+      ? await PhoneSpecs.countDocuments({ phoneId: { $in: expectedSpecPhoneIds } })
+      : 0;
+
     revalidatePublicContent({ includeBrands: true });
     return NextResponse.json(
-      { success: true, total: records.length, imported, inserted: imported, updated, skipped, failed, duration, historyId, errors: errors.slice(0, 500) },
+      {
+        success: true, total: records.length, imported, inserted: imported, updated, skipped, failed, duration, historyId,
+        specsRequested: expectedSpecPhoneIds.length, specsVerified: persistedSpecs,
+        warnings: persistedSpecs < expectedSpecPhoneIds.length
+          ? [`${expectedSpecPhoneIds.length - persistedSpecs} specification records could not be verified after import`]
+          : [],
+        errors: errors.slice(0, 500),
+      },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } },
     );
   }
