@@ -262,7 +262,16 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       missing: type,
     }));
 
-    return NextResponse.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)), type });
+    if (searchParams.get('idsOnly') === '1') {
+      const ids = await Phone.find(baseQuery).select('_id').sort({ updatedAt: -1, modelName: 1 }).lean();
+      return NextResponse.json({ ids: ids.map((row: any) => row._id.toString()), total, type }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+      });
+    }
+
+    return NextResponse.json({ items, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)), type }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    });
   }
 
   // GET /api/admin/data-quality/scans/:id

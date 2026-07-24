@@ -395,6 +395,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [matchThreshold, setMatchThreshold] = useState(92);
   const [datasetStatus, setDatasetStatus] = useState<{ count: number; lastUpdatedAt: string | null; latestSource: string } | null>(null);
   const [datasetProgress, setDatasetProgress] = useState<{ done: number; total: number } | null>(null);
+  const [batchMatchProgress, setBatchMatchProgress] = useState<{ done: number; total: number } | null>(null);
 
   const labels = {
     specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
@@ -495,22 +496,52 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     finally { setDatasetImportLoading(false); setDatasetProgress(null); }
   };
 
-  const autoMatchSelected = async () => {
-    if (selected.size === 0) return;
+  const runAutoMatch = async (phoneIds: string[]) => {
+    if (!phoneIds.length) return;
+    setBatchMatchLoading(true); setBatchMatchResult(null); setBatchMatchProgress({ done: 0, total: phoneIds.length });
+    const aggregate = { selected: phoneIds.length, processed: 0, applied: 0, review: 0, notFound: 0, failed: 0, results: [] as any[] };
+    try {
+      for (let offset = 0; offset < phoneIds.length; offset += 100) {
+        const chunk = phoneIds.slice(offset, offset + 100);
+        const res = await fetch('/api/admin/data-quality/spec-enrichment/batch-apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store',
+          body: JSON.stringify({ phoneIds: chunk, threshold: matchThreshold }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Automatic matching failed (${res.status})`);
+        aggregate.processed += data.processed || 0;
+        aggregate.applied += data.applied || 0;
+        aggregate.review += data.review || 0;
+        aggregate.notFound += data.notFound || 0;
+        aggregate.failed += data.failed || 0;
+        if (Array.isArray(data.results)) aggregate.results.push(...data.results.filter((row: any) => row.status !== 'applied').slice(0, 20));
+        setBatchMatchProgress({ done: Math.min(offset + chunk.length, phoneIds.length), total: phoneIds.length });
+        setBatchMatchResult({ ...aggregate, results: aggregate.results.slice(0, 100), running: offset + chunk.length < phoneIds.length });
+      }
+      setSelected(new Set());
+      await load();
+    } catch (e) {
+      setBatchMatchResult({ ...aggregate, error: e instanceof Error ? e.message : 'Automatic matching failed' });
+    } finally { setBatchMatchLoading(false); setBatchMatchProgress(null); }
+  };
+
+  const autoMatchSelected = async () => runAutoMatch(Array.from(selected));
+
+  const autoMatchAllMissing = async () => {
+    if (type !== 'specs' || !total) return;
+    if (!confirm(`Automatically match all ${total.toLocaleString()} phones missing specs? High-confidence matches will be applied in safe batches of 100; ambiguous phones will remain for review.`)) return;
     setBatchMatchLoading(true); setBatchMatchResult(null);
     try {
-      const res = await fetch('/api/admin/data-quality/spec-enrichment/batch-apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ phoneIds: Array.from(selected).slice(0, 100), threshold: matchThreshold }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Automatic matching failed');
-      setBatchMatchResult(data);
-      setSelected(new Set());
-      if (data.applied > 0) await load();
+      const params = new URLSearchParams({ type: 'specs', idsOnly: '1' });
+      if (appliedQuery) params.set('q', appliedQuery);
+      const res = await fetch(`/api/admin/data-quality/live-queue?${params}`, { credentials: 'include', cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Unable to load missing phone IDs');
+      await runAutoMatch(Array.isArray(data.ids) ? data.ids : []);
     } catch (e) {
-      setBatchMatchResult({ error: e instanceof Error ? e.message : 'Automatic matching failed' });
-    } finally { setBatchMatchLoading(false); }
+      setBatchMatchResult({ error: e instanceof Error ? e.message : 'Unable to start automatic matching' });
+      setBatchMatchLoading(false); setBatchMatchProgress(null);
+    }
   };
 
   const searchLocalSpecs = async (phone: LiveQueueItem) => {
@@ -584,7 +615,8 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} phone{selected.size === 1 ? '' : 's'} selected</span>{type === 'specs' && <><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label><button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title={!datasetStatus?.count ? 'Import a local dataset first' : `Apply only matches at or above ${matchThreshold}%`} >{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button></>}<button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
+      {type === 'specs' && total > 0 && <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className="text-sm font-semibold text-blue-800">{selected.size > 0 ? `${selected.size.toLocaleString()} selected` : `${total.toLocaleString()} phones need specs`}</span><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label>{selected.size > 0 && <button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button>}<button onClick={autoMatchAllMissing} disabled={batchMatchLoading || !datasetStatus?.count || total === 0} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title="Process the complete missing-specs queue in batches of 100">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match all {total.toLocaleString()}</button>{selected.size > 0 && <><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></>}</div>{batchMatchProgress && <div><div className="flex justify-between text-xs text-blue-800 mb-1"><span>Automatic matching in progress — keep this page open</span><span>{batchMatchProgress.done.toLocaleString()} / {batchMatchProgress.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-blue-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.round((batchMatchProgress.done / Math.max(1, batchMatchProgress.total)) * 100)}%` }} /></div></div>}</div>}
+      {type !== 'specs' && selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
       {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: any) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: any) => row.status !== 'applied').slice(0, 8).map((row: any) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
