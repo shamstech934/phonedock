@@ -50,6 +50,12 @@ export function validateProductionEnvironment(env: NodeJS.ProcessEnv = process.e
   if (configured(env, 'FIRST_ADMIN_SETUP_KEY')) {
     warnings.push('FIRST_ADMIN_SETUP_KEY is set. Remove it and redeploy immediately after the first superadmin is created.');
   }
+  if (configured(env, 'NEXT_PUBLIC_SITE_URL')) {
+    warnings.push('NEXT_PUBLIC_SITE_URL is unused. Remove it and configure NEXT_PUBLIC_BASE_URL instead.');
+  }
+  if (configured(env, 'COLLECTOR_SECRET')) {
+    warnings.push('COLLECTOR_SECRET is unused. Collector routes are protected by admin authentication and collectors:read/manage permissions; remove this variable.');
+  }
 
   return { valid: errors.length === 0, errors, warnings };
 }

@@ -36,3 +36,11 @@ No intentional breaking API change is declared; integrations with internal catch
 - Added typo/alias-aware brand detection, multi-intent detection, AMOLED, PTA, NFC, 5G and chipset filters.
 - Added parser confidence display and local recent-search history.
 - Added automated parser regression tests.
+
+## 17.0.1 - Production finalization
+
+- Added warnings for obsolete `NEXT_PUBLIC_SITE_URL` and `COLLECTOR_SECRET` variables.
+- Clarified canonical `NEXT_PUBLIC_BASE_URL` requirements in `.env.example`.
+- Documented required and grouped production environment variables.
+- Removed unused legacy AI enrichment runtime and its direct legacy tests.
+- Archived historical root reports without deleting them.
