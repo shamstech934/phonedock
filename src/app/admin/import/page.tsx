@@ -172,7 +172,13 @@ export default function AdminImportPage() {
           credentials: 'include',
           body: formData,
         });
-        const data = await res.json();
+        const responseText = await res.text();
+        let data: ImportResult;
+        try {
+          data = JSON.parse(responseText) as ImportResult;
+        } catch {
+          data = { error: res.ok ? 'Import returned an invalid response' : `Import failed (${res.status}). The server may have timed out.` };
+        }
         data.duration = Date.now() - startTime;
         setResult(data);
       } else {
@@ -188,7 +194,13 @@ export default function AdminImportPage() {
           credentials: 'include',
           body: JSON.stringify({ records: previewRecords, mode: importMode }),
         });
-        const data = await res.json();
+        const responseText = await res.text();
+        let data: ImportResult;
+        try {
+          data = JSON.parse(responseText) as ImportResult;
+        } catch {
+          data = { error: res.ok ? 'Import returned an invalid response' : `Import failed (${res.status}). The server may have timed out.` };
+        }
         data.duration = Date.now() - startTime;
         setResult(data);
       }

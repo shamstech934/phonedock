@@ -1164,37 +1164,212 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const { records, mode = 'skip_duplicates' } = body;
     if (!Array.isArray(records) || records.length === 0) return NextResponse.json({ error: 'No records' }, { status: 400 });
     if (records.length > MAX_UPLOAD_RECORDS) return NextResponse.json({ error: `Too many records (max ${MAX_UPLOAD_RECORDS})` }, { status: 400 });
-    const brands = await Brand.find().lean();
-    const brandMap = new Map(brands.map((b: { name: string; _id: mongoose.Types.ObjectId }) => [b.name.toLowerCase(), b._id]));
-    const allPhones = await Phone.find().populate('brand').lean();
-    const existingSlugs = new Set(allPhones.map((p: LeanPhoneSlim) => p.slug));
-    const existingBM = new Set(allPhones.map((p: LeanPhoneSlim) => `${p.brand?.name || ''}|${p.modelName}`.toLowerCase()));
-    let imported = 0, updated = 0, skipped = 0, failed = 0;
-    const errors: string[] = [];
-    for (let i = 0; i < records.length; i++) {
-      const r = records[i];
-      try {
-        const bName = String(r.brand || r.brandName || '').trim();
-        const mName = String(r.model || r.modelName || '').trim();
-        if (!bName || !mName) { skipped++; errors.push(`Row ${i+1}: Missing brand/model`); continue; }
-        let bId = brandMap.get(bName.toLowerCase());
-        if (!bId) { const bslug = bName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); const nb = await Brand.create({ name: bName, slug: bslug, active: true, description: '', sortOrder: 0, logo: '', country: '' }); brandMap.set(bName.toLowerCase(), nb._id); bId = nb._id; }
-        const slug = String(r.slug || '').trim() || `${bName} ${mName}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        const isDup = existingSlugs.has(slug) || existingBM.has(`${bName}|${mName}`.toLowerCase());
-        if (isDup && mode === 'skip_duplicates') { skipped++; continue; }
-        if (isDup && mode === 'new_only') { skipped++; continue; }
-        const pd: Record<string, unknown> = { brandId: bId, modelName: mName, slug, pricePKR: parseInt(r.pricePKR) || parseInt(r.price) || 0, ptaStatus: r.ptaStatus || 'Unknown', ptaApproved: r.ptaApproved === true, releaseDate: r.releaseDate || '', thumbnail: r.thumbnail || '', description: r.description || '', featured: r.featured === true, trending: r.trending === true, upcoming: r.upcoming === true, status: 'published', active: true, cameraScore: parseInt(r.cameraScore) || 0, performanceScore: parseInt(r.performanceScore) || 0, batteryScore: parseInt(r.batteryScore) || 0, displayScore: parseInt(r.displayScore) || 0, valueScore: parseInt(r.valueScore) || 0, overallRating: parseInt(r.overallRating) || 0, pros: r.pros || '', cons: r.cons || '', reviewSummary: r.reviewSummary || '', reviewVerdict: r.reviewVerdict || '' };
-        if (isDup && mode === 'update_existing') { const ex = await Phone.findOne({ slug }); if (ex) { await Phone.updateOne({ _id: ex._id }, { $set: pd }); if (r.specs) { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = r.specs as Record<string, unknown>; await PhoneSpecs.findOneAndUpdate({ phoneId: ex._id }, { $set: safeSpecs }, { upsert: true }); } if (r.benchmarks) { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = r.benchmarks as Record<string, unknown>; await PhoneBenchmark.findOneAndUpdate({ phoneId: ex._id }, { $set: safeBench }, { upsert: true }); } updated++; continue; } }
-        const phone = await Phone.create(pd); existingSlugs.add(slug); existingBM.add(`${bName}|${mName}`.toLowerCase());
-        if (r.specs) { const { _id: _s, __v: _sv, phoneId: _sp, ...safeSpecs } = r.specs as Record<string, unknown>; await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { $set: safeSpecs, phoneId: phone._id }, { upsert: true }); }
-        if (r.benchmarks) { const { _id: _b, __v: _bv, phoneId: _bp, ...safeBench } = r.benchmarks as Record<string, unknown>; await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { $set: safeBench, phoneId: phone._id }, { upsert: true }); }
-        if (Array.isArray(r.images)) await PhoneImage.insertMany(r.images.map((img: ImageInput, j: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? j })));
-        if (Array.isArray(r.prices)) await PhonePrice.insertMany(r.prices.map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false })));
-        imported++;
-      } catch (err: unknown) { failed++; errors.push(`Row ${i+1}: ${err instanceof Error ? err.message : String(err)}`); }
+    if (!['skip_duplicates', 'update_existing', 'new_only'].includes(mode)) {
+      return NextResponse.json({ error: 'Invalid import mode' }, { status: 400 });
     }
-    try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors });
+
+    const BULK_BATCH_SIZE = 500;
+    const runBulkInChunks = async (model: { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, operations: Array<Record<string, unknown>>) => {
+      for (let i = 0; i < operations.length; i += BULK_BATCH_SIZE) {
+        await model.bulkWrite(operations.slice(i, i + BULK_BATCH_SIZE) as never[], { ordered: false });
+      }
+    };
+
+    const normalizedRows: Array<{
+      row: number;
+      raw: Record<string, unknown>;
+      brandName: string;
+      modelName: string;
+      slug: string;
+    }> = [];
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < records.length; i++) {
+      const raw = records[i] as Record<string, unknown>;
+      const brandName = String(raw.brand || raw.brandName || '').trim();
+      const modelName = String(raw.model || raw.modelName || '').trim();
+      if (!brandName || !modelName) {
+        skipped++;
+        errors.push(`Row ${i + 1}: Missing brand/model`);
+        continue;
+      }
+      const slug = String(raw.slug || '').trim() || `${brandName} ${modelName}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      normalizedRows.push({ row: i + 1, raw, brandName, modelName, slug });
+    }
+
+    // Create all missing brands in one database operation instead of one request per row.
+    const brands = await Brand.find().select('_id name slug').lean();
+    const brandMap = new Map(brands.map((brand: { name: string; _id: mongoose.Types.ObjectId }) => [brand.name.toLowerCase(), brand._id]));
+    const missingBrandNames = [...new Map(
+      normalizedRows
+        .filter(({ brandName }) => !brandMap.has(brandName.toLowerCase()))
+        .map(({ brandName }) => [brandName.toLowerCase(), brandName]),
+    ).values()];
+
+    if (missingBrandNames.length > 0) {
+      const brandOps: Array<Record<string, unknown>> = missingBrandNames.map((name) => {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        return {
+          updateOne: {
+            filter: { name },
+            update: { $setOnInsert: { name, slug, active: true, description: '', sortOrder: 0, logo: '', country: '' } },
+            upsert: true,
+          },
+        };
+      });
+      await runBulkInChunks(Brand as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, brandOps);
+      const refreshedBrands = await Brand.find({ name: { $in: missingBrandNames } }).select('_id name').lean();
+      for (const brand of refreshedBrands as Array<{ name: string; _id: mongoose.Types.ObjectId }>) {
+        brandMap.set(brand.name.toLowerCase(), brand._id);
+      }
+    }
+
+    // One compact query replaces per-record duplicate lookups.
+    const existingPhones = await Phone.find().select('_id slug modelName brandId').lean();
+    const brandNameById = new Map([...brandMap.entries()].map(([name, id]) => [id.toString(), name]));
+    const existingBySlug = new Map<string, { _id: mongoose.Types.ObjectId; slug: string; modelName: string; brandId: mongoose.Types.ObjectId }>();
+    const existingByBrandModel = new Map<string, { _id: mongoose.Types.ObjectId; slug: string; modelName: string; brandId: mongoose.Types.ObjectId }>();
+    for (const phone of existingPhones as Array<{ _id: mongoose.Types.ObjectId; slug: string; modelName: string; brandId: mongoose.Types.ObjectId }>) {
+      existingBySlug.set(phone.slug, phone);
+      const brandName = brandNameById.get(phone.brandId?.toString() || '') || '';
+      existingByBrandModel.set(`${brandName}|${phone.modelName.toLowerCase()}`, phone);
+    }
+
+    const phoneOps: Array<Record<string, unknown>> = [];
+    const specsOps: Array<Record<string, unknown>> = [];
+    const benchmarkOps: Array<Record<string, unknown>> = [];
+    const imageDocs: Array<Record<string, unknown>> = [];
+    const priceDocs: Array<Record<string, unknown>> = [];
+    let imported = 0;
+    let updated = 0;
+    let failed = 0;
+
+    for (const item of normalizedRows) {
+      try {
+        const { raw, brandName, modelName, slug } = item;
+        const brandId = brandMap.get(brandName.toLowerCase());
+        if (!brandId) throw new Error(`Brand could not be created: ${brandName}`);
+
+        const brandModelKey = `${brandName.toLowerCase()}|${modelName.toLowerCase()}`;
+        const existing = existingBySlug.get(slug) || existingByBrandModel.get(brandModelKey);
+        if (existing && (mode === 'skip_duplicates' || mode === 'new_only')) {
+          skipped++;
+          continue;
+        }
+
+        const phoneId = existing?._id || new mongoose.Types.ObjectId();
+        const phoneData: Record<string, unknown> = {
+          brandId,
+          modelName,
+          slug,
+          pricePKR: parseInt(String(raw.pricePKR || ''), 10) || parseInt(String(raw.price || ''), 10) || 0,
+          ptaStatus: raw.ptaStatus || 'Unknown',
+          ptaApproved: raw.ptaApproved === true,
+          releaseDate: raw.releaseDate || '',
+          thumbnail: raw.thumbnail || '',
+          description: raw.description || '',
+          featured: raw.featured === true,
+          trending: raw.trending === true,
+          upcoming: raw.upcoming === true,
+          status: 'published',
+          active: true,
+          cameraScore: parseInt(String(raw.cameraScore || ''), 10) || 0,
+          performanceScore: parseInt(String(raw.performanceScore || ''), 10) || 0,
+          batteryScore: parseInt(String(raw.batteryScore || ''), 10) || 0,
+          displayScore: parseInt(String(raw.displayScore || ''), 10) || 0,
+          valueScore: parseInt(String(raw.valueScore || ''), 10) || 0,
+          overallRating: parseInt(String(raw.overallRating || ''), 10) || 0,
+          pros: raw.pros || '',
+          cons: raw.cons || '',
+          reviewSummary: raw.reviewSummary || '',
+          reviewVerdict: raw.reviewVerdict || '',
+        };
+
+        if (existing) {
+          phoneOps.push({ updateOne: { filter: { _id: phoneId }, update: { $set: phoneData } } });
+          updated++;
+        } else {
+          phoneOps.push({ insertOne: { document: { _id: phoneId, ...phoneData } } });
+          imported++;
+          const compactPhone = { _id: phoneId, slug, modelName, brandId };
+          existingBySlug.set(slug, compactPhone);
+          existingByBrandModel.set(brandModelKey, compactPhone);
+        }
+
+        if (raw.specs && typeof raw.specs === 'object') {
+          const { _id: _specId, __v: _specVersion, phoneId: _ignoredPhoneId, ...safeSpecs } = raw.specs as Record<string, unknown>;
+          specsOps.push({
+            updateOne: {
+              filter: { phoneId },
+              update: { $set: { ...safeSpecs, phoneId } },
+              upsert: true,
+            },
+          });
+        }
+        if (raw.benchmarks && typeof raw.benchmarks === 'object') {
+          const { _id: _benchmarkId, __v: _benchmarkVersion, phoneId: _ignoredPhoneId, ...safeBenchmarks } = raw.benchmarks as Record<string, unknown>;
+          benchmarkOps.push({
+            updateOne: {
+              filter: { phoneId },
+              update: { $set: { ...safeBenchmarks, phoneId } },
+              upsert: true,
+            },
+          });
+        }
+
+        // Preserve the previous behavior: images/prices are inserted for new phones only.
+        if (!existing && Array.isArray(raw.images)) {
+          for (let index = 0; index < raw.images.length; index++) {
+            const image = raw.images[index] as ImageInput;
+            imageDocs.push({ phoneId, url: image.url || '', altText: image.altText || '', sortOrder: image.sortOrder ?? index });
+          }
+        }
+        if (!existing && Array.isArray(raw.prices)) {
+          for (const price of raw.prices as PriceInput[]) {
+            priceDocs.push({ phoneId, storeName: price.storeName || '', price: price.price || 0, url: price.url || '', inStock: price.inStock !== false });
+          }
+        }
+      } catch (error: unknown) {
+        failed++;
+        errors.push(`Row ${item.row}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    try {
+      await runBulkInChunks(Phone as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, phoneOps);
+      await runBulkInChunks(PhoneSpecs as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, specsOps);
+      await runBulkInChunks(PhoneBenchmark as unknown as { bulkWrite: (ops: never[], options: { ordered: boolean }) => Promise<unknown> }, benchmarkOps);
+      for (let i = 0; i < imageDocs.length; i += BULK_BATCH_SIZE) {
+        await PhoneImage.insertMany(imageDocs.slice(i, i + BULK_BATCH_SIZE), { ordered: false });
+      }
+      for (let i = 0; i < priceDocs.length; i += BULK_BATCH_SIZE) {
+        await PhonePrice.insertMany(priceDocs.slice(i, i + BULK_BATCH_SIZE), { ordered: false });
+      }
+    } catch (error: unknown) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Bulk database operation failed',
+          details: error instanceof Error ? error.message : String(error),
+          total: records.length,
+          imported: 0,
+          updated: 0,
+          skipped,
+          failed: records.length - skipped,
+          errors: errors.slice(0, 100),
+        },
+        { status: 500 },
+      );
+    }
+
+    try {
+      await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' });
+    } catch (error) {
+      console.error('[ActivityLog]', error);
+    }
+    revalidatePublicContent({ includeBrands: true });
+    return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors: errors.slice(0, 500) });
   }
 
   // ---- /api/admin/sponsors (CREATE) ----

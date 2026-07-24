@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+// Allow optimized bulk imports enough time on Vercel plans that support it.
+export const maxDuration = 60;
+
 import { APP_VERSION } from '@/lib/version';
 function timingSafeEqual(a: string, b: string): boolean {
   try {
@@ -98,14 +101,8 @@ function validateRequestSize(req: NextRequest, segments: string[]): NextResponse
   const length = Number(rawLength);
   if (!Number.isFinite(length) || length < 0) return securityError('Invalid content length', 400);
 
-  const isBulkPhoneImport =
-    segments[0] === 'admin' &&
-    segments[1] === 'phones' &&
-    segments[2] === 'bulk-import';
-  const largeRoute =
-    segments[0] === 'import' ||
-    segments[0] === 'import-v2' ||
-    isBulkPhoneImport;
+  const isBulkPhoneImport = segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'bulk-import';
+  const largeRoute = segments[0] === 'import' || segments[0] === 'import-v2' || isBulkPhoneImport;
   const limit = largeRoute ? LARGE_BODY_LIMIT : DEFAULT_BODY_LIMIT;
   return length > limit ? securityError('Request body too large', 413) : null;
 }
