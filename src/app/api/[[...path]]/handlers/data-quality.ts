@@ -113,7 +113,13 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
       severity: { critical, high, medium, low, info, total: totalOpen },
       trends: { discoveredToday, fixedToday, newLast7Days },
-    });
+      database: {
+        connected: true,
+        checkedAt: new Date().toISOString(),
+        linkedSpecs: specPhoneIdSet.size,
+        linkedImages: imagePhoneIdSet.size,
+      },
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache', Expires: '0' } });
   }
 
   // GET /api/admin/data-quality/live-queue.csv?type=specs|images|prices&q=

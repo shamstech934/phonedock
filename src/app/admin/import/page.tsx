@@ -55,6 +55,7 @@ interface ImportHistory {
   createdAt: string;
   filename?: string;
   imported?: number;
+  inserted?: number;
   updated?: number;
   failed?: number;
   duration?: number;
@@ -77,11 +78,11 @@ export default function AdminImportPage() {
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    fetch('/api/import/stats', { credentials: 'include' }).then(r => r.json()).then((d: ImportStats) => setImportStats(d)).catch(() => {});
+    fetch(`/api/import/stats?refresh=${Date.now()}`, { credentials: 'include', cache: 'no-store' }).then(r => r.json()).then((d: ImportStats) => setImportStats(d)).catch(() => {});
   }, [result]);
 
   useEffect(() => {
-    fetch('/api/import/history', { credentials: 'include' }).then(r => r.json()).then((d: ImportHistory[] | { history?: ImportHistory[] }) => setHistory(Array.isArray(d) ? d : (d.history || []))).catch(() => {});
+    fetch(`/api/import/history?refresh=${Date.now()}`, { credentials: 'include', cache: 'no-store' }).then(r => r.json()).then((d: ImportHistory[] | { history?: ImportHistory[] }) => setHistory(Array.isArray(d) ? d : (d.history || []))).catch(() => {});
   }, [result]);
 
   const validateFile = (f: File): string | null => {
@@ -192,7 +193,7 @@ export default function AdminImportPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ records: previewRecords, mode: importMode }),
+          body: JSON.stringify({ records: previewRecords, mode: importMode, filename: file.name, fileType: ext }),
         });
         const responseText = await res.text();
         let data: ImportResult;
@@ -284,7 +285,7 @@ export default function AdminImportPage() {
                   <tr key={h._id || i} className="border-b border-gray-50 hover:bg-gray-50/50">
                     <td className="py-2 px-2 text-gray-500">{new Date(h.createdAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="py-2 px-2 text-gray-900 font-medium">{h.filename || '-'}</td>
-                    <td className="py-2 px-2 text-center"><span className="text-emerald-600 font-medium">{h.imported || 0}</span></td>
+                    <td className="py-2 px-2 text-center"><span className="text-emerald-600 font-medium">{h.inserted ?? h.imported ?? 0}</span></td>
                     <td className="py-2 px-2 text-center"><span className="text-blue-600 font-medium">{h.updated || 0}</span></td>
                     <td className="py-2 px-2 text-center"><span className="text-red-600 font-medium">{h.failed || 0}</span></td>
                     <td className="py-2 px-2 text-gray-500">{h.duration ? `${(h.duration / 1000).toFixed(1)}s` : '-'}</td>

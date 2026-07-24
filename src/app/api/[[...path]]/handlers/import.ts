@@ -19,7 +19,7 @@ export async function handleImportGet(req: NextRequest, segments: string[]): Pro
     await connectDB();
     const { ImportHistory } = await import('@/lib/models/ImportHistory');
     const history = await ImportHistory.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({ history });
+    return NextResponse.json({ history }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
   }
 
   // ---- /api/import/stats ----
@@ -36,14 +36,14 @@ export async function handleImportGet(req: NextRequest, segments: string[]): Pro
       ImportHistory.countDocuments({ createdAt: { $gte: todayStart } }),
     ]);
     const lastImport = await ImportHistory.findOne().sort({ createdAt: -1 }).select('createdAt duration filename').lean();
-    const totalRecords = await ImportHistory.aggregate([{ $group: { _id: null, total: { $sum: '$imported' }, updated: { $sum: '$updated' }, failed: { $sum: '$failed' } } }]);
+    const totalRecords = await ImportHistory.aggregate([{ $group: { _id: null, total: { $sum: '$inserted' }, updated: { $sum: '$updated' }, failed: { $sum: '$failed' } } }]);
     const t = totalRecords[0] || {};
     return NextResponse.json({
       totalImports, successfulImports, failedImports, todayImports,
       totalImported: t.total || 0, totalUpdated: t.updated || 0, totalFailed: t.failed || 0,
       lastImportTime: (lastImport as Record<string, unknown> | null)?.createdAt || null,
       lastImportDuration: (lastImport as Record<string, unknown> | null)?.duration || 0,
-    });
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
   }
 
   return undefined;

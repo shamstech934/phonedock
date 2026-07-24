@@ -1161,8 +1161,9 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'bulk-import') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
+    const importStartedAt = Date.now();
     const body = await req.json();
-    const { records, mode = 'skip_duplicates' } = body;
+    const { records, mode = 'skip_duplicates', filename = 'admin-bulk-import.json', fileType = 'json' } = body;
     if (!Array.isArray(records) || records.length === 0) return NextResponse.json({ error: 'No records' }, { status: 400 });
     if (records.length > MAX_UPLOAD_RECORDS) return NextResponse.json({ error: `Too many records (max ${MAX_UPLOAD_RECORDS})` }, { status: 400 });
     if (!['skip_duplicates', 'update_existing', 'new_only'].includes(mode)) {
@@ -1362,6 +1363,25 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
         await PhonePrice.insertMany(priceDocs.slice(i, i + BULK_BATCH_SIZE), { ordered: false });
       }
     } catch (error: unknown) {
+      const bulkFailureCount = records.length - skipped;
+      try {
+        const { ImportHistory } = await import('@/lib/models/ImportHistory');
+        await ImportHistory.create({
+          filename: String(filename || 'admin-bulk-import.json').slice(0, 255),
+          fileType: ['json', 'csv', 'xlsx'].includes(String(fileType)) ? fileType : 'json',
+          totalRecords: records.length,
+          inserted: 0,
+          updated: 0,
+          skipped,
+          failed: bulkFailureCount,
+          status: 'failed',
+          duration: Date.now() - importStartedAt,
+          batchSize: BULK_BATCH_SIZE,
+          errorRecords: [{ row: 0, model: '', error: error instanceof Error ? error.message : String(error) }],
+        });
+      } catch (historyError) {
+        console.error('[ImportHistory] Failed to record failed bulk import', historyError);
+      }
       return NextResponse.json(
         {
           success: false,
@@ -1371,20 +1391,45 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
           imported: 0,
           updated: 0,
           skipped,
-          failed: records.length - skipped,
+          failed: bulkFailureCount,
           errors: errors.slice(0, 100),
         },
-        { status: 500 },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
+    const duration = Date.now() - importStartedAt;
+    let historyId = '';
     try {
-      await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone' });
+      const { ImportHistory } = await import('@/lib/models/ImportHistory');
+      const history = await ImportHistory.create({
+        filename: String(filename || 'admin-bulk-import.json').slice(0, 255),
+        fileType: ['json', 'csv', 'xlsx'].includes(String(fileType)) ? fileType : 'json',
+        totalRecords: records.length,
+        inserted: imported,
+        updated,
+        skipped,
+        failed,
+        status: failed > 0 ? 'partial' : 'completed',
+        duration,
+        batchSize: BULK_BATCH_SIZE,
+        errorRecords: errors.slice(0, 100).map((message, index) => ({ row: index + 1, model: '', error: message.slice(0, 500) })),
+      });
+      historyId = history._id?.toString() || '';
+    } catch (historyError) {
+      console.error('[ImportHistory] Failed to record bulk import', historyError);
+    }
+
+    try {
+      await ActivityLog.create({ adminId: admin._id, action: 'bulk_import', details: `Bulk: ${imported} new, ${updated} updated, ${skipped} skipped, ${failed} failed`, entityType: 'phone', entityId: historyId });
     } catch (error) {
       console.error('[ActivityLog]', error);
     }
     revalidatePublicContent({ includeBrands: true });
-    return NextResponse.json({ success: true, total: records.length, imported, updated, skipped, failed, errors: errors.slice(0, 500) });
+    return NextResponse.json(
+      { success: true, total: records.length, imported, inserted: imported, updated, skipped, failed, duration, historyId, errors: errors.slice(0, 500) },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } },
+    );
   }
 
   // ---- /api/admin/sponsors (CREATE) ----
