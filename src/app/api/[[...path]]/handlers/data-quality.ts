@@ -815,7 +815,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
   // PhoneDock import-ready CSV format (slug / brand + model). Rows are resolved
   // against existing phones before any write so a missing MongoDB ObjectId does
   // not incorrectly reject an otherwise valid reviewed CSV.
-  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'repair-import') {
+  if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && (segments[2] === 'repair-import' || segments[2] === 'repair-import-v2')) {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
     const permCheck = requirePermission(authResult.admin, 'data-quality:fix');
@@ -840,9 +840,12 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       } catch { return false; }
     };
     const slugify = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 
     const objectIds: Types.ObjectId[] = [];
     const slugs = new Set<string>();
+    const brandNames = new Set<string>();
+    const modelNames = new Set<string>();
     for (const row of rows as Array<Record<string, unknown>>) {
       const id = clean(row.phoneId || row['Phone ID'], 40);
       if (Types.ObjectId.isValid(id)) objectIds.push(new Types.ObjectId(id));
@@ -850,22 +853,41 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       const brand = clean(row.brand || row.Brand, 120);
       const model = clean(row.model || row.Model || row.modelName, 240);
       if (explicitSlug) slugs.add(explicitSlug);
-      if (brand && model) slugs.add(slugify(`${brand} ${model}`));
+      if (brand && model) {
+        slugs.add(slugify(`${brand} ${model}`));
+        brandNames.add(normalizeName(brand));
+        modelNames.add(normalizeName(model));
+      }
     }
 
-    const phones = await Phone.find({
-      deletedAt: null,
-      $or: [
-        ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
-        ...(slugs.size ? [{ slug: { $in: Array.from(slugs) } }] : []),
-      ],
-    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean();
+    const relevantBrands = brandNames.size
+      ? await Brand.find({ deletedAt: null }).select('_id name slug').lean()
+      : [];
+    const brandIds = relevantBrands
+      .filter((brand: any) => brandNames.has(normalizeName(String(brand.name || brand.slug || ''))))
+      .map((brand: any) => brand._id);
 
+    const orFilters: Record<string, unknown>[] = [];
+    if (objectIds.length) orFilters.push({ _id: { $in: objectIds } });
+    if (slugs.size) orFilters.push({ slug: { $in: Array.from(slugs) } });
+    if (brandIds.length) orFilters.push({ brandId: { $in: brandIds } });
+
+    const phones = orFilters.length ? await Phone.find({
+      deletedAt: null,
+      $or: orFilters,
+    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean() : [];
+
+    const brandNameById = new Map<string, string>();
+    for (const brand of relevantBrands as any[]) brandNameById.set(brand._id.toString(), normalizeName(String(brand.name || brand.slug || '')));
     const byId = new Map<string, any>();
     const bySlug = new Map<string, any>();
+    const byBrandModel = new Map<string, any>();
     for (const phone of phones as any[]) {
       byId.set(phone._id.toString(), phone);
       bySlug.set(String(phone.slug || ''), phone);
+      const normalizedBrand = brandNameById.get(phone.brandId?.toString?.() || '') || '';
+      const normalizedModel = normalizeName(String(phone.modelName || ''));
+      if (normalizedBrand && normalizedModel) byBrandModel.set(`${normalizedBrand}::${normalizedModel}`, phone);
     }
 
     const results: Array<{ row: number; phoneId: string; status: 'ready' | 'updated' | 'skipped' | 'error'; message: string }> = [];
@@ -880,10 +902,13 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       const brand = clean(row.brand || row.Brand, 120);
       const model = clean(row.model || row.Model || row.modelName, 240);
       const derivedSlug = explicitSlug || (brand && model ? slugify(`${brand} ${model}`) : '');
-      const phone = (suppliedId && byId.get(suppliedId)) || (derivedSlug && bySlug.get(derivedSlug));
+      const brandModelKey = brand && model ? `${normalizeName(brand)}::${normalizeName(model)}` : '';
+      const phone = (suppliedId && byId.get(suppliedId))
+        || (derivedSlug && bySlug.get(derivedSlug))
+        || (brandModelKey && byBrandModel.get(brandModelKey));
       if (!phone) {
         failed++;
-        results.push({ row: index + 2, phoneId: suppliedId, status: 'error', message: suppliedId ? 'Phone not found for Phone ID' : 'Phone not found for slug/brand/model' });
+        results.push({ row: index + 2, phoneId: suppliedId, status: 'error', message: `Phone not found (slug: ${derivedSlug || 'none'}, brand/model: ${brand || 'none'} / ${model || 'none'})` });
         continue;
       }
       const phoneId = phone._id.toString();
@@ -973,7 +998,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       } catch (e) { console.error('[ActivityLog]', e); }
     }
 
-    return NextResponse.json({ dryRun, type, total: rows.length, ready, updated, skipped, failed, results: results.slice(0, 100) }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ engineVersion: 'repair-import-v2', dryRun, type, total: rows.length, ready, updated, skipped, failed, results: results.slice(0, 100) }, { headers: { 'Cache-Control': 'no-store' } });
   }
   // POST /api/admin/data-quality/scans
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {

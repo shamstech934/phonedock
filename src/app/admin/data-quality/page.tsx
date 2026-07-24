@@ -456,7 +456,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       const aggregate = { dryRun, type, total: repairRows.length, ready: 0, updated: 0, skipped: 0, failed: 0, results: [] as any[] };
       for (let offset = 0; offset < repairRows.length; offset += 500) {
         const batch = repairRows.slice(offset, offset + 500);
-        const res = await fetch('/api/admin/data-quality/repair-import', {
+        const res = await fetch('/api/admin/data-quality/repair-import-v2', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store',
           body: JSON.stringify({ type, rows: batch, dryRun }),
         });
@@ -569,7 +569,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
 
       <div className="bg-white border border-blue-100 rounded-2xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-          <div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-blue-600" /> Import reviewed repair CSV</h3><p className="text-sm text-gray-500 mt-1">Export a work pack, fill only the repair columns, then upload it here. Preview validates every row before apply.</p></div>
+          <div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-blue-600" /> Import reviewed repair CSV</h3><p className="text-sm text-gray-500 mt-1">Accepts exported repair work packs or PhoneDock specs CSV files. Phones are matched by ID, slug, or brand + model.</p></div>
           <label className="h-10 px-4 inline-flex items-center justify-center rounded-xl border border-blue-200 text-blue-700 text-sm font-medium cursor-pointer hover:bg-blue-50">
             Choose CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; const rows = parseCsvWorkPack(await file.text()); setRepairRows(rows); setRepairFileName(file.name); setRepairResult(null); }} />
           </label>
