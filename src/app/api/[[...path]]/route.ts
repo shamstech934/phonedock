@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+import { APP_VERSION } from '@/lib/version';
 function timingSafeEqual(a: string, b: string): boolean {
   try {
     const aBuf = Buffer.from(a, 'utf8');
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Lightweight production health check. Deliberately does not expose environment values.
     if (segments.length === 1 && segments[0] === 'health') {
       return NextResponse.json(
-        { status: 'ok', service: 'phonedock', version: '1.0.0' },
+        { status: 'ok', service: 'phonedock', version: APP_VERSION },
         { status: 200, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
       );
     }
