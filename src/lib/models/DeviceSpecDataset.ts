@@ -1,6 +1,6 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-export interface IDeviceSpecDataset extends Document {
+export interface IDeviceSpecDataset {
   brand: string; model: string; normalizedBrand: string; normalizedModel: string;
   display: string; chipset: string; ram: string; storage: string; battery: string;
   mainCamera: string; fiveG: string; sourceName: string; sourceUrl: string;
