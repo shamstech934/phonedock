@@ -70,6 +70,7 @@ export default function DataQualityPage() {
   const [summaryError, setSummaryError] = useState('');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [refreshMessage, setRefreshMessage] = useState('');
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [scanStatus, setScanStatus] = useState<{ running: boolean; scanId?: string; progress?: { status: string; processed: number; total: number; issuesFound: number } }>({ running: false });
 
   const fetchSummary = useCallback(async () => {
@@ -97,35 +98,20 @@ export default function DataQualityPage() {
   useEffect(() => { if (admin) fetchSummary(); }, [admin, fetchSummary]);
 
   const refreshAll = useCallback(async () => {
-    if (loadingSummary || scanStatus.running) return;
-    const startedAt = Date.now();
+    if (loadingSummary) return;
     setSummaryError('');
-    setRefreshMessage('Rechecking MongoDB and refreshing live counts...');
+    setRefreshMessage('Refreshing live MongoDB counts and the current queue...');
     try {
-      // Start an incremental scan so the refresh control does real work instead
-      // of only repainting the same cached summary. The summary endpoint itself
-      // reads directly from source collections and is refreshed immediately.
-      const scanRes = await fetch('/api/admin/data-quality/scans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store',
-        body: JSON.stringify({ type: 'incremental', dryRun: false, execute: true }),
-      });
-      const scanPayload = await scanRes.json().catch(() => null);
-      if (!scanRes.ok) throw new Error(scanPayload?.error || `Scan could not start (${scanRes.status})`);
-      setScanStatus({ running: true, scanId: scanPayload.scanId });
       await fetchSummary();
+      setRefreshNonce(value => value + 1);
       router.refresh();
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < 600) await new Promise(resolve => setTimeout(resolve, 600 - elapsed));
-      setRefreshMessage(`Refresh started successfully at ${new Date().toLocaleTimeString()}`);
+      setRefreshMessage(`Refreshed successfully at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Refresh failed';
       setSummaryError(message);
       setRefreshMessage('');
     }
-  }, [fetchSummary, loadingSummary, router, scanStatus.running]);
+  }, [fetchSummary, loadingSummary, router]);
 
   // Poll scan status if running
   useEffect(() => {
@@ -297,9 +283,9 @@ export default function DataQualityPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
       {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
-      {activeTab === 'missing-specs' && <LiveQueueTab type="specs" />}
-      {activeTab === 'missing-images' && <LiveQueueTab type="images" />}
-      {activeTab === 'missing-prices' && <LiveQueueTab type="prices" />}
+      {activeTab === 'missing-specs' && <LiveQueueTab key={`specs-${refreshNonce}`} type="specs" />}
+      {activeTab === 'missing-images' && <LiveQueueTab key={`images-${refreshNonce}`} type="images" />}
+      {activeTab === 'missing-prices' && <LiveQueueTab key={`prices-${refreshNonce}`} type="prices" />}
       {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
       {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
       {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ entityType: 'import' }} />}
@@ -467,14 +453,24 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     if (!repairRows.length) return;
     setRepairLoading(true); setRepairResult(null);
     try {
-      const res = await fetch('/api/admin/data-quality/repair-import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ type, rows: repairRows.slice(0, 500), dryRun }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Repair import failed');
-      setRepairResult(data);
-      if (!dryRun && data.updated > 0) load();
+      const aggregate = { dryRun, type, total: repairRows.length, ready: 0, updated: 0, skipped: 0, failed: 0, results: [] as any[] };
+      for (let offset = 0; offset < repairRows.length; offset += 500) {
+        const batch = repairRows.slice(offset, offset + 500);
+        const res = await fetch('/api/admin/data-quality/repair-import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store',
+          body: JSON.stringify({ type, rows: batch, dryRun }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Repair import failed (${res.status})`);
+        aggregate.ready += data.ready || 0;
+        aggregate.updated += data.updated || 0;
+        aggregate.skipped += data.skipped || 0;
+        aggregate.failed += data.failed || 0;
+        if (Array.isArray(data.results)) aggregate.results.push(...data.results.map((row: any) => ({ ...row, row: row.row + offset })));
+      }
+      aggregate.results = aggregate.results.slice(0, 100);
+      setRepairResult(aggregate);
+      if (!dryRun && aggregate.updated > 0) await load();
     } catch (e) { setRepairResult({ failed: repairRows.length, error: e instanceof Error ? e.message : 'Repair import failed' }); }
     finally { setRepairLoading(false); }
   };
@@ -580,7 +576,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
           <button onClick={() => submitRepair(true)} disabled={!repairRows.length || repairLoading} className="h-10 px-4 rounded-xl border border-gray-200 text-sm font-medium disabled:opacity-50">Preview</button>
           <button onClick={() => { if (confirm(`Apply reviewed ${type} repairs to the database?`)) submitRepair(false); }} disabled={!repairRows.length || repairLoading || !repairResult || repairResult.failed > 0} className="h-10 px-4 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-50">Apply repairs</button>
         </div>
-        {repairFileName && <p className="text-xs text-gray-500 mt-3">{repairFileName} · {repairRows.length} rows loaded (maximum 500 per batch)</p>}
+        {repairFileName && <p className="text-xs text-gray-500 mt-3">{repairFileName} · {repairRows.length} rows loaded (automatically processed in batches of 500)</p>}
         {repairResult && <div className={`mt-3 rounded-xl p-3 text-sm ${repairResult.error || repairResult.failed > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
           {repairResult.error ? repairResult.error : `${repairResult.dryRun ? 'Preview' : 'Import'}: ${repairResult.ready || 0} ready, ${repairResult.updated || 0} updated, ${repairResult.skipped || 0} skipped, ${repairResult.failed || 0} failed.`}
           {repairResult.results?.some((r: any) => r.status !== 'ready' && r.status !== 'updated') && <div className="mt-2 text-xs space-y-1">{repairResult.results.filter((r: any) => r.status !== 'ready' && r.status !== 'updated').slice(0, 5).map((r: any) => <p key={`${r.row}-${r.phoneId}`}>Row {r.row}: {r.message}</p>)}</div>}

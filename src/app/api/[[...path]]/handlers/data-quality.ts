@@ -811,8 +811,10 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
   }
 
   // POST /api/admin/data-quality/repair-import
-  // Applies a reviewed repair work pack. No row is accepted without a valid
-  // existing Phone ID, and a dry run is supported before any database write.
+  // Accepts both exported repair work packs (Phone ID) and the standard
+  // PhoneDock import-ready CSV format (slug / brand + model). Rows are resolved
+  // against existing phones before any write so a missing MongoDB ObjectId does
+  // not incorrectly reject an otherwise valid reviewed CSV.
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'repair-import') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -830,124 +832,148 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       return NextResponse.json({ error: 'Provide between 1 and 500 repair rows' }, { status: 400 });
     }
 
+    const clean = (value: unknown, max = 1000) => String(value ?? '').trim().slice(0, max);
     const isHttpUrl = (value: unknown) => {
       try {
-        const url = new URL(String(value || '').trim());
+        const url = new URL(clean(value, 1500));
         return url.protocol === 'http:' || url.protocol === 'https:';
       } catch { return false; }
     };
-    const clean = (value: unknown, max = 500) => String(value ?? '').trim().slice(0, max);
+    const slugify = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+    const objectIds: Types.ObjectId[] = [];
+    const slugs = new Set<string>();
+    for (const row of rows as Array<Record<string, unknown>>) {
+      const id = clean(row.phoneId || row['Phone ID'], 40);
+      if (Types.ObjectId.isValid(id)) objectIds.push(new Types.ObjectId(id));
+      const explicitSlug = clean(row.slug || row.Slug, 240);
+      const brand = clean(row.brand || row.Brand, 120);
+      const model = clean(row.model || row.Model || row.modelName, 240);
+      if (explicitSlug) slugs.add(explicitSlug);
+      if (brand && model) slugs.add(slugify(`${brand} ${model}`));
+    }
+
+    const phones = await Phone.find({
+      deletedAt: null,
+      $or: [
+        ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+        ...(slugs.size ? [{ slug: { $in: Array.from(slugs) } }] : []),
+      ],
+    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean();
+
+    const byId = new Map<string, any>();
+    const bySlug = new Map<string, any>();
+    for (const phone of phones as any[]) {
+      byId.set(phone._id.toString(), phone);
+      bySlug.set(String(phone.slug || ''), phone);
+    }
+
     const results: Array<{ row: number; phoneId: string; status: 'ready' | 'updated' | 'skipped' | 'error'; message: string }> = [];
-    let ready = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
+    const specsOps: Array<Record<string, unknown>> = [];
+    const phoneOps: Array<Record<string, unknown>> = [];
+    let ready = 0, updated = 0, skipped = 0, failed = 0;
 
     for (let index = 0; index < rows.length; index++) {
-      const row = rows[index] || {};
-      const phoneId = clean(row.phoneId || row['Phone ID'], 40);
-      if (!Types.ObjectId.isValid(phoneId)) {
-        failed++; results.push({ row: index + 2, phoneId, status: 'error', message: 'Invalid Phone ID' }); continue;
-      }
-      const phone = await Phone.findOne({ _id: phoneId, deletedAt: null });
+      const row = (rows[index] || {}) as Record<string, unknown>;
+      const suppliedId = clean(row.phoneId || row['Phone ID'], 40);
+      const explicitSlug = clean(row.slug || row.Slug, 240);
+      const brand = clean(row.brand || row.Brand, 120);
+      const model = clean(row.model || row.Model || row.modelName, 240);
+      const derivedSlug = explicitSlug || (brand && model ? slugify(`${brand} ${model}`) : '');
+      const phone = (suppliedId && byId.get(suppliedId)) || (derivedSlug && bySlug.get(derivedSlug));
       if (!phone) {
-        failed++; results.push({ row: index + 2, phoneId, status: 'error', message: 'Phone not found' }); continue;
+        failed++;
+        results.push({ row: index + 2, phoneId: suppliedId, status: 'error', message: suppliedId ? 'Phone not found for Phone ID' : 'Phone not found for slug/brand/model' });
+        continue;
       }
+      const phoneId = phone._id.toString();
 
       try {
-        if (type === 'prices') {
-          const price = Number(row.newPricePKR ?? row['New Price PKR'] ?? row.pricePKR ?? row['Price PKR']);
+        if (type === 'specs') {
+          const displaySize = clean(row.displaySize || row['Display Size']);
+          const displayType = clean(row.displayType || row['Display Type']);
+          const display = clean(row.display || row.Display) || [displaySize, displayType].filter(Boolean).join(' ');
+          const specInput: Record<string, string> = {
+            display,
+            displayType,
+            refreshRate: clean(row.refreshRate || row['Refresh Rate']),
+            chipset: clean(row.chipset || row.Chipset),
+            ram: clean(row.ram || row.RAM),
+            storage: clean(row.storage || row.Storage),
+            mainCamera: clean(row.mainCamera || row['Main Camera']),
+            selfieCamera: clean(row.selfieCamera || row['Selfie Camera']),
+            battery: clean(row.battery || row.Battery),
+            charging: clean(row.charging || row.Charging),
+            os: clean(row.os || row.OS),
+            fiveG: clean(row.fiveG || row['5G']),
+          };
+          const populated = Object.fromEntries(Object.entries(specInput).filter(([, value]) => value));
+          if (Object.keys(populated).length === 0) {
+            skipped++;
+            results.push({ row: index + 2, phoneId, status: 'skipped', message: 'At least one specification value is required' });
+            continue;
+          }
+          const numberFrom = (value: string, pattern: RegExp) => {
+            const match = value.match(pattern);
+            return match ? Number(match[1]) : null;
+          };
+          const numeric = {
+            ramGB: numberFrom(specInput.ram, /(\d+(?:\.\d+)?)\s*gb/i),
+            storageGB: numberFrom(specInput.storage, /(\d+(?:\.\d+)?)\s*gb/i),
+            batteryMAh: numberFrom(specInput.battery, /(\d+(?:\.\d+)?)\s*mah/i),
+            mainCameraMP: numberFrom(specInput.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i),
+            screenSizeInch: numberFrom(displaySize || specInput.display, /(\d+(?:\.\d+)?)/),
+          };
+          const update = { ...populated, ...Object.fromEntries(Object.entries(numeric).filter(([, value]) => value !== null)) };
+          if (!dryRun) {
+            specsOps.push({ updateOne: { filter: { phoneId: phone._id }, update: { $set: update, $setOnInsert: { phoneId: phone._id } }, upsert: true } });
+            phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { sourceName: clean(row.sourceName || row['Source Name'], 120) || 'PhoneDock reviewed CSV', sourceUrl: clean(row.sourceUrl || row['Source URL'], 1000), lastVerifiedAt: new Date(), dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
+          }
+        } else if (type === 'images') {
+          const thumbnail = clean(row.thumbnailUrl || row['Thumbnail URL'] || row.thumbnail || row.imageUrl, 1500);
+          if (!isHttpUrl(thumbnail)) {
+            skipped++; results.push({ row: index + 2, phoneId, status: 'skipped', message: 'Valid Thumbnail URL is required' }); continue;
+          }
+          if (!dryRun) phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { thumbnail, dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
+        } else {
+          const price = Number(row.newPricePKR ?? row['New Price PKR'] ?? row.pricePKR ?? row['Price PKR'] ?? row.price);
           if (!Number.isFinite(price) || price <= 0 || price > 10000000) {
             skipped++; results.push({ row: index + 2, phoneId, status: 'skipped', message: 'Valid New Price PKR is required' }); continue;
           }
-          const sourceName = clean(row.sourceName || row['Source Name'], 120);
           const sourceUrl = clean(row.sourceUrl || row['Source URL'], 1000);
           if (sourceUrl && !isHttpUrl(sourceUrl)) {
             failed++; results.push({ row: index + 2, phoneId, status: 'error', message: 'Source URL must be http(s)' }); continue;
           }
-          if (!dryRun) {
-            const previous = Number(phone.pricePKR || 0);
-            phone.previousPrice = previous;
-            phone.pricePKR = price;
-            phone.currentPrice = price;
-            phone.lowestPrice = phone.lowestPrice > 0 ? Math.min(phone.lowestPrice, price) : price;
-            phone.highestPrice = Math.max(Number(phone.highestPrice || 0), price);
-            phone.priceChange = previous > 0 ? price - previous : 0;
-            phone.percentageChange = previous > 0 ? ((price - previous) / previous) * 100 : 0;
-            phone.sourceName = sourceName || phone.sourceName;
-            phone.sourceUrl = sourceUrl || phone.sourceUrl;
-            phone.lastPriceCheckedAt = new Date();
-            phone.lastPriceChangedAt = previous !== price ? new Date() : phone.lastPriceChangedAt;
-            phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
-            await phone.save();
-          }
-        } else if (type === 'images') {
-          const thumbnail = clean(row.thumbnailUrl || row['Thumbnail URL'] || row.thumbnail, 1500);
-          if (!isHttpUrl(thumbnail)) {
-            skipped++; results.push({ row: index + 2, phoneId, status: 'skipped', message: 'Valid Thumbnail URL is required' }); continue;
-          }
-          if (!dryRun) {
-            phone.thumbnail = thumbnail;
-            phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
-            await phone.save();
-          }
-        } else {
-          const specInput: Record<string, string> = {
-            display: clean(row.display || row.Display),
-            chipset: clean(row.chipset || row.Chipset),
-            ram: clean(row.ram || row.RAM),
-            storage: clean(row.storage || row.Storage),
-            battery: clean(row.battery || row.Battery),
-            mainCamera: clean(row.mainCamera || row['Main Camera']),
-            fiveG: clean(row.fiveG || row['5G']),
-          };
-          const populated = Object.entries(specInput).filter(([, value]) => value);
-          if (populated.length === 0) {
-            skipped++; results.push({ row: index + 2, phoneId, status: 'skipped', message: 'At least one specification value is required' }); continue;
-          }
-          const numericFrom = (value: string, pattern: RegExp) => {
-            const match = value.match(pattern); return match ? Number(match[1]) : null;
-          };
-          if (!dryRun) {
-            const update: Record<string, unknown> = { ...specInput };
-            const ramGB = numericFrom(specInput.ram, /(\d+(?:\.\d+)?)\s*gb/i);
-            const storageGB = numericFrom(specInput.storage, /(\d+(?:\.\d+)?)\s*gb/i);
-            const batteryMAh = numericFrom(specInput.battery, /(\d+(?:\.\d+)?)\s*mah/i);
-            const mainCameraMP = numericFrom(specInput.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i);
-            if (ramGB) update.ramGB = ramGB;
-            if (storageGB) update.storageGB = storageGB;
-            if (batteryMAh) update.batteryMAh = batteryMAh;
-            if (mainCameraMP) update.mainCameraMP = mainCameraMP;
-            await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
-            phone.dataConfidence = 'user-submitted';
-            phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString());
-            await phone.save();
-          }
+          const previous = Number(phone.pricePKR || 0);
+          if (!dryRun) phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: {
+            previousPrice: previous, pricePKR: price, currentPrice: price,
+            lowestPrice: Number(phone.lowestPrice || 0) > 0 ? Math.min(Number(phone.lowestPrice), price) : price,
+            highestPrice: Math.max(Number(phone.highestPrice || 0), price),
+            priceChange: previous > 0 ? price - previous : 0,
+            percentageChange: previous > 0 ? ((price - previous) / previous) * 100 : 0,
+            sourceName: clean(row.sourceName || row['Source Name'], 120) || phone.sourceName,
+            sourceUrl: sourceUrl || phone.sourceUrl, lastPriceCheckedAt: new Date(),
+            lastPriceChangedAt: previous !== price ? new Date() : phone.lastPriceChangedAt,
+            dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()),
+          } } } });
         }
-
-        if (dryRun) { ready++; results.push({ row: index + 2, phoneId, status: 'ready', message: 'Validated and ready to apply' }); }
-        else { updated++; results.push({ row: index + 2, phoneId, status: 'updated', message: 'Repair applied' }); }
+        if (dryRun) ready++; else updated++;
+        results.push({ row: index + 2, phoneId, status: dryRun ? 'ready' : 'updated', message: dryRun ? 'Ready to apply' : 'Updated' });
       } catch (error) {
         failed++;
-        results.push({ row: index + 2, phoneId, status: 'error', message: error instanceof Error ? error.message : 'Update failed' });
+        results.push({ row: index + 2, phoneId, status: 'error', message: error instanceof Error ? error.message : 'Repair failed' });
       }
     }
 
-    if (!dryRun && updated > 0) {
+    if (!dryRun) {
+      if (specsOps.length) await PhoneSpecs.bulkWrite(specsOps as never[], { ordered: false });
+      if (phoneOps.length) await Phone.bulkWrite(phoneOps as never[], { ordered: false });
       try {
-        await ActivityLog.create({
-          adminId: authResult.admin._id,
-          action: 'data_quality_repair_import',
-          details: `Applied ${updated} ${type} repairs from reviewed CSV (${failed} failed, ${skipped} skipped)`,
-          entityType: 'data_quality',
-          entityId: '',
-        });
+        await ActivityLog.create({ adminId: authResult.admin._id, action: 'data_quality_repair_import', details: `Applied ${updated} ${type} repairs from reviewed CSV (${failed} failed, ${skipped} skipped)`, entityType: 'data_quality', entityId: '' });
       } catch (e) { console.error('[ActivityLog]', e); }
     }
 
-    return NextResponse.json({ dryRun, type, total: rows.length, ready, updated, skipped, failed, results: results.slice(0, 100) });
+    return NextResponse.json({ dryRun, type, total: rows.length, ready, updated, skipped, failed, results: results.slice(0, 100) }, { headers: { 'Cache-Control': 'no-store' } });
   }
   // POST /api/admin/data-quality/scans
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'scans') {
