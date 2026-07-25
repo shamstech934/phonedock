@@ -1,6 +1,9 @@
 import { RuleDefinition, DetectedIssue, DetectionContext, FixContext, FixResult } from '../types';
 import { Types } from 'mongoose';
-import { PhoneSpecs, PhoneImage } from '@/lib/models';
+import { PhoneSpecs, PhoneImage, Phone } from '@/lib/models';
+import { PhoneRetailListing } from '@/lib/models/PriceTracker';
+import { CollectedPhone } from '@/lib/models';
+import { matchAndApplySpecsForPhone } from '../spec-match';
 
 // ─── Helper: build stable issue key ───────────────────────────────
 function issueKey(ruleId: string, entityType: string, entityId: string, field?: string): string {
@@ -17,7 +20,7 @@ export const PHONE_MISSING_SPECS: RuleDefinition = {
   description: 'Phone has no associated PhoneSpecs document',
   severity: 'high',
   entityType: 'phone',
-  canAutoFix: false,
+  canAutoFix: true,
   async detect(ctx): Promise<DetectedIssue[]> {
     const issues: DetectedIssue[] = [];
     for (const phone of ctx.entities) {
@@ -40,6 +43,27 @@ export const PHONE_MISSING_SPECS: RuleDefinition = {
       }
     }
     return issues;
+  },
+  // Reuses the exact same local-dataset matcher already trusted for the manual
+  // "Auto match" buttons on the Missing Specs tab (see spec-match.ts). Only writes
+  // when the match is high-confidence (>=92%, unambiguous, enough populated fields);
+  // otherwise leaves the issue open for manual review instead of guessing.
+  async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
+    const phone = await Phone.findById(issue.entityId).populate('brandId', 'name').lean() as { _id: unknown; modelName?: string } | null;
+    if (!phone) {
+      return { success: false, changes: [], error: 'Phone not found' };
+    }
+    const result = await matchAndApplySpecsForPhone(phone, 92, ctx.adminId, ctx.dryRun);
+    if (result.status === 'applied') {
+      return { success: true, changes: [{ field: 'specs', oldValue: null, newValue: result.candidate || 'matched from local dataset' }] };
+    }
+    if (result.status === 'needs_review') {
+      return { success: false, changes: [], error: `Match found but confidence too low for auto-apply (${result.score}%, candidate: ${result.candidate}) — needs manual review` };
+    }
+    if (result.status === 'not_found') {
+      return { success: false, changes: [], error: 'No matching phone found in local specs dataset' };
+    }
+    return { success: false, changes: [], error: result.message || 'Auto-fix failed' };
   },
 };
 
@@ -139,7 +163,7 @@ export const PHONE_MISSING_PRIMARY_IMAGE: RuleDefinition = {
   description: 'Published phone has no thumbnail or images',
   severity: 'medium',
   entityType: 'phone',
-  canAutoFix: false,
+  canAutoFix: true,
   async detect(ctx): Promise<DetectedIssue[]> {
     const issues: DetectedIssue[] = [];
     for (const phone of ctx.entities) {
@@ -158,6 +182,39 @@ export const PHONE_MISSING_PRIMARY_IMAGE: RuleDefinition = {
     }
     return issues;
   },
+  // Safe, internal-data-only fix: reuse images already collected for this exact phone by
+  // the Collector system (linked via approvedPhoneId/importedPhoneId), if any exist. Never
+  // fetches anything from the network — if no linked CollectedPhone has images, it fails
+  // honestly instead of guessing or scraping.
+  async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
+    const phoneId = issue.entityId;
+    const collected = await CollectedPhone.findOne({
+      $or: [{ approvedPhoneId: phoneId }, { importedPhoneId: phoneId }],
+    }).sort({ updatedAt: -1 }).lean() as { thumbnail?: string; images?: string[] } | null;
+
+    const thumbnail = collected?.thumbnail || (collected?.images && collected.images[0]) || '';
+    const gallery = (collected?.images || []).filter(Boolean);
+
+    if (!thumbnail && gallery.length === 0) {
+      return { success: false, changes: [], error: 'No linked Collector record with images found for this phone' };
+    }
+
+    if (ctx.dryRun) {
+      return { success: true, changes: [{ field: 'thumbnail', oldValue: null, newValue: thumbnail || gallery[0] }] };
+    }
+
+    const finalThumbnail = thumbnail || gallery[0];
+    await Phone.updateOne({ _id: phoneId }, { $set: { thumbnail: finalThumbnail } });
+    if (gallery.length > 0) {
+      const existing = await PhoneImage.countDocuments({ phoneId });
+      if (existing === 0) {
+        await PhoneImage.insertMany(
+          gallery.slice(0, 10).map((url, i) => ({ phoneId, url, sortOrder: i })),
+        );
+      }
+    }
+    return { success: true, changes: [{ field: 'thumbnail', oldValue: null, newValue: finalThumbnail }] };
+  },
 };
 
 export const PHONE_MISSING_PRICE: RuleDefinition = {
@@ -166,7 +223,7 @@ export const PHONE_MISSING_PRICE: RuleDefinition = {
   description: 'Published phone has no price set',
   severity: 'high',
   entityType: 'phone',
-  canAutoFix: false,
+  canAutoFix: true,
   async detect(ctx): Promise<DetectedIssue[]> {
     const issues: DetectedIssue[] = [];
     for (const phone of ctx.entities) {
@@ -183,6 +240,41 @@ export const PHONE_MISSING_PRICE: RuleDefinition = {
       }
     }
     return issues;
+  },
+  // Safe, internal-data-only fix: uses the phone's own verified retailer listings
+  // (PhoneRetailListing, populated by the Collector/Price Tracker system) — never invents
+  // a number and never calls out to the network itself. Only listings with
+  // verificationStatus 'verified' and a positive price count; takes the lowest verified
+  // price (the standard "starting from" convention this site already uses elsewhere).
+  async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
+    const phoneId = issue.entityId;
+    const listings = await PhoneRetailListing.find({
+      phoneId, enabled: true, verificationStatus: 'verified', currentSourcePrice: { $gt: 0 },
+    }).sort({ currentSourcePrice: 1 }).limit(1).lean() as Array<{ currentSourcePrice: number; sourceId: unknown }>;
+
+    if (listings.length === 0) {
+      return { success: false, changes: [], error: 'No verified retail listing with a price found for this phone' };
+    }
+    const newPrice = listings[0].currentSourcePrice;
+    const oldPrice = (await Phone.findById(phoneId).select('pricePKR').lean() as { pricePKR?: number } | null)?.pricePKR || 0;
+
+    if (ctx.dryRun) {
+      return { success: true, changes: [{ field: 'pricePKR', oldValue: oldPrice, newValue: newPrice }] };
+    }
+
+    await Phone.updateOne({ _id: phoneId }, { $set: { pricePKR: newPrice, lastPriceCheckedAt: new Date() } });
+    try {
+      const { PriceTrackerHistory } = await import('@/lib/models/PriceTracker');
+      await PriceTrackerHistory.create({
+        phoneId, oldPrice, newPrice, difference: newPrice - oldPrice,
+        percentageChange: oldPrice > 0 ? Math.round(((newPrice - oldPrice) / oldPrice) * 100) : 0,
+        changeType: oldPrice === 0 ? 'correction' : newPrice > oldPrice ? 'increase' : 'decrease',
+        sourceType: 'retailer', sourceId: listings[0].sourceId,
+        changedByAdminId: ctx.adminId, verificationStatus: 'confirmed',
+      });
+    } catch { /* history log is best-effort, not fatal to the fix */ }
+
+    return { success: true, changes: [{ field: 'pricePKR', oldValue: oldPrice, newValue: newPrice }] };
   },
 };
 
@@ -291,17 +383,41 @@ export const SPECS_DUPLICATE: RuleDefinition = {
   canAutoFix: true,
   async detect(ctx): Promise<DetectedIssue[]> {
     const issues: DetectedIssue[] = [];
-    const seen = new Map<string, number>();
-    for (const phone of ctx.entities) {
-      const id = phone._id?.toString();
-      if (!id) continue;
-      seen.set(id, (seen.get(id) || 0) + 1);
+    const phoneIds = ctx.entities.map(p => p._id?.toString()).filter(Boolean);
+    if (phoneIds.length === 0) return issues;
+    // Group PhoneSpecs by phoneId and flag any phone with more than one specs document
+    const dupes = await PhoneSpecs.aggregate([
+      { $match: { phoneId: { $in: phoneIds.map(id => new Types.ObjectId(id)) } } },
+      { $group: { _id: '$phoneId', count: { $sum: 1 }, ids: { $push: '$_id' } } },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+    for (const d of dupes) {
+      const id = d._id.toString();
+      issues.push({
+        issueKey: issueKey(this.ruleId, 'phone', id, 'specs'),
+        entityType: 'phone', entityId: id, issueType: this.ruleId,
+        severity: this.severity, field: 'specs',
+        currentValue: `${d.count} PhoneSpecs documents`,
+        suggestedValue: 'Keep most recently updated, delete the rest',
+        source: 'system', confidence: 1,
+        metadata: { specsIds: d.ids.map((i: unknown) => String(i)) },
+      });
     }
-    // This rule works differently — it's detected from specs side
     return issues;
   },
   async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
-    return { success: false, changes: [], error: 'Manual review required' };
+    const phoneId = issue.entityId;
+    const docs = await PhoneSpecs.find({ phoneId: new Types.ObjectId(phoneId) }).sort({ updatedAt: -1 }).lean();
+    if (docs.length <= 1) {
+      return { success: true, changes: [], error: 'No duplicates remain' };
+    }
+    const remove = docs.slice(1);
+    const removeIds = remove.map((d: { _id: unknown }) => d._id);
+    if (ctx.dryRun) {
+      return { success: true, changes: [{ field: 'specs', oldValue: docs.length, newValue: 1 }] };
+    }
+    await PhoneSpecs.deleteMany({ _id: { $in: removeIds } });
+    return { success: true, changes: [{ field: 'specs', oldValue: docs.length, newValue: 1 }] };
   },
 };
 

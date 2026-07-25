@@ -65,7 +65,7 @@ export default function AdminDashboardPage() {
   ];
 
   const quickActions = [
-    { label: 'Import', icon: Upload, href: '/admin/import' },
+    { label: 'Import', icon: Upload, href: '/admin/import-v2' },
     { label: 'Sync', icon: RefreshCw, href: '/admin/sync' },
     { label: 'Phones', icon: Smartphone, href: '/admin/phones' },
     { label: 'Brands', icon: Layers, href: '/admin/brands' },

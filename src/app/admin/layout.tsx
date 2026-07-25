@@ -33,7 +33,7 @@ const adminLinks: NavLink[] = [
   { label: 'Reviews', href: '/admin/reviews', icon: Star, permission: 'phones:read' },
   { label: 'Review Engine', href: '/admin/review-engine', icon: Sparkles, permission: 'phones:edit' },
   { label: 'Activity', href: '/admin/activity', icon: Clock, permission: 'activity:read' },
-  { label: 'Import', href: '/admin/import', icon: Upload, permission: 'imports:read' },
+  { label: 'Import', href: '/admin/import-v2', icon: Upload, permission: 'imports:read' },
   { label: 'Collector', href: '/admin/collector', icon: Radio, permission: 'collectors:read', children: [
     { label: 'Overview', href: '/admin/collector' },
     { label: 'Sources', href: '/admin/collector/sources' },

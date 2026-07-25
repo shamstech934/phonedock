@@ -815,6 +815,8 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
   const [bulkAction, setBulkAction] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [detailIssue, setDetailIssue] = useState<any>(null);
+  const [fixAllLoading, setFixAllLoading] = useState(false);
+  const [fixingId, setFixingId] = useState<string | null>(null);
 
   const fetchIssues = useCallback(async (p: number = page) => {
     setLoading(true);
@@ -858,6 +860,56 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       }
     } catch (e) { console.error(e); }
     finally { setActionLoading(false); }
+  };
+
+  const handleFixOne = async (issueId: string) => {
+    setFixingId(issueId);
+    try {
+      const res = await fetch(`/api/admin/data-quality/issues/${issueId}/fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ dryRun: false }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.success === false) {
+        alert(result.error || 'Auto-fix failed for this issue');
+      } else {
+        fetchIssues();
+        onRefresh();
+      }
+    } catch (e) { console.error(e); alert('Auto-fix failed'); }
+    finally { setFixingId(null); }
+  };
+
+  const handleFixAll = async () => {
+    const confirmMsg = `This will auto-fix EVERY open issue matching the current filters (not just this page). Continue?`;
+    if (!window.confirm(confirmMsg)) return;
+    setFixAllLoading(true);
+    try {
+      const res = await fetch('/api/admin/data-quality/fix-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          severity: severityFilter || undefined,
+          issueType: defaultFilter?.issueType || undefined,
+          entityType: defaultFilter?.entityType || undefined,
+          search: search || undefined,
+          dryRun: false,
+        }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        alert(`Fix all complete: ${result.succeeded} fixed, ${result.failed} failed, out of ${result.total} auto-fixable issues found.`);
+        fetchIssues(1);
+        onRefresh();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Fix all failed');
+      }
+    } catch (e) { console.error(e); alert('Fix all failed'); }
+    finally { setFixAllLoading(false); }
   };
 
   const handleResolveIssue = async (issueId: string) => {
@@ -952,6 +1004,11 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
           </select>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={handleFixAll} disabled={fixAllLoading || total === 0}
+            title={`Auto-fixes every open, auto-fixable issue matching current filters (up to ${total.toLocaleString()} total) — not just the 50 shown on this page`}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+            {fixAllLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />} Fix All ({total.toLocaleString()})
+          </button>
           <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">
             <Download className="w-3.5 h-3.5" /> CSV
           </button>
@@ -961,10 +1018,11 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       {/* Bulk Actions */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
-          <span className="text-sm text-blue-700 font-medium">{selected.size} selected</span>
+          <span className="text-sm text-blue-700 font-medium">{selected.size} selected (this page)</span>
           <select value={bulkAction} onChange={e => setBulkAction(e.target.value)}
             className="h-8 px-2 rounded-lg border border-blue-200 text-sm bg-white">
             <option value="">Actions...</option>
+            <option value="fix">Auto-fix</option>
             <option value="ignore">Ignore</option>
             <option value="resolve">Resolve</option>
           </select>
@@ -1037,6 +1095,12 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                   </button>
                   {issue.status === 'open' && (
                     <>
+                      {issue.canAutoFix && (
+                        <button onClick={() => handleFixOne(issue.id)} disabled={fixingId === issue.id}
+                          className="p-1.5 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg disabled:opacity-50" title="Auto-fix">
+                          {fixingId === issue.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
                       <button onClick={() => handleResolveIssue(issue.id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Resolve">
                         <CheckCircle className="w-3.5 h-3.5" />
                       </button>
