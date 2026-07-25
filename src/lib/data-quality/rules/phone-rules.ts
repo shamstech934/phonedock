@@ -182,21 +182,54 @@ export const PHONE_MISSING_PRIMARY_IMAGE: RuleDefinition = {
     }
     return issues;
   },
-  // Safe, internal-data-only fix: reuse images already collected for this exact phone by
-  // the Collector system (linked via approvedPhoneId/importedPhoneId), if any exist. Never
-  // fetches anything from the network — if no linked CollectedPhone has images, it fails
-  // honestly instead of guessing or scraping.
+  // Safe, internal-data-only fix: reuse images already collected for this exact phone.
+  // Tries three match strategies, from safest to broadest, and stops at the first hit:
+  //   1. Direct link (approvedPhoneId/importedPhoneId) — phone came through Collector approval.
+  //   2. Exact slug match against any CollectedPhone record — covers phones that were
+  //      bulk-imported (CSV/JSON) but also happen to exist as an unlinked scraped record.
+  //   3. Exact normalized brand+model match, only if the match is unambiguous (exactly one
+  //      CollectedPhone candidate) — avoids attaching the wrong phone's photo.
+  // Never fetches anything from the network. If none of the three find anything, fails
+  // honestly instead of guessing.
   async autoFix(issue: DetectedIssue, ctx: FixContext): Promise<FixResult> {
     const phoneId = issue.entityId;
-    const collected = await CollectedPhone.findOne({
+    type CollectedLite = { thumbnail?: string; images?: string[]; slug?: string; brandName?: string; model?: string };
+
+    let collected: CollectedLite | null = await CollectedPhone.findOne({
       $or: [{ approvedPhoneId: phoneId }, { importedPhoneId: phoneId }],
-    }).sort({ updatedAt: -1 }).lean() as { thumbnail?: string; images?: string[] } | null;
+    }).sort({ updatedAt: -1 }).lean() as CollectedLite | null;
+    let matchStrategy = 'linked';
+
+    if (!collected?.thumbnail && !(collected?.images && collected.images.length)) {
+      const phone = await Phone.findById(phoneId).populate('brandId', 'name').lean() as
+        { slug?: string; modelName?: string; brandId?: { name?: string } } | null;
+      if (!phone) return { success: false, changes: [], error: 'Phone not found' };
+
+      if (phone.slug) {
+        const bySlug = await CollectedPhone.findOne({
+          slug: phone.slug,
+          $or: [{ thumbnail: { $ne: '' } }, { 'images.0': { $exists: true } }],
+        }).sort({ updatedAt: -1 }).lean() as CollectedLite | null;
+        if (bySlug) { collected = bySlug; matchStrategy = 'slug'; }
+      }
+
+      if (!collected && phone.modelName && phone.brandId?.name) {
+        const norm = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ').trim();
+        const escapedBrand = phone.brandId.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const candidates = await CollectedPhone.find({
+          brandName: new RegExp(`^${escapedBrand}$`, 'i'),
+          $or: [{ thumbnail: { $ne: '' } }, { 'images.0': { $exists: true } }],
+        }).limit(20).lean() as CollectedLite[];
+        const exact = candidates.filter(c => norm(c.model || '') === norm(phone.modelName || ''));
+        if (exact.length === 1) { collected = exact[0]; matchStrategy = 'brand+model'; }
+      }
+    }
 
     const thumbnail = collected?.thumbnail || (collected?.images && collected.images[0]) || '';
     const gallery = (collected?.images || []).filter(Boolean);
 
     if (!thumbnail && gallery.length === 0) {
-      return { success: false, changes: [], error: 'No linked Collector record with images found for this phone' };
+      return { success: false, changes: [], error: 'No matching Collector record with images found for this phone (checked direct link, slug, and brand+model)' };
     }
 
     if (ctx.dryRun) {
@@ -213,7 +246,7 @@ export const PHONE_MISSING_PRIMARY_IMAGE: RuleDefinition = {
         );
       }
     }
-    return { success: true, changes: [{ field: 'thumbnail', oldValue: null, newValue: finalThumbnail }] };
+    return { success: true, changes: [{ field: `thumbnail (matched via ${matchStrategy})`, oldValue: null, newValue: finalThumbnail }] };
   },
 };
 

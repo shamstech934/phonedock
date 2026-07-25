@@ -159,3 +159,45 @@ npm run test
 
 If any of these fail, the specific error will point at the exact file/line — happy to fix
 whatever comes up in a follow-up pass with the real error output.
+
+---
+
+## Follow-up: real missing-images export analysis (8,871 phones)
+
+User provided a live CSV export from **Missing Images** (`phonedock-missing-images-all.csv`,
+8,871 rows). Analyzed it before making further claims:
+
+- `Data Confidence` breakdown: `auto-imported` (3,990), `user-submitted` (3,990),
+  `unverified` (891). **None** show a Collector-scrape origin.
+- This means the original image auto-fix (which only checked
+  `CollectedPhone.approvedPhoneId`/`importedPhoneId` — i.e. phones that went through
+  Collector approval) likely would have matched **very few, possibly none**, of these
+  8,871 phones, since they were bulk-imported, not Collector-approved.
+- Also confirmed `DeviceSpecDataset` (the local specs-matching source) has no image
+  fields at all — not a fallback source either.
+
+**Broadened the fix** (`PHONE_MISSING_PRIMARY_IMAGE.autoFix`) to try, in order, stopping
+at the first hit:
+1. Direct Collector-approval link (original, safest).
+2. Exact slug match against any `CollectedPhone` record (covers phones that exist as an
+   unlinked scraped record even though they were bulk-imported).
+3. Exact normalized brand+model match, **only if unambiguous** (exactly one candidate) —
+   deliberately conservative to avoid attaching the wrong phone's photo.
+
+Still 100% internal-database-only — no network calls added.
+
+**Honest caveat — I cannot tell you the real recovery rate.** I have no live database
+connection in this sandbox, so I can't query how many of these 8,871 phones actually have
+a matching `CollectedPhone` record (linked, same slug, or same brand+model) with images.
+The broadened match gives it a real, better-founded chance, but the only way to know the
+actual number fixed is to run "Fix All" against Missing Images in your real environment
+and look at the returned `succeeded`/`failed` counts.
+
+**Scale note:** `fix-all` is capped at 2,000 issues per call (to avoid a Vercel function
+timeout). For 8,871 phones you'll need to click "Fix All" roughly 4–5 times — it's
+idempotent, so repeating it is safe; each call only processes remaining open issues.
+
+**If the recovery rate turns out low**, the honest remaining options are: (a) run your
+Collector against these specific models to scrape real images (needs live network, can't
+be done from this sandbox), or (b) accept that phones with truly no source anywhere need
+manual image upload — there's no other legitimate internal data to pull from.
