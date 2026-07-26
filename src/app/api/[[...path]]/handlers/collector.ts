@@ -30,16 +30,30 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
-    const [totalSources, activeSources, totalJobs, pendingReview, completedJobs] = await Promise.all([
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+    const [
+      totalSources, activeSources, totalJobs, pendingReview, completedJobs,
+      jobsRunning, jobsWaiting, jobsFailed, phonesCollectedToday, phonesImportedTotal,
+      duplicatesDetected, recentActivity,
+    ] = await Promise.all([
       CollectorSource.countDocuments(),
       CollectorSource.countDocuments({ enabled: true }),
       CollectorJob.countDocuments(),
       CollectedPhone.countDocuments({ status: { $in: ['pending', 'needs_review'] } }),
       CollectorJob.countDocuments({ status: { $in: ['completed', 'failed'] } }),
+      CollectorJob.countDocuments({ status: 'running' }),
+      CollectorJob.countDocuments({ status: 'queued' }),
+      CollectorJob.countDocuments({ status: 'failed' }),
+      CollectedPhone.countDocuments({ createdAt: { $gte: startOfToday } }),
+      CollectedPhone.countDocuments({ status: 'imported' }),
+      CollectedPhone.countDocuments({ hasExactDuplicate: true, status: { $in: ['pending', 'needs_review'] } }),
+      ActivityLog.find({ entityType: 'collector' }).sort({ createdAt: -1 }).limit(8).lean(),
     ]);
     const pagesPerInvocationEnv = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '3');
     return NextResponse.json({
       totalSources, activeSources, totalJobs, pendingReview, completedJobs,
+      jobsRunning, jobsWaiting, jobsFailed, phonesCollectedToday, phonesImportedTotal, duplicatesDetected,
+      recentActivity: recentActivity.map((a: Record<string, unknown>) => ({ id: (a._id as { toString(): string })?.toString(), action: a.action, details: a.details, createdAt: a.createdAt })),
       config: {
         pagesPerInvocation: pagesPerInvocationEnv > 0 ? pagesPerInvocationEnv : 'unlimited',
         maxCollectPerJob: 2000,

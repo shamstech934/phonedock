@@ -15,31 +15,37 @@ interface CollectorStats {
   activeSources?: number;
   totalSources?: number;
   pendingReview?: number;
+  jobsRunning?: number;
+  jobsWaiting?: number;
+  jobsFailed?: number;
+  phonesCollectedToday?: number;
+  phonesImportedTotal?: number;
+  duplicatesDetected?: number;
+  recentActivity?: RecentActivity[];
 }
 
-interface CollectorJob {
+interface RecentActivity {
   id: string;
-  status: string;
+  action: string;
+  details: string;
+  createdAt: string;
 }
+
 
 export default function AdminCollectorPage() {
   useAdmin();
   const [stats, setStats] = useState<CollectorStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [recentJobs, setRecentJobs] = useState<CollectorJob[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [runningCollection, setRunningCollection] = useState(false);
 
   const fetchData = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([
-      fetch('/api/collector/dashboard', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Dashboard fetch failed'); return r.json(); }),
-      fetch('/api/collector/jobs', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Jobs fetch failed'); return r.json(); }),
-    ]).then(([d, j]) => {
+    fetch('/api/collector/dashboard', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Dashboard fetch failed'); return r.json(); })
+      .then((d) => {
       setStats(d);
-      setRecentJobs(((j.jobs || []) as CollectorJob[]).slice(0, 5));
       setLastSync(new Date().toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
       setLoading(false);
     }).catch((e) => {
@@ -136,9 +142,13 @@ export default function AdminCollectorPage() {
         {[
           { label: 'Total Sources', value: stats?.totalSources || 0, icon: Database, bg: 'bg-blue-50', color: 'text-blue-600' },
           { label: 'Active Sources', value: stats?.activeSources || 0, icon: Radio, bg: 'bg-emerald-50', color: 'text-emerald-600' },
-          { label: 'Total Jobs', value: stats?.totalJobs || 0, icon: Clock, bg: 'bg-violet-50', color: 'text-violet-600' },
-          { label: 'Completed', value: stats?.completedJobs || 0, icon: CheckCircle, bg: 'bg-cyan-50', color: 'text-cyan-600' },
+          { label: 'Jobs Running', value: stats?.jobsRunning || 0, icon: RefreshCw, bg: 'bg-blue-50', color: 'text-blue-600' },
+          { label: 'Jobs Waiting', value: stats?.jobsWaiting || 0, icon: Clock, bg: 'bg-violet-50', color: 'text-violet-600' },
+          { label: 'Jobs Failed', value: stats?.jobsFailed || 0, icon: AlertCircle, bg: 'bg-red-50', color: 'text-red-600' },
           { label: 'Pending Review', value: stats?.pendingReview || 0, icon: AlertCircle, bg: 'bg-amber-50', color: 'text-amber-600' },
+          { label: 'Collected Today', value: stats?.phonesCollectedToday || 0, icon: TrendingUp, bg: 'bg-cyan-50', color: 'text-cyan-600' },
+          { label: 'Imported Total', value: stats?.phonesImportedTotal || 0, icon: CheckCircle, bg: 'bg-emerald-50', color: 'text-emerald-600' },
+          { label: 'Duplicates Found', value: stats?.duplicatesDetected || 0, icon: AlertCircle, bg: 'bg-amber-50', color: 'text-amber-600' },
           { label: 'Success Rate', value: successRate, icon: TrendingUp, bg: 'bg-indigo-50', color: 'text-indigo-600' },
         ].map(s => (
           <div key={s.label} className="card-premium p-3.5">
@@ -148,6 +158,40 @@ export default function AdminCollectorPage() {
           </div>
         ))}
       </div>
+
+      {/* Job status distribution chart (real data, CSS bar) */}
+      {(stats?.totalJobs ?? 0) > 0 && (
+        <div className="card-premium p-5">
+          <h3 className="font-bold text-sm text-gray-900 mb-3">Job Status Distribution</h3>
+          {(() => {
+            const running = stats?.jobsRunning || 0;
+            const waiting = stats?.jobsWaiting || 0;
+            const completed = stats?.completedJobs || 0;
+            const failed = stats?.jobsFailed || 0;
+            const total = Math.max(1, running + waiting + completed + failed);
+            const seg = [
+              { label: 'Running', value: running, color: 'bg-blue-500' },
+              { label: 'Waiting', value: waiting, color: 'bg-violet-400' },
+              { label: 'Completed', value: completed, color: 'bg-emerald-500' },
+              { label: 'Failed', value: failed, color: 'bg-red-500' },
+            ];
+            return (
+              <div>
+                <div className="w-full h-3 rounded-full overflow-hidden flex bg-gray-100">
+                  {seg.map(s => s.value > 0 && <div key={s.label} className={s.color} style={{ width: `${(s.value / total) * 100}%` }} title={`${s.label}: ${s.value}`} />)}
+                </div>
+                <div className="flex flex-wrap gap-3 mt-3">
+                  {seg.map(s => (
+                    <span key={s.label} className="text-[10px] text-gray-500 flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${s.color}`} /> {s.label} ({s.value})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Navigation Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -191,16 +235,17 @@ export default function AdminCollectorPage() {
             </div>
           </div>
           <div className="space-y-2.5">
-            <h4 className="text-xs font-semibold text-gray-700 mb-1">Recent Jobs</h4>
-            {recentJobs.length > 0 ? recentJobs.map((job) => {
-              const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700', failed: 'bg-red-50 text-red-700', running: 'bg-blue-50 text-blue-700', pending: 'bg-gray-100 text-gray-600' };
-              return (
-                <div key={job.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-gray-500">#{job.id.slice(-6)}</span>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${statusColors[job.status] || statusColors.pending}`}>{job.status}</span>
-                </div>
-              );
-            }) : <p className="text-xs text-muted-foreground">No recent jobs</p>}
+            <h4 className="text-xs font-semibold text-gray-700 mb-1">Live Activity</h4>
+            {stats?.recentActivity && stats.recentActivity.length > 0 ? (
+              <div className="space-y-2">
+                {stats.recentActivity.map(a => (
+                  <div key={a.id} className="text-xs">
+                    <p className="text-gray-700">{a.details}</p>
+                    <p className="text-[10px] text-gray-400">{new Date(a.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-xs text-muted-foreground">No recent activity</p>}
           </div>
         </div>
       </div>
