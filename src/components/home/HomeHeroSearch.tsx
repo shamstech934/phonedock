@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Search, Smartphone, TrendingUp, Loader2 } from 'lucide-react';
+import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
 interface AutocompleteResult {
   id: string;
@@ -64,7 +65,15 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
   const submit = (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const value = query.trim();
-    if (value) { setShowDropdown(false); router.push(`/search?q=${encodeURIComponent(value)}`); }
+    if (!value) return;
+    setShowDropdown(false);
+    const smartIntent = parseSmartSearch(value);
+    const hasSmartFilters = smartIntent.detected.length > 0 && (
+      smartIntent.maxPrice || smartIntent.minPrice || smartIntent.ram || smartIntent.storage ||
+      smartIntent.display || smartIntent.refresh || smartIntent.camera || smartIntent.battery ||
+      smartIntent.chipset || smartIntent.fiveG || smartIntent.nfc || smartIntent.pta || smartIntent.sort
+    );
+    router.push(hasSmartFilters ? smartSearchToPhonesUrl(smartIntent) : `/search?q=${encodeURIComponent(value)}`);
   };
 
   return (
