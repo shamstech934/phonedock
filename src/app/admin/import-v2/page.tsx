@@ -332,6 +332,7 @@ export default function ImportV2Page() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [lastBatchDebug, setLastBatchDebug] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningBatchesRef = useRef<Set<number>>(new Set());
   const nextBatchRef = useRef(0);
@@ -614,6 +615,7 @@ export default function ImportV2Page() {
         const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/batches/${batchNum}`, { records });
         if (res.ok && res.data) {
           const batchResult = res.data;
+          setLastBatchDebug(`created=${batchResult.created ?? '?'} updated=${batchResult.updated ?? '?'} specsWritten=${batchResult.specsWrittenCount ?? '?'} specsChanges=${JSON.stringify(batchResult.specsChanges ?? [])} errors=${JSON.stringify(batchResult.errors ?? [])}`);
           setProgress(prev => {
             if (!prev) return prev;
             const batches = [...prev.batches];
@@ -1299,6 +1301,14 @@ export default function ImportV2Page() {
                     <p className="text-sm font-medium text-red-700">Import could not start</p>
                     <p className="text-xs text-red-600 mt-0.5">{startError}</p>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+            {lastBatchDebug && (
+              <Card className="border-blue-200 bg-blue-50">
+                <CardContent className="py-3">
+                  <p className="text-xs font-medium text-blue-700 mb-1">Debug: last batch response</p>
+                  <pre className="text-[10px] text-blue-800 whitespace-pre-wrap break-all">{lastBatchDebug}</pre>
                 </CardContent>
               </Card>
             )}

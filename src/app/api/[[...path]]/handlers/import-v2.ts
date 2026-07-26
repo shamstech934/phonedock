@@ -356,7 +356,7 @@ export async function handleImportV2Batch(req: NextRequest, segments: string[]):
     // FIX #9: Reconcile counters before potentially completing
     await reconcileJobCounters(importId);
 
-    return NextResponse.json({ success: true, data: { ...result, total: records.length } });
+    return NextResponse.json({ success: true, data: { ...result, total: records.length, specsWrittenCount: result.specsChanges?.length || 0 } });
   } catch (err: unknown) {
     // FIX #7: Return actual HTTP 500, not 200 with status in body
     const errMsg = err instanceof Error ? err.message : 'Unknown error';

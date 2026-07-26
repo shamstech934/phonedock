@@ -462,6 +462,11 @@ export function normalizePhoneRecord(
     data.slug = generateSlug(`${data.brand} ${data.model}`);
   }
 
+  // Attach collected benchmarks — this was previously left on the local
+  // `benchmarks` variable and never copied onto the returned data, so every
+  // import silently dropped all benchmark fields.
+  data.benchmarks = benchmarks;
+
   // Generate duplicate key
   const brand = data.brand.toLowerCase().replace(/[^a-z0-9]/g, '');
   const model = data.model.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -500,9 +505,9 @@ export function getEmptyFieldInfo(records: NormalizedPhoneImportRecord[]): {
   const missing = ['brand', 'model'];
 
   for (const r of records) {
-    for (const [k] of Object.keys(r.normalizedData.specs)) allSpecs.add(k);
+    for (const k of Object.keys(r.normalizedData.specs)) allSpecs.add(k);
     if (r.warnings.length > 0 || r.errors.length > 0) continue;
-    for (const [k] of Object.keys(r.normalizedData)) {
+    for (const k of Object.keys(r.normalizedData)) {
       if (k === 'specs' || k === 'benchmarks' || k === 'extra' || k === 'images') continue;
       recognized.add(k);
     }
@@ -510,7 +515,7 @@ export function getEmptyFieldInfo(records: NormalizedPhoneImportRecord[]): {
 
   const ignored: string[] = [];
   for (const r of records) {
-    for (const [k] of Object.keys(r.originalRecord)) {
+    for (const k of Object.keys(r.originalRecord)) {
       const canon = FIELD_ALIASES[k.toLowerCase().replace(/[\s_-]/g, '')];
       if (!canon) ignored.push(k);
     }
