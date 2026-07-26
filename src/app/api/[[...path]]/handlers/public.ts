@@ -353,8 +353,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return cached({ phones: [] }, 60, 180);
     const safe = escapeRegex(q);
-    const prefix = new RegExp(`^${safe}`, 'i');
-    const contains = new RegExp(safe, 'i');
+    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
+    const flexiblePattern = tokens.length > 1 ? tokens.join('[\\s-]+') : safe;
+    const prefix = new RegExp(`^${flexiblePattern}`, 'i');
+    const contains = new RegExp(flexiblePattern, 'i');
 
     // Fast path: anchored prefix queries can use the modelName/slug indexes.
     // Only run the broader contains query when prefix results do not fill the list.
@@ -565,8 +567,14 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const q = (url.searchParams.get('q') || '').trim();
     if (!q) return cached({ phones: [], brands: [], query: q }, 60, 180);
     const safe = escapeRegex(q);
-    const prefix = new RegExp(`^${safe}`, 'i');
-    const contains = new RegExp(safe, 'i');
+    // Tokenize so multi-word queries (e.g. "samsung galaxy s26") match text where
+    // those words are separated by spaces OR hyphens (e.g. the slug
+    // "samsung-galaxy-s26-ultra-1tb") — a single literal-string regex would only
+    // match if the query's exact spacing/punctuation happened to line up.
+    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
+    const flexiblePattern = tokens.length > 1 ? tokens.join('[\\s-]+') : safe;
+    const prefix = new RegExp(`^${flexiblePattern}`, 'i');
+    const contains = new RegExp(flexiblePattern, 'i');
 
     // Rank exact/prefix matches ahead of contains matches, and avoid a broad
     // collection scan when the indexed prefix query already supplies 20 items.
