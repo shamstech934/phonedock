@@ -529,11 +529,27 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     await connectDB();
     const brand = await Brand.findOne({ slug: segments[1], active: true }).lean();
     if (!brand) return cachedError('Not found', 404, 60, 300);
-    const phones = await Phone.find({ brandId: brand._id, active: true, status: 'published' })
-      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .limit(100)
-      .populate('brand').lean();
-    return cached({ brand, phones: await attachListSpecs(phones) }, 300, 600);
+    const url = new URL(req.url);
+    const page = parseBoundedInt(url.searchParams.get('page'), 1);
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 100, { max: 100 });
+    const sortParam = url.searchParams.get('sort');
+    const sortMap: Record<string, Record<string, 1 | -1>> = {
+      newest: { createdAt: -1 },
+      price_low: { pricePKR: 1 },
+      price_high: { pricePKR: -1 },
+      rating: { overallRating: -1 },
+      name: { modelName: 1 },
+    };
+    const sort = sortMap[sortParam || 'newest'] || sortMap.newest;
+    const filter = { brandId: brand._id, active: true, status: 'published' };
+    const [phones, total] = await Promise.all([
+      Phone.find(filter)
+        .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+        .sort(sort).skip((page - 1) * limit).limit(limit)
+        .populate('brand').lean(),
+      Phone.countDocuments(filter),
+    ]);
+    return cached({ brand, phones: await attachListSpecs(phones), total, page, limit }, 300, 600);
   }
 
   // ---- /api/news ----
