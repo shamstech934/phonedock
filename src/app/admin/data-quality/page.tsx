@@ -1078,7 +1078,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
           </div>
 
           {issues.map(issue => {
-            const sev = SEVERITY_CONFIG[issue.severity] || SEVERITY_CONFIG.info;
+            const sev = SEVERITY_CONFIG[issue.severity || 'info'] || SEVERITY_CONFIG.info;
             const SevIcon = sev.icon;
             return (
               <div key={issue.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center px-4 py-3 bg-white border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
@@ -1090,7 +1090,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                 </div>
                 <div className="sm:col-span-3">
                   <p className="text-sm font-medium text-gray-900 truncate">{issue.entityName || issue.entityId}</p>
-                  <p className="text-[10px] text-gray-400">{issue.entityType} · {issue.entityId.slice(0, 8)}...</p>
+                  <p className="text-[10px] text-gray-400">{issue.entityType} · {(issue.entityId || '').slice(0, 8)}...</p>
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-sm text-gray-600 truncate">{issue.field || '—'}</p>
@@ -1104,7 +1104,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                   </span>
                 </div>
                 <div className="sm:col-span-1">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[issue.status] || STATUS_COLORS.open}`}>{issue.status}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[issue.status || 'open'] || STATUS_COLORS.open}`}>{issue.status}</span>
                 </div>
                 <div className="sm:col-span-2 flex items-center gap-1">
                   <button onClick={() => setDetailIssue(issue)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="View Details">
@@ -1166,7 +1166,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                 <DetailField label="Field" value={detailIssue.field || '—'} />
                 <DetailField label="Status" value={detailIssue.status || ''} />
                 <DetailField label="Confidence" value={`${Math.round((detailIssue.confidence || 0) * 100)}%`} />
-                <DetailField label="Detected" value={new Date(detailIssue.detectedAt).toLocaleString()} />
+                <DetailField label="Detected" value={detailIssue.detectedAt ? new Date(detailIssue.detectedAt).toLocaleString() : ''} />
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 mb-1">Current Value</p>
