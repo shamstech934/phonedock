@@ -594,7 +594,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const [count, latest] = await Promise.all([
       DeviceSpecDataset.countDocuments(),
-      DeviceSpecDataset.findOne().sort({ updatedAt: -1 }).select('updatedAt sourceName').lean() as Promise<{ updatedAt?: Date; sourceName?: string } | null>,
+      DeviceSpecDataset.findOne().sort({ updatedAt: -1 }).select('updatedAt sourceName').lean() as unknown as Promise<{ updatedAt?: Date; sourceName?: string } | null>,
     ]);
     return NextResponse.json({
       count,
@@ -692,14 +692,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const body = await req.json();
     const phoneId = String(body.phoneId || '').trim();
     if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
-    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as PhoneWithBrandName | null;
+    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as unknown as PhoneWithBrandName | null;
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
     const normalize = (v: unknown) => String(v ?? '').toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
     const queryModel = normalize(phone.modelName);
     const queryBrand = normalize(phone.brandId?.name || '');
     const tokens = queryModel.split(' ').filter((t: string) => t.length > 1);
     const regex = tokens.length ? new RegExp(tokens.slice(0, 4).map((t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i') : /.^/;
-    const rows = await DeviceSpecDataset.find({ $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])] }).limit(80).lean() as DatasetRow[];
+    const rows = await DeviceSpecDataset.find({ $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])] }).limit(80).lean() as unknown as DatasetRow[];
     const score = (candidate: DatasetRow) => {
       const a = new Set(queryModel.split(' ').filter(Boolean)); const b = new Set(String(candidate.normalizedModel || '').split(' ').filter(Boolean));
       const common = [...a].filter(x => b.has(x)).length; const union = new Set([...a, ...b]).size || 1;
@@ -742,7 +742,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       return NextResponse.json({ error: 'One or more Phone IDs are invalid' }, { status: 400 });
     }
 
-    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as PhoneWithBrandName[];
+    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as unknown as PhoneWithBrandName[];
     const results: SpecMatchResult[] = [];
     let applied = 0, review = 0, notFound = 0, failed = 0;
 
@@ -837,7 +837,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
 
     const relevantBrands = brandNames.size
-      ? await Brand.find({ deletedAt: null }).select('_id name slug').lean() as BrandLean[]
+      ? await Brand.find({ deletedAt: null }).select('_id name slug').lean() as unknown as BrandLean[]
       : [];
     const brandIds = relevantBrands
       .filter((brand: BrandLean) => brandNames.has(normalizeName(String(brand.name || brand.slug || ''))))
@@ -851,7 +851,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const phones = orFilters.length ? await Phone.find({
       deletedAt: null,
       $or: orFilters,
-    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean() as PhonePriceRow[] : [];
+    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean() as unknown as PhonePriceRow[] : [];
 
     const brandNameById = new Map<string, string>();
     for (const brand of relevantBrands) brandNameById.set(brand._id.toString(), normalizeName(String(brand.name || brand.slug || '')));
