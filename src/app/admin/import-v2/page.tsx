@@ -331,6 +331,7 @@ export default function ImportV2Page() {
   const [isRunning, setIsRunning] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningBatchesRef = useRef<Set<number>>(new Set());
   const nextBatchRef = useRef(0);
@@ -517,20 +518,28 @@ export default function ImportV2Page() {
     if (!jobId || actionLockRef.current) return;
     actionLockRef.current = true;
     setActionLoading(true);
+    setStartError(null);
     try {
       // Save settings first
-      await safePost(`/api/admin/import-v2/jobs/${jobId}/config`, {
+      const configRes = await safePost(`/api/admin/import-v2/jobs/${jobId}/config`, {
         duplicateMode,
         batchSize,
         publishMode,
         createMissingBrands,
         dryRun,
       });
+      if (!configRes.ok) { setStartError(configRes.error || 'Failed to save import settings.'); return; }
       // Start the job
       const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/start`, {});
-      if (!res.ok) return;
+      if (!res.ok) { setStartError(res.error || 'Failed to start the import job.'); return; }
 
       const jobData = res.data;
+      const totalRecordsFromServer = Number(jobData?.totalRecords || 0);
+      if (totalRecordsFromServer <= 0) {
+        setStartError('No records found in this file. Check that it matches the expected format (see the CSV/JSON sample) before importing.');
+        return;
+      }
+
       const totalBatches = Math.ceil((jobData?.totalRecords || 0) / batchSize);
       const initialProgress: JobProgress = {
         jobId,
@@ -570,6 +579,16 @@ export default function ImportV2Page() {
   // ── Batch processing loop ─────────────────────────────────────────────
   useEffect(() => {
     if (!isRunning || isPaused || !progress || !jobId) return;
+
+    // Safety net: a job with zero batches would otherwise poll forever with
+    // nothing ever happening (nextBatchRef never satisfies <= totalBatches).
+    if (progress.totalBatches <= 0) {
+      setStartError('This import has 0 records to process — nothing to import. Check the uploaded file.');
+      setIsRunning(false);
+      setProgress(prev => prev ? { ...prev, status: 'failed' } : prev);
+      clearJobStorage();
+      return;
+    }
 
     const sendNextBatch = async () => {
       if (isPaused || runningBatchesRef.current.size >= MAX_CONCURRENCY) return;
@@ -1272,6 +1291,17 @@ export default function ImportV2Page() {
         {/* ═══════════════════════════════════════════════════════════════ */}
         {activeTab === 'progress' && (
           <div className="space-y-4">
+            {startError && (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="py-4 flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-red-700">Import could not start</p>
+                    <p className="text-xs text-red-600 mt-0.5">{startError}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             {!progress && !jobId ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-16">
