@@ -67,7 +67,7 @@ export default function AdminCollectorJobsPage() {
   const completed = jobs.filter(j => j.status === 'completed').length;
   const failed = jobs.filter(j => j.status === 'failed').length;
   const running = jobs.filter(j => j.status === 'running').length;
-  const totalCollected = jobs.reduce((sum, j) => sum + (j.phonesCollected || 0), 0);
+  const totalCollected = jobs.reduce((sum, j) => sum + (j.newPhones || 0), 0);
 
   const filteredJobs = jobs
     .filter(j => {
