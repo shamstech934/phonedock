@@ -100,16 +100,10 @@ export function parseJSON(content: string, fileName: string): ParsedFile {
 export function parseCSV(content: string, fileName: string): ParsedFile {
   const warnings: string[] = [];
 
-  // Sanitize: remove formula prefixes from cells
-  const sanitized = content.split('\n').map(line => {
-    return line.split(',').map(cell => {
-      const trimmed = cell.trim();
-      if (/^[=+\-@\t\r]/.test(trimmed)) return '';
-      return trimmed;
-    }).join(',');
-  }).join('\n');
+  // Strip a UTF-8 BOM if present, since it can otherwise become part of the first header name.
+  const source = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
 
-  const result = Papa.parse(sanitized, {
+  const result = Papa.parse(source, {
     header: true,
     skipEmptyLines: true,
     dynamicTyping: true,
@@ -120,14 +114,28 @@ export function parseCSV(content: string, fileName: string): ParsedFile {
     return { records: [], fileType: 'csv', fileName, totalRecords: 0, warnings: [`CSV parse errors: ${result.errors.length}`] };
   }
 
-  let records = result.data;
+  let records = result.data as Record<string, unknown>[];
   if (records.length > MAX_RECORDS) {
     warnings.push(`Truncated to ${MAX_RECORDS} records (total: ${records.length})`);
     records = records.slice(0, MAX_RECORDS);
   }
 
+  // Sanitize each *value* against spreadsheet-formula injection (=, +, -, @ prefixes)
+  // now that CSV structure (including commas inside quoted fields) has already
+  // been parsed correctly — sanitizing the raw text before parsing would corrupt
+  // any quoted field that itself contains a comma.
+  const stripFormulaPrefix = (value: unknown): unknown => {
+    if (typeof value !== 'string') return value;
+    return /^[=+\-@\t\r]/.test(value.trim()) ? '' : value;
+  };
+  const sanitizedRecords = records.map((row) => {
+    const clean: Record<string, unknown> = {};
+    for (const key of Object.keys(row)) clean[key] = stripFormulaPrefix(row[key]);
+    return clean;
+  });
+
   // Sanitize each record for prototype pollution
-  const safeRecords = records.filter(r => isSafeObject(r)) as Record<string, unknown>[];
+  const safeRecords = sanitizedRecords.filter(r => isSafeObject(r));
 
   return { records: safeRecords, fileType: 'csv', fileName, totalRecords: records.length, warnings };
 }
