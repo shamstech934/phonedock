@@ -47,7 +47,10 @@ function isSafeObject(val: unknown, depth = 0): boolean {
   const prototype = Object.getPrototypeOf(val);
   if (prototype === null || val.constructor?.name === 'Object' || val.constructor?.name === 'Array') {
     if (Object.keys(val).length > 500) return false;
-    return !('__proto__' in val || 'constructor' in val || 'prototype' in val);
+    // Check OWN properties only — 'in' would also match constructor/__proto__ via
+    // the prototype chain, which every normal object has, making this always false.
+    const hasOwn = Object.prototype.hasOwnProperty;
+    return !(hasOwn.call(val, '__proto__') || hasOwn.call(val, 'constructor') || hasOwn.call(val, 'prototype'));
   }
   return false;
 }
