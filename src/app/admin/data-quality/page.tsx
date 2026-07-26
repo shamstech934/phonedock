@@ -622,10 +622,10 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
             Choose CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; const rows = parseCsvWorkPack(await file.text()); setRepairRows(rows); setRepairFileName(file.name); setRepairResult(null); }} />
           </label>
           <button onClick={() => submitRepair(true)} disabled={!repairRows.length || repairLoading} className="h-10 px-4 rounded-xl border border-gray-200 text-sm font-medium disabled:opacity-50">Preview</button>
-          <button onClick={() => { if (confirm(`Apply reviewed ${type} repairs to the database?`)) submitRepair(false); }} disabled={!repairRows.length || repairLoading || !repairResult || repairResult.failed > 0} className="h-10 px-4 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-50">Apply repairs</button>
+          <button onClick={() => { if (confirm(`Apply reviewed ${type} repairs to the database?`)) submitRepair(false); }} disabled={!repairRows.length || repairLoading || !repairResult || (repairResult.failed || 0) > 0} className="h-10 px-4 rounded-xl bg-green-600 text-white text-sm font-medium disabled:opacity-50">Apply repairs</button>
         </div>
         {repairFileName && <p className="text-xs text-gray-500 mt-3">{repairFileName} · {repairRows.length} rows loaded (automatically processed in batches of 500)</p>}
-        {repairResult && <div className={`mt-3 rounded-xl p-3 text-sm ${repairResult.error || repairResult.failed > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
+        {repairResult && <div className={`mt-3 rounded-xl p-3 text-sm ${repairResult.error || (repairResult.failed || 0) > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
           {repairResult.error ? repairResult.error : `${repairResult.dryRun ? 'Preview' : 'Import'}: ${repairResult.ready || 0} ready, ${repairResult.updated || 0} updated, ${repairResult.skipped || 0} skipped, ${repairResult.failed || 0} failed.`}
           {repairResult.results?.some((r: RepairResultRow) => r.status !== 'ready' && r.status !== 'updated') && <div className="mt-2 text-xs space-y-1">{repairResult.results.filter((r: RepairResultRow) => r.status !== 'ready' && r.status !== 'updated').slice(0, 5).map((r: RepairResultRow) => <p key={`${r.row}-${r.phoneId}`}>Row {r.row}: {r.message}</p>)}</div>}
         </div>}
