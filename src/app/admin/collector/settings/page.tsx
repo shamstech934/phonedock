@@ -64,7 +64,7 @@ export default function AdminCollectorSettingsPage() {
             </div>
             <div className="p-3 bg-gray-50 rounded-xl">
               <p className="text-[11px] text-gray-500">Scheduler</p>
-              <p className="text-lg font-semibold text-gray-900">{config.schedulerEnabled ? 'Active (hourly check)' : 'Inactive'}</p>
+              <p className="text-lg font-semibold text-gray-900">{config.schedulerEnabled ? 'Active (daily check)' : 'Inactive'}</p>
               <p className="text-[10px] text-gray-400 mt-1">Vercel Cron checks every hour for sources whose <code>syncFrequencyHours</code> is due.</p>
             </div>
             <div className="p-3 bg-gray-50 rounded-xl">
