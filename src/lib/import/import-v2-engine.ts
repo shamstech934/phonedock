@@ -468,6 +468,14 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     if (dup.isDuplicate) {
       if (duplicateMode === 'skip') {
         result.skipped++;
+        result.errors.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          errorCode: 'SKIPPED_DUPLICATE',
+          errorMessage: `Skipped (duplicateMode=skip): matched existing phone "${dup.existingSlug}" (matchType=${dup.matchType}, confidence=${dup.confidence}, existingPhoneId=${dup.existingPhoneId})`,
+          batchNumber,
+        });
         continue;
       }
 
