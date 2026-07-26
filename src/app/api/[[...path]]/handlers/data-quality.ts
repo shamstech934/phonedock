@@ -196,7 +196,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence updatedAt')
       .populate('brandId', 'name slug')
       .sort({ brandId: 1, modelName: 1 })
-      .lean();
+      .lean() as unknown as RepairQueueRow[];
 
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const repairColumns = type === 'specs'
@@ -279,7 +279,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         .sort({ updatedAt: -1, modelName: 1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .lean(),
+        .lean() as unknown as Promise<RepairQueueRow[]>,
       Phone.countDocuments(baseQuery),
     ]);
 
@@ -297,7 +297,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     }));
 
     if (searchParams.get('idsOnly') === '1') {
-      const ids = await Phone.find(baseQuery).select('_id').sort({ updatedAt: -1, modelName: 1 }).lean();
+      const ids = await Phone.find(baseQuery).select('_id').sort({ updatedAt: -1, modelName: 1 }).lean() as unknown as IdOnlyRow[];
       return NextResponse.json({ ids: ids.map((row: IdOnlyRow) => row._id.toString()), total, type }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
       });
