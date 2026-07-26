@@ -1124,7 +1124,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                       <button onClick={() => handleIgnoreIssue(issue.id)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg" title="Ignore">
                         <EyeOff className="w-3.5 h-3.5" />
                       </button>
-                      {issue.suggestedValue && (
+                      {Boolean(issue.suggestedValue) && (
                         <a href={`/admin/phones/${issue.entityId}/edit`} target="_blank" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Edit Phone">
                           <Wrench className="w-3.5 h-3.5" />
                         </a>
@@ -1172,7 +1172,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                 <p className="text-xs font-medium text-gray-500 mb-1">Current Value</p>
                 <pre className="text-sm bg-gray-50 rounded-lg p-3 overflow-auto max-h-32">{typeof detailIssue.currentValue === 'object' ? JSON.stringify(detailIssue.currentValue, null, 2) : String(detailIssue.currentValue ?? 'null')}</pre>
               </div>
-              {detailIssue.suggestedValue && (
+              {Boolean(detailIssue.suggestedValue) && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-1">Suggested Value</p>
                   <p className="text-sm bg-blue-50 rounded-lg p-3 text-blue-800">{typeof detailIssue.suggestedValue === 'object' ? JSON.stringify(detailIssue.suggestedValue, null, 2) : String(detailIssue.suggestedValue)}</p>
