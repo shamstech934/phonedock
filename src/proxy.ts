@@ -14,10 +14,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings } from '@/lib/models/Settings';
 
-// Node.js runtime (not Edge) is required here so we can query MongoDB directly
-// for the maintenance-mode flag, via Mongoose.
-export const runtime = 'nodejs';
-
 // ============ CONFIGURATION ============
 
 const LOGIN_PATH = '/admin/login';
