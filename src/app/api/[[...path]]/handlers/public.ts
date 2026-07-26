@@ -352,46 +352,41 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return cached({ phones: [] }, 60, 180);
-    const safe = escapeRegex(q);
     const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const flexiblePattern = tokens.length > 1 ? tokens.join('[\\s-]+') : safe;
-    const prefix = new RegExp(`^${flexiblePattern}`, 'i');
-    const contains = new RegExp(flexiblePattern, 'i');
+    const tokenMatchStage = tokens.length
+      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
+      : {};
+    const safe = escapeRegex(q);
 
-    // Fast path: anchored prefix queries can use the modelName/slug indexes.
-    // Only run the broader contains query when prefix results do not fill the list.
-    const prefixPhones = await Phone.find({
-      active: true,
-      status: 'published',
-      $or: [{ modelName: prefix }, { slug: prefix }],
-    }).select('slug modelName thumbnail pricePKR brandId').sort({ modelName: 1 }).limit(12).maxTimeMS(2500).lean();
+    const phones = await Phone.aggregate([
+      { $match: { active: true, status: 'published' } },
+      { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
+      { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+      { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
+      { $match: tokenMatchStage },
+      {
+        $addFields: {
+          _rank: {
+            $cond: [
+              { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
+              { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
+            ],
+          },
+        },
+      },
+      { $sort: { _rank: 1, modelName: 1 } },
+      { $limit: 12 },
+      { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
+    ]).option({ maxTimeMS: 2500 });
 
-    let phones = prefixPhones;
-    if (prefixPhones.length < 12) {
-      const seenIds = prefixPhones.map(p => p._id);
-      const fallback = await Phone.find({
-        active: true,
-        status: 'published',
-        _id: { $nin: seenIds },
-        modelName: contains,
-      }).select('slug modelName thumbnail pricePKR brandId').sort({ modelName: 1 }).limit(12 - prefixPhones.length).maxTimeMS(2500).lean();
-      phones = [...prefixPhones, ...fallback];
-    }
-    // Manual brand lookup — virtual populate + .lean() drops selected fields
-    const brandIds = [...new Set(phones.map(p => p.brandId?.toString()).filter(Boolean))];
-    const brands = brandIds.length > 0 ? await Brand.find({ _id: { $in: brandIds } }).select('name slug').lean() : [];
-    const brandMap = new Map(brands.map(b => [b._id.toString(), b]));
-    return cached({ phones: phones.map(p => {
-      const b = brandMap.get(p.brandId?.toString());
-      return {
-        id: p._id?.toString(),
-        slug: p.slug,
-        modelName: p.modelName,
-        thumbnail: p.thumbnail || '',
-        pricePKR: p.pricePKR,
-        brand: b ? { id: p.brandId?.toString(), name: b.name, slug: b.slug } : null,
-      };
-    })}, 60, 180);
+    return cached({ phones: phones.map(p => ({
+      id: p._id?.toString(),
+      slug: p.slug,
+      modelName: p.modelName,
+      thumbnail: p.thumbnail || '',
+      pricePKR: p.pricePKR,
+      brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name, slug: p.brand.slug } : null,
+    })) }, 60, 180);
   }
 
   // ---- /api/phones/:slug ----
@@ -567,24 +562,37 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const q = (url.searchParams.get('q') || '').trim();
     if (!q) return cached({ phones: [], brands: [], query: q }, 60, 180);
     const safe = escapeRegex(q);
-    // Tokenize so multi-word queries (e.g. "samsung galaxy s26") match text where
-    // those words are separated by spaces OR hyphens (e.g. the slug
-    // "samsung-galaxy-s26-ultra-1tb") — a single literal-string regex would only
-    // match if the query's exact spacing/punctuation happened to line up.
+    // Match every query word independently against "brand name + model name"
+    // combined — this is what makes "samsung s26" find "Samsung Galaxy S26
+    // Ultra 1TB" even though "galaxy" sits between the two matched words, and
+    // even though the brand name isn't part of modelName by itself.
     const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const flexiblePattern = tokens.length > 1 ? tokens.join('[\\s-]+') : safe;
-    const prefix = new RegExp(`^${flexiblePattern}`, 'i');
-    const contains = new RegExp(flexiblePattern, 'i');
+    const tokenMatchStage = tokens.length
+      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
+      : {};
 
-    // Rank exact/prefix matches ahead of contains matches, and avoid a broad
-    // collection scan when the indexed prefix query already supplies 20 items.
-    const prefixPhonesPromise = Phone.find({
-      active: true,
-      status: 'published',
-      $or: [{ modelName: prefix }, { slug: prefix }],
-    }).sort({ modelName: 1 }).limit(20)
-      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .populate('brand').maxTimeMS(3000).lean();
+    const phonesPromise = Phone.aggregate([
+      { $match: { active: true, status: 'published' } },
+      { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
+      { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+      { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
+      { $match: tokenMatchStage },
+      {
+        $addFields: {
+          // Rank: whole query as an exact prefix of the combined text ranks highest,
+          // then whole-query-anywhere, then the individual-token matches above.
+          _rank: {
+            $cond: [
+              { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
+              { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
+            ],
+          },
+        },
+      },
+      { $sort: { _rank: 1, modelName: 1 } },
+      { $limit: 20 },
+      { $project: { description: 0, pros: 0, cons: 0, reviewSummary: 0, reviewVerdict: 0, seoTitle: 0, seoDescription: 0, keywords: 0, sourceName: 0, sourceUrl: 0, searchText: 0, _rank: 0 } },
+    ]).option({ maxTimeMS: 3000 });
 
     const brandPromise = Brand.aggregate([
         { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
@@ -593,20 +601,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
       ]).option({ maxTimeMS: 3000 });
 
-    const [prefixPhones, brandAgg] = await Promise.all([prefixPhonesPromise, brandPromise]);
-    let phones = prefixPhones;
-    if (prefixPhones.length < 20) {
-      const seenIds = prefixPhones.map(p => p._id);
-      const fallback = await Phone.find({
-        active: true,
-        status: 'published',
-        _id: { $nin: seenIds },
-        $or: [{ modelName: contains }, { slug: contains }, { keywords: contains }],
-      }).sort({ modelName: 1 }).limit(20 - prefixPhones.length)
-        .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-        .populate('brand').maxTimeMS(3000).lean();
-      phones = [...prefixPhones, ...fallback];
-    }
+    const [phones, brandAgg] = await Promise.all([phonesPromise, brandPromise]);
 
     const brands = (brandAgg as BrandAggResult[]).map(b => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } }));
     return cached({ phones: await attachListSpecs(phones), brands, query: q }, 60, 180);
