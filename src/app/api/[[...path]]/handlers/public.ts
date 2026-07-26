@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBoundedInt } from '@/lib/http';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
-import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones, type PhoneDocOrJson, type PhoneJson } from './helpers';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, CollectedPhone, RateLimit } from '@/lib/models';
+import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones, checkIpRateLimit, type PhoneDocOrJson, type PhoneJson } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
@@ -166,7 +166,7 @@ async function attachListSpecs(phones: PhoneDocOrJson[]): Promise<PhoneJson[]> {
 
 // ============ PUBLIC GET HANDLERS ============
 
-export async function handlePublicGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+export async function handlePublicGet(req: NextRequest, segments: string[], ip: string = 'unknown'): Promise<NextResponse | undefined> {
   // ---- /api/build-info (deployment verification) ----
   if (segments.length === 1 && segments[0] === 'build-info') {
     return NextResponse.json({
@@ -345,6 +345,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
 
   // ---- /api/phones/autocomplete?q=... ----
   if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'autocomplete') {
+    if (!await checkIpRateLimit(`autocomplete:${ip}`, 120, 60_000, RateLimit)) {
+      return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
+    }
     await connectDB();
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
@@ -554,6 +557,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
 
   // ---- /api/search ----
   if (segments.length === 1 && segments[0] === 'search') {
+    if (!await checkIpRateLimit(`search:${ip}`, 60, 60_000, RateLimit)) {
+      return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
+    }
     await connectDB();
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
@@ -737,6 +743,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[]): Pro
 export async function handlePublicPost(req: NextRequest, segments: string[], ip: string): Promise<NextResponse | undefined> {
   // ---- /api/contact ----
   if (segments.length === 1 && segments[0] === 'contact') {
+    if (!await checkIpRateLimit(`contact:${ip}`, 5, 3600_000, RateLimit)) {
+      return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
+    }
     const body = await req.json();
     const { name, email, subject, message, turnstileToken } = body;
 

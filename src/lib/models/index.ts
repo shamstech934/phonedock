@@ -23,3 +23,5 @@ export { AffiliateLink, AffiliateClick, ContactRequest } from './Commercial';
 
 
 export { DeviceSpecDataset } from './DeviceSpecDataset';
+export { AIResearchJob } from './AIResearchJob';
+export { AIResearchDraft } from './AIResearchDraft';

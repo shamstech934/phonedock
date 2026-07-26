@@ -18,7 +18,8 @@ export async function startJob(jobId: string): Promise<void> {
   const job = await CollectorJob.findById(jobId);
   if (!job) return;
 
-  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: new Date() } });
+  const resumingFromPage = job.status === 'paused' && job.currentBatch > 0 ? job.currentBatch + 1 : 1;
+  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date() } });
 
   try {
     if (job.sourceId) {
@@ -29,7 +30,7 @@ export async function startJob(jobId: string): Promise<void> {
       const config = buildProviderConfig(source);
       const provider = createProvider(config, source._id.toString(), source.name);
 
-      let page = 1;
+      let page = resumingFromPage;
       let hasNext = true;
       let totalFetched = 0;
 
@@ -56,9 +57,12 @@ export async function startJob(jobId: string): Promise<void> {
           return;
         }
 
-        // Check if job was paused
+        // Check if job was paused or cancelled
         const currentJob = await CollectorJob.findById(jobId);
-        if (!currentJob || currentJob.status === 'paused') {
+        if (!currentJob || currentJob.status === 'cancelled') {
+          return;
+        }
+        if (currentJob.status === 'paused') {
           await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'paused', lastProcessedAt: new Date() } });
           return;
         }

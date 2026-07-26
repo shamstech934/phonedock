@@ -1413,3 +1413,4 @@ function ScanHistoryTab() {
     </div>
   );
 }
+

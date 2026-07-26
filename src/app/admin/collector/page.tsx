@@ -53,14 +53,14 @@ export default function AdminCollectorPage() {
   const handleRunCollection = async () => {
     setRunningCollection(true);
     try {
-      const res = await fetch('/api/collector/jobs', {
+      const res = await fetch('/api/collector/jobs/run-all', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ sourceId: 'all' }),
       });
-      if (!res.ok) throw new Error('Failed to start collection');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to start collection');
       fetchData();
-    } catch {
-      setError('Failed to start collection. Check that sources are configured.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start collection. Check that sources are configured.');
     } finally { setRunningCollection(false); }
   };
 

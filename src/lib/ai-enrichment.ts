@@ -179,6 +179,57 @@ async function synthesize(type: EnrichmentType, phone: EnrichmentPhoneInput, sou
 
 export function aiEnrichmentConfigured(type: EnrichmentType): boolean { return getAIStatus().configured[type]; }
 
+export interface DiscoveredModel { name: string; confidence: number; sourceUrl?: string; }
+
+/**
+ * Discover real phone model names for a brand/year/series using grounded web search.
+ * This never invents model names — it only returns names that appear in the search
+ * evidence, with the source that mentioned them. The caller (Discover UI) still
+ * requires human review before anything is imported.
+ */
+export async function discoverPhoneModels(brand: string, year?: string, series?: string): Promise<DiscoveredModel[]> {
+  if (!process.env.TAVILY_API_KEY) throw new Error('TAVILY_API_KEY is not configured — Discover needs web search to find real phone models.');
+  const config = getAIProviderConfig();
+  if (!config) throw new Error('AI provider is not configured. Set AI_PROVIDER and its API key.');
+
+  const queryParts = [brand, series, year, 'phone models list official'].filter(Boolean);
+  const research = await tavilySearch(queryParts.join(' '), false);
+  if (!research.sources.length) throw new Error(`No web sources found for ${queryParts.join(' ')}`);
+
+  const evidence = research.sources.map((source, index) => ({ id: index + 1, ...source }));
+  const system = [
+    'You extract a list of real smartphone model names from the supplied web-search evidence only.',
+    'Never invent a model name that is not clearly present in the evidence text.',
+    'If the evidence is ambiguous or does not mention specific model names, return an empty list rather than guessing.',
+    'Return strict JSON only, shape: {"models":[{"name":"","sourceId":0}]}. sourceId refers to the evidence id that mentions this model.',
+  ].join(' ');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
+  if (config.provider === 'openrouter') {
+    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock-pi.vercel.app';
+    headers['X-Title'] = 'PhoneDock';
+  }
+  const requestBody: Record<string, unknown> = {
+    model: config.model, temperature: 0,
+    messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({ brand, year, series, evidence }) }],
+  };
+  if (config.provider === 'openai') requestBody.response_format = { type: 'json_object' };
+
+  const response = await fetch(config.endpoint, { method: 'POST', headers, body: JSON.stringify(requestBody), signal: AbortSignal.timeout(60000), cache: 'no-store' });
+  if (!response.ok) throw new Error(`${config.displayName} discovery failed (${response.status})`);
+  const payload = await response.json() as any;
+  const content = payload.choices?.[0]?.message?.content ?? payload.output_text ?? payload.content;
+  if (!content) throw new Error(`${config.displayName} returned no message content`);
+  const parsed = typeof content === 'string' ? parseJsonObject(content) : content;
+  const models: Array<{ name?: unknown; sourceId?: unknown }> = Array.isArray(parsed.models) ? parsed.models : [];
+
+  return models
+    .map((m) => ({ name: cleanText(m.name, 120), sourceId: Number(m.sourceId) || 0 }))
+    .filter((m) => m.name.length > 0)
+    .map((m) => ({ name: m.name, confidence: research.sources[m.sourceId - 1] ? 0.7 : 0.3, sourceUrl: research.sources[m.sourceId - 1]?.url }))
+    .filter((m, index, rows) => rows.findIndex((r) => r.name.toLowerCase() === m.name.toLowerCase()) === index)
+    .slice(0, 30);
+}
+
 export async function generateEnrichmentSuggestions(type: EnrichmentType, phones: EnrichmentPhoneInput[]): Promise<EnrichmentSuggestion[]> {
   if (!phones.length) return [];
   const results: EnrichmentSuggestion[] = [];

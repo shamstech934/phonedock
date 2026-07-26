@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { connectDBSafe } from '@/lib/mongodb';
-import { Brand, Phone, PhoneSpecs } from '@/lib/models';
+import { Brand, Phone, PhoneSpecs, RateLimit } from '@/lib/models';
 import { parseBuyingIntent } from '@/lib/intelligence/intent';
 import { recommendPhones, type RecommendationCandidate } from '@/lib/intelligence/recommendations';
-import { serializePhoneSpecs } from '@/app/api/[[...path]]/handlers/helpers';
+import { serializePhoneSpecs, getClientIp, checkIpRateLimit } from '@/app/api/[[...path]]/handlers/helpers';
 
 export const dynamic = 'force-dynamic';
 const schema = z.object({ query: z.string().trim().min(3).max(300) });
 const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  if (!await checkIpRateLimit(`buying-assistant:${ip}`, 15, 3600_000, RateLimit)) {
+    return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429, headers });
+  }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Please enter a short phone-buying question.' }, { status: 400, headers });
   const intent = parseBuyingIntent(parsed.data.query);

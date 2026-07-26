@@ -3,7 +3,7 @@ import mongoose, { Schema } from 'mongoose';
 const CollectorJobSchema = new Schema({
   status: {
     type: String,
-    enum: ['queued', 'running', 'paused', 'completed', 'partially_completed', 'failed'],
+    enum: ['queued', 'running', 'paused', 'completed', 'partially_completed', 'failed', 'cancelled'],
     default: 'queued',
   },
   sourceId: { type: Schema.Types.ObjectId, ref: 'CollectorSource' },

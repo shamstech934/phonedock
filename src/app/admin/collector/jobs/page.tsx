@@ -6,9 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
 interface CollectorJob {
-  id: string; sourceId?: string; status: string; progress?: number;
-  error?: string; startedAt?: string; completedAt?: string; createdAt: string;
-  phonesCollected?: number; phonesUpdated?: number; phonesFailed?: number;
+  id: string; sourceId?: string; sourceName?: string; status: string;
+  lastError?: string; startedAt?: string; completedAt?: string; createdAt: string;
+  fetched?: number; newPhones?: number; possibleUpdates?: number; duplicates?: number; failureCount?: number;
+  currentBatch?: number; totalBatches?: number; totalExpected?: number; retryCount?: number;
 }
 
 export default function AdminCollectorJobsPage() {
@@ -40,12 +41,26 @@ export default function AdminCollectorJobsPage() {
     } catch (error) { setError(error instanceof Error ? error.message : 'Failed to delete collector job'); }
   };
 
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const runJobAction = async (id: string, action: 'resume' | 'retry' | 'cancel') => {
+    setActionBusyId(id);
+    try {
+      const response = await fetch(`/api/collector/jobs/${id}/${action}`, { method: 'POST', credentials: 'include' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Failed to ${action} job`);
+      fetchJobs();
+    } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }
+    finally { setActionBusyId(null); }
+  };
+
   const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
-    pending: { icon: Clock, color: 'text-gray-600', bg: 'bg-gray-50', label: 'Pending' },
+    queued: { icon: Clock, color: 'text-gray-600', bg: 'bg-gray-50', label: 'Queued' },
     running: { icon: Loader, color: 'text-blue-500', bg: 'bg-blue-50', label: 'Running' },
+    paused: { icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Paused' },
     completed: { icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Completed' },
+    partially_completed: { icon: AlertTriangle, color: 'text-amber-500', bg: 'bg-amber-50', label: 'Partially Completed' },
     failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', label: 'Failed' },
-    cancelled: { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-50', label: 'Cancelled' },
+    cancelled: { icon: AlertCircle, color: 'text-gray-500', bg: 'bg-gray-50', label: 'Cancelled' },
   };
 
   const totalJobs = jobs.length;
@@ -124,7 +139,7 @@ export default function AdminCollectorJobsPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by job ID..." className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {['all', 'running', 'completed', 'failed', 'pending'].map(s => (
+          {['all', 'queued', 'running', 'paused', 'completed', 'partially_completed', 'failed', 'cancelled'].map(s => (
             <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-2 text-[11px] font-medium rounded-xl transition-colors ${statusFilter === s ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/25' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}</button>
           ))}
         </div>
@@ -151,36 +166,55 @@ export default function AdminCollectorJobsPage() {
                     {job.completedAt && <span className="flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5 text-emerald-500" /> {new Date(job.completedAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
                   </div>
                   {/* Stats row */}
-                  {(job.phonesCollected !== undefined || job.phonesUpdated !== undefined || job.phonesFailed !== undefined) && (
+                  {(job.fetched !== undefined || job.newPhones !== undefined || job.failureCount !== undefined) && (
                     <div className="flex items-center gap-3 mt-2 flex-wrap">
-                      {job.phonesCollected !== undefined && <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">+{job.phonesCollected} collected</span>}
-                      {job.phonesUpdated !== undefined && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">~{job.phonesUpdated} updated</span>}
-                      {job.phonesFailed !== undefined && <span className="text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">{job.phonesFailed} failed</span>}
+                      {job.newPhones !== undefined && <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">+{job.newPhones} new</span>}
+                      {job.possibleUpdates !== undefined && job.possibleUpdates > 0 && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">~{job.possibleUpdates} possible updates</span>}
+                      {job.duplicates !== undefined && job.duplicates > 0 && <span className="text-[10px] font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full">{job.duplicates} duplicates</span>}
+                      {job.failureCount !== undefined && job.failureCount > 0 && <span className="text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">{job.failureCount} failed</span>}
+                      {job.fetched !== undefined && <span className="text-[10px] text-gray-400">{job.fetched} fetched total</span>}
                     </div>
                   )}
                   {/* Error */}
-                  {job.error && (
+                  {job.lastError && (
                     <div className="mt-2 p-2.5 bg-red-50/50 rounded-lg border border-red-100/50 text-[11px] text-red-600 flex items-start gap-1.5">
                       <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                      <span>{job.error}</span>
+                      <span>{job.lastError}</span>
                     </div>
                   )}
                   {/* Progress */}
-                  {job.status === 'running' && job.progress !== undefined && (
+                  {(job.status === 'running' || job.status === 'paused') && !!job.totalExpected && (
                     <div className="mt-2.5">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] text-muted-foreground">Progress</span>
-                        <span className="text-[10px] font-medium text-blue-600">{job.progress}%</span>
+                        <span className="text-[10px] text-muted-foreground">Progress · batch {job.currentBatch || 0}</span>
+                        <span className="text-[10px] font-medium text-blue-600">{Math.min(100, Math.round(((job.fetched || 0) / job.totalExpected) * 100))}%</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-1.5">
-                        <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(job.progress, 100)}%` }} />
+                        <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.round(((job.fetched || 0) / job.totalExpected) * 100))}%` }} />
                       </div>
                     </div>
                   )}
                 </div>
-                <button onClick={() => setDeleteModal(job)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors shrink-0 mt-1 sm:mt-0" title="Delete" aria-label="Delete job">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0 mt-1 sm:mt-0">
+                  {(job.status === 'paused' || job.status === 'failed') && (
+                    <button onClick={() => runJobAction(job.id, 'resume')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50" title="Resume from where it left off" aria-label="Resume job">
+                      <Zap className="w-4 h-4" />
+                    </button>
+                  )}
+                  {job.status === 'failed' && (
+                    <button onClick={() => runJobAction(job.id, 'retry')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-emerald-100 text-gray-400 hover:text-emerald-600 transition-colors disabled:opacity-50" title="Retry from the start" aria-label="Retry job">
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                  {['queued', 'running', 'paused'].includes(job.status) && (
+                    <button onClick={() => runJobAction(job.id, 'cancel')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-amber-100 text-gray-400 hover:text-amber-600 transition-colors disabled:opacity-50" title="Cancel job" aria-label="Cancel job">
+                      <AlertCircle className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button onClick={() => setDeleteModal(job)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete" aria-label="Delete job">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );

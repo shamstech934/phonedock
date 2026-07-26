@@ -25,14 +25,16 @@ function isValidCronSecret(provided: string | null | undefined): boolean {
   if (!configured || !provided) return false;
   return timingSafeEqual(provided, configured);
 }
-import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory, NewsletterSubscriber } from '@/lib/models';
+import { RateLimit, UserReview, Phone, PriceAlert, PriceHistory, NewsletterSubscriber, CollectorSource, CollectorJob, ActivityLog } from '@/lib/models';
 import { connectDB, checkIpRateLimit, getClientIp, isEmailConfigured } from './handlers/helpers';
+import { startJob } from '@/lib/collectors/job-runner';
 import { getEmailTransporter } from '@/lib/email';
 import { handlePublicGet, handlePublicPost } from './handlers/public';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { handleAdminAuthGet, handleAdminAuthPost, handleAdminAuthDelete } from './handlers/admin-auth';
 import { handleFirstSetupGet, handleFirstSetupPost } from './handlers/first-setup';
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
+import { handleAiResearchGet, handleAiResearchPost } from './handlers/ai-research';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv } from './handlers/import-v2';
@@ -144,6 +146,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
       const cronResult = await handleCronUpdatePrices(req);
       if (cronResult) return cronResult;
+    }
+
+    // Cron: /api/cron/collector-sync — triggers due collector source syncs (Scheduler)
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'collector-sync') {
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+      if (!isValidCronSecret(secret)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      await connectDB();
+      // Only sources with scheduling enabled (syncFrequencyHours > 0) and enabled=true.
+      const dueSources = await CollectorSource.find({ enabled: true, syncFrequencyHours: { $gt: 0 } }).lean();
+      const now = Date.now();
+      const triggered: string[] = [];
+      const skipped: string[] = [];
+      for (const source of dueSources) {
+        const dueAt = source.lastSyncAt ? new Date(source.lastSyncAt).getTime() + source.syncFrequencyHours * 3600_000 : 0;
+        if (dueAt > now) { skipped.push(source.name); continue; }
+        const active = await CollectorJob.exists({ sourceId: source._id, status: { $in: ['queued', 'running', 'paused'] } });
+        if (active) { skipped.push(`${source.name} (job already active)`); continue; }
+        const job = await CollectorJob.create({ sourceId: source._id, sourceName: source.name, mode: 'incremental', status: 'queued', trigger: 'scheduled' });
+        try { await ActivityLog.create({ action: 'collector_scheduled_sync', details: `Scheduled sync triggered for source ${source.name}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
+        await startJob(job._id.toString());
+        triggered.push(source.name);
+      }
+      return NextResponse.json({ success: true, triggered, skipped, checkedSources: dueSources.length });
     }
 
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
@@ -270,7 +297,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (setupGetResult) return setupGetResult;
 
     // Public routes
-    const publicResult = await handlePublicGet(req, segments);
+    const publicResult = await handlePublicGet(req, segments, getClientIp(req));
     if (publicResult) return publicResult;
 
     // Admin auth routes (session check)
@@ -280,6 +307,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
     const crudResult = await handleAdminCrudGet(req, segments);
     if (crudResult) return crudResult;
+
+    // AI Research routes (status, jobs, drafts)
+    const aiResearchResult = await handleAiResearchGet(req, segments);
+    if (aiResearchResult) return aiResearchResult;
 
     // Collector routes (dashboard, sources, jobs)
     const collectorResult = await handleCollectorGet(req, segments);
@@ -551,6 +582,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
     const crudResult = await handleAdminCrudPost(req, segments);
     if (crudResult) return crudResult;
+
+    // AI Research routes (create job, approve/reject drafts)
+    const aiResearchResult = await handleAiResearchPost(req, segments);
+    if (aiResearchResult) return aiResearchResult;
 
     // Collector routes (sources, jobs, review, test)
     const collectorResult = await handleCollectorPost(req, segments);
