@@ -66,8 +66,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
         reviews,
         contacts,
       },
-      topPhones: topPhones.map((phone: any) => ({ id: phone._id.toString(), modelName: phone.modelName, slug: phone.slug, views: phone.views || 0 })),
-      affiliateByStore: affiliateByStore.map((row: any) => ({ store: row._id || 'unknown', clicks: row.clicks || 0 })),
+      topPhones: topPhones.map((phone: { _id: { toString(): string }; modelName?: string; slug?: string; views?: number }) => ({ id: phone._id.toString(), modelName: phone.modelName, slug: phone.slug, views: phone.views || 0 })),
+      affiliateByStore: affiliateByStore.map((row: { _id?: string; clicks?: number }) => ({ store: row._id || 'unknown', clicks: row.clicks || 0 })),
       integrations: {
         googleAnalytics: Boolean(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID),
         microsoftClarity: Boolean(process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID),

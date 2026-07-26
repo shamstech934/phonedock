@@ -1,11 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, DeviceSpecDataset } from '@/lib/models';
+import type { IDeviceSpecDataset } from '@/lib/models/DeviceSpecDataset';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { getRuleById, ALL_QUALITY_RULES } from '@/lib/data-quality/rules';
-import { matchAndApplySpecsForPhone } from '@/lib/data-quality/spec-match';
+import { matchAndApplySpecsForPhone, type SpecMatchResult } from '@/lib/data-quality/spec-match';
 import { parseBoundedInt } from '@/lib/http';
+
+// Shape of a Phone row after `.select('_id modelName slug brandId thumbnail
+// pricePKR ptaStatus dataConfidence updatedAt').populate('brandId', 'name
+// slug').lean()` — used by the missing-specs/images/prices queue endpoints.
+interface RepairQueueRow {
+  _id: { toString(): string };
+  brandId?: { name?: string; slug?: string } | null;
+  modelName?: string;
+  slug?: string;
+  thumbnail?: string;
+  pricePKR?: number;
+  ptaStatus?: string;
+  dataConfidence?: string;
+  updatedAt?: Date;
+}
+interface IdOnlyRow { _id: { toString(): string } }
+
+// Phone document populated with brandId -> { name } for spec-enrichment matching.
+interface PhoneWithBrandName {
+  _id: Types.ObjectId;
+  modelName: string;
+  brandId?: { name?: string } | null;
+}
+type DatasetRow = IDeviceSpecDataset & { _id: Types.ObjectId };
+interface BrandLean { _id: Types.ObjectId; name?: string; slug?: string }
+interface PhonePriceRow {
+  _id: Types.ObjectId; slug?: string; modelName?: string; brandId?: Types.ObjectId;
+  pricePKR?: number; currentPrice?: number; previousPrice?: number; lowestPrice?: number; highestPrice?: number;
+  priceChange?: number; percentageChange?: number; sourceName?: string; sourceUrl?: string; thumbnail?: string;
+  dataConfidence?: string; updatedBy?: string; lastPriceCheckedAt?: Date; lastPriceChangedAt?: Date;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // GET HANDLERS
@@ -173,7 +205,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         ? ['Thumbnail URL']
         : ['New Price PKR', 'Source Name', 'Source URL'];
     const header = ['Phone ID', 'Brand', 'Model', 'Slug', 'Missing', ...repairColumns, 'PTA Status', 'Data Confidence', 'Last Verified At', 'Admin Editor'];
-    const csvRows = rows.map((row: any) => [
+    const csvRows = rows.map((row: RepairQueueRow) => [
       row._id.toString(),
       row.brandId?.name || 'Unknown brand',
       row.modelName || 'Unnamed phone',
@@ -251,7 +283,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       Phone.countDocuments(baseQuery),
     ]);
 
-    const items = rows.map((row: any) => ({
+    const items = rows.map((row: RepairQueueRow) => ({
       id: row._id.toString(),
       modelName: row.modelName || 'Unnamed phone',
       slug: row.slug || '',
@@ -266,7 +298,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     if (searchParams.get('idsOnly') === '1') {
       const ids = await Phone.find(baseQuery).select('_id').sort({ updatedAt: -1, modelName: 1 }).lean();
-      return NextResponse.json({ ids: ids.map((row: any) => row._id.toString()), total, type }, {
+      return NextResponse.json({ ids: ids.map((row: IdOnlyRow) => row._id.toString()), total, type }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
       });
     }
@@ -562,7 +594,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const [count, latest] = await Promise.all([
       DeviceSpecDataset.countDocuments(),
-      DeviceSpecDataset.findOne().sort({ updatedAt: -1 }).select('updatedAt sourceName').lean() as Promise<any>,
+      DeviceSpecDataset.findOne().sort({ updatedAt: -1 }).select('updatedAt sourceName').lean() as Promise<{ updatedAt?: Date; sourceName?: string } | null>,
     ]);
     return NextResponse.json({
       count,
@@ -607,7 +639,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const clean = (v: unknown, max = 700) => String(v ?? '').trim().slice(0, max);
     const normalize = (v: unknown) => clean(v, 300).toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 
-    const operations: any[] = [];
+    const operations: Array<{ updateOne: { filter: { normalizedBrand: string; normalizedModel: string }; update: { $set: Record<string, string> }; upsert: true } }> = [];
     let skipped = 0;
     const seen = new Set<string>();
     for (const row of rows) {
@@ -660,15 +692,15 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const body = await req.json();
     const phoneId = String(body.phoneId || '').trim();
     if (!Types.ObjectId.isValid(phoneId)) return NextResponse.json({ error: 'Invalid Phone ID' }, { status: 400 });
-    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as any;
+    const phone = await Phone.findOne({ _id: phoneId, deletedAt: null }).populate('brandId', 'name').lean() as PhoneWithBrandName | null;
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
     const normalize = (v: unknown) => String(v ?? '').toLowerCase().replace(/\b(dual sim|single sim|standard edition|premium edition|td-lte|cn|global|us|eu)\b/g, ' ').replace(/\b\d{5,}[a-z0-9-]*\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
     const queryModel = normalize(phone.modelName);
     const queryBrand = normalize(phone.brandId?.name || '');
     const tokens = queryModel.split(' ').filter((t: string) => t.length > 1);
     const regex = tokens.length ? new RegExp(tokens.slice(0, 4).map((t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i') : /.^/;
-    const rows = await DeviceSpecDataset.find({ $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])] }).limit(80).lean() as any[];
-    const score = (candidate: any) => {
+    const rows = await DeviceSpecDataset.find({ $or: [{ normalizedModel: regex }, ...(queryBrand ? [{ normalizedBrand: queryBrand }] : [])] }).limit(80).lean() as DatasetRow[];
+    const score = (candidate: DatasetRow) => {
       const a = new Set(queryModel.split(' ').filter(Boolean)); const b = new Set(String(candidate.normalizedModel || '').split(' ').filter(Boolean));
       const common = [...a].filter(x => b.has(x)).length; const union = new Set([...a, ...b]).size || 1;
       let value = Math.round((common / union) * 85);
@@ -710,8 +742,8 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       return NextResponse.json({ error: 'One or more Phone IDs are invalid' }, { status: 400 });
     }
 
-    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as any[];
-    const results: any[] = [];
+    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as PhoneWithBrandName[];
+    const results: SpecMatchResult[] = [];
     let applied = 0, review = 0, notFound = 0, failed = 0;
 
     for (const phone of phones) {
@@ -805,11 +837,11 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
 
     const relevantBrands = brandNames.size
-      ? await Brand.find({ deletedAt: null }).select('_id name slug').lean()
+      ? await Brand.find({ deletedAt: null }).select('_id name slug').lean() as BrandLean[]
       : [];
     const brandIds = relevantBrands
-      .filter((brand: any) => brandNames.has(normalizeName(String(brand.name || brand.slug || ''))))
-      .map((brand: any) => brand._id);
+      .filter((brand: BrandLean) => brandNames.has(normalizeName(String(brand.name || brand.slug || ''))))
+      .map((brand: BrandLean) => brand._id);
 
     const orFilters: Record<string, unknown>[] = [];
     if (objectIds.length) orFilters.push({ _id: { $in: objectIds } });
@@ -819,14 +851,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const phones = orFilters.length ? await Phone.find({
       deletedAt: null,
       $or: orFilters,
-    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean() : [];
+    }).select('_id slug modelName brandId pricePKR currentPrice previousPrice lowestPrice highestPrice priceChange percentageChange sourceName sourceUrl thumbnail dataConfidence updatedBy lastPriceCheckedAt lastPriceChangedAt').lean() as PhonePriceRow[] : [];
 
     const brandNameById = new Map<string, string>();
-    for (const brand of relevantBrands as any[]) brandNameById.set(brand._id.toString(), normalizeName(String(brand.name || brand.slug || '')));
-    const byId = new Map<string, any>();
-    const bySlug = new Map<string, any>();
-    const byBrandModel = new Map<string, any>();
-    for (const phone of phones as any[]) {
+    for (const brand of relevantBrands) brandNameById.set(brand._id.toString(), normalizeName(String(brand.name || brand.slug || '')));
+    const byId = new Map<string, PhonePriceRow>();
+    const bySlug = new Map<string, PhonePriceRow>();
+    const byBrandModel = new Map<string, PhonePriceRow>();
+    for (const phone of phones) {
       byId.set(phone._id.toString(), phone);
       bySlug.set(String(phone.slug || ''), phone);
       const normalizedBrand = brandNameById.get(phone.brandId?.toString?.() || '') || '';

@@ -26,6 +26,23 @@ interface SummaryData {
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
 
+interface RepairResultRow { row: number; phoneId?: string; status?: string; message?: string; }
+interface RepairResult {
+  dryRun?: boolean; type?: string; total?: number; ready?: number; updated?: number; skipped?: number; failed?: number;
+  results?: RepairResultRow[]; error?: string;
+}
+interface BatchMatchRow { phoneId: string; modelName?: string; status: string; score?: number; }
+interface BatchMatchResult {
+  processed?: number; applied?: number; review?: number; notFound?: number; failed?: number;
+  results?: BatchMatchRow[]; running?: boolean; error?: string;
+}
+
+interface DataQualityIssue {
+  id: string; issueType?: string; severity?: string; entityType?: string; entityId?: string; entityName?: string;
+  field?: string; status?: string; confidence?: number; detectedAt?: string; currentValue?: unknown; suggestedValue?: unknown;
+  metadata?: Record<string, unknown>; resolution?: string; canAutoFix?: boolean;
+}
+
 const TABS: { id: TabId; label: string; icon: React.ElementType; queueFilter?: string; issueTypeFilter?: string; entityTypeFilter?: string }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'issues', label: 'All Issues', icon: AlertTriangle },
@@ -379,7 +396,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [repairRows, setRepairRows] = useState<Record<string, string>[]>([]);
   const [repairFileName, setRepairFileName] = useState('');
-  const [repairResult, setRepairResult] = useState<any>(null);
+  const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
   const [repairLoading, setRepairLoading] = useState(false);
   const [specSearchPhone, setSpecSearchPhone] = useState<LiveQueueItem | null>(null);
   const [specCandidates, setSpecCandidates] = useState<FreeSpecCandidate[]>([]);
@@ -391,7 +408,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [datasetImportLoading, setDatasetImportLoading] = useState(false);
   const [datasetImportResult, setDatasetImportResult] = useState('');
   const [batchMatchLoading, setBatchMatchLoading] = useState(false);
-  const [batchMatchResult, setBatchMatchResult] = useState<any>(null);
+  const [batchMatchResult, setBatchMatchResult] = useState<BatchMatchResult | null>(null);
   const [matchThreshold, setMatchThreshold] = useState(92);
   const [datasetStatus, setDatasetStatus] = useState<{ count: number; lastUpdatedAt: string | null; latestSource: string } | null>(null);
   const [datasetProgress, setDatasetProgress] = useState<{ done: number; total: number } | null>(null);
@@ -454,7 +471,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     if (!repairRows.length) return;
     setRepairLoading(true); setRepairResult(null);
     try {
-      const aggregate = { dryRun, type, total: repairRows.length, ready: 0, updated: 0, skipped: 0, failed: 0, results: [] as any[] };
+      const aggregate = { dryRun, type, total: repairRows.length, ready: 0, updated: 0, skipped: 0, failed: 0, results: [] as RepairResultRow[] };
       for (let offset = 0; offset < repairRows.length; offset += 500) {
         const batch = repairRows.slice(offset, offset + 500);
         const res = await fetch('/api/admin/data-quality/repair-import-v2', {
@@ -467,7 +484,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         aggregate.updated += data.updated || 0;
         aggregate.skipped += data.skipped || 0;
         aggregate.failed += data.failed || 0;
-        if (Array.isArray(data.results)) aggregate.results.push(...data.results.map((row: any) => ({ ...row, row: row.row + offset })));
+        if (Array.isArray(data.results)) aggregate.results.push(...data.results.map((row: RepairResultRow) => ({ ...row, row: row.row + offset })));
       }
       aggregate.results = aggregate.results.slice(0, 100);
       setRepairResult(aggregate);
@@ -499,7 +516,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const runAutoMatch = async (phoneIds: string[]) => {
     if (!phoneIds.length) return;
     setBatchMatchLoading(true); setBatchMatchResult(null); setBatchMatchProgress({ done: 0, total: phoneIds.length });
-    const aggregate = { selected: phoneIds.length, processed: 0, applied: 0, review: 0, notFound: 0, failed: 0, results: [] as any[] };
+    const aggregate = { selected: phoneIds.length, processed: 0, applied: 0, review: 0, notFound: 0, failed: 0, results: [] as BatchMatchRow[] };
     try {
       for (let offset = 0; offset < phoneIds.length; offset += 100) {
         const chunk = phoneIds.slice(offset, offset + 100);
@@ -514,7 +531,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         aggregate.review += data.review || 0;
         aggregate.notFound += data.notFound || 0;
         aggregate.failed += data.failed || 0;
-        if (Array.isArray(data.results)) aggregate.results.push(...data.results.filter((row: any) => row.status !== 'applied').slice(0, 20));
+        if (Array.isArray(data.results)) aggregate.results.push(...data.results.filter((row: BatchMatchRow) => row.status !== 'applied').slice(0, 20));
         setBatchMatchProgress({ done: Math.min(offset + chunk.length, phoneIds.length), total: phoneIds.length });
         setBatchMatchResult({ ...aggregate, results: aggregate.results.slice(0, 100), running: offset + chunk.length < phoneIds.length });
       }
@@ -610,14 +627,14 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         {repairFileName && <p className="text-xs text-gray-500 mt-3">{repairFileName} · {repairRows.length} rows loaded (automatically processed in batches of 500)</p>}
         {repairResult && <div className={`mt-3 rounded-xl p-3 text-sm ${repairResult.error || repairResult.failed > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
           {repairResult.error ? repairResult.error : `${repairResult.dryRun ? 'Preview' : 'Import'}: ${repairResult.ready || 0} ready, ${repairResult.updated || 0} updated, ${repairResult.skipped || 0} skipped, ${repairResult.failed || 0} failed.`}
-          {repairResult.results?.some((r: any) => r.status !== 'ready' && r.status !== 'updated') && <div className="mt-2 text-xs space-y-1">{repairResult.results.filter((r: any) => r.status !== 'ready' && r.status !== 'updated').slice(0, 5).map((r: any) => <p key={`${r.row}-${r.phoneId}`}>Row {r.row}: {r.message}</p>)}</div>}
+          {repairResult.results?.some((r: RepairResultRow) => r.status !== 'ready' && r.status !== 'updated') && <div className="mt-2 text-xs space-y-1">{repairResult.results.filter((r: RepairResultRow) => r.status !== 'ready' && r.status !== 'updated').slice(0, 5).map((r: RepairResultRow) => <p key={`${r.row}-${r.phoneId}`}>Row {r.row}: {r.message}</p>)}</div>}
         </div>}
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
       {type === 'specs' && total > 0 && <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className="text-sm font-semibold text-blue-800">{selected.size > 0 ? `${selected.size.toLocaleString()} selected` : `${total.toLocaleString()} phones need specs`}</span><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label>{selected.size > 0 && <button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button>}<button onClick={autoMatchAllMissing} disabled={batchMatchLoading || !datasetStatus?.count || total === 0} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title="Process the complete missing-specs queue in batches of 100">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match all {total.toLocaleString()}</button>{selected.size > 0 && <><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></>}</div>{batchMatchProgress && <div><div className="flex justify-between text-xs text-blue-800 mb-1"><span>Automatic matching in progress — keep this page open</span><span>{batchMatchProgress.done.toLocaleString()} / {batchMatchProgress.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-blue-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.round((batchMatchProgress.done / Math.max(1, batchMatchProgress.total)) * 100)}%` }} /></div></div>}</div>}
       {type !== 'specs' && selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
-      {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: any) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: any) => row.status !== 'applied').slice(0, 8).map((row: any) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
+      {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: BatchMatchRow) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: BatchMatchRow) => row.status !== 'applied').slice(0, 8).map((row: BatchMatchRow) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
         {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex flex-wrap gap-2">{type === 'specs' && <button onClick={() => searchLocalSpecs(item)} className="h-8 px-3 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white rounded-lg text-xs font-medium"><Search className="w-3.5 h-3.5" /> Find specs</button>}<a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
@@ -804,7 +821,7 @@ function StatCard({ label, value, icon: Icon, color = 'text-gray-600', sub }: { 
 // ═══════════════════════════════════════════════════════════════════
 
 function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData | null; onRefresh: () => void; defaultFilter?: Record<string, any> }) {
-  const [issues, setIssues] = useState<any[]>([]);
+  const [issues, setIssues] = useState<DataQualityIssue[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -814,7 +831,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [detailIssue, setDetailIssue] = useState<any>(null);
+  const [detailIssue, setDetailIssue] = useState<DataQualityIssue | null>(null);
   const [fixAllLoading, setFixAllLoading] = useState(false);
   const [fixingId, setFixingId] = useState<string | null>(null);
 
@@ -1142,12 +1159,12 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
             </div>
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <DetailField label="Issue Type" value={detailIssue.issueType} />
-                <DetailField label="Severity" value={detailIssue.severity} />
-                <DetailField label="Entity Type" value={detailIssue.entityType} />
-                <DetailField label="Entity ID" value={detailIssue.entityId} mono />
+                <DetailField label="Issue Type" value={detailIssue.issueType || ''} />
+                <DetailField label="Severity" value={detailIssue.severity || ''} />
+                <DetailField label="Entity Type" value={detailIssue.entityType || ''} />
+                <DetailField label="Entity ID" value={detailIssue.entityId || ''} mono />
                 <DetailField label="Field" value={detailIssue.field || '—'} />
-                <DetailField label="Status" value={detailIssue.status} />
+                <DetailField label="Status" value={detailIssue.status || ''} />
                 <DetailField label="Confidence" value={`${Math.round((detailIssue.confidence || 0) * 100)}%`} />
                 <DetailField label="Detected" value={new Date(detailIssue.detectedAt).toLocaleString()} />
               </div>
