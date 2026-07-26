@@ -9,12 +9,19 @@ const CONSENT_KEY = 'phonedock_cookie_consent_v1';
 export function GrowthScripts() {
   const pathname = usePathname();
   const [consented, setConsented] = useState(false);
+  const [cmsGaId, setCmsGaId] = useState('');
   useEffect(() => {
     const sync = () => setConsented(localStorage.getItem(CONSENT_KEY) === 'accepted');
     sync(); window.addEventListener('phonedock:consent', sync); return () => window.removeEventListener('phonedock:consent', sync);
   }, []);
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.settings?.googleAnalyticsId) setCmsGaId(d.settings.googleAnalyticsId); })
+      .catch(() => { /* env var fallback still applies */ });
+  }, []);
   const adsenseClient = process.env.NEXT_PUBLIC_ADSENSE_CLIENT?.trim();
-  const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
+  const gaId = cmsGaId.trim() || process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
   const clarityId = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID?.trim();
 
   if (!consented || pathname.startsWith('/admin')) return null;

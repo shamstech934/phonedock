@@ -18,6 +18,8 @@ interface AutocompleteResult {
   brand: { id: string; name: string; slug: string } | null;
 }
 
+interface HeaderSiteSettings { siteName?: string; logo?: string; }
+
 const POPULAR_SEARCHES = ['Samsung Galaxy S24', 'iPhone 15', 'Xiaomi 14', 'Redmi Note 13', 'Poco X6'];
 
 export function Header() {
@@ -25,6 +27,7 @@ export function Header() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { user } = useUser();
+  const [siteSettings, setSiteSettings] = useState<HeaderSiteSettings>({});
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState('');
@@ -46,6 +49,14 @@ export function Header() {
       const saved = localStorage.getItem('pd_recent_searches');
       if (saved) setRecentSearches(JSON.parse(saved));
     } catch { /* ignore */ }
+  }, []);
+
+  // Load site branding (logo/name) from CMS settings — cached for 5 min server-side.
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.settings) setSiteSettings({ siteName: d.settings.siteName, logo: d.settings.logo }); })
+      .catch(() => { /* keep defaults on failure */ });
   }, []);
 
   useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
@@ -154,10 +165,18 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14 sm:h-16">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
-              <Smartphone className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
+            {siteSettings.logo ? (
+              <Image src={siteSettings.logo} alt={siteSettings.siteName || 'PhoneDock'} width={36} height={36} className="w-9 h-9 rounded-xl object-contain" unoptimized />
+            ) : (
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
+                <Smartphone className="w-5 h-5 text-white" />
+              </div>
+            )}
+            {siteSettings.siteName ? (
+              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">{siteSettings.siteName}</span>
+            ) : (
+              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
+            )}
           </Link>
 
           <nav className="hidden lg:flex items-center gap-0.5">

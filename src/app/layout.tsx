@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { getBaseUrl } from "@/lib/urls";
+import { getSettings } from "@/lib/models/Settings";
 import { GrowthScripts } from "@/components/monetization/GrowthScripts";
 import { CookieConsent } from "@/components/monetization/CookieConsent";
 import { UserProvider } from "@/lib/useUser";
@@ -10,49 +11,58 @@ import { serializeJsonLd } from "@/lib/json-ld";
 
 const BASE_URL = getBaseUrl();
 
-export const metadata: Metadata = {
-  metadataBase: new URL(BASE_URL),
-  title: {
-    default: "PhoneDock - Pakistan's #1 Smartphone Database | Specs, Prices & Reviews",
-    template: "%s | PhoneDock Pakistan",
-  },
-  description: "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.",
-  keywords: ["smartphone Pakistan", "phone price PKR", "PTA approved phones", "mobile specs", "phone comparison", "Samsung price Pakistan", "iPhone price Pakistan", "Xiaomi Pakistan", "phone reviews", "best camera phone", "best gaming phone", "smartphone", "Pakistan", "phone price", "PTA", "mobile", "specs", "compare", "reviews", "Samsung", "Apple", "Xiaomi", "OnePlus", "Realme", "Infinix", "Tecno"],
-  authors: [{ name: "PhoneDock", url: BASE_URL }],
-  creator: "PhoneDock",
-  publisher: "PhoneDock",
-  openGraph: {
-    title: "PhoneDock - Pakistan's #1 Smartphone Database",
-    description: "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan.",
-    type: "website",
-    url: BASE_URL,
-    siteName: "PhoneDock",
-    locale: "en_PK",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "PhoneDock - Pakistan's Smartphone Database" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "PhoneDock - Pakistan's Smartphone Database",
-    description: "Compare smartphones, check prices, and find the best phone in Pakistan",
-    images: ["/og-image.png"],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
-  },
-  alternates: { canonical: BASE_URL },
-  applicationName: "PhoneDock",
-  category: "technology",
-  manifest: "/manifest.webmanifest",
-  icons: { icon: "/logo.svg", shortcut: "/logo.svg", apple: "/logo.svg" },
-  verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
-    other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
-      ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
-      : undefined,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSettings().catch(() => null);
+  const siteName = settings?.siteName || "PhoneDock";
+  const titleSuffix = settings?.titleSuffix || `${siteName} Pakistan`;
+  const description = settings?.metaDescription || "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.";
+  const ogImage = settings?.ogImage || "/og-image.png";
+  const favicon = settings?.favicon || "/logo.svg";
+
+  return {
+    metadataBase: new URL(BASE_URL),
+    title: {
+      default: `${siteName} - Pakistan's #1 Smartphone Database | Specs, Prices & Reviews`,
+      template: `%s | ${titleSuffix}`,
+    },
+    description,
+    keywords: ["smartphone Pakistan", "phone price PKR", "PTA approved phones", "mobile specs", "phone comparison", "Samsung price Pakistan", "iPhone price Pakistan", "Xiaomi Pakistan", "phone reviews", "best camera phone", "best gaming phone", "smartphone", "Pakistan", "phone price", "PTA", "mobile", "specs", "compare", "reviews", "Samsung", "Apple", "Xiaomi", "OnePlus", "Realme", "Infinix", "Tecno"],
+    authors: [{ name: siteName, url: BASE_URL }],
+    creator: siteName,
+    publisher: siteName,
+    openGraph: {
+      title: `${siteName} - Pakistan's #1 Smartphone Database`,
+      description,
+      type: "website",
+      url: BASE_URL,
+      siteName,
+      locale: "en_PK",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: `${siteName} - Pakistan's Smartphone Database` }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${siteName} - Pakistan's Smartphone Database`,
+      description,
+      images: [ogImage],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
+    },
+    alternates: { canonical: BASE_URL },
+    applicationName: siteName,
+    category: "technology",
+    manifest: "/manifest.webmanifest",
+    icons: { icon: favicon, shortcut: favicon, apple: favicon },
+    verification: {
+      google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+      other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
+        ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
+        : undefined,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -98,12 +108,21 @@ const jsonLdOrg = {
 
 const jsonLdAll = [jsonLdWebSite, jsonLdOrg];
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const settings = await getSettings().catch(() => null);
+  const theme = settings?.theme;
+  const primaryColor = theme?.primaryColor ? String(theme.primaryColor) : '';
+  const secondaryColor = theme?.secondaryColor ? String(theme.secondaryColor) : '';
+  const accentColor = theme?.accentColor ? String(theme.accentColor) : '';
+  const themeStyle = (primaryColor || secondaryColor || accentColor)
+    ? `:root{${primaryColor ? `--primary:${primaryColor};--ring:${primaryColor};` : ''}${secondaryColor ? `--secondary:${secondaryColor};` : ''}${accentColor ? `--accent:${accentColor};` : ''}}`
+    : '';
   return (
     <html lang="en-PK" suppressHydrationWarning>
       <head>
+        {themeStyle && <style dangerouslySetInnerHTML={{ __html: themeStyle }} />}
         {jsonLdAll.map((item, i) => (
           <script
             key={i}

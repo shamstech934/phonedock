@@ -12,6 +12,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getSettings } from '@/lib/models/Settings';
+
+// Node.js runtime (not Edge) is required here so we can query MongoDB directly
+// for the maintenance-mode flag, via Mongoose.
+export const runtime = 'nodejs';
 
 // ============ CONFIGURATION ============
 
@@ -41,9 +46,25 @@ function isStaticAsset(pathname: string): boolean {
 
 // ============ PROXY ============
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+
+  // Maintenance mode: block public pages (never admin, API, or static assets)
+  // so an admin can still log in and turn it back off.
+  if (!isStaticAsset(pathname) && !pathname.startsWith('/admin') && !pathname.startsWith('/api')) {
+    try {
+      const settings = await getSettings();
+      if (settings.maintenanceMode) {
+        return new NextResponse(
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Down for maintenance</title><meta name="robots" content="noindex"></head><body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0F172A;color:#fff;text-align:center;padding:20px"><div><h1 style="font-size:1.5rem">We\'ll be right back</h1><p style="color:#94A3B8">The site is temporarily down for maintenance. Please check back soon.</p></div></body></html>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '300', 'Cache-Control': 'no-store' } },
+        );
+      }
+    } catch {
+      // If the settings lookup fails, fail open (don't block the site over a DB hiccup).
+    }
+  }
 
   const nextWithSecurityHeaders = () => {
     const requestHeaders = new Headers(req.headers);

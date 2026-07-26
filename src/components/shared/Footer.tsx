@@ -1,9 +1,33 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Smartphone, Star, Play, Shield, BarChart3 } from 'lucide-react';
+import { Smartphone, Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
 
 const FOOTER_BRANDS = ['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'];
 
+interface FooterSiteSettings {
+  siteName?: string; footerText?: string; contactEmail?: string; supportEmail?: string;
+  facebook?: string; twitter?: string; instagram?: string; youtubeChannel?: string;
+}
+
 export function Footer() {
+  const [settings, setSettings] = useState<FooterSiteSettings>({});
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.settings) setSettings(d.settings); })
+      .catch(() => { /* keep defaults on failure */ });
+  }, []);
+
+  const socialLinks = [
+    { href: settings.facebook, icon: Facebook, label: 'Facebook' },
+    { href: settings.twitter, icon: Twitter, label: 'X / Twitter' },
+    { href: settings.instagram, icon: Instagram, label: 'Instagram' },
+    { href: settings.youtubeChannel, icon: Youtube, label: 'YouTube' },
+  ].filter(s => s.href);
+
   return (
     <footer className="bg-[#0F172A] text-gray-400 mt-auto relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -14,9 +38,25 @@ export function Footer() {
               <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <Smartphone className="w-5 h-5 text-white" />
               </div>
-              <span className="font-display font-extrabold text-lg text-white">Phone<span className="text-blue-400">Dock</span></span>
+              <span className="font-display font-extrabold text-lg text-white">
+                {settings.siteName ? settings.siteName : <>Phone<span className="text-blue-400">Dock</span></>}
+              </span>
             </Link>
-            <p className="text-sm leading-relaxed text-gray-400">A growing smartphone database for Pakistan. Compare available specs and prices before buying.</p>
+            <p className="text-sm leading-relaxed text-gray-400">{settings.footerText || 'A growing smartphone database for Pakistan. Compare available specs and prices before buying.'}</p>
+            {(settings.contactEmail || settings.supportEmail) && (
+              <a href={`mailto:${settings.contactEmail || settings.supportEmail}`} className="mt-3 inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-300 transition-colors">
+                <Mail className="w-3.5 h-3.5" /> {settings.contactEmail || settings.supportEmail}
+              </a>
+            )}
+            {socialLinks.length > 0 && (
+              <div className="flex items-center gap-3 mt-4">
+                {socialLinks.map(s => (
+                  <a key={s.label} href={s.href} target="_blank" rel="noopener noreferrer" aria-label={s.label} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-blue-300 hover:bg-white/10 transition-colors">
+                    <s.icon className="w-4 h-4" />
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <h4 className="font-semibold text-white mb-4 text-sm">Popular Brands</h4>
@@ -74,7 +114,7 @@ export function Footer() {
         </div>
         <div className="divider-glass mb-6" />
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-400">
-          <p>&copy; {new Date().getFullYear()} PhoneDock. All rights reserved. Made for Pakistan.</p>
+          <p>&copy; {new Date().getFullYear()} {settings.siteName || 'PhoneDock'}. All rights reserved. Made for Pakistan.</p>
           <p className="text-cyan-300 font-medium">Phone prices may vary. Check with retailers.</p>
           {process.env.NEXT_PUBLIC_BUILD_ID && (
             <p className="text-gray-700 text-[10px]">Build: {process.env.NEXT_PUBLIC_BUILD_ID}</p>
