@@ -144,7 +144,7 @@ export async function handleAiResearchPost(req: NextRequest, segments: string[])
         }
       } else if (draft.type === 'images' && Array.isArray(draft.images) && draft.images.length > 0) {
         const existingCount = await PhoneImage.countDocuments({ phoneId: draft.phoneId });
-        await PhoneImage.insertMany(draft.images.map((img, i) => ({ phoneId: draft.phoneId, url: img.url, altText: img.title || '', sortOrder: existingCount + i })));
+        await PhoneImage.insertMany(draft.images.map((img: { url: string; sourceUrl?: string; title?: string }, i: number) => ({ phoneId: draft.phoneId, url: img.url, altText: img.title || '', sortOrder: existingCount + i })));
         publishResult.image = true;
       } else if (draft.type === 'prices' && draft.price?.valuePKR) {
         await PhonePrice.create({ phoneId: draft.phoneId, storeName: draft.price.sourceName || 'AI Research', price: draft.price.valuePKR, url: draft.price.sourceUrl || '', inStock: true });
