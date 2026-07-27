@@ -41,6 +41,8 @@ const BENCHMARK_FIELDS = new Set([
 const PHONE_REPLACEABLE_FIELDS = new Set([
   'modelName','pricePKR','releaseDate','ptaStatus','ptaApproved',
   'featured','trending','upcoming','thumbnail','description',
+  'cameraScore','performanceScore','batteryScore','displayScore','valueScore','overallRating',
+  'pros','cons','reviewSummary','reviewVerdict','seoTitle','seoDescription','keywords',
 ]);
 
 // All spec field names for rollback tracking
@@ -502,6 +504,19 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         if (d.ptaApproved !== undefined) updateFields.ptaApproved = d.ptaApproved;
         if (d.thumbnail) updateFields.thumbnail = d.thumbnail;
         if (d.description) updateFields.description = d.description;
+        if (d.cameraScore !== null) updateFields.cameraScore = d.cameraScore;
+        if (d.performanceScore !== null) updateFields.performanceScore = d.performanceScore;
+        if (d.batteryScore !== null) updateFields.batteryScore = d.batteryScore;
+        if (d.displayScore !== null) updateFields.displayScore = d.displayScore;
+        if (d.valueScore !== null) updateFields.valueScore = d.valueScore;
+        if (d.overallRating !== null) updateFields.overallRating = d.overallRating;
+        if (d.pros) updateFields.pros = d.pros;
+        if (d.cons) updateFields.cons = d.cons;
+        if (d.reviewSummary) updateFields.reviewSummary = d.reviewSummary;
+        if (d.reviewVerdict) updateFields.reviewVerdict = d.reviewVerdict;
+        if (d.seoTitle) updateFields.seoTitle = d.seoTitle;
+        if (d.seoDescription) updateFields.seoDescription = d.seoDescription;
+        if (d.keywords) updateFields.keywords = d.keywords;
 
         // Capture before-state for each field being changed
         for (const [field, newVal] of Object.entries(updateFields)) {
@@ -574,6 +589,10 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           upcoming: d.upcoming,
           thumbnail: d.thumbnail,
           description: d.description,
+          cameraScore: d.cameraScore ?? 0, performanceScore: d.performanceScore ?? 0, batteryScore: d.batteryScore ?? 0,
+          displayScore: d.displayScore ?? 0, valueScore: d.valueScore ?? 0, overallRating: d.overallRating ?? 0,
+          pros: d.pros, cons: d.cons, reviewSummary: d.reviewSummary, reviewVerdict: d.reviewVerdict,
+          seoTitle: d.seoTitle, seoDescription: d.seoDescription, keywords: d.keywords,
           lastImportId: importId,
           lastImportAt: new Date(),
           lastImportMode: 'replace',
@@ -654,7 +673,10 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       description: d.description || '',
       status: publishMode === 'immediate' ? 'published' : 'draft',
       active: true,
-      cameraScore: 0, performanceScore: 0, batteryScore: 0, displayScore: 0, valueScore: 0, overallRating: 0,
+      cameraScore: d.cameraScore ?? 0, performanceScore: d.performanceScore ?? 0, batteryScore: d.batteryScore ?? 0,
+      displayScore: d.displayScore ?? 0, valueScore: d.valueScore ?? 0, overallRating: d.overallRating ?? 0,
+      pros: d.pros || '', cons: d.cons || '', reviewSummary: d.reviewSummary || '', reviewVerdict: d.reviewVerdict || '',
+      seoTitle: d.seoTitle || '', seoDescription: d.seoDescription || '', keywords: d.keywords || '',
       dataConfidence: 'auto-imported',
       lastImportId: importId,
       lastImportAt: new Date(),

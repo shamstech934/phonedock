@@ -31,6 +31,20 @@ export interface NormalizedPhoneData {
   upcoming: boolean;
   thumbnail: string;
   description: string;
+  // Ratings — 0-100 scale for the category scores, 0-10 for overallRating (matches Phone schema)
+  cameraScore: number | null;
+  performanceScore: number | null;
+  batteryScore: number | null;
+  displayScore: number | null;
+  valueScore: number | null;
+  overallRating: number | null;
+  pros: string;
+  cons: string;
+  reviewSummary: string;
+  reviewVerdict: string;
+  seoTitle: string;
+  seoDescription: string;
+  keywords: string;
   // Specs (mapped to PhoneSpecs)
   specs: Record<string, string>;
   // Benchmarks
@@ -360,6 +374,8 @@ export function normalizePhoneRecord(
     brand: '', model: '', slug: '', pricePKR: null, releaseDate: null,
     ptaStatus: 'Unknown', ptaApproved: false, featured: false, trending: false, upcoming: false,
     thumbnail: '', description: '', specs: {}, benchmarks: {}, images: [], extra: {},
+    cameraScore: null, performanceScore: null, batteryScore: null, displayScore: null, valueScore: null, overallRating: null,
+    pros: '', cons: '', reviewSummary: '', reviewVerdict: '', seoTitle: '', seoDescription: '', keywords: '',
   };
 
   if (!isSafeObject(raw)) {
@@ -443,13 +459,14 @@ export function normalizePhoneRecord(
       benchmarks[canon] = toNumber(val);
     } else if (BENCHMARK_STRING_FIELDS.has(canon)) {
       benchmarks[canon] = cleanString(val, 50);
+    } else if (canon === 'cameraScore' || canon === 'performanceScore' || canon === 'batteryScore' || canon === 'displayScore' || canon === 'valueScore' || canon === 'overallRating') {
+      const n = toNumber(val);
+      if (n !== null) (data as unknown as Record<string, number | null>)[canon] = n;
+    } else if (canon === 'pros' || canon === 'cons' || canon === 'reviewSummary' || canon === 'reviewVerdict' || canon === 'seoTitle' || canon === 'seoDescription' || canon === 'keywords') {
+      const s = cleanString(val, canon === 'keywords' ? 500 : 2000);
+      if (s) (data as unknown as Record<string, string>)[canon] = s;
     } else if (PHONE_FIELDS.has(canon)) {
-      // Skip — already handled above or not in phone core
-      if (canon !== 'brand' && canon !== 'model' && canon !== 'pricePKR' && canon !== 'releaseDate'
-        && canon !== 'ptaStatus' && canon !== 'ptaApproved' && canon !== 'featured' && canon !== 'trending'
-        && canon !== 'upcoming' && canon !== 'thumbnail' && canon !== 'images' && canon !== 'description') {
-        // Skip recognized but non-critical phone fields
-      }
+      // Already handled above (brand/model/pricePKR/etc.) — nothing left to do here.
     } else {
       // Unknown field — store in extra
       if (isValidValue(val, 200)) {
