@@ -357,6 +357,17 @@ export default function ImportV2Page() {
   useEffect(() => {
     const stored = loadJobFromStorage();
     if (stored && (stored.status === 'running' || stored.status === 'paused')) {
+      // If this job was started more than 30 minutes ago, treat it as
+      // abandoned/stuck rather than auto-resuming forever — without this,
+      // a single failed batch call would force every future page load
+      // (hard refresh included, since localStorage survives that) straight
+      // back into the same broken resume attempt, with no way out.
+      const startedAtMs = stored.startedAt ? new Date(stored.startedAt).getTime() : 0;
+      const isStale = !startedAtMs || (Date.now() - startedAtMs > 30 * 60 * 1000);
+      if (isStale) {
+        clearJobStorage();
+        return;
+      }
       setJobId(stored.jobId);
       setProgress(stored);
       if (stored.status === 'paused') {
@@ -657,8 +668,12 @@ export default function ImportV2Page() {
             if (batches[batchIndex]) {
               batches[batchIndex] = { ...batches[batchIndex], status: 'failed', completedAt: new Date().toISOString() };
             }
-            return { ...prev, batches };
+            const updated = { ...prev, batches, status: 'failed' as JobStatus };
+            clearJobStorage();
+            return updated;
           });
+          setIsRunning(false);
+          setStartError('A batch failed to process. Check the batch list below for details, then use Retry from the Import History if you want to try again.');
         }
       } catch {
         setProgress(prev => {
@@ -668,15 +683,19 @@ export default function ImportV2Page() {
           if (batches[batchIndex]) {
             batches[batchIndex] = { ...batches[batchIndex], status: 'failed', completedAt: new Date().toISOString() };
           }
-          return { ...prev, batches };
+          const updated = { ...prev, batches, status: 'failed' as JobStatus };
+          clearJobStorage();
+          return updated;
         });
+        setIsRunning(false);
+        setStartError('A network error interrupted the import. Check the batch list below, then retry from Import History if needed.');
       } finally {
         runningBatchesRef.current.delete(batchNum);
       }
     };
 
     const interval = setInterval(() => {
-      if (!isPaused && runningBatchesRef.current.size < MAX_CONCURRENCY && nextBatchRef.current <= (progress?.totalBatches || 0)) {
+      if (!isPaused && runningBatchesRef.current.size < MAX_CONCURRENCY && nextBatchRef.current <= (progress?.totalBatches || 0) && progress?.status !== 'failed') {
         sendNextBatch();
       }
     }, 300);
@@ -846,6 +865,30 @@ export default function ImportV2Page() {
               ID: {jobId.slice(0, 8)}...
             </Badge>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className={jobId ? '' : 'ml-auto'}
+            onClick={() => {
+              clearJobStorage();
+              setJobId(null);
+              setProgress(null);
+              setIsRunning(false);
+              setIsPaused(false);
+              setIsCompleted(false);
+              setFile(null);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+              setFields([]);
+              setPreviewRecords([]);
+              setStartError(null);
+              setLastBatchDebug(null);
+              nextBatchRef.current = 1;
+              runningBatchesRef.current.clear();
+              setActiveTab('upload');
+            }}
+          >
+            Reset Import
+          </Button>
         </div>
 
         {/* Tab navigation - URL-based */}
