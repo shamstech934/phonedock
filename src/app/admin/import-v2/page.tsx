@@ -615,7 +615,7 @@ export default function ImportV2Page() {
         const res = await safePost<Record<string, any>>(`/api/admin/import-v2/jobs/${jobId}/batches/${batchNum}`, { records });
         if (res.ok && res.data) {
           const batchResult = res.data;
-          setLastBatchDebug(`created=${batchResult.created ?? '?'} updated=${batchResult.updated ?? '?'} specsWritten=${batchResult.specsWrittenCount ?? '?'} specsChanges=${JSON.stringify(batchResult.specsChanges ?? [])} errors=${JSON.stringify(batchResult.errors ?? [])}`);
+          setLastBatchDebug(`created=${batchResult.created ?? '?'} updated=${batchResult.updated ?? '?'} specsWritten=${batchResult.specsWrittenCount ?? '?'} fieldChanges=${JSON.stringify(batchResult.fieldChanges ?? [])} specsChanges=${JSON.stringify(batchResult.specsChanges ?? [])} errors=${JSON.stringify(batchResult.errors ?? [])}`);
           setProgress(prev => {
             if (!prev) return prev;
             const batches = [...prev.batches];
