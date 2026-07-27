@@ -18,6 +18,7 @@ import type { IPhone } from '@/lib/models/Phone';
 import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark } from '@/lib/models';
 import { ImportJob, ImportBatch } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
+import { revalidatePublicContent } from '@/lib/revalidate';
 import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo, type NormalizedPhoneImportRecord } from './normalize-phone-record';
 import { buildDuplicateIndex, checkDuplicate, getDuplicateKey } from './duplicate-detector';
 
@@ -448,6 +449,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   // Build batch write operations
   const phonesToCreate: Record<string, unknown>[] = [];
   const phonesToUpdate: PhoneUpdateOp[] = [];
+  const touchedSlugs = new Set<string>();
   const specsForNewPhones: (Record<string, string> | null)[] = [];
   const specsForUpdatedPhones: { phoneId: Types.ObjectId; specFields: Record<string, string> }[] = [];
   const benchmarksForNewPhones: (Record<string, unknown> | null)[] = [];
@@ -567,6 +569,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           update: { $set: updateFields },
           phoneId: existingPhone._id,
         });
+        touchedSlugs.add(d.slug);
         updatedIds.push(existingPhone._id);
         result.updated++;
         continue;
@@ -647,6 +650,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           update: { $set: replaceFields },
           phoneId: existingPhone._id,
         });
+        touchedSlugs.add(d.slug);
         updatedIds.push(existingPhone._id);
         result.replaced++;
         continue;
@@ -684,6 +688,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     };
 
     phonesToCreate.push(phoneData);
+    touchedSlugs.add(d.slug);
 
     const specFields: Record<string, string> = {};
     for (const [k, v] of Object.entries(d.specs)) {
@@ -925,6 +930,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   }
 
   await completeBatch(importId, batchNumber, result, dryRun);
+
+  // Without this, the public site keeps serving stale (pre-import) pages for
+  // every phone this batch touched, since Next.js's ISR cache has no other
+  // way to know the underlying data changed.
+  if (!dryRun && touchedSlugs.size > 0) {
+    for (const slug of touchedSlugs) {
+      try { revalidatePublicContent({ phoneSlug: slug }); } catch (e) { console.warn('[import] revalidate failed for', slug, e); }
+    }
+  }
+
   return result;
 }
 
