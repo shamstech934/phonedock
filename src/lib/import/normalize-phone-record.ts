@@ -34,7 +34,7 @@ export interface NormalizedPhoneData {
   // Specs (mapped to PhoneSpecs)
   specs: Record<string, string>;
   // Benchmarks
-  benchmarks: Record<string, number | null>;
+  benchmarks: Record<string, number | string | null>;
   // Images
   images: string[];
   // Extra fields for unknown columns
@@ -70,10 +70,9 @@ export const SPEC_FIELDS = new Set([
   'os','osVersion','osUI','updatePolicy','specialFeatures',
 ]);
 
-export const BENCHMARK_FIELDS = new Set([
-  'antutu','geekbenchSingle','geekbenchMulti','gamingScore',
-  'pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery',
-]);
+export const BENCHMARK_NUMERIC_FIELDS = new Set(['antutu', 'geekbenchSingle', 'geekbenchMulti', 'gamingScore']);
+export const BENCHMARK_STRING_FIELDS = new Set(['pubgFps', 'codMobileFps', 'genshinFps', 'videoPlayback', 'gamingBattery', 'browsingBattery']);
+export const BENCHMARK_FIELDS = new Set([...BENCHMARK_NUMERIC_FIELDS, ...BENCHMARK_STRING_FIELDS]);
 
 // Phone-level fields
 const PHONE_FIELDS = new Set([
@@ -356,7 +355,7 @@ export function normalizePhoneRecord(
   const warnings: string[] = [];
   const extra: Record<string, unknown> = {};
   const specs: Record<string, string> = {};
-  const benchmarks: Record<string, number | null> = {};
+  const benchmarks: Record<string, number | string | null> = {};
   const data: NormalizedPhoneData = {
     brand: '', model: '', slug: '', pricePKR: null, releaseDate: null,
     ptaStatus: 'Unknown', ptaApproved: false, featured: false, trending: false, upcoming: false,
@@ -440,8 +439,10 @@ export function normalizePhoneRecord(
       if (s) data.specs[canon] = s;
     } else if (canon === 'mainCameraMP') {
       data.specs.mainCameraMP = normalizeMP(val);
-    } else if (BENCHMARK_FIELDS.has(canon)) {
+    } else if (BENCHMARK_NUMERIC_FIELDS.has(canon)) {
       benchmarks[canon] = toNumber(val);
+    } else if (BENCHMARK_STRING_FIELDS.has(canon)) {
+      benchmarks[canon] = cleanString(val, 50);
     } else if (PHONE_FIELDS.has(canon)) {
       // Skip — already handled above or not in phone core
       if (canon !== 'brand' && canon !== 'model' && canon !== 'pricePKR' && canon !== 'releaseDate'
