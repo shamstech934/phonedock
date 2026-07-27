@@ -448,6 +448,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const phonesToUpdate: PhoneUpdateOp[] = [];
   const specsForNewPhones: (Record<string, string> | null)[] = [];
   const specsForUpdatedPhones: { phoneId: Types.ObjectId; specFields: Record<string, string> }[] = [];
+  const benchmarksForNewPhones: (Record<string, unknown> | null)[] = [];
+  const benchmarksForUpdatedPhones: { phoneId: Types.ObjectId; benchmarkFields: Record<string, unknown> }[] = [];
   const createdIds: Types.ObjectId[] = [];
   const updatedIds: Types.ObjectId[] = [];
   const fieldChanges: FieldChangeItem[] = [];
@@ -526,6 +528,18 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           });
         }
 
+        // Collect benchmarks for update
+        const benchmarkFields: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(d.benchmarks)) {
+          if (v !== null && v !== undefined && v !== '') benchmarkFields[k] = v;
+        }
+        if (Object.keys(benchmarkFields).length > 0) {
+          benchmarksForUpdatedPhones.push({
+            phoneId: existingPhone._id,
+            benchmarkFields,
+          });
+        }
+
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: updateFields },
@@ -585,6 +599,18 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           });
         }
 
+        // Collect benchmarks for replace
+        const benchmarkFieldsReplace: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(d.benchmarks)) {
+          if (v !== null && v !== undefined && v !== '') benchmarkFieldsReplace[k] = v;
+        }
+        if (Object.keys(benchmarkFieldsReplace).length > 0) {
+          benchmarksForUpdatedPhones.push({
+            phoneId: existingPhone._id,
+            benchmarkFields: benchmarkFieldsReplace,
+          });
+        }
+
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: replaceFields },
@@ -630,6 +656,12 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       if (v) specFields[k] = v;
     }
     specsForNewPhones.push(Object.keys(specFields).length > 0 ? specFields : null);
+
+    const benchmarkFields: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(d.benchmarks)) {
+      if (v !== null && v !== undefined && v !== '') benchmarkFields[k] = v;
+    }
+    benchmarksForNewPhones.push(Object.keys(benchmarkFields).length > 0 ? benchmarkFields : null);
   }
 
   // Execute batch (unless dry run)
@@ -647,32 +679,49 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           if (matching) createdSlugMap.set(doc.slug, doc._id);
         }
 
-        const specOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown> } }> = [];
+        const specOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = [];
         const specUpsertChanges: SpecsChangeItem[] = [];
+        const benchmarkOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = [];
         for (let i = 0; i < phonesToCreate.length; i++) {
           const specData = specsForNewPhones[i];
-          if (!specData) continue;
           const phoneId = createdSlugMap.get(phonesToCreate[i].slug as string);
           if (!phoneId) continue;
 
-          // FIX #8: Track specs upserts for rollback
-          specUpsertChanges.push({
-            phoneId,
-            collection: 'PhoneSpecs',
-            changeType: 'created',
-            fields: { ...specData },
-          });
+          if (specData) {
+            // FIX #8: Track specs upserts for rollback
+            specUpsertChanges.push({
+              phoneId,
+              collection: 'PhoneSpecs',
+              changeType: 'created',
+              fields: { ...specData },
+            });
 
-          specOps.push({
-            updateOne: {
-              filter: { phoneId },
-              update: { $set: { ...specData, lastImportId: importId }, $setOnInsert: { phoneId } },
-            },
-          });
+            specOps.push({
+              updateOne: {
+                filter: { phoneId },
+                update: { $set: { ...specData, lastImportId: importId }, $setOnInsert: { phoneId } },
+                upsert: true,
+              },
+            });
+          }
+
+          const benchmarkData = benchmarksForNewPhones[i];
+          if (benchmarkData) {
+            benchmarkOps.push({
+              updateOne: {
+                filter: { phoneId },
+                update: { $set: { ...benchmarkData }, $setOnInsert: { phoneId } },
+                upsert: true,
+              },
+            });
+          }
         }
         if (specOps.length > 0) {
           await PhoneSpecs.bulkWrite(specOps);
           specsChanges.push(...specUpsertChanges);
+        }
+        if (benchmarkOps.length > 0) {
+          await PhoneBenchmark.bulkWrite(benchmarkOps);
         }
       } catch (e: unknown) {
         // FIX #9: Log insert failures properly
@@ -752,6 +801,26 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
             phoneId: specEntry.phoneId?.toString(),
           });
         }
+      }
+    }
+
+    if (benchmarksForUpdatedPhones.length > 0) {
+      const benchmarkOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = benchmarksForUpdatedPhones.map(entry => ({
+        updateOne: {
+          filter: { phoneId: entry.phoneId },
+          update: { $set: { ...entry.benchmarkFields }, $setOnInsert: { phoneId: entry.phoneId } },
+          upsert: true,
+        },
+      }));
+      try {
+        await PhoneBenchmark.bulkWrite(benchmarkOps);
+      } catch (e: unknown) {
+        result.errors.push({
+          rowNumber: -1,
+          errorCode: 'BENCHMARKS_UPDATE_FAILED',
+          errorMessage: `Failed to update benchmarks: ${getErrorMsg(e).slice(0, 200)}`,
+          batchNumber,
+        });
       }
     }
   } else {
