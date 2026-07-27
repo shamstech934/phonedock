@@ -450,6 +450,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const specsForUpdatedPhones: { phoneId: Types.ObjectId; specFields: Record<string, string> }[] = [];
   const benchmarksForNewPhones: (Record<string, unknown> | null)[] = [];
   const benchmarksForUpdatedPhones: { phoneId: Types.ObjectId; benchmarkFields: Record<string, unknown> }[] = [];
+  const imagesForNewPhones: (string[] | null)[] = [];
+  const imagesForUpdatedPhones: { phoneId: Types.ObjectId; images: string[] }[] = [];
   const createdIds: Types.ObjectId[] = [];
   const updatedIds: Types.ObjectId[] = [];
   const fieldChanges: FieldChangeItem[] = [];
@@ -540,6 +542,11 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           });
         }
 
+        // Collect images for update (replaces the existing image set when new ones are provided)
+        if (Array.isArray(d.images) && d.images.length > 0) {
+          imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
+        }
+
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: updateFields },
@@ -611,6 +618,11 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           });
         }
 
+        // Collect images for replace
+        if (Array.isArray(d.images) && d.images.length > 0) {
+          imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
+        }
+
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: replaceFields },
@@ -662,6 +674,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       if (v !== null && v !== undefined && v !== '') benchmarkFields[k] = v;
     }
     benchmarksForNewPhones.push(Object.keys(benchmarkFields).length > 0 ? benchmarkFields : null);
+
+    imagesForNewPhones.push(Array.isArray(d.images) && d.images.length > 0 ? d.images : null);
   }
 
   // Execute batch (unless dry run)
@@ -682,6 +696,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         const specOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = [];
         const specUpsertChanges: SpecsChangeItem[] = [];
         const benchmarkOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = [];
+        const imageDocs: Array<{ phoneId: Types.ObjectId; url: string; altText: string; sortOrder: number }> = [];
         for (let i = 0; i < phonesToCreate.length; i++) {
           const specData = specsForNewPhones[i];
           const phoneId = createdSlugMap.get(phonesToCreate[i].slug as string);
@@ -715,6 +730,11 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
               },
             });
           }
+
+          const imageUrls = imagesForNewPhones[i];
+          if (imageUrls) {
+            imageUrls.forEach((url, sortOrder) => imageDocs.push({ phoneId, url, altText: '', sortOrder }));
+          }
         }
         if (specOps.length > 0) {
           await PhoneSpecs.bulkWrite(specOps);
@@ -722,6 +742,9 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         }
         if (benchmarkOps.length > 0) {
           await PhoneBenchmark.bulkWrite(benchmarkOps);
+        }
+        if (imageDocs.length > 0) {
+          await PhoneImage.insertMany(imageDocs, { ordered: false });
         }
       } catch (e: unknown) {
         // FIX #9: Log insert failures properly
@@ -821,6 +844,27 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           errorMessage: `Failed to update benchmarks: ${getErrorMsg(e).slice(0, 200)}`,
           batchNumber,
         });
+      }
+    }
+
+    if (imagesForUpdatedPhones.length > 0) {
+      for (const entry of imagesForUpdatedPhones) {
+        try {
+          // Imported images replace the existing set for that phone — the CSV
+          // is treated as the current source of truth when images are provided.
+          await PhoneImage.deleteMany({ phoneId: entry.phoneId });
+          await PhoneImage.insertMany(
+            entry.images.map((url, sortOrder) => ({ phoneId: entry.phoneId, url, altText: '', sortOrder })),
+            { ordered: false },
+          );
+        } catch (e: unknown) {
+          result.errors.push({
+            rowNumber: -1,
+            errorCode: 'IMAGES_UPDATE_FAILED',
+            errorMessage: `Failed to update images for phone ${entry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
+            batchNumber,
+          });
+        }
       }
     }
   } else {
