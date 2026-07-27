@@ -467,6 +467,8 @@ export default function ImportV2Page() {
         setFields(normalizeFields(data));
         setPreviewRecords(normalizePreview(data.firstRecords || data.preview));
         if (data.duplicateEstimate !== undefined) setDuplicateEstimate(Number(data.duplicateEstimate));
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         setActiveTab('preview');
       }
     } finally {
