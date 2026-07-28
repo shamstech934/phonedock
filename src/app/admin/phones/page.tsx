@@ -194,7 +194,7 @@ export default function AdminPhonesPage() {
   const [cleanupModal, setCleanupModal] = useState(false);
   const [cleanupCount, setCleanupCount] = useState<number | null>(null);
   const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [cleanupDiagnostic, setCleanupDiagnostic] = useState<{ distinctDataConfidenceValues: unknown[]; totalPhones: number } | null>(null);
+  const [cleanupDiagnostic, setCleanupDiagnostic] = useState<Record<string, unknown> | null>(null);
 
   const checkCleanupCount = async () => {
     setCleanupLoading(true);
@@ -202,7 +202,7 @@ export default function AdminPhonesPage() {
       const res = await fetch('/api/admin/phones/bulk-delete-unverified?dryRun=true', { method: 'DELETE', credentials: 'include' });
       const data = await res.json();
       setCleanupCount(data.matchedCount ?? 0);
-      setCleanupDiagnostic(data.distinctDataConfidenceValues ? { distinctDataConfidenceValues: data.distinctDataConfidenceValues, totalPhones: data.totalPhones } : null);
+      setCleanupDiagnostic(data.matchedCount === 0 ? data : null);
       setCleanupModal(true);
     } catch { setError('Could not check unverified phone count'); } finally { setCleanupLoading(false); }
   };
@@ -575,10 +575,9 @@ export default function AdminPhonesPage() {
               {cleanupCount === null ? 'Checking…' : `${cleanupCount} phone${cleanupCount === 1 ? '' : 's'} will be permanently deleted, along with their specs, benchmarks, images, and prices.`}
             </p>
             {cleanupCount === 0 && cleanupDiagnostic && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800 whitespace-pre-wrap break-all">
                 <p className="font-semibold mb-1">Debug info: 0 matched — here's what's actually in the database</p>
-                <p>Total phones: {cleanupDiagnostic.totalPhones}</p>
-                <p>Distinct dataConfidence values found: {JSON.stringify(cleanupDiagnostic.distinctDataConfidenceValues)}</p>
+                {JSON.stringify(cleanupDiagnostic, null, 2)}
               </div>
             )}
             <div className="flex gap-3 justify-end">

@@ -2189,8 +2189,17 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
 
     if (dryRun || ids.length === 0) {
       const distinctValues = await Phone.distinct('dataConfidence');
+      const distinctImportModes = await Phone.distinct('lastImportMode');
       const totalPhones = await Phone.countDocuments({});
-      return NextResponse.json({ success: true, dryRun: true, matchedCount: ids.length, distinctDataConfidenceValues: distinctValues, totalPhones });
+      const withLastImportId = await Phone.countDocuments({ lastImportId: { $exists: true, $ne: null } });
+      const sampleOld = await Phone.findOne({ slug: /redmi-12c/i }).select('lastImportId lastImportMode dataConfidence createdAt sourceName').lean();
+      return NextResponse.json({
+        success: true, dryRun: true, matchedCount: ids.length,
+        distinctDataConfidenceValues: distinctValues,
+        distinctLastImportModeValues: distinctImportModes,
+        totalPhones, withLastImportId,
+        sampleOldPhone: sampleOld,
+      });
     }
 
     await Promise.all([
