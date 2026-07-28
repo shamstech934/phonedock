@@ -2173,7 +2173,14 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
     await connectDB();
 
-    const filter = { dataConfidence: 'unverified' as const };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filter: any = {
+      $or: [
+        { dataConfidence: 'unverified' },
+        { dataConfidence: { $exists: false } },
+        { dataConfidence: null },
+      ],
+    };
     const url = new URL(req.url);
     const dryRun = url.searchParams.get('dryRun') === 'true';
 
