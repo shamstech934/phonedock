@@ -8,25 +8,41 @@ const MONGODB_URI = process.env.MONGODB_URI || '';
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
+  lastError: Error | null;
+  lastFailureAt: number;
 }
 
 declare global {
   var mongooseCache: MongooseCache | undefined;
 }
 
-let cached: MongooseCache = global.mongooseCache || { conn: null, promise: null };
+let cached: MongooseCache = global.mongooseCache || {
+  conn: null,
+  promise: null,
+  lastError: null,
+  lastFailureAt: 0,
+};
 
 if (!global.mongooseCache) {
   global.mongooseCache = cached;
 }
 
-async function connectWithRetry(uri: string, retries = 3, delay = 1000): Promise<typeof mongoose> {
+const BUILD_PHASE = process.env.NEXT_PHASE === 'phase-production-build';
+const FAILURE_COOLDOWN_MS = BUILD_PHASE ? 60_000 : 10_000;
+
+async function connectWithRetry(
+  uri: string,
+  retries = BUILD_PHASE ? 1 : 3,
+  delay = 1000,
+): Promise<typeof mongoose> {
   let lastError: Error | null = null;
   for (let i = 0; i < retries; i++) {
     try {
       return await mongoose.connect(uri, {
         maxPoolSize: 10,
-        minPoolSize: 2,
+        // Serverless functions scale horizontally. Keeping idle connections in
+        // every function/build worker creates avoidable Atlas connection pressure.
+        minPoolSize: 0,
         serverSelectionTimeoutMS: 10000,
         socketTimeoutMS: 45000,
         heartbeatFrequencyMS: 10000,
@@ -49,6 +65,14 @@ async function connectWithRetry(uri: string, retries = 3, delay = 1000): Promise
         console.error(`MongoDB attempt ${i + 1}/${retries}: Authentication failed. Check username/password in MONGODB_URI.`);
       } else if (msg.includes('IP is not allowed') || ((e as unknown as Record<string, unknown>).code as string) === '8000') {
         console.error(`MongoDB attempt ${i + 1}/${retries}: IP not allowed. Add your IP to Atlas Network Access.`);
+      } else if (
+        msg.includes('tlsv1 alert internal error')
+        || msg.includes('SSL routines')
+        || msg.includes('TLS')
+      ) {
+        console.error(
+          `MongoDB attempt ${i + 1}/${retries}: TLS handshake failed. Check the Atlas cluster status, Vercel Network Access, and MONGODB_URI.`,
+        );
       } else {
         console.warn(`MongoDB attempt ${i + 1}/${retries} failed:`, lastError.message);
       }
@@ -70,6 +94,15 @@ export async function connectDB(): Promise<typeof mongoose> {
     cached.promise = null;
   }
 
+  // A single Vercel build can render many pages concurrently. If Atlas is
+  // unavailable, do not let every page start its own three-attempt retry loop.
+  if (
+    cached.lastError
+    && Date.now() - cached.lastFailureAt < FAILURE_COOLDOWN_MS
+  ) {
+    throw cached.lastError;
+  }
+
   if (!cached.promise) {
     cached.promise = connectWithRetry(MONGODB_URI).then((m) => {
       return m;
@@ -78,8 +111,12 @@ export async function connectDB(): Promise<typeof mongoose> {
 
   try {
     cached.conn = await cached.promise;
+    cached.lastError = null;
+    cached.lastFailureAt = 0;
   } catch (e) {
     cached.promise = null;
+    cached.lastError = e as Error;
+    cached.lastFailureAt = Date.now();
     throw e;
   }
 
