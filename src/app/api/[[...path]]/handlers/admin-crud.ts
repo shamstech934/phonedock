@@ -219,7 +219,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     await connectDB();
     const url = new URL(req.url);
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
-    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 500 });
     const skip = (page - 1) * limit;
     const filter: Record<string, unknown> = { active: true };
     // Search

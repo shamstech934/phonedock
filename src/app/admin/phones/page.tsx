@@ -328,7 +328,7 @@ export default function AdminPhonesPage() {
           </select>
           {/* Rows per page */}
           <select value={rowsPerPage} onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1); }} className="h-9 px-2.5 rounded-xl border border-gray-200 text-xs bg-white outline-none focus:ring-2 focus:ring-blue-500/20" aria-label="Rows per page">
-            {[10, 20, 40].map(n => <option key={n} value={n}>{n} per page</option>)}
+            {[10, 20, 40, 100, 250, 500].map(n => <option key={n} value={n}>{n} per page</option>)}
           </select>
           {/* Filter toggle */}
           <button onClick={() => setShowFilters(!showFilters)} className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors ${showFilters ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
