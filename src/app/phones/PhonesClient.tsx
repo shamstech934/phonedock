@@ -29,6 +29,7 @@ const REFRESH_OPTIONS = ['all', '90', '120', '144'];
 const CAMERA_OPTIONS = ['all', '50', '108', '200'];
 const BATTERY_OPTIONS = ['all', '4500', '5000', '6000'];
 const CHIPSET_OPTIONS = ['all', 'Snapdragon', 'Dimensity', 'Exynos', 'Apple', 'Helio', 'Unisoc'];
+const YEAR_OPTIONS = Array.from({ length: 12 }, (_, index) => String(new Date().getFullYear() - index));
 
 interface PhonesClientProps {
   initialPhones: Phone[];
@@ -76,6 +77,8 @@ export default function PhonesClient({
   const chipsetParam = searchParams.get('chipset') || 'all';
   const priceDropParam = searchParams.get('priceDrop') || '';
   const collectionParam = searchParams.get('collection') || '';
+  const yearParam = searchParams.get('year') || 'all';
+  const availabilityParam = searchParams.get('availability') || 'all';
   const pageParam = parseInt(searchParams.get('page') || '1');
 
   const [search, setSearch] = useState(q);
@@ -150,6 +153,8 @@ export default function PhonesClient({
 
     // Curated collection filter
     if (collectionParam) params.set('collection', collectionParam);
+    if (yearParam !== 'all') params.set('year', yearParam);
+    if (availabilityParam !== 'all') params.set('availability', availabilityParam);
 
     // Price drop filter
     if (priceDropParam === 'true') params.set('priceDrop', 'true');
@@ -198,7 +203,7 @@ export default function PhonesClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
+  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam, yearParam, availabilityParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -223,7 +228,7 @@ export default function PhonesClient({
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
@@ -289,6 +294,20 @@ export default function PhonesClient({
               <select value={brandParam} onChange={e => updateParam('brand', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="all">All Brands</option>
                 {brands.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
+              </select>
+              <select aria-label="Release year" value={yearParam} onChange={e => updateParam('year', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <option value="all">All Years</option>
+                {YEAR_OPTIONS.map(year => <option key={year} value={year}>{year}</option>)}
+              </select>
+              <select aria-label="Availability" value={availabilityParam} onChange={e => updateParam('availability', e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <option value="all">All Availability</option>
+                <option value="rumored">Rumored</option>
+                <option value="announced">Announced</option>
+                <option value="coming_soon">Coming Soon</option>
+                <option value="available">Available</option>
+                <option value="limited">Limited</option>
+                <option value="discontinued">Discontinued</option>
+                <option value="cancelled">Cancelled</option>
               </select>
               <select aria-label="Price category" value={priceCategoryParam} onChange={e => updateParam('priceCategory', e.target.value)} className="lg:hidden h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="all">All Price Categories</option>

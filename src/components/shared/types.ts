@@ -120,6 +120,12 @@ export interface Phone {
   releaseDate: string;
   trending: boolean;
   upcoming: boolean;
+  availabilityStatus?: string;
+  announcedAt?: string;
+  expectedLaunchAt?: string;
+  pakistanLaunchAt?: string;
+  availableFrom?: string;
+  discontinuedAt?: string;
   featured: boolean;
   specs?: PhoneSpecs;
   benchmarks?: PhoneBenchmark;

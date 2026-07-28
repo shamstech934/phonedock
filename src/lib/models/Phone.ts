@@ -22,6 +22,12 @@ export interface IPhone extends Document {
   featured: boolean;
   trending: boolean;
   upcoming: boolean;
+  availabilityStatus: string;
+  announcedAt: string;
+  expectedLaunchAt: string;
+  pakistanLaunchAt: string;
+  availableFrom: string;
+  discontinuedAt: string;
   thumbnail: string;
   description: string;
   cameraScore: number;
@@ -82,6 +88,12 @@ const PhoneSchema = new Schema<IPhone>({
   featured: { type: Boolean, default: false },
   trending: { type: Boolean, default: false },
   upcoming: { type: Boolean, default: false },
+  availabilityStatus: { type: String, enum: ['rumored', 'announced', 'coming_soon', 'available', 'limited', 'discontinued', 'cancelled'], default: 'available', index: true },
+  announcedAt: { type: String, default: '' },
+  expectedLaunchAt: { type: String, default: '' },
+  pakistanLaunchAt: { type: String, default: '' },
+  availableFrom: { type: String, default: '' },
+  discontinuedAt: { type: String, default: '' },
   thumbnail: { type: String, default: '' },
   description: { type: String, default: '' },
   cameraScore: { type: Number, default: 0 },
@@ -151,6 +163,7 @@ PhoneSchema.index({ modelName: 1 });
 PhoneSchema.index({ active: 1, status: 1, featured: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, trending: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, upcoming: 1, createdAt: -1 });
+PhoneSchema.index({ active: 1, status: 1, availabilityStatus: 1, releaseDate: -1 });
 PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });

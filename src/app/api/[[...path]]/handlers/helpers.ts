@@ -69,6 +69,12 @@ export interface PhoneJson {
   releaseDate?: string;
   trending?: boolean;
   upcoming?: boolean;
+  availabilityStatus?: string;
+  announcedAt?: string;
+  expectedLaunchAt?: string;
+  pakistanLaunchAt?: string;
+  availableFrom?: string;
+  discontinuedAt?: string;
   featured?: boolean;
   pros?: string;
   cons?: string;
@@ -107,6 +113,12 @@ interface RawPhoneObject {
   releaseDate?: string;
   trending?: boolean;
   upcoming?: boolean;
+  availabilityStatus?: string;
+  announcedAt?: string;
+  expectedLaunchAt?: string;
+  pakistanLaunchAt?: string;
+  availableFrom?: string;
+  discontinuedAt?: string;
   featured?: boolean;
   pros?: string;
   cons?: string;
@@ -371,6 +383,12 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     releaseDate: r.releaseDate || '',
     trending: r.trending || false,
     upcoming: r.upcoming || false,
+    availabilityStatus: r.availabilityStatus || (r.upcoming ? 'coming_soon' : 'available'),
+    announcedAt: r.announcedAt || '',
+    expectedLaunchAt: r.expectedLaunchAt || '',
+    pakistanLaunchAt: r.pakistanLaunchAt || '',
+    availableFrom: r.availableFrom || '',
+    discontinuedAt: r.discontinuedAt || '',
     featured: r.featured || false,
     pros: r.pros || '',
     cons: r.cons || '',

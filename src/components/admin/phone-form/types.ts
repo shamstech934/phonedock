@@ -40,6 +40,12 @@ export interface PhoneFormData {
   featured: boolean;
   trending: boolean;
   upcoming: boolean;
+  availabilityStatus: string;
+  announcedAt: string;
+  expectedLaunchAt: string;
+  pakistanLaunchAt: string;
+  availableFrom: string;
+  discontinuedAt: string;
   // Display & Processor
   display: string;
   displayType: string;
@@ -203,6 +209,12 @@ export const createEmptyFormData = (): PhoneFormData => ({
   featured: false,
   trending: false,
   upcoming: false,
+  availabilityStatus: 'available',
+  announcedAt: '',
+  expectedLaunchAt: '',
+  pakistanLaunchAt: '',
+  availableFrom: '',
+  discontinuedAt: '',
   display: '',
   displayType: '',
   resolution: '',

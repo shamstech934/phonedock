@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { Smartphone } from 'lucide-react';
 import type { PhoneFormData } from './types';
 import { TextInput, NumberInput, SelectInput, TextArea, CheckboxInput } from './FormFields';
+import { PHONE_AVAILABILITY_LABELS, PHONE_AVAILABILITY_STATUSES } from '@/lib/phone-lifecycle';
 
 interface SectionProps {
   form: PhoneFormData;
@@ -67,6 +68,20 @@ export default function BasicInfoSection({ form, set, brandOptions }: SectionPro
         onChange={(v) => set('releaseDate', v)}
         type="date"
       />
+      <SelectInput
+        label="Market Availability"
+        value={form.availabilityStatus}
+        onChange={(v) => {
+          set('availabilityStatus', v);
+          set('upcoming', ['rumored', 'announced', 'coming_soon'].includes(v));
+        }}
+        options={PHONE_AVAILABILITY_STATUSES.map(value => ({ value, label: PHONE_AVAILABILITY_LABELS[value] }))}
+      />
+      <TextInput label="Announced Date" value={form.announcedAt} onChange={(v) => set('announcedAt', v)} type="date" />
+      <TextInput label="Expected Launch" value={form.expectedLaunchAt} onChange={(v) => set('expectedLaunchAt', v)} type="date" />
+      <TextInput label="Pakistan Launch" value={form.pakistanLaunchAt} onChange={(v) => set('pakistanLaunchAt', v)} type="date" />
+      <TextInput label="Available From" value={form.availableFrom} onChange={(v) => set('availableFrom', v)} type="date" />
+      <TextInput label="Discontinued Date" value={form.discontinuedAt} onChange={(v) => set('discontinuedAt', v)} type="date" />
       <div className="md:col-span-2">
         <label className="block text-xs font-semibold text-gray-700 mb-1.5">Thumbnail</label>
         <div className="flex items-center gap-3">

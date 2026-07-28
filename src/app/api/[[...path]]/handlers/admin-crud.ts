@@ -10,6 +10,7 @@ import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-spe
 import { parseBoundedInt } from '@/lib/http';
 import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
+import { isPhoneAvailabilityStatus } from '@/lib/phone-lifecycle';
 
 // ============ LOCAL TYPES ============
 
@@ -25,6 +26,7 @@ interface PhoneUpdateBody {
   modelName?: string; slug?: string; pricePKR?: number | string; originalPricePKR?: number;
   ptaStatus?: string; ptaApproved?: boolean; releaseDate?: string;
   thumbnail?: string; description?: string; featured?: boolean; trending?: boolean; upcoming?: boolean; status?: string; active?: boolean;
+  availabilityStatus?: string; announcedAt?: string; expectedLaunchAt?: string; pakistanLaunchAt?: string; availableFrom?: string; discontinuedAt?: string;
   cameraScore?: number | string; performanceScore?: number | string; batteryScore?: number | string;
   displayScore?: number | string; valueScore?: number | string; overallRating?: number | string;
   pros?: string; cons?: string; reviewSummary?: string; reviewVerdict?: string;
@@ -1142,7 +1144,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const permCheck = requirePermission(admin, 'phones:create'); if (permCheck) return permCheck;
     const body = await req.json();
     const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
-      thumbnail, description, featured, trending, upcoming, status: phoneStatus,
+      thumbnail, description, featured, trending, upcoming, availabilityStatus, announcedAt, expectedLaunchAt, pakistanLaunchAt, availableFrom, discontinuedAt, status: phoneStatus,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
       specs, benchmarks, images, prices } = body;
@@ -1163,7 +1165,8 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
         return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
       }
     }
-    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: upcoming || false, status: requestedStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
+    const lifecycleStatus = isPhoneAvailabilityStatus(availabilityStatus) ? availabilityStatus : (upcoming ? 'coming_soon' : 'available');
+    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: ['rumored', 'announced', 'coming_soon'].includes(lifecycleStatus), availabilityStatus: lifecycleStatus, announcedAt: announcedAt || '', expectedLaunchAt: expectedLaunchAt || '', pakistanLaunchAt: pakistanLaunchAt || '', availableFrom: availableFrom || '', discontinuedAt: discontinuedAt || '', status: requestedStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: ImageInput, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
@@ -1686,7 +1689,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const _previousPricePKR = phone.pricePKR;
 
     const { brandId, modelName, slug: inputSlug, pricePKR, originalPricePKR, ptaStatus, ptaApproved, releaseDate,
-      thumbnail, description, featured, trending, upcoming, status: phoneStatus, active,
+      thumbnail, description, featured, trending, upcoming, availabilityStatus, announcedAt, expectedLaunchAt, pakistanLaunchAt, availableFrom, discontinuedAt, status: phoneStatus, active,
       cameraScore, performanceScore, batteryScore, displayScore, valueScore, overallRating,
       pros, cons, reviewSummary, reviewVerdict, seoTitle, seoDescription, keywords,
       specs, benchmarks, images, prices, priceMode, manualLock, manualLockReason, sourceUrl } = body;
@@ -1726,6 +1729,16 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (featured !== undefined) phone.featured = Boolean(featured);
     if (trending !== undefined) phone.trending = Boolean(trending);
     if (upcoming !== undefined) phone.upcoming = Boolean(upcoming);
+    if (availabilityStatus !== undefined) {
+      if (!isPhoneAvailabilityStatus(availabilityStatus)) return NextResponse.json({ error: 'Invalid availability status' }, { status: 400 });
+      phone.availabilityStatus = availabilityStatus;
+      phone.upcoming = ['rumored', 'announced', 'coming_soon'].includes(availabilityStatus);
+    }
+    if (announcedAt !== undefined) phone.announcedAt = announcedAt;
+    if (expectedLaunchAt !== undefined) phone.expectedLaunchAt = expectedLaunchAt;
+    if (pakistanLaunchAt !== undefined) phone.pakistanLaunchAt = pakistanLaunchAt;
+    if (availableFrom !== undefined) phone.availableFrom = availableFrom;
+    if (discontinuedAt !== undefined) phone.discontinuedAt = discontinuedAt;
     if (phoneStatus !== undefined) {
       const validStatuses = ['published', 'draft', 'pending', 'archived'];
       if (!validStatuses.includes(phoneStatus)) return NextResponse.json({ error: `Invalid status: "${phoneStatus}". Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });

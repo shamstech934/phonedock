@@ -29,6 +29,8 @@ export interface PhoneListParams {
   pta?: string;
   priceDrop?: string;
   collection?: string;
+  year?: string;
+  availability?: string;
 }
 
 const PRICE_RANGES: Record<string, { min?: number; max?: number }> = {
@@ -73,9 +75,18 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
     upcoming: collection === 'upcoming',
   });
+  const andFilters: Record<string, unknown>[] = [];
   if (collection === 'trending') filter.trending = true;
   if (collection === 'featured') filter.featured = true;
   if (collection === 'upcoming') filter.upcoming = true;
+  if (/^\d{4}$/.test(params.year || '')) filter.releaseDate = { $regex: `^${params.year}` };
+  if (params.availability === 'available') {
+    andFilters.push({ $or: [{ availabilityStatus: 'available' }, { availabilityStatus: { $exists: false }, upcoming: { $ne: true } }] });
+  } else if (params.availability === 'coming_soon') {
+    andFilters.push({ $or: [{ availabilityStatus: 'coming_soon' }, { availabilityStatus: { $exists: false }, upcoming: true }] });
+  } else if (params.availability) {
+    filter.availabilityStatus = params.availability;
+  }
 
   if (params.q) {
     const safe = escapeRegex(params.q);
@@ -93,7 +104,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   const directPriceMin = Number.parseFloat(params.priceMin || '');
   const directPriceMax = Number.parseFloat(params.priceMax || '');
   if (category?.missing) {
-    filter.$and = [{ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] }];
+    andFilters.push({ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] });
   } else if (Number.isFinite(directPriceMin) || Number.isFinite(directPriceMax)) {
     filter.pricePKR = {
       ...(Number.isFinite(directPriceMin) && directPriceMin > 0 ? { $gte: directPriceMin } : {}),
@@ -138,6 +149,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     const ids = await PhoneSpecs.find(specFilter).distinct('phoneId');
     filter._id = { $in: ids };
   }
+  if (andFilters.length > 0) filter.$and = andFilters;
 
   const sortMap: Record<string, { field: string; order: 1 | -1 }> = {
     newest: { field: 'createdAt', order: -1 },
@@ -198,6 +210,8 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (params.nfc && params.nfc !== 'all') apiParams.set('nfc', params.nfc);
   if (params.priceDrop === 'true') apiParams.set('priceDrop', 'true');
   if (collection) apiParams.set('collection', collection);
+  if (/^\d{4}$/.test(params.year || '')) apiParams.set('year', params.year!);
+  if (params.availability) apiParams.set('availability', params.availability);
 
   return { phones, total, queryKey: apiParams.toString() };
 }

@@ -224,14 +224,25 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const trendingOnly = url.searchParams.get('trending') === 'true';
     const collection = url.searchParams.get('collection') || '';
     const priceDropOnly = url.searchParams.get('priceDrop') === 'true';
+    const year = url.searchParams.get('year') || '';
+    const availability = url.searchParams.get('availability') || '';
 
     const filter: Record<string, unknown> = getPublicPhoneFilter({
       cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
       upcoming: collection === 'upcoming',
     });
+    const andFilters: Record<string, unknown>[] = [];
     if (trendingOnly || collection === 'trending') filter.trending = true;
     if (collection === 'featured') filter.featured = true;
     if (collection === 'upcoming') filter.upcoming = true;
+    if (/^\d{4}$/.test(year)) filter.releaseDate = { $regex: `^${year}` };
+    if (availability === 'available') {
+      andFilters.push({ $or: [{ availabilityStatus: 'available' }, { availabilityStatus: { $exists: false }, upcoming: { $ne: true } }] });
+    } else if (availability === 'coming_soon') {
+      andFilters.push({ $or: [{ availabilityStatus: 'coming_soon' }, { availabilityStatus: { $exists: false }, upcoming: true }] });
+    } else if (availability) {
+      filter.availabilityStatus = availability;
+    }
     if (ptaFilter === 'approved') filter.ptaApproved = true;
     else if (ptaFilter === 'pending') filter.ptaApproved = false;
     if (priceDropOnly) filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
@@ -262,7 +273,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     // Price range filter on Phone model
     if (priceMissing) {
-      filter.$and = [{ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] }];
+      andFilters.push({ $or: [{ pricePKR: { $exists: false } }, { pricePKR: null }, { pricePKR: { $lte: 0 } }] });
     } else {
       if (priceMin > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $gte: priceMin };
       if (priceMax > 0) filter.pricePKR = { ...((filter.pricePKR as Record<string, number>) || {}), $lte: priceMax };
@@ -302,6 +313,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
       filter._id = { ...((filter._id as Record<string, unknown>) || {}), $in: matchingSpecPhoneIds };
     }
+    if (andFilters.length > 0) filter.$and = andFilters;
 
     const [phones, rawTotal] = await Promise.all([
       Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit)
