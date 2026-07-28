@@ -6,6 +6,7 @@ import { escapeRegex } from '@/lib/sanitize';
 import { buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import type { Brand as BrandType, Phone as PhoneType } from '@/components/shared/types';
 import { getPriceCategory } from '@/lib/price-categories';
+import { getPublicPhoneFilter } from '@/lib/phone-publication';
 
 export interface PhoneListParams {
   page?: string;
@@ -67,8 +68,11 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   await connectDB();
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
   const limit = 20;
-  const filter: Record<string, unknown> = { active: true, status: 'published' };
   const collection = params.collection || '';
+  const filter: Record<string, unknown> = getPublicPhoneFilter({
+    cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
+    upcoming: collection === 'upcoming',
+  });
   if (collection === 'trending') filter.trending = true;
   if (collection === 'featured') filter.featured = true;
   if (collection === 'upcoming') filter.upcoming = true;

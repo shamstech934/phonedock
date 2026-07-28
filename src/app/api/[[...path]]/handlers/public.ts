@@ -9,6 +9,7 @@ import { normalizeCompareValues } from '@/lib/compare';
 import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
+import { getPublicPhoneFilter } from '@/lib/phone-publication';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -224,7 +225,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const collection = url.searchParams.get('collection') || '';
     const priceDropOnly = url.searchParams.get('priceDrop') === 'true';
 
-    const filter: Record<string, unknown> = { active: true, status: 'published' };
+    const filter: Record<string, unknown> = getPublicPhoneFilter({
+      cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
+      upcoming: collection === 'upcoming',
+    });
     if (trendingOnly || collection === 'trending') filter.trending = true;
     if (collection === 'featured') filter.featured = true;
     if (collection === 'upcoming') filter.upcoming = true;

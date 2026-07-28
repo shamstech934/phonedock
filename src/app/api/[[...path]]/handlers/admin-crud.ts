@@ -9,6 +9,7 @@ import { escapeRegex } from '@/lib/sanitize';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { parseBoundedInt } from '@/lib/http';
 import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
+import { getPhonePublicationIssues } from '@/lib/phone-publication';
 
 // ============ LOCAL TYPES ============
 
@@ -1151,7 +1152,18 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     const slug = inputSlug || modelName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const existing = await Phone.findOne({ slug }).lean();
     if (existing) return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
-    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: upcoming || false, status: phoneStatus || 'published', active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
+    const requestedStatus = phoneStatus || 'draft';
+    if (!['published', 'draft', 'pending', 'archived'].includes(requestedStatus)) {
+      return NextResponse.json({ error: 'Invalid phone status' }, { status: 400 });
+    }
+    if (requestedStatus === 'published') {
+      const pubCheck = requirePermission(admin, 'phones:publish'); if (pubCheck) return pubCheck;
+      const publicationIssues = getPhonePublicationIssues({ brandId, modelName, slug, thumbnail, pricePKR, upcoming });
+      if (publicationIssues.length > 0) {
+        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
+      }
+    }
+    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: upcoming || false, status: requestedStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: ImageInput, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
@@ -1742,6 +1754,13 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (manualLock !== undefined) phone.manualLock = Boolean(manualLock);
     if (manualLockReason !== undefined) phone.manualLockReason = String(manualLockReason).slice(0, 500);
     if (sourceUrl !== undefined) { phone.sourceUrl = String(sourceUrl); phone.sourceName = 'Manual Entry'; }
+
+    if (phone.status === 'published') {
+      const publicationIssues = getPhonePublicationIssues(phone);
+      if (publicationIssues.length > 0) {
+        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
+      }
+    }
 
     // Save phone — with clear error on failure
     try {

@@ -100,7 +100,7 @@ const PhoneSchema = new Schema<IPhone>({
   seoDescription: { type: String, default: '' },
   keywords: { type: String, default: '' },
   views: { type: Number, default: 0 },
-  status: { type: String, enum: ['published', 'draft', 'pending', 'archived'], default: 'published' },
+  status: { type: String, enum: ['published', 'draft', 'pending', 'archived'], default: 'draft' },
   sourceName: { type: String, default: '' },
   sourceUrl: { type: String, default: '' },
   lastVerifiedAt: { type: Date, default: null },

@@ -280,7 +280,9 @@ export async function approveAndImport(draftId: string, adminEdits?: Record<stri
     seoTitle: draft.suggestedSeoTitle || '',
     seoDescription: draft.suggestedSeoDescription || '',
     keywords: draft.suggestedKeywords || '',
-    status: 'published',
+    // Approval imports the record for an editorial pass. Publishing stays an
+    // explicit admin action so incomplete collector data cannot leak publicly.
+    status: 'draft',
     active: true,
   };
 

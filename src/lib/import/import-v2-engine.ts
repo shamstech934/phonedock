@@ -21,6 +21,7 @@ import { connectDB } from '@/lib/mongodb';
 import { revalidatePublicContent } from '@/lib/revalidate';
 import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo, type NormalizedPhoneImportRecord } from './normalize-phone-record';
 import { buildDuplicateIndex, checkDuplicate, getDuplicateKey } from './duplicate-detector';
+import { getPhonePublicationIssues } from '@/lib/phone-publication';
 
 const SPEC_FIELDS = new Set([
   'display','displayType','resolution','refreshRate','protection','brightness',
@@ -661,6 +662,26 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
 
     // Create new phone
+    const publicationIssues = getPhonePublicationIssues({
+      brandId: brand._id,
+      modelName: d.model,
+      slug: d.slug,
+      thumbnail: d.thumbnail,
+      pricePKR: d.pricePKR,
+      upcoming: d.upcoming,
+    });
+    const canPublishImmediately = publishMode === 'immediate' && publicationIssues.length === 0;
+    if (publishMode === 'immediate' && !canPublishImmediately) {
+      result.errors.push({
+        rowNumber: rec.originalRowNumber,
+        brand: d.brand,
+        model: d.model,
+        errorCode: 'SAVED_AS_DRAFT',
+        errorMessage: `Saved as draft: ${publicationIssues.join('; ')}`,
+        batchNumber,
+      });
+    }
+
     const phoneData: Record<string, unknown> = {
       brandId: brand._id,
       modelName: d.model,
@@ -675,7 +696,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       upcoming: d.upcoming,
       thumbnail: d.thumbnail,
       description: d.description || '',
-      status: publishMode === 'immediate' ? 'published' : 'draft',
+      status: canPublishImmediately ? 'published' : 'draft',
       active: true,
       cameraScore: d.cameraScore ?? 0, performanceScore: d.performanceScore ?? 0, batteryScore: d.batteryScore ?? 0,
       displayScore: d.displayScore ?? 0, valueScore: d.valueScore ?? 0, overallRating: d.overallRating ?? 0,
