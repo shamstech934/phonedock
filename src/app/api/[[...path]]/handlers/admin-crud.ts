@@ -2162,6 +2162,49 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     return NextResponse.json({ success: true });
   }
 
+  // ---- /api/admin/phones/bulk-delete-unverified ----
+  // Deletes phones whose dataConfidence is still the schema default ('unverified'),
+  // which is exactly the phones created by the original bulk PhoneDB import and never
+  // touched since — as opposed to phones created/updated through Import V2, which always
+  // explicitly sets dataConfidence to 'auto-imported'. Call with ?dryRun=true first to see
+  // the count before actually deleting anything.
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones' && segments[2] === 'bulk-delete-unverified') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'phones:delete'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const filter = { dataConfidence: 'unverified' };
+    const url = new URL(req.url);
+    const dryRun = url.searchParams.get('dryRun') === 'true';
+
+    const matchingIds = await Phone.find(filter).select('_id').lean();
+    const ids = matchingIds.map(p => p._id);
+
+    if (dryRun || ids.length === 0) {
+      return NextResponse.json({ success: true, dryRun: true, matchedCount: ids.length });
+    }
+
+    await Promise.all([
+      Phone.deleteMany({ _id: { $in: ids } }),
+      PhoneSpecs.deleteMany({ phoneId: { $in: ids } }),
+      PhoneBenchmark.deleteMany({ phoneId: { $in: ids } }),
+      PhoneImage.deleteMany({ phoneId: { $in: ids } }),
+      PhonePrice.deleteMany({ phoneId: { $in: ids } }),
+      PriceHistory.deleteMany({ phoneId: { $in: ids } }),
+      UserReview.deleteMany({ phoneId: { $in: ids } }),
+      PriceAlert.deleteMany({ phoneId: { $in: ids } }),
+      PhoneRetailListing.deleteMany({ phoneId: { $in: ids } }),
+      PriceTrackerHistory.deleteMany({ phoneId: { $in: ids } }),
+    ]);
+
+    try {
+      await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_unverified_phones', details: `Bulk deleted ${ids.length} unverified (original bulk-import) phones`, entityType: 'phone' });
+    } catch (e) { console.error('[ActivityLog]', e); }
+
+    revalidatePublicContent({ includeBrands: true });
+    return NextResponse.json({ success: true, deletedCount: ids.length });
+  }
+
   // ---- /api/admin/phones/:id ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;

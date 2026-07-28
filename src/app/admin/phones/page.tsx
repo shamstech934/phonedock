@@ -190,6 +190,30 @@ export default function AdminPhonesPage() {
     } catch (error) { setError(error instanceof Error ? error.message : 'Bulk delete failed'); } finally { setBulkLoading(false); }
   };
 
+  // ── Cleanup: bulk-delete phones from the original (unverified) bulk import ──
+  const [cleanupModal, setCleanupModal] = useState(false);
+  const [cleanupCount, setCleanupCount] = useState<number | null>(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+
+  const checkCleanupCount = async () => {
+    setCleanupLoading(true);
+    try {
+      const res = await fetch('/api/admin/phones/bulk-delete-unverified?dryRun=true', { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      setCleanupCount(data.matchedCount ?? 0);
+      setCleanupModal(true);
+    } catch { setError('Could not check unverified phone count'); } finally { setCleanupLoading(false); }
+  };
+
+  const runCleanup = async () => {
+    setCleanupLoading(true);
+    try {
+      const res = await fetch('/api/admin/phones/bulk-delete-unverified', { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Cleanup failed');
+      setCleanupModal(false); setCleanupCount(null); fetchPhones(); fetchStats();
+    } catch { setError('Cleanup failed'); } finally { setCleanupLoading(false); }
+  };
+
   // Select logic
   const toggleSelect = (id: string) => {
     setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -244,6 +268,13 @@ export default function AdminPhonesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={checkCleanupCount}
+            disabled={cleanupLoading}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">Clean Up Old Bulk Import</span><span className="sm:hidden">Cleanup</span>
+          </button>
           <Link href="/admin/phones/new" className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Add Phone</span><span className="sm:hidden">Add</span>
           </Link>
@@ -524,6 +555,31 @@ export default function AdminPhonesPage() {
           </div>
         </div>
       )}
+
+      {/* ─── Cleanup Old Bulk Import Confirmation Modal ─── */}
+      {cleanupModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !cleanupLoading && setCleanupModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-500" /></div>
+              <div><h3 className="font-bold text-gray-900">Clean Up Old Bulk Import</h3><p className="text-xs text-muted-foreground">This action cannot be undone</p></div>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              This deletes only phones that came from the original bulk import and have never
+              been touched by a manual Import V2 update — it will not affect any phone you've
+              carefully added or updated since.
+            </p>
+            <p className="text-sm font-semibold text-gray-900 mb-6">
+              {cleanupCount === null ? 'Checking…' : `${cleanupCount} phone${cleanupCount === 1 ? '' : 's'} will be permanently deleted, along with their specs, benchmarks, images, and prices.`}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setCleanupModal(false)} disabled={cleanupLoading} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Cancel</button>
+              <button onClick={runCleanup} disabled={cleanupLoading || !cleanupCount} className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors disabled:opacity-50">{cleanupLoading ? 'Deleting...' : `Delete ${cleanupCount ?? ''} Phones`}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ─── Bulk Delete Confirmation Modal ─── */}
       {bulkDeleteModal && (
