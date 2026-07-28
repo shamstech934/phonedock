@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Smartphone, ChevronLeft, ChevronRight, CircleDollarSign, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Search, Smartphone, ChevronLeft, ChevronRight, CircleDollarSign, SlidersHorizontal, ChevronDown, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
@@ -30,7 +30,21 @@ const CAMERA_OPTIONS = ['all', '50', '108', '200'];
 const BATTERY_OPTIONS = ['all', '4500', '5000', '6000'];
 const CHIPSET_OPTIONS = ['all', 'Snapdragon', 'Dimensity', 'Exynos', 'Apple', 'Helio', 'Unisoc'];
 
-export default function PhonesClient({ initialPhones, initialBrands, initialTotal, initialQueryKey }: { initialPhones: Phone[]; initialBrands: Brand[]; initialTotal: number; initialQueryKey: string }) {
+interface PhonesClientProps {
+  initialPhones: Phone[];
+  initialBrands: Brand[];
+  initialTotal: number;
+  initialQueryKey: string;
+  initialError?: string;
+}
+
+export default function PhonesClient({
+  initialPhones,
+  initialBrands,
+  initialTotal,
+  initialQueryKey,
+  initialError = '',
+}: PhonesClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -38,6 +52,7 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   const [phones, setPhones] = useState<Phone[]>(initialPhones);
   const [brands] = useState<Brand[]>(initialBrands);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(initialError);
   const [total, setTotal] = useState(initialTotal);
   const [showFilters, setShowFilters] = useState(false);
   const hydratedQueryKey = useRef(initialQueryKey);
@@ -70,7 +85,10 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
   // Build API query from all filter params
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     setLoading(true);
+    setLoadError('');
 
     const params = new URLSearchParams();
     params.set('page', String(pageParam));
@@ -140,17 +158,46 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
     if (hydratedQueryKey.current === queryKey) {
       hydratedQueryKey.current = '';
       setLoading(false);
-      return () => { cancelled = true; };
+      window.clearTimeout(timeout);
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
     }
 
-    fetch(`/api/phones?${queryKey}`).then(r => r.json()).then(pd => {
-      if (!cancelled) {
-        setPhones(pd.phones || []);
-        setTotal(pd.total || 0);
-        setLoading(false);
-      }
-    }).catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    fetch(`/api/phones?${queryKey}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || 'Phone data is temporarily unavailable.');
+        }
+        return payload;
+      })
+      .then(pd => {
+        if (!cancelled) {
+          setPhones(pd.phones || []);
+          setTotal(pd.total || 0);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          const message = error instanceof DOMException && error.name === 'AbortError'
+            ? 'The phone listing took too long to load. Please try again.'
+            : error instanceof Error
+              ? error.message
+              : 'Phone data is temporarily unavailable.';
+          setLoadError(message);
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
@@ -189,6 +236,18 @@ export default function PhonesClient({ initialPhones, initialBrands, initialTota
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
           </div>
+
+          {loadError && (
+            <div role="alert" className="flex items-start justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <span className="flex items-start gap-2">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {loadError}
+              </span>
+              <button type="button" onClick={() => window.location.reload()} className="shrink-0 font-bold text-blue-700 hover:text-blue-800">
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Search & Sort Bar */}
           <div className="card-premium p-4 space-y-4">

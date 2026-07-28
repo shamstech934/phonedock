@@ -28,11 +28,12 @@ if (!global.mongooseCache) {
 }
 
 const BUILD_PHASE = process.env.NEXT_PHASE === 'phase-production-build';
+const SERVERLESS_RUNTIME = Boolean(process.env.VERCEL);
 const FAILURE_COOLDOWN_MS = BUILD_PHASE ? 60_000 : 10_000;
 
 async function connectWithRetry(
   uri: string,
-  retries = BUILD_PHASE ? 1 : 3,
+  retries = BUILD_PHASE || SERVERLESS_RUNTIME ? 1 : 3,
   delay = 1000,
 ): Promise<typeof mongoose> {
   let lastError: Error | null = null;
@@ -43,8 +44,10 @@ async function connectWithRetry(
         // Serverless functions scale horizontally. Keeping idle connections in
         // every function/build worker creates avoidable Atlas connection pressure.
         minPoolSize: 0,
-        serverSelectionTimeoutMS: 10000,
-        socketTimeoutMS: 45000,
+        // A public request must fail quickly enough to return a useful 503
+        // instead of leaving the page on a loading screen for 30+ seconds.
+        serverSelectionTimeoutMS: SERVERLESS_RUNTIME ? 6000 : 10000,
+        socketTimeoutMS: SERVERLESS_RUNTIME ? 20000 : 45000,
         heartbeatFrequencyMS: 10000,
         retryWrites: true,
         w: 'majority',

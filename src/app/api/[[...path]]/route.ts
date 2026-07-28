@@ -43,7 +43,6 @@ import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, h
 import { handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-quality';
 import { syncYouTubeVideos } from '@/lib/video-sync';
-import { Video } from '@/lib/models';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 
 type HandlerResult = Promise<NextResponse | undefined>;
@@ -68,6 +67,20 @@ function securityError(message: string, status: number): NextResponse {
       },
     },
   );
+}
+
+function isDatabaseConnectionError(message: string): boolean {
+  return [
+    'MONGODB_URI',
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'Authentication failed',
+    'IP is not allowed',
+    'tlsv1 alert internal error',
+    'SSL routines',
+    'TLS handshake',
+    'MongoServerSelectionError',
+  ].some((marker) => message.includes(marker));
 }
 
 function isPrivilegedMutation(segments: string[]): boolean {
@@ -339,8 +352,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     const err = e instanceof Error ? e : new Error(String(e));
     console.error('API GET error:', err.message);
     const msg = err.message;
-    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
-      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    if (isDatabaseConnectionError(msg)) {
+      return NextResponse.json({ error: 'Database is temporarily unavailable. Please try again shortly.' }, { status: 503 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -604,8 +617,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     const err = e instanceof Error ? e : new Error(String(e));
     console.error('API POST error:', err.message);
     const msg = err.message;
-    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
-      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    if (isDatabaseConnectionError(msg)) {
+      return NextResponse.json({ error: 'Database is temporarily unavailable. Please try again shortly.' }, { status: 503 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -648,8 +661,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     const err = e instanceof Error ? e : new Error(String(e));
     console.error('API PUT error:', err.message, err.stack);
     const msg = err.message;
-    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
-      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    if (isDatabaseConnectionError(msg)) {
+      return NextResponse.json({ error: 'Database is temporarily unavailable. Please try again shortly.' }, { status: 503 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -696,8 +709,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     const err = e instanceof Error ? e : new Error(String(e));
     console.error('API DELETE error:', err.message);
     const msg = err.message;
-    if (msg.includes('MONGODB_URI') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('Authentication failed') || msg.includes('IP is not allowed')) {
-      return NextResponse.json({ error: 'Database connection failed. Please set MONGODB_URI in environment variables.' }, { status: 503 });
+    if (isDatabaseConnectionError(msg)) {
+      return NextResponse.json({ error: 'Database is temporarily unavailable. Please try again shortly.' }, { status: 503 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

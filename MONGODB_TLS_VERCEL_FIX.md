@@ -8,6 +8,8 @@
   does not start another retry loop.
 - Uses `minPoolSize: 0`, which is appropriate for Vercel/serverless workers.
 - Classifies TLS handshake failures without printing the connection string.
+- Uses one short serverless connection attempt so public requests return a safe
+  HTTP 503 instead of holding the page on a loading screen for 30+ seconds.
 
 The application still retries transient database failures at runtime.
 

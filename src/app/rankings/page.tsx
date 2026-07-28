@@ -11,7 +11,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Best Phones in Pakistan 2026 – Smart Rankings | PhoneDock',
+  title: 'Best Phones in Pakistan 2026 – Smart Rankings',
   description: 'PhoneDock smart rankings for the best overall, gaming, camera, battery, value and budget phones in Pakistan.',
   alternates: { canonical: `${BASE_URL}/rankings` },
 };

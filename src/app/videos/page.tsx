@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Play, ChevronLeft, ChevronRight, X, TriangleAlert } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
@@ -22,21 +22,43 @@ export default function VideosPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
 
   const closeModal = useCallback(() => setActiveVideo(null), []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
     setLoading(true);
-    fetch(`/api/videos?page=${page}&limit=12`)
-      .then(r => r.json())
+    setLoadError('');
+    fetch(`/api/videos?page=${page}&limit=12`, { signal: controller.signal })
+      .then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Video data is temporarily unavailable.');
+        return payload;
+      })
       .then(d => {
         setVideos(d.videos || []);
         setTotalPages(d.totalPages || 1);
         setTotal(d.total || 0);
-        setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((error: unknown) => {
+        const message = error instanceof DOMException && error.name === 'AbortError'
+          ? 'Video reviews took too long to load. Please try again.'
+          : error instanceof Error
+            ? error.message
+            : 'Video data is temporarily unavailable.';
+        setLoadError(message);
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        setLoading(false);
+      });
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [page]);
 
   // Close modal on Escape key
@@ -63,6 +85,18 @@ export default function VideosPage() {
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Video Reviews</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} video{total !== 1 ? 's' : ''} in our database</p>
           </div>
+
+          {loadError && (
+            <div role="alert" className="mb-6 flex items-start justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <span className="flex items-start gap-2">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {loadError}
+              </span>
+              <button type="button" onClick={() => window.location.reload()} className="shrink-0 font-bold text-blue-700 hover:text-blue-800">
+                Retry
+              </button>
+            </div>
+          )}
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

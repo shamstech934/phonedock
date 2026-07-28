@@ -100,7 +100,7 @@ export default function BuyingAssistantPage() {
     void runSearch(query);
   }
 
-  function usePrompt(prompt: string) {
+  function applyQuickPrompt(prompt: string) {
     setQuery(prompt);
     void runSearch(prompt);
   }
@@ -151,7 +151,7 @@ export default function BuyingAssistantPage() {
                   key={prompt}
                   type="button"
                   disabled={loading}
-                  onClick={() => usePrompt(prompt)}
+                  onClick={() => applyQuickPrompt(prompt)}
                   className="rounded-full border border-blue-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-700 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 >
                   {prompt}
