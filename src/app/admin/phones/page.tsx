@@ -182,10 +182,17 @@ export default function AdminPhonesPage() {
   const handleBulkDelete = async () => {
     setBulkLoading(true);
     try {
-      const responses = await Promise.all(Array.from(selected).map(id =>
-        fetch(`/api/admin/phones/${id}`, { method: 'DELETE', credentials: 'include' })
-      ));
-      if (responses.some(response => !response.ok)) throw new Error('One or more phone deletions failed');
+      const idsToDelete = Array.from(selected);
+      const CHUNK_SIZE = 20; // process in small batches so a large selection doesn't overload the DB/API
+      let anyFailed = false;
+      for (let i = 0; i < idsToDelete.length; i += CHUNK_SIZE) {
+        const chunk = idsToDelete.slice(i, i + CHUNK_SIZE);
+        const responses = await Promise.all(chunk.map(id =>
+          fetch(`/api/admin/phones/${id}`, { method: 'DELETE', credentials: 'include' })
+        ));
+        if (responses.some(response => !response.ok)) anyFailed = true;
+      }
+      if (anyFailed) throw new Error('One or more phone deletions failed');
       setBulkDeleteModal(false); setSelected(new Set()); fetchPhones(); fetchStats();
     } catch (error) { setError(error instanceof Error ? error.message : 'Bulk delete failed'); } finally { setBulkLoading(false); }
   };
