@@ -8,6 +8,7 @@ import { CookieConsent } from "@/components/monetization/CookieConsent";
 import { UserProvider } from "@/lib/useUser";
 import { WebVitalsReporter } from "@/components/observability/WebVitalsReporter";
 import { serializeJsonLd } from "@/lib/json-ld";
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 const BASE_URL = getBaseUrl();
 
@@ -143,6 +144,7 @@ export default async function RootLayout({
           </UserProvider>
         </ThemeProvider>
         <CookieConsent />
+        <SpeedInsights />
       </body>
     </html>
   );
