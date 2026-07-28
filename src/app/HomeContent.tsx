@@ -22,6 +22,7 @@ import { HomeVideoSection } from '@/components/home/HomeVideoSection';
 import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 import { PRICE_CATEGORIES } from '@/lib/price-categories';
+import { normalizeHomepageSectionOrder, type OrderedHomepageSection } from '@/lib/homepage-builder';
 
 // ============ QUICK CATEGORY STRIP ============
 const QUICK_CATEGORIES = [
@@ -455,7 +456,7 @@ function ExplorePhoneDockTools() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; sections?: Record<string, boolean>; titles?: Record<string, string> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -465,6 +466,37 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const sections = cms.sections || {};
   const titles = cms.titles || {};
   const visible = (key: string) => sections[key] !== false;
+  const sectionOrder = normalizeHomepageSectionOrder(cms.sectionOrder);
+  const renderOrderedSection = (key: OrderedHomepageSection) => {
+    if (!visible(key)) return null;
+    switch (key) {
+      case 'latest': return <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty tone="sky" />;
+      case 'trending': return <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty tone="rose" />;
+      case 'camera': return <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" tone="violet" />;
+      case 'gaming': return <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" tone="indigo" />;
+      case 'battery': return <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" tone="emerald" />;
+      case 'budget': return <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" tone="amber" />;
+      case 'flagship': return <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" tone="orange" />;
+      case 'upcoming': return <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" tone="cyan" />;
+      case 'reviews': return <HomeReviewsSection phones={data.featured} />;
+      case 'videos': return <HomeVideoSection videos={data.videos} />;
+      case 'news': return data.news.length > 0 ? (
+        <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.orange}`}>
+          <SectionHeader title={titles.news || 'Latest News'} icon={Newspaper} link="/news" linkText="All News" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {data.news.slice(0, 4).map(n => (
+              <Link key={n.id} href={`/news/${n.slug}`} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
+                <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
+                <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
+                <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null;
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -550,54 +582,10 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
               <PriceCategorySidebar />
             </div>
 
-            {/* ===== 5. LATEST PHONES ===== */}
-            {visible('latest') && <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty tone="sky" />}
-
-            {/* ===== 6. TRENDING PHONES ===== */}
-            {visible('trending') && <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty tone="rose" />}
-
-            {/* ===== 7. BEST CAMERA PHONES ===== */}
-            {visible('camera') && <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" tone="violet" />}
-
-            {/* ===== 8. BEST GAMING PHONES ===== */}
-            {visible('gaming') && <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" tone="indigo" />}
-
-            {/* ===== 9. BEST BATTERY PHONES ===== */}
-            {visible('battery') && <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" tone="emerald" />}
-
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
-
-            {/* ===== 10. BUDGET CHAMPIONS ===== */}
-            {visible('budget') && <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" tone="amber" />}
-
-            {/* ===== 11. PREMIUM FLAGSHIPS ===== */}
-            {visible('flagship') && <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" tone="orange" />}
-
-            {/* ===== 12. UPCOMING PHONES ===== */}
-            {visible('upcoming') && <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" tone="cyan" />}
-
-            {/* ===== 13. LATEST REVIEWS ===== */}
-            {visible('reviews') && <HomeReviewsSection phones={data.featured} />}
-
-            {/* ===== 14. LATEST VIDEOS ===== */}
-            {visible('videos') && <HomeVideoSection videos={data.videos} />}
-
-            {/* ===== 15. LATEST NEWS ===== */}
-            {visible('news') && data.news.length > 0 && (
-              <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.orange}`}>
-                <SectionHeader title={titles.news || 'Latest News'} icon={Newspaper} link="/news" linkText="All News" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {data.news.slice(0, 4).map(n => (
-                    <Link key={n.id} href={`/news/${n.slug}`} className="card-premium p-4 cursor-pointer hover:shadow-lg hover:shadow-black/5 hover:-translate-y-0.5 transition-all duration-300 block">
-                      <Badge variant="secondary" className="text-[10px] mb-3 bg-gray-100 text-gray-600 font-medium">{n.category}</Badge>
-                      <h3 className="font-semibold text-sm line-clamp-2 mb-2 text-gray-900 leading-snug">{n.title}</h3>
-                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{n.excerpt}</p>
-                      <p className="text-[10px] text-muted-foreground/70 mt-3">{new Date(n.createdAt).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
-                    </Link>
-                  ))}
-                </div>
-              </section>
-            )}
+            <div className="space-y-10 sm:space-y-14">
+              {sectionOrder.map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
+            </div>
 
             {/* ===== 16-18. COMING SOON TEASERS ===== */}
             <ExplorePhoneDockTools />

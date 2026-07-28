@@ -11,6 +11,7 @@ import { parseBoundedInt } from '@/lib/http';
 import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
 import { isPhoneAvailabilityStatus } from '@/lib/phone-lifecycle';
+import { normalizeHomepageSectionOrder } from '@/lib/homepage-builder';
 
 // ============ LOCAL TYPES ============
 
@@ -2125,6 +2126,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       homepage.heroPhoneSlugs = Array.isArray(homepage.heroPhoneSlugs)
         ? [...new Set(homepage.heroPhoneSlugs.filter((slug): slug is string => typeof slug === 'string').map(slug => slug.trim()).filter(Boolean))].slice(0, 6)
         : [];
+      homepage.sectionOrder = normalizeHomepageSectionOrder(homepage.sectionOrder);
       update.homepage = homepage;
     }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
