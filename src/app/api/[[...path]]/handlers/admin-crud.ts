@@ -2188,7 +2188,9 @@ export async function handleAdminCrudDelete(req: NextRequest, segments: string[]
     const ids = matchingIds.map(p => p._id);
 
     if (dryRun || ids.length === 0) {
-      return NextResponse.json({ success: true, dryRun: true, matchedCount: ids.length });
+      const distinctValues = await Phone.distinct('dataConfidence');
+      const totalPhones = await Phone.countDocuments({});
+      return NextResponse.json({ success: true, dryRun: true, matchedCount: ids.length, distinctDataConfidenceValues: distinctValues, totalPhones });
     }
 
     await Promise.all([
