@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ShieldCheck, Smartphone } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, Play, ShieldCheck, Smartphone } from 'lucide-react';
 import { formatPrice } from './formatPrice';
 
 export interface HeroPhone {
@@ -92,8 +92,6 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
   return (
     <div
       className="relative h-full w-full select-none overflow-hidden"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
       onTouchStart={event => { touchStart.current = event.changedTouches[0].screenX; }}
       onTouchEnd={event => {
         const difference = touchStart.current - event.changedTouches[0].screenX;
@@ -126,15 +124,13 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
           '--mobile-rotate': `${position?.mobileRotate || 0}deg`,
         } as CSSProperties}
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={phone?.id || 'hero-stage-loading'}
-            initial={{ opacity: 0, y: 25, rotateY: -24, rotateZ: -2, scale: .86 }}
-            animate={{ opacity: 1, y: [5, -2, 5], rotateY: -14, rotateZ: 3, scale: .94 }}
-            exit={{ opacity: 0, y: -15, rotateY: 18, scale: .9 }}
-            transition={{ opacity: { duration: .35 }, scale: { duration: .45 }, rotateY: { duration: .5 }, rotateZ: { duration: .5 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
-            className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
-          >
+        <motion.div
+          key={phone?.id || 'hero-stage-loading'}
+          initial={{ opacity: 0, y: 18, rotateY: -18, scale: .9 }}
+          animate={{ opacity: 1, y: [4, -3, 4], rotateY: -12, rotateZ: 2, scale: .96 }}
+          transition={{ opacity: { duration: .3 }, scale: { duration: .4 }, rotateY: { duration: .45 }, rotateZ: { duration: .45 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
+          className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
+        >
             {phone ? (
               <div className="absolute inset-0 rounded-[42%] bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,.12),transparent_64%)]">
                 <Image
@@ -157,8 +153,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                 {validImageIds === null ? <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-sky-300" /> : <><Smartphone className="h-20 w-20 text-sky-200/40" /><span>No valid hero images</span></>}
               </div>
             )}
-          </motion.div>
-        </AnimatePresence>
+        </motion.div>
       </div>
 
       {showInfo && phone && (
@@ -179,6 +174,9 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
       {slideCount > 1 && <div className="absolute bottom-[78px] left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 backdrop-blur">
         {carouselPhones.map((slide, index) => <button key={slide.id} type="button" onClick={() => setCurrent(index)} aria-label={`Show ${slide.modelName}`} aria-current={index === activeIndex ? 'true' : undefined} className={`h-1.5 rounded-full transition-all ${index === activeIndex ? 'w-6 bg-sky-300' : 'w-1.5 bg-white/35 hover:bg-white/70'}`} />)}
         <span className="ml-1 text-[9px] font-bold tabular-nums text-white/65">{activeIndex + 1}/{slideCount}</span>
+        <button type="button" onClick={() => setPaused(value => !value)} aria-label={paused ? 'Resume phone slideshow' : 'Pause phone slideshow'} className="ml-1 grid h-5 w-5 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
+          {paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+        </button>
       </div>}
       <style jsx>{`
         .hero-stage-position {

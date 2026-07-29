@@ -44,6 +44,9 @@ assert.match(heroShowcase, /Publish each successful image immediately/, 'one slo
 assert.doesNotMatch(heroShowcase, /Promise\.all\(phones\.map/, 'hero image validation must not deadlock behind one pending remote image');
 assert.match(heroShowcase, /carouselPhones/, 'hero navigation must rotate through valid slides only');
 assert.match(heroShowcase, /slideCount < 2/, 'hero autoplay must stop when fewer than two valid images exist');
+assert.doesNotMatch(heroShowcase, /onMouseEnter=\{\(\) => setPaused\(true\)\}/, 'moving the pointer over the hero must not silently stop autoplay');
+assert.match(heroShowcase, /Resume phone slideshow/, 'autoplay must provide an explicit accessible pause and resume control');
+assert.doesNotMatch(heroShowcase, /<AnimatePresence mode="wait">\\s*<motion\.div\\s*key=\{phone/, 'the hero image must not deadlock behind an infinitely animated exiting stage');
 assert.doesNotMatch(heroShowcase, /mix-blend-multiply/, 'hero product images must remain visible on the dark stage');
 assert.match(heroShowcase, /mix-blend-normal/, 'hero product images must use stable normal compositing');
 assert.match(homeContent, /aria-label="Popular phone categories"/, 'quick categories must expose an accessible navigation landmark');
