@@ -547,7 +547,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     if (!brand) return cachedError('Not found', 404, 60, 300);
     const url = new URL(req.url);
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
-    const limit = parseBoundedInt(url.searchParams.get('limit'), 100, { max: 100 });
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 100, { max: 250 });
     const sortParam = url.searchParams.get('sort');
     const sortMap: Record<string, Record<string, 1 | -1>> = {
       newest: { createdAt: -1 },

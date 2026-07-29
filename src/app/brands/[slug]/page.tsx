@@ -3,14 +3,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Smartphone, Layers, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Smartphone, Layers, ChevronRight, ChevronLeft, Clock3, Archive, Sparkles, BadgeDollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 import type { Brand, Phone } from '@/components/shared/types';
 
 const PER_PAGE = 20;
+type LifecycleTab = 'all' | 'latest' | 'upcoming' | 'discontinued';
+const isUpcomingPhone = (phone: Phone) =>
+  phone.upcoming || ['rumored', 'announced', 'coming_soon'].includes(phone.availabilityStatus || '');
+const isDiscontinuedPhone = (phone: Phone) =>
+  ['discontinued', 'cancelled'].includes(phone.availabilityStatus || '') || Boolean(phone.discontinuedAt);
+const isLatestPhone = (phone: Phone) => !isUpcomingPhone(phone) && !isDiscontinuedPhone(phone);
 const PRICE_OPTIONS = [
   { label: 'All Prices', min: 0, max: 0, key: 'all' },
   { label: 'Under 20K', min: 0, max: 20000, key: 'under20k' },
@@ -28,6 +35,8 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
   const [priceFilter, setPriceFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [sortOrder, setSortOrder] = useState<'newest' | 'price-low' | 'price-high' | 'rating'>('newest');
+  const [lifecycleTab, setLifecycleTab] = useState<LifecycleTab>('all');
+  const [yearFilter, setYearFilter] = useState('all');
 
   useEffect(() => {
     params.then(p => setSlug(p.slug));
@@ -37,16 +46,33 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
     if (!slug) return;
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/brands/${slug}`).then(r => r.json()).then(d => {
+    fetch(`/api/brands/${slug}?limit=250`).then(r => r.json()).then(d => {
       if (!cancelled) { setBrand(d.brand || null); setPhones(d.phones || []); setLoading(false); }
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [slug]);
 
-  useEffect(() => { setPage(1); }, [priceFilter, sortOrder]);
+  useEffect(() => { setPage(1); }, [priceFilter, sortOrder, lifecycleTab, yearFilter]);
+
+  const years = useMemo(() => [...new Set(phones.map(phone => phone.releaseDate?.slice(0, 4)).filter(year => /^\d{4}$/.test(year || '')) as string[])].sort((a, b) => b.localeCompare(a)), [phones]);
+  const tabCounts = useMemo(() => ({
+    all: phones.length,
+    latest: phones.filter(isLatestPhone).length,
+    upcoming: phones.filter(isUpcomingPhone).length,
+    discontinued: phones.filter(isDiscontinuedPhone).length,
+  }), [phones]);
+  const pricedPhones = useMemo(() => phones.filter(phone => phone.pricePKR > 0), [phones]);
+  const priceSummary = useMemo(() => ({
+    min: pricedPhones.length ? Math.min(...pricedPhones.map(phone => phone.pricePKR)) : 0,
+    max: pricedPhones.length ? Math.max(...pricedPhones.map(phone => phone.pricePKR)) : 0,
+  }), [pricedPhones]);
 
   const filtered = useMemo(() => {
     let result = [...phones];
+    if (lifecycleTab === 'latest') result = result.filter(isLatestPhone);
+    else if (lifecycleTab === 'upcoming') result = result.filter(isUpcomingPhone);
+    else if (lifecycleTab === 'discontinued') result = result.filter(isDiscontinuedPhone);
+    if (yearFilter !== 'all') result = result.filter(phone => phone.releaseDate?.startsWith(yearFilter));
     const priceOpt = PRICE_OPTIONS.find(p => p.key === priceFilter);
     if (priceOpt && (priceOpt.min > 0 || priceOpt.max > 0)) {
       if (priceOpt.max > 0) {
@@ -59,7 +85,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
     else if (sortOrder === 'price-high') result.sort((a, b) => b.pricePKR - a.pricePKR);
     else if (sortOrder === 'rating') result.sort((a, b) => b.overallRating - a.overallRating);
     return result;
-  }, [phones, priceFilter, sortOrder]);
+  }, [phones, lifecycleTab, yearFilter, priceFilter, sortOrder]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -115,7 +141,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
           <div className="card-premium p-5 sm:p-6">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                {brand.logo ? <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-7 h-7 text-gray-400" />}
+                {(() => { const logo = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo; return logo ? <Image src={logo} alt={`${brand.name} logo`} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-7 h-7 text-gray-400" />; })()}
               </div>
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 font-display">{brand.name}</h1>
@@ -128,10 +154,44 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
             </div>
           </div>
 
+          {/* Brand intelligence summary */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: 'Available phones', value: tabCounts.latest, icon: Sparkles, tone: 'text-blue-600 bg-blue-50' },
+              { label: 'Coming soon', value: tabCounts.upcoming, icon: Clock3, tone: 'text-violet-600 bg-violet-50' },
+              { label: 'Discontinued', value: tabCounts.discontinued, icon: Archive, tone: 'text-slate-600 bg-slate-100' },
+              { label: 'Price range', value: priceSummary.min ? `PKR ${Math.round(priceSummary.min / 1000)}K–${Math.round(priceSummary.max / 1000)}K` : 'Not available', icon: BadgeDollarSign, tone: 'text-emerald-600 bg-emerald-50' },
+            ].map(item => <div key={item.label} className="rounded-2xl border border-white/80 bg-white/55 p-3.5 shadow-sm backdrop-blur-xl sm:p-4">
+              <div className={`mb-3 grid h-9 w-9 place-items-center rounded-xl ${item.tone}`}><item.icon className="h-4.5 w-4.5" /></div>
+              <strong className="block text-lg font-extrabold text-slate-900">{item.value}</strong>
+              <span className="text-xs text-slate-500">{item.label}</span>
+            </div>)}
+          </div>
+
+          {/* Availability navigation */}
+          <div className="overflow-x-auto no-scrollbar">
+            <div role="tablist" aria-label={`${brand.name} phone availability`} className="flex min-w-max gap-1 rounded-2xl border border-white/80 bg-white/45 p-1.5 shadow-sm backdrop-blur-xl">
+              {([
+                ['all', 'All Phones'],
+                ['latest', 'Latest'],
+                ['upcoming', 'Coming Soon'],
+                ['discontinued', 'Discontinued'],
+              ] as Array<[LifecycleTab, string]>).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={lifecycleTab === key} onClick={() => setLifecycleTab(key)} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${lifecycleTab === key ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-600 hover:bg-white/80 hover:text-blue-700'}`}>
+                  {label}<span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${lifecycleTab === key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{tabCounts[key]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3">
             <select value={priceFilter} onChange={e => setPriceFilter(e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
               {PRICE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+            </select>
+            <select aria-label="Release year" value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+              <option value="all">All Years</option>
+              {years.map(year => <option key={year} value={year}>{year}</option>)}
             </select>
             <select value={sortOrder} onChange={e => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
               <option value="newest">Newest</option>
@@ -178,7 +238,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
             <div className="text-center py-16 text-muted-foreground">
               <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
               <p className="text-sm">No phones found matching your filters</p>
-              <button onClick={() => { setPriceFilter('all'); setSortOrder('newest'); }} className="text-sm text-blue-500 hover:text-blue-600 font-medium mt-2">Clear filters</button>
+              <button onClick={() => { setPriceFilter('all'); setSortOrder('newest'); setYearFilter('all'); setLifecycleTab('all'); }} className="text-sm text-blue-500 hover:text-blue-600 font-medium mt-2">Clear filters</button>
             </div>
           )}
         </div>
