@@ -32,5 +32,35 @@ if (missingPackages.length > 0) {
   process.exit(1);
 }
 
+const requiredTools = [
+  ['TypeScript', 'typescript/bin/tsc'],
+  ['ESLint', 'eslint/bin/eslint.js'],
+  ['TSX', 'tsx/dist/cli.mjs'],
+  ['Next.js', 'next/dist/bin/next'],
+];
+const missingTools = requiredTools
+  .filter(([, modulePath]) => {
+    try {
+      require.resolve(modulePath);
+      return false;
+    } catch {
+      return true;
+    }
+  })
+  .map(([label]) => label);
+
+if (missingTools.length > 0) {
+  console.error(`Dependency installation is damaged. Missing runnable tools: ${missingTools.join(', ')}.`);
+  console.error('Close running Next.js/dev terminals and editors that may lock node_modules, then run:');
+  if (process.platform === 'win32') {
+    console.error('  Remove-Item -Recurse -Force node_modules');
+  } else {
+    console.error('  rm -rf node_modules');
+  }
+  console.error('  npm cache verify');
+  console.error('  npm ci');
+  process.exit(1);
+}
+
 console.log(`PhoneDock runtime is healthy (Node ${process.version}, npm dependencies installed).`);
 console.log(`Declared Node engine: ${packageJson.engines?.node || 'not set'}`);
