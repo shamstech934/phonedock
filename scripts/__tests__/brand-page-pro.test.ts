@@ -14,6 +14,10 @@ assert.match(page, /aria-label="Release year"/, 'brand page must support release
 assert.match(page, /Price range/, 'brand page must summarize its available price range');
 assert.match(page, /OFFICIAL_LOGOS/, 'brand header must use the resilient official logo map');
 assert.match(page, /setLifecycleTab\('all'\)/, 'clear filters must reset lifecycle state');
+assert.match(page, /aria-label="Phone series"/, 'brand page must support series filtering');
+assert.match(page, /xl:grid-cols-5/, 'brand cards must use a more compact five-column desktop grid');
+assert.match(page, /Phone Price List/, 'brand page must expose a compact price and specification table');
+assert.match(page, /Price not available/, 'brand price table must handle missing prices honestly');
 assert.match(api, /max: 250/, 'brand endpoint must safely support the expanded brand catalogue');
 
 console.log('brand-page-pro: all assertions passed');

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { formatPrice } from '@/components/shared/formatPrice';
 import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 import type { Brand, Phone } from '@/components/shared/types';
 
@@ -18,6 +19,12 @@ const isUpcomingPhone = (phone: Phone) =>
 const isDiscontinuedPhone = (phone: Phone) =>
   ['discontinued', 'cancelled'].includes(phone.availabilityStatus || '') || Boolean(phone.discontinuedAt);
 const isLatestPhone = (phone: Phone) => !isUpcomingPhone(phone) && !isDiscontinuedPhone(phone);
+const getPhoneSeries = (phone: Phone, brandName: string) => {
+  let model = phone.modelName.trim();
+  if (model.toLowerCase().startsWith(brandName.toLowerCase())) model = model.slice(brandName.length).trim();
+  const knownSeries = model.match(/^(Galaxy\s+(?:S|A|M|F|Z|Note)|iPhone|Redmi\s+Note|Redmi|POCO|Reno|Find|Nord|Camon|Spark|Hot|Note|GT|Phantom|V|Y|X)\b/i);
+  return knownSeries ? `${knownSeries[1]} Series` : 'Other Models';
+};
 const PRICE_OPTIONS = [
   { label: 'All Prices', min: 0, max: 0, key: 'all' },
   { label: 'Under 20K', min: 0, max: 20000, key: 'under20k' },
@@ -37,6 +44,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
   const [sortOrder, setSortOrder] = useState<'newest' | 'price-low' | 'price-high' | 'rating'>('newest');
   const [lifecycleTab, setLifecycleTab] = useState<LifecycleTab>('all');
   const [yearFilter, setYearFilter] = useState('all');
+  const [seriesFilter, setSeriesFilter] = useState('all');
 
   useEffect(() => {
     params.then(p => setSlug(p.slug));
@@ -52,9 +60,18 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
     return () => { cancelled = true; };
   }, [slug]);
 
-  useEffect(() => { setPage(1); }, [priceFilter, sortOrder, lifecycleTab, yearFilter]);
+  useEffect(() => { setPage(1); }, [priceFilter, sortOrder, lifecycleTab, yearFilter, seriesFilter]);
 
   const years = useMemo(() => [...new Set(phones.map(phone => phone.releaseDate?.slice(0, 4)).filter(year => /^\d{4}$/.test(year || '')) as string[])].sort((a, b) => b.localeCompare(a)), [phones]);
+  const series = useMemo(() => {
+    if (!brand) return [];
+    const counts = new Map<string, number>();
+    phones.forEach(phone => {
+      const name = getPhoneSeries(phone, brand.name);
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [brand, phones]);
   const tabCounts = useMemo(() => ({
     all: phones.length,
     latest: phones.filter(isLatestPhone).length,
@@ -73,6 +90,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
     else if (lifecycleTab === 'upcoming') result = result.filter(isUpcomingPhone);
     else if (lifecycleTab === 'discontinued') result = result.filter(isDiscontinuedPhone);
     if (yearFilter !== 'all') result = result.filter(phone => phone.releaseDate?.startsWith(yearFilter));
+    if (seriesFilter !== 'all' && brand) result = result.filter(phone => getPhoneSeries(phone, brand.name) === seriesFilter);
     const priceOpt = PRICE_OPTIONS.find(p => p.key === priceFilter);
     if (priceOpt && (priceOpt.min > 0 || priceOpt.max > 0)) {
       if (priceOpt.max > 0) {
@@ -85,7 +103,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
     else if (sortOrder === 'price-high') result.sort((a, b) => b.pricePKR - a.pricePKR);
     else if (sortOrder === 'rating') result.sort((a, b) => b.overallRating - a.overallRating);
     return result;
-  }, [phones, lifecycleTab, yearFilter, priceFilter, sortOrder]);
+  }, [phones, lifecycleTab, yearFilter, seriesFilter, priceFilter, sortOrder, brand]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -193,6 +211,10 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
               <option value="all">All Years</option>
               {years.map(year => <option key={year} value={year}>{year}</option>)}
             </select>
+            <select aria-label="Phone series" value={seriesFilter} onChange={e => setSeriesFilter(e.target.value)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+              <option value="all">All Series</option>
+              {series.map(([name, count]) => <option key={name} value={name}>{name} ({count})</option>)}
+            </select>
             <select value={sortOrder} onChange={e => setSortOrder(e.target.value as typeof sortOrder)} className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
               <option value="newest">Newest</option>
               <option value="price-low">Price: Low to High</option>
@@ -205,7 +227,7 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
           {/* Phone Grid */}
           {paginated.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {paginated.map(p => <PhoneCard key={p.id} phone={p} />)}
               </div>
               {totalPages > 1 && (
@@ -233,12 +255,39 @@ export default function BrandDetailPage({ params }: { params: Promise<{ slug: st
                   <span className="text-xs text-muted-foreground ml-3">Page {page} of {totalPages}</span>
                 </div>
               )}
+
+              <section aria-labelledby="brand-price-list" className="mt-8 overflow-hidden rounded-2xl border border-white/80 bg-white/55 shadow-sm backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-4 sm:px-5">
+                  <div>
+                    <h2 id="brand-price-list" className="text-lg font-extrabold text-slate-900">{brand.name} Phone Price List</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">Compact specifications for the phones currently shown above.</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">{paginated.length} models</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-left text-sm">
+                    <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+                      <tr><th className="px-5 py-3">Model</th><th className="px-4 py-3">Price</th><th className="px-4 py-3">RAM</th><th className="px-4 py-3">Storage</th><th className="px-4 py-3">Year</th><th className="px-4 py-3">Status</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/70">
+                      {paginated.map(phone => <tr key={`price-${phone.id}`} className="transition hover:bg-blue-50/40">
+                        <td className="px-5 py-3"><Link href={`/phones/${phone.slug}`} className="font-bold text-slate-900 hover:text-blue-700">{phone.modelName}</Link></td>
+                        <td className="px-4 py-3 font-semibold text-blue-700">{phone.pricePKR > 0 ? formatPrice(phone.pricePKR) : 'Price not available'}</td>
+                        <td className="px-4 py-3 text-slate-600">{phone.specs?.ram || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{phone.specs?.storage || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{phone.releaseDate?.slice(0, 4) || '—'}</td>
+                        <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold capitalize text-slate-600">{(phone.availabilityStatus || (phone.upcoming ? 'coming soon' : 'available')).replaceAll('_', ' ')}</span></td>
+                      </tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </>
           ) : (
             <div className="text-center py-16 text-muted-foreground">
               <Smartphone className="w-12 h-12 mx-auto mb-3 opacity-20" />
               <p className="text-sm">No phones found matching your filters</p>
-              <button onClick={() => { setPriceFilter('all'); setSortOrder('newest'); setYearFilter('all'); setLifecycleTab('all'); }} className="text-sm text-blue-500 hover:text-blue-600 font-medium mt-2">Clear filters</button>
+              <button onClick={() => { setPriceFilter('all'); setSortOrder('newest'); setYearFilter('all'); setSeriesFilter('all'); setLifecycleTab('all'); }} className="text-sm text-blue-500 hover:text-blue-600 font-medium mt-2">Clear filters</button>
             </div>
           )}
         </div>
