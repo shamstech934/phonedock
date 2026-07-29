@@ -46,6 +46,19 @@ interface PopulatedVideo {
   [key: string]: unknown;
 }
 
+interface AutocompletePhone {
+  _id?: { toString(): string };
+  slug?: string;
+  modelName?: string;
+  thumbnail?: string;
+  pricePKR?: number;
+  brand?: {
+    _id?: { toString(): string };
+    name?: string;
+    slug?: string;
+  } | null;
+}
+
 // ============ CACHE-CONTROL HELPERS ============
 // Vercel CDN respects these headers — repeat requests are served from edge cache
 // without hitting the origin server function or MongoDB.
@@ -361,10 +374,12 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
   // ---- /api/phones/autocomplete?q=... ----
   if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'autocomplete') {
+    // The limiter is MongoDB-backed, so the connection must exist before it is
+    // queried. Calling it first makes cold serverless requests fail closed.
+    await connectDB();
     if (!await checkIpRateLimit(`autocomplete:${ip}`, 120, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
     }
-    await connectDB();
     const url = new URL(req.url);
     const q = (url.searchParams.get('q') || '').trim();
     if (q.length < 2) return cached({ phones: [] }, 60, 180);
@@ -374,26 +389,52 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       : {};
     const safe = escapeRegex(q);
 
-    const phones = await Phone.aggregate([
-      { $match: { active: true, status: 'published' } },
-      { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
-      { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-      { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
-      { $match: tokenMatchStage },
-      {
-        $addFields: {
-          _rank: {
-            $cond: [
-              { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
-              { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
-            ],
+    let phones: AutocompletePhone[];
+    try {
+      phones = await Phone.aggregate<AutocompletePhone>([
+        { $match: { active: true, status: 'published' } },
+        { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
+        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
+        { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
+        { $match: tokenMatchStage },
+        {
+          $addFields: {
+            _rank: {
+              $cond: [
+                { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
+                { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
+              ],
+            },
           },
         },
-      },
-      { $sort: { _rank: 1, modelName: 1 } },
-      { $limit: 12 },
-      { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
-    ]).option({ maxTimeMS: 2500 });
+        { $sort: { _rank: 1, modelName: 1 } },
+        { $limit: 12 },
+        { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
+      ]).option({ maxTimeMS: 5000 });
+    } catch {
+      // A bounded fallback keeps search usable when the aggregation exceeds the
+      // serverless time budget. It intentionally returns the same light shape.
+      const brandIds = await Brand.find({
+        $or: [
+          { name: { $regex: safe, $options: 'i' } },
+          { slug: { $regex: safe, $options: 'i' } },
+        ],
+      }).distinct('_id');
+      phones = await Phone.find({
+        active: true,
+        status: 'published',
+        $or: [
+          { modelName: { $regex: safe, $options: 'i' } },
+          { slug: { $regex: safe, $options: 'i' } },
+          ...(brandIds.length ? [{ brandId: { $in: brandIds } }] : []),
+        ],
+      })
+        .select('slug modelName thumbnail pricePKR brandId')
+        .sort({ modelName: 1 })
+        .limit(12)
+        .populate('brand')
+        .lean() as unknown as AutocompletePhone[];
+    }
 
     return cached({ phones: phones.map(p => ({
       id: p._id?.toString(),

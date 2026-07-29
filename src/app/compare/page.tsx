@@ -24,9 +24,11 @@ function CompareContent() {
 
   // ── All hooks BEFORE any early return ──
   const [selected, setSelected] = useState<Phone[]>([]);
+  const selectedRef = useRef<Phone[]>([]);
   const [search, setSearch] = useState('');
   const [compared, setCompared] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [autocompleteResults, setAutocompleteResults] = useState<Phone[]>([]);
@@ -38,13 +40,20 @@ function CompareContent() {
   // results are intentionally lightweight and must never drive the comparison UI.
   useEffect(() => {
     if (!slugsParam) {
+      selectedRef.current = [];
       setSelected([]);
       setCompared(false);
       setLoading(false);
+      setRefreshing(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    const hasVisibleSelection = selectedRef.current.length > 0;
+    if (hasVisibleSelection) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     const slugs = normalizeCompareValues(slugsParam);
     fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
       .then(r => {
@@ -57,6 +66,7 @@ function CompareContent() {
         ...d,
         id: d.id || d._id || d.slug,
       }));
+      selectedRef.current = phones;
       setSelected(phones);
       if (phones.length >= 2) {
         setCompared(true);
@@ -64,7 +74,13 @@ function CompareContent() {
         setPickerOpen(true);
       }
       setLoading(false);
-    }).catch(() => { if (!cancelled) setLoading(false); });
+      setRefreshing(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    });
     return () => { cancelled = true; };
   }, [slugsParam]);
 
@@ -118,8 +134,9 @@ function CompareContent() {
     } else {
       return;
     }
+    selectedRef.current = next;
     setSelected(next);
-    setCompared(false);
+    setCompared(next.length >= MIN_COMPARE_PHONES);
     if (next.length >= 2) {
       setPickerOpen(false);
       updateURL(next);
@@ -130,12 +147,14 @@ function CompareContent() {
 
   const removePhone = (id: string) => {
     const next = selected.filter(p => p.id !== id);
+    selectedRef.current = next;
     setSelected(next);
     if (next.length < 2) { setCompared(false); }
     updateURL(next);
   };
 
   const clearAll = () => {
+    selectedRef.current = [];
     setSelected([]);
     setCompared(false);
     updateURL([] as Phone[]);
@@ -265,11 +284,19 @@ function CompareContent() {
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
-        {compared && (
-          <button onClick={openPicker} className="text-sm font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg">
-            Change Phones
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {refreshing && (
+            <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-xs font-medium text-blue-600">
+              <span className="h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" aria-hidden="true" />
+              Updating comparison…
+            </span>
+          )}
+          {compared && (
+            <button onClick={openPicker} className="text-sm font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg">
+              Change Phones
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Prominent Phone Management Bar (always visible when phones selected) */}
