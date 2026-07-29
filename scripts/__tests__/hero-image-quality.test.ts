@@ -14,6 +14,6 @@ assert.doesNotMatch(showcase, /mix-blend-multiply/);
 
 assert.match(homeData, /PhoneImage\.find\(/);
 assert.match(homeData, /heroImageMap/);
-assert.match(homeData, /heroImage: heroImageMap\.get\(phone\.id\) \|\| phone\.thumbnail/);
+assert.match(homeData, /heroImage: \(phone\.id \? heroImageMap\.get\(phone\.id\) : undefined\) \|\| phone\.thumbnail/);
 
 console.log('hero image quality regression checks passed');

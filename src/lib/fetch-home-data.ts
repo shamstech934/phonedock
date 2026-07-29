@@ -287,6 +287,6 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
 
   return attachSpecsToRawPhones(phones as unknown as PhoneDocOrJson[], specsMap).map(phone => ({
     ...phone,
-    heroImage: heroImageMap.get(phone.id) || phone.thumbnail,
+    heroImage: (phone.id ? heroImageMap.get(phone.id) : undefined) || phone.thumbnail,
   }));
 }
