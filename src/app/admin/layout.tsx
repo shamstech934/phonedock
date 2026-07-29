@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
-  ChevronDown, DollarSign, Database, Zap, Key, Play, TrendingDown,
+  ChevronDown, DollarSign, Key, Play, TrendingDown,
   ShieldCheck, Rocket, Sparkles,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
 
 interface NavLink {
@@ -24,7 +23,7 @@ const adminLinks: NavLink[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
   { label: 'Analytics', href: '/admin/analytics', icon: Activity, permission: 'settings:read' },
   { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
-  { label: 'Homepage Builder', href: '/admin/settings', icon: Settings, permission: 'settings:read' },
+  { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: Sparkles, permission: 'settings:read' },
   { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
   { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },
   { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },
@@ -48,6 +47,7 @@ const adminLinks: NavLink[] = [
   { label: 'AI Research', href: '/admin/ai-research', icon: Sparkles, permission: 'ai-research:read' },
   { label: 'Sync', href: '/admin/sync', icon: RefreshCw, permission: 'phones:edit' },
   { label: 'Data Quality', href: '/admin/data-quality', icon: ShieldCheck, permission: 'data-quality:read' },
+  { label: 'Site Settings', href: '/admin/settings', icon: Settings, permission: 'settings:read' },
   { label: 'Users', href: '/admin/users', icon: Users, permission: 'users:read' },
 ];
 
@@ -61,7 +61,6 @@ function isActive(pathname: string, link: NavLink): boolean {
 
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { admin, loading, logout } = useAdmin();
-  const router = useRouter();
   const pathname = usePathname();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [showPasswordModal, setShowPasswordModal] = useState(false);

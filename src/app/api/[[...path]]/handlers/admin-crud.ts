@@ -2134,6 +2134,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     const { revalidatePath } = await import('next/cache');
     revalidatePath('/');
     revalidatePath('/admin/settings');
+    revalidatePath('/admin/homepage-builder');
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings', entityId: 'main' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
   }
