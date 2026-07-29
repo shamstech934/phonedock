@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShieldCheck, Smartphone } from 'lucide-react';
 import { formatPrice } from './formatPrice';
 
 export interface HeroPhone {
@@ -30,6 +30,7 @@ interface Props { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; 
 export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true, position }: Props) {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const touchStart = useRef(0);
   const next = useCallback(() => setCurrent(value => (value + 1) % phones.length), [phones.length]);
   const previous = useCallback(() => setCurrent(value => (value - 1 + phones.length) % phones.length), [phones.length]);
@@ -89,7 +90,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
             transition={{ opacity: { duration: .35 }, scale: { duration: .45 }, rotateY: { duration: .5 }, rotateZ: { duration: .5 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
             className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
           >
-            {phone.thumbnail ? (
+            {phone.thumbnail && !failedImages.has(phone.id) ? (
               <Image
                 src={phone.thumbnail}
                 alt={phone.modelName}
@@ -97,10 +98,17 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                 sizes="(max-width: 640px) 190px, 290px"
                 priority={current === 0}
                 unoptimized
+                onError={() => {
+                  setFailedImages(previous => new Set(previous).add(phone.id));
+                  if (phones.length > 1) window.setTimeout(next, 250);
+                }}
                 className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
               />
             ) : (
-              <div className="flex h-full items-center justify-center text-xs text-slate-300">No image</div>
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
+                <Smartphone className="h-20 w-20 text-sky-200/40" />
+                <span>Image unavailable</span>
+              </div>
             )}
           </motion.div>
         </AnimatePresence>

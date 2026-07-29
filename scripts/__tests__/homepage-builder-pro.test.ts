@@ -7,6 +7,8 @@ const builder = fs.readFileSync(path.join(root, 'src/app/admin/homepage-builder/
 const layout = fs.readFileSync(path.join(root, 'src/app/admin/layout.tsx'), 'utf8');
 const handler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handlers/admin-crud.ts'), 'utf8');
 const homeContent = fs.readFileSync(path.join(root, 'src/app/HomeContent.tsx'), 'utf8');
+const heroShowcase = fs.readFileSync(path.join(root, 'src/components/shared/HeroPhoneShowcase.tsx'), 'utf8');
+const globalCss = fs.readFileSync(path.join(root, 'src/app/globals.css'), 'utf8');
 
 assert.match(layout, /Homepage Builder', href: '\/admin\/homepage-builder'/, 'sidebar must open the Pro Builder');
 assert.match(layout, /Site Settings', href: '\/admin\/settings'/, 'legacy settings must remain available as a safe fallback');
@@ -33,5 +35,10 @@ assert.match(homeContent, /'View brand'/, 'zero-count brands must retain useful 
 assert.match(homeContent, /CURATED_BRAND_DIRECTORY/, 'homepage must retain a curated brand directory when MongoDB returns only a partial brand list');
 assert.match(homeContent, /brandBySlug\.set/, 'database brands must merge into the curated directory instead of replacing it');
 assert.match(homeContent, /isolate flex flex-col gap-5/, 'price and year panels must use an isolated flex stack that cannot overlap');
+assert.match(homeContent, /renderOrderedSection\('latest'\)/, 'Latest Phones must fill the column below brands instead of leaving sidebar-height whitespace');
+assert.match(homeContent, /filter\(key => key !== 'latest'\)/, 'Latest Phones must not render twice after moving into the brand column');
+assert.match(heroShowcase, /failedImages/, 'hero must track failed remote phone images');
+assert.match(heroShowcase, /window\.setTimeout\(next, 250\)/, 'hero must advance past a broken selected image');
+assert.match(globalCss, /background: rgba\(240, 244, 248, 0\.94\)/, 'sticky header must be opaque enough to prevent hero text showing through it');
 
 console.log('homepage-builder-pro: all assertions passed');

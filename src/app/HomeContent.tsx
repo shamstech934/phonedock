@@ -599,8 +599,9 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
-              <div className="min-w-0">
+              <div className="min-w-0 space-y-10 sm:space-y-14">
                 {visible('brands') && <BrandsGrid brands={data.brands} logoSize={cms.brandLogoSize || 48} />}
+                {renderOrderedSection('latest')}
               </div>
               <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar />}
@@ -610,7 +611,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
             <div style={{ display: 'grid', gap: `${cms.sectionGap || 56}px` }}>
-              {sectionOrder.map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
+              {sectionOrder.filter(key => key !== 'latest').map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
             </div>
 
             {/* ===== 16-18. COMING SOON TEASERS ===== */}
