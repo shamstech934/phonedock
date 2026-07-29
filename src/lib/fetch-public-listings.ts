@@ -66,6 +66,44 @@ const loadPublicBrands = cache(async (): Promise<BrandType[]> => {
 });
 export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v1'], { revalidate: 900, tags: ['brands', 'phones'] });
 
+async function loadPublicBrandDetail(slug: string): Promise<{ brand: BrandType | null; phones: PhoneType[] }> {
+  await connectDB();
+  const rawBrand = await Brand.findOne({ slug, active: true })
+    .select('name slug logo country description')
+    .lean();
+  if (!rawBrand) return { brand: null, phones: [] };
+
+  const rawPhones = await Phone.find({
+    ...getPublicPhoneFilter(),
+    brandId: rawBrand._id,
+  })
+    .sort({ createdAt: -1 })
+    .limit(250)
+    .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+    .populate('brand')
+    .lean();
+  const ids = rawPhones.map(phone => phone._id.toString());
+  const specs = ids.length ? await PhoneSpecs.find({ phoneId: { $in: ids } }).lean() : [];
+
+  return {
+    brand: {
+      id: rawBrand._id.toString(),
+      name: rawBrand.name,
+      slug: rawBrand.slug,
+      logo: rawBrand.logo || '',
+      country: rawBrand.country || '',
+      description: rawBrand.description || '',
+      _count: { phones: rawPhones.length },
+    },
+    phones: attachSpecsToRawPhones(rawPhones, buildSpecsMap(specs)) as unknown as PhoneType[],
+  };
+}
+export const fetchPublicBrandDetail = unstable_cache(
+  loadPublicBrandDetail,
+  ['public-brand-detail-v1'],
+  { revalidate: 300, tags: ['brands', 'phones'] },
+);
+
 async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: PhoneType[]; total: number; queryKey: string }> {
   await connectDB();
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
