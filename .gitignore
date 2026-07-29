@@ -64,3 +64,4 @@ test-results/
 e2e-server.err
 e2e-server.out
 coverage/
+.npm-cache/

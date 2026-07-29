@@ -17,7 +17,7 @@ assert.match(card, /data-testid="category-score"[\s\S]*absolute right-2 top-2/);
 assert.match(card, /data-testid="overall-rating"[\s\S]*absolute bottom-2 right-2/);
 assert.match(card, /data-testid="phone-card-link"/);
 assert.match(card, /aria-label=\{`View \$\{phone\.brand/);
-assert.match(rankings, /hideOverallRating=\{badgeField === 'overallRating'\}/);
+assert.match(rankings, /hideOverallRating=\{Boolean\(rankingCategory \|\| badgeField\)\}/);
 assert.doesNotMatch(rankings, /absolute top-3 right-3/);
 
 console.log('Ranking card interaction tests passed');

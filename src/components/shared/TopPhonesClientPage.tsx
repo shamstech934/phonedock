@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { Smartphone } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
 import type { Phone } from '@/components/shared/types';
+import { rankPhones, type RankingCategory } from '@/lib/intelligence/rankings';
 
 interface TopPhonesClientPageProps {
   title: string;
@@ -16,6 +17,8 @@ interface TopPhonesClientPageProps {
   description?: string;
   badgeField?: string;
   badgeLabel?: string;
+  /** Apply PhoneDock's category-specific weighted ranking instead of raw field order. */
+  rankingCategory?: RankingCategory;
   /** Custom API endpoint (default: /api/top-phones?sort=...&limit=20) */
   apiEndpoint?: string;
   /** Empty state heading when no data */
@@ -32,6 +35,7 @@ export function TopPhonesClientPage({
   description,
   badgeField,
   badgeLabel,
+  rankingCategory,
   apiEndpoint,
   emptyHeading,
   emptyDescription,
@@ -74,6 +78,12 @@ export function TopPhonesClientPage({
   }, [sort, apiEndpoint]);
 
   const EmptyIcon = icon || <Smartphone className="w-14 h-14" />;
+  const rankedPhones = useMemo(
+    () => rankingCategory
+      ? rankPhones(phones, rankingCategory, phones.length)
+      : phones.map((phone, index) => ({ phone, score: 0, rank: index + 1 })),
+    [phones, rankingCategory],
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -97,16 +107,26 @@ export function TopPhonesClientPage({
                 <PhoneCardSkeleton key={i} />
               ))}
             </div>
-          ) : phones.length > 0 ? (
+          ) : rankedPhones.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {phones.map((phone) => (
-                <PhoneCard
-                  key={phone.id}
-                  phone={phone}
-                  categoryScore={badgeField ? (phone as unknown as Record<string, unknown>)[badgeField] : undefined}
-                  categoryLabel={badgeLabel}
-                  hideOverallRating={badgeField === 'overallRating'}
-                />
+              {rankedPhones.map((item) => (
+                <div key={item.phone.id} className="relative">
+                  {rankingCategory && (
+                    <span className="absolute left-2 top-2 z-[3] rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-white shadow-sm">
+                      #{item.rank}
+                    </span>
+                  )}
+                  <PhoneCard
+                    phone={item.phone}
+                    categoryScore={rankingCategory
+                      ? item.score
+                      : badgeField
+                        ? (item.phone as unknown as Record<string, unknown>)[badgeField]
+                        : undefined}
+                    categoryLabel={badgeLabel}
+                    hideOverallRating={Boolean(rankingCategory || badgeField)}
+                  />
+                </div>
               ))}
             </div>
           ) : (

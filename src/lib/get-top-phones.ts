@@ -64,6 +64,8 @@ async function loadTopPhones(
   const phones = await Phone.find({
     active: true,
     status: 'published',
+    upcoming: { $ne: true },
+    availabilityStatus: { $nin: ['discontinued'] },
     [field]: { $gt: 0 },
   })
     .select(CARD_SELECT)

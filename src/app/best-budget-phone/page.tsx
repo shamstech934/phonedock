@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Budget Phones in Pakistan 2025',
+  title: 'Best Budget Phones in Pakistan 2026',
   description: 'Best value smartphones under budget in Pakistan',
   alternates: { canonical: `${BASE_URL}/best-budget-phone` },
   openGraph: {
-    title: 'Best Budget Phones in Pakistan 2025',
+    title: 'Best Budget Phones in Pakistan 2026',
     description: 'Best value smartphones under budget in Pakistan',
     url: `${BASE_URL}/best-budget-phone`,
     type: 'website',
@@ -19,9 +19,11 @@ export const metadata: Metadata = {
 export default function BestBudgetPhonePage() {
   return (
     <TopPhonesClientPage
-      title="Best Budget Phones in Pakistan 2025"
+      title="Best Budget Phones in Pakistan 2026"
       subtitle="Best value smartphones under budget in Pakistan"
       sort="valueScore"
+      rankingCategory="budget"
+      badgeLabel="Budget"
       icon={<Wallet className="w-14 h-14" />}
       emptyHeading="No budget phone data yet"
       emptyDescription="Check back later for updated rankings"

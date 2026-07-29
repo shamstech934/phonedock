@@ -5,11 +5,11 @@ import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
 export const metadata: Metadata = {
-  title: 'Best Value Phones in Pakistan 2025',
+  title: 'Best Value Phones in Pakistan 2026',
   description: 'Smartphones with the best price-to-performance ratio in Pakistan',
   alternates: { canonical: `${BASE_URL}/best-value-phone` },
   openGraph: {
-    title: 'Best Value Phones in Pakistan 2025',
+    title: 'Best Value Phones in Pakistan 2026',
     description: 'Smartphones with the best price-to-performance ratio in Pakistan',
     url: `${BASE_URL}/best-value-phone`,
     type: 'website',
@@ -19,9 +19,11 @@ export const metadata: Metadata = {
 export default function BestValuePhonePage() {
   return (
     <TopPhonesClientPage
-      title="Best Value Phones in Pakistan 2025"
+      title="Best Value Phones in Pakistan 2026"
       subtitle="Smartphones with the best price-to-performance ratio in Pakistan"
-      sort="overallRating"
+      sort="valueScore"
+      rankingCategory="value"
+      badgeLabel="Value"
       icon={<TrendingUp className="w-14 h-14" />}
       emptyHeading="No value phone data yet"
       emptyDescription="Check back later for updated rankings"

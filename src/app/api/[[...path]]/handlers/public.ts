@@ -725,7 +725,13 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const sort = ALLOWED.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'overallRating';
     const limit = parseBoundedInt(url.searchParams.get('limit'), 10, { max: 20 });
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
-    const raw = await Phone.find({ active: true, status: 'published', [sort]: { $gt: 0 } })
+    const raw = await Phone.find({
+      active: true,
+      status: 'published',
+      upcoming: { $ne: true },
+      availabilityStatus: { $nin: ['discontinued'] },
+      [sort]: { $gt: 0 },
+    })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
       .sort({ [sort]: order }).limit(limit).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
