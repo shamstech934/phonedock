@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowDown, ArrowUp, Check, ChevronRight, Eye, GripVertical, Image,
-  LayoutDashboard, Loader2, Monitor, Save, Settings2, Smartphone,
-  Sparkles, Tablet, Undo2,
+  LayoutDashboard, Link2, Loader2, Monitor, Navigation, Palette, Save,
+  Settings2, Smartphone, Sparkles, Tablet, Undo2, Upload,
 } from 'lucide-react';
 import { useAdmin } from '@/lib/useAdmin';
+import { uploadImage } from '@/lib/cloudinary';
 import {
   HOMEPAGE_SECTION_ORDER,
   normalizeHomepageSectionOrder,
@@ -15,7 +16,7 @@ import {
 } from '@/lib/homepage-builder';
 
 type Device = 'desktop' | 'tablet' | 'mobile';
-type Tab = 'overview' | 'hero' | 'sections' | 'preview';
+type Tab = 'overview' | 'hero' | 'sections' | 'design' | 'navigation' | 'media' | 'preview';
 type SectionMode = 'automatic' | 'manual';
 
 interface PhoneOption {
@@ -35,6 +36,13 @@ interface SectionRule {
   cardCount: number;
   columns: number;
   manualPhoneSlugs: string[];
+  background: string;
+  accent: string;
+  cardStyle: 'glass' | 'solid' | 'outline';
+  spacing: 'compact' | 'normal' | 'spacious';
+  showViewAll: boolean;
+  viewAllText: string;
+  viewAllUrl: string;
 }
 
 interface HomepageSettings {
@@ -56,10 +64,42 @@ interface HomepageSettings {
   titles: Record<string, string>;
   sectionOrder: OrderedHomepageSection[];
   sectionRules: Partial<Record<OrderedHomepageSection, SectionRule>>;
+  pageBackground: string;
+  contentWidth: 'standard' | 'wide' | 'full';
+  sectionGap: number;
+  heroBackground: string;
+  heroImageFit: 'contain' | 'cover';
+  heroDesktopX: number;
+  heroDesktopY: number;
+  heroDesktopScale: number;
+  heroDesktopRotate: number;
+  heroMobileX: number;
+  heroMobileY: number;
+  heroMobileScale: number;
+  heroMobileRotate: number;
+  heroBackgroundImage: string;
+  brandLogoSize: number;
+  brandColumns: number;
+  showPriceCategories: boolean;
+  showYearCategories: boolean;
+  pricePanelSide: 'left' | 'right';
+  navigation: Array<{ label: string; url: string; enabled: boolean }>;
+  media: {
+    heroBackground: string;
+    homepageOgImage: string;
+    sectionImages: Partial<Record<OrderedHomepageSection, string>>;
+  };
 }
 
 interface SettingsDocument {
   [key: string]: unknown;
+  siteName?: string;
+  tagline?: string;
+  logo?: string;
+  favicon?: string;
+  titleSuffix?: string;
+  metaDescription?: string;
+  ogImage?: string;
   homepage?: Partial<HomepageSettings>;
   theme?: { primaryColor?: string; secondaryColor?: string; accentColor?: string };
 }
@@ -88,6 +128,13 @@ const DEFAULT_RULE: SectionRule = {
   cardCount: 8,
   columns: 4,
   manualPhoneSlugs: [],
+  background: '',
+  accent: '#2563eb',
+  cardStyle: 'glass',
+  spacing: 'normal',
+  showViewAll: true,
+  viewAllText: 'See all',
+  viewAllUrl: '',
 };
 
 const DEFAULT_HOMEPAGE: HomepageSettings = {
@@ -109,6 +156,34 @@ const DEFAULT_HOMEPAGE: HomepageSettings = {
   titles: { ...LABELS },
   sectionOrder: [...HOMEPAGE_SECTION_ORDER],
   sectionRules: {},
+  pageBackground: '#eef4fb',
+  contentWidth: 'standard',
+  sectionGap: 56,
+  heroBackground: '#0f172a',
+  heroImageFit: 'contain',
+  heroDesktopX: 0,
+  heroDesktopY: 0,
+  heroDesktopScale: 100,
+  heroDesktopRotate: 3,
+  heroMobileX: 0,
+  heroMobileY: 0,
+  heroMobileScale: 88,
+  heroMobileRotate: 0,
+  heroBackgroundImage: '',
+  brandLogoSize: 48,
+  brandColumns: 7,
+  showPriceCategories: true,
+  showYearCategories: true,
+  pricePanelSide: 'right',
+  navigation: [
+    { label: 'Home', url: '/', enabled: true },
+    { label: 'Phones', url: '/phones', enabled: true },
+    { label: 'Brands', url: '/brands', enabled: true },
+    { label: 'Compare', url: '/compare', enabled: true },
+    { label: 'Rankings', url: '/rankings', enabled: true },
+    { label: 'Reviews', url: '/reviews', enabled: true },
+  ],
+  media: { heroBackground: '', homepageOgImage: '', sectionImages: {} },
 };
 
 const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
@@ -144,6 +219,7 @@ export default function HomepageBuilderPage() {
   const [dragged, setDragged] = useState<OrderedHomepageSection | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState('');
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
@@ -167,6 +243,12 @@ export default function HomepageBuilderPage() {
         titles: { ...DEFAULT_HOMEPAGE.titles, ...(current.titles || {}) },
         sectionOrder: normalizeHomepageSectionOrder(current.sectionOrder),
         sectionRules: current.sectionRules || {},
+        navigation: Array.isArray(current.navigation) ? current.navigation : DEFAULT_HOMEPAGE.navigation,
+        media: {
+          ...DEFAULT_HOMEPAGE.media,
+          ...(current.media || {}),
+          sectionImages: { ...DEFAULT_HOMEPAGE.media.sectionImages, ...(current.media?.sectionImages || {}) },
+        },
       });
       if (phonesResponse.ok) setPhones(phonesPayload.phones || []);
     } catch (cause) {
@@ -184,6 +266,34 @@ export default function HomepageBuilderPage() {
   const updateHomepage = <K extends keyof HomepageSettings>(key: K, value: HomepageSettings[K]) => {
     setHomepage(current => ({ ...current, [key]: value }));
     setSaved(false);
+  };
+
+  const updateSetting = (key: string, value: unknown) => {
+    setSettings(current => ({ ...current, [key]: value }));
+    setSaved(false);
+  };
+
+  const upload = async (file: File | undefined, target: 'logo' | 'favicon' | 'heroBackground' | 'homepageOgImage' | OrderedHomepageSection) => {
+    if (!file) return;
+    setUploading(target);
+    setError('');
+    try {
+      const result = await uploadImage(file, 'site-builder');
+      if (target === 'logo' || target === 'favicon') updateSetting(target, result.url);
+      else if (target === 'heroBackground') {
+        updateHomepage('heroBackgroundImage', result.url);
+        updateHomepage('media', { ...homepage.media, heroBackground: result.url });
+      } else if (target === 'homepageOgImage') {
+        updateSetting('ogImage', result.url);
+        updateHomepage('media', { ...homepage.media, homepageOgImage: result.url });
+      } else {
+        updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [target]: result.url } });
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Image upload failed');
+    } finally {
+      setUploading('');
+    }
   };
 
   const selectedRule = useMemo(
@@ -268,6 +378,9 @@ export default function HomepageBuilderPage() {
           ['overview', LayoutDashboard, 'Overview'],
           ['hero', Image, 'Hero stage'],
           ['sections', GripVertical, 'Sections'],
+          ['design', Palette, 'Design system'],
+          ['navigation', Navigation, 'Header & links'],
+          ['media', Upload, 'Media library'],
           ['preview', Eye, 'Full preview'],
         ] as const).map(([key, Icon, label]) =>
           <button key={key} type="button" onClick={() => setTab(key)}
@@ -324,6 +437,21 @@ export default function HomepageBuilderPage() {
               </label>
             )}</div>
           </Panel>
+          <Panel title="3D stage positioning" subtitle="Adjust phone placement separately for desktop and mobile.">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <NumberRange label="Desktop horizontal" value={homepage.heroDesktopX} min={-150} max={150} suffix="px" onChange={value => updateHomepage('heroDesktopX', value)} />
+                <NumberRange label="Desktop vertical" value={homepage.heroDesktopY} min={-150} max={150} suffix="px" onChange={value => updateHomepage('heroDesktopY', value)} />
+                <NumberRange label="Desktop zoom" value={homepage.heroDesktopScale} min={50} max={160} suffix="%" onChange={value => updateHomepage('heroDesktopScale', value)} />
+                <NumberRange label="Desktop rotation" value={homepage.heroDesktopRotate} min={-25} max={25} suffix="°" onChange={value => updateHomepage('heroDesktopRotate', value)} />
+                <NumberRange label="Mobile horizontal" value={homepage.heroMobileX} min={-100} max={100} suffix="px" onChange={value => updateHomepage('heroMobileX', value)} />
+                <NumberRange label="Mobile vertical" value={homepage.heroMobileY} min={-100} max={100} suffix="px" onChange={value => updateHomepage('heroMobileY', value)} />
+                <NumberRange label="Mobile zoom" value={homepage.heroMobileScale} min={45} max={130} suffix="%" onChange={value => updateHomepage('heroMobileScale', value)} />
+                <NumberRange label="Mobile rotation" value={homepage.heroMobileRotate} min={-20} max={20} suffix="°" onChange={value => updateHomepage('heroMobileRotate', value)} />
+              </div>
+              <label className="block text-xs font-semibold text-slate-600">Image fit<select className={inputClass} value={homepage.heroImageFit} onChange={event => updateHomepage('heroImageFit', event.target.value as HomepageSettings['heroImageFit'])}><option value="contain">Contain — show complete phone</option><option value="cover">Cover — fill stage</option></select></label>
+            </div>
+          </Panel>
         </div>}
 
         {tab === 'sections' && <div className="space-y-4">
@@ -359,8 +487,82 @@ export default function HomepageBuilderPage() {
                 <Field label="Cards to show" value={String(selectedRule.cardCount)} onChange={value => updateRule({ cardCount: clamp(Number(value), 1, 24) })} type="number" />
                 <Field label="Desktop columns" value={String(selectedRule.columns)} onChange={value => updateRule({ columns: clamp(Number(value), 2, 6) })} type="number" />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Section background" value={selectedRule.background} onChange={background => updateRule({ background })} type="color" />
+                <Field label="Accent color" value={selectedRule.accent} onChange={accent => updateRule({ accent })} type="color" />
+                <label className="block text-xs font-semibold text-slate-600">Card style<select className={inputClass} value={selectedRule.cardStyle} onChange={event => updateRule({ cardStyle: event.target.value as SectionRule['cardStyle'] })}><option value="glass">Glass</option><option value="solid">Solid</option><option value="outline">Outline</option></select></label>
+                <label className="block text-xs font-semibold text-slate-600">Vertical spacing<select className={inputClass} value={selectedRule.spacing} onChange={event => updateRule({ spacing: event.target.value as SectionRule['spacing'] })}><option value="compact">Compact</option><option value="normal">Normal</option><option value="spacious">Spacious</option></select></label>
+              </div>
+              <Toggle label="Show “See all” link" checked={selectedRule.showViewAll} onChange={showViewAll => updateRule({ showViewAll })} />
+              {selectedRule.showViewAll && <div className="grid grid-cols-2 gap-3"><Field label="Link text" value={selectedRule.viewAllText} onChange={viewAllText => updateRule({ viewAllText })} /><Field label="Link URL override" value={selectedRule.viewAllUrl} onChange={viewAllUrl => updateRule({ viewAllUrl })} /></div>}
+              <MediaField label="Section cover/background image" value={homepage.media.sectionImages[selected] || ''} uploading={uploading === selected} onUrlChange={url => updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [selected]: url } })} onFile={file => void upload(file, selected)} />
               <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800"><strong>Checkpoint note:</strong> rules are saved safely with the homepage configuration. Existing homepage data queries continue unchanged until the next rule-engine checkpoint, preventing accidental content loss.</p>
             </div>
+          </Panel>
+        </div>}
+
+        {tab === 'design' && <div className="space-y-4">
+          <Panel title="Global design system" subtitle="Control the overall visual language without editing code.">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Page background" value={homepage.pageBackground} onChange={value => updateHomepage('pageBackground', value)} type="color" />
+                <Field label="Hero background" value={homepage.heroBackground} onChange={value => updateHomepage('heroBackground', value)} type="color" />
+                <Field label="Primary color" value={String(settings.theme && typeof settings.theme === 'object' ? settings.theme.primaryColor || '#2563eb' : '#2563eb')} onChange={primaryColor => updateSetting('theme', { ...(settings.theme || {}), primaryColor })} type="color" />
+                <Field label="Secondary color" value={String(settings.theme && typeof settings.theme === 'object' ? settings.theme.secondaryColor || '#7c3aed' : '#7c3aed')} onChange={secondaryColor => updateSetting('theme', { ...(settings.theme || {}), secondaryColor })} type="color" />
+              </div>
+              <label className="block text-xs font-semibold text-slate-600">Content width<select className={inputClass} value={homepage.contentWidth} onChange={event => updateHomepage('contentWidth', event.target.value as HomepageSettings['contentWidth'])}><option value="standard">Standard — 1280px</option><option value="wide">Wide — 1440px</option><option value="full">Full width</option></select></label>
+              <NumberRange label="Space between homepage sections" value={homepage.sectionGap} min={16} max={96} suffix="px" onChange={value => updateHomepage('sectionGap', value)} />
+            </div>
+          </Panel>
+          <Panel title="Brands and category panels" subtitle="Adjust the parts highlighted in your homepage screenshots.">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <NumberRange label="Brand logo size" value={homepage.brandLogoSize} min={28} max={90} suffix="px" onChange={value => updateHomepage('brandLogoSize', value)} />
+                <NumberRange label="Desktop brand columns" value={homepage.brandColumns} min={4} max={10} onChange={value => updateHomepage('brandColumns', value)} />
+              </div>
+              <Toggle label="Show price categories" checked={homepage.showPriceCategories} onChange={value => updateHomepage('showPriceCategories', value)} />
+              <Toggle label="Show release-year categories" checked={homepage.showYearCategories} onChange={value => updateHomepage('showYearCategories', value)} />
+              <label className="block text-xs font-semibold text-slate-600">Category panel position<select className={inputClass} value={homepage.pricePanelSide} onChange={event => updateHomepage('pricePanelSide', event.target.value as HomepageSettings['pricePanelSide'])}><option value="right">Right side</option><option value="left">Left side</option></select></label>
+            </div>
+          </Panel>
+        </div>}
+
+        {tab === 'navigation' && <div className="space-y-4">
+          <Panel title="Brand identity" subtitle="Logo and name are already consumed by the public header.">
+            <div className="space-y-3">
+              <Field label="Website name" value={String(settings.siteName || 'PhoneDock')} onChange={value => updateSetting('siteName', value)} />
+              <Field label="Tagline" value={String(settings.tagline || '')} onChange={value => updateSetting('tagline', value)} />
+              <MediaField label="Header logo" value={String(settings.logo || '')} uploading={uploading === 'logo'} onUrlChange={value => updateSetting('logo', value)} onFile={file => void upload(file, 'logo')} />
+              <MediaField label="Browser favicon" value={String(settings.favicon || '')} uploading={uploading === 'favicon'} onUrlChange={value => updateSetting('favicon', value)} onFile={file => void upload(file, 'favicon')} />
+            </div>
+          </Panel>
+          <Panel title="Main navigation" subtitle="Rename, reorder, hide or change the URL of every top-level link.">
+            <div className="space-y-2">{homepage.navigation.map((item, index) =>
+              <div key={`${item.url}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                  <input aria-label={`Navigation label ${index + 1}`} className={inputClass} value={item.label} onChange={event => updateHomepage('navigation', homepage.navigation.map((value, itemIndex) => itemIndex === index ? { ...value, label: event.target.value } : value))} />
+                  <input aria-label={`Navigation URL ${index + 1}`} className={inputClass} value={item.url} onChange={event => updateHomepage('navigation', homepage.navigation.map((value, itemIndex) => itemIndex === index ? { ...value, url: event.target.value } : value))} />
+                  <button type="button" aria-label={`${item.enabled ? 'Hide' : 'Show'} ${item.label}`} onClick={() => updateHomepage('navigation', homepage.navigation.map((value, itemIndex) => itemIndex === index ? { ...value, enabled: !value.enabled } : value))} className={`mt-1.5 rounded-xl px-3 text-xs font-bold ${item.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{item.enabled ? 'On' : 'Off'}</button>
+                </div>
+                <div className="mt-2 flex gap-2"><button type="button" disabled={index === 0} onClick={() => updateHomepage('navigation', arrayMove(homepage.navigation, index, index - 1))} className="rounded-lg border p-1.5 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" disabled={index === homepage.navigation.length - 1} onClick={() => updateHomepage('navigation', arrayMove(homepage.navigation, index, index + 1))} className="rounded-lg border p-1.5 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => updateHomepage('navigation', homepage.navigation.filter((_, itemIndex) => itemIndex !== index))} className="ml-auto text-xs font-bold text-red-600">Remove</button></div>
+              </div>
+            )}</div>
+            <button type="button" onClick={() => updateHomepage('navigation', [...homepage.navigation, { label: 'New link', url: '/', enabled: true }])} className="mt-3 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"><Link2 className="h-4 w-4" />Add navigation link</button>
+          </Panel>
+        </div>}
+
+        {tab === 'media' && <div className="space-y-4">
+          <Panel title="Homepage media library" subtitle="Upload to the configured Cloudinary account or paste an existing image URL.">
+            <div className="space-y-4">
+              <MediaField label="Hero background image" value={homepage.heroBackgroundImage || homepage.media.heroBackground} uploading={uploading === 'heroBackground'} onUrlChange={value => { updateHomepage('heroBackgroundImage', value); updateHomepage('media', { ...homepage.media, heroBackground: value }); }} onFile={file => void upload(file, 'heroBackground')} />
+              <MediaField label="Homepage social/OG image" value={String(settings.ogImage || homepage.media.homepageOgImage)} uploading={uploading === 'homepageOgImage'} onUrlChange={value => { updateSetting('ogImage', value); updateHomepage('media', { ...homepage.media, homepageOgImage: value }); }} onFile={file => void upload(file, 'homepageOgImage')} />
+            </div>
+          </Panel>
+          <Panel title="Section images" subtitle="Each homepage category can have its own managed visual.">
+            <div className="space-y-3">{homepage.sectionOrder.map(key => <MediaField key={key} label={homepage.titles[key] || LABELS[key]} value={homepage.media.sectionImages[key] || ''} uploading={uploading === key} onUrlChange={value => updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [key]: value } })} onFile={file => void upload(file, key)} />)}</div>
+          </Panel>
+          <Panel title="SEO preview" subtitle="Homepage title and search/social description.">
+            <div className="space-y-3"><Field label="Title suffix" value={String(settings.titleSuffix || '')} onChange={value => updateSetting('titleSuffix', value)} /><label className="block text-xs font-semibold text-slate-600">Meta description<textarea rows={4} className={inputClass} value={String(settings.metaDescription || '')} onChange={event => updateSetting('metaDescription', event.target.value)} /></label></div>
           </Panel>
         </div>}
 
@@ -400,6 +602,33 @@ function Stat({ value, label }: { value: string | number; label: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><strong className="block text-2xl font-black text-slate-950">{value}</strong><span className="text-xs text-slate-500">{label}</span></div>;
 }
 
+function NumberRange({ label, value, min, max, suffix = '', onChange }: {
+  label: string; value: number; min: number; max: number; suffix?: string; onChange: (value: number) => void;
+}) {
+  return <label className="block text-xs font-semibold text-slate-600">{label}: <strong className="text-blue-700">{value}{suffix}</strong>
+    <input className="mt-2 w-full accent-blue-600" type="range" min={min} max={max} value={value} onChange={event => onChange(Number(event.target.value))} />
+  </label>;
+}
+
+function MediaField({ label, value, uploading, onUrlChange, onFile }: {
+  label: string; value: string; uploading: boolean; onUrlChange: (value: string) => void; onFile: (file?: File) => void;
+}) {
+  return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <label className="block text-xs font-semibold text-slate-600">{label}
+      <input className={inputClass} value={value} placeholder="https://..." onChange={event => onUrlChange(event.target.value)} />
+    </label>
+    <div className="mt-2 flex items-center gap-3">
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">
+        {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+        {uploading ? 'Uploading…' : 'Upload image'}
+        <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploading} onChange={event => onFile(event.target.files?.[0])} />
+      </label>
+      {value && <button type="button" onClick={() => onUrlChange('')} className="text-xs font-bold text-red-600">Remove</button>}
+      {value && <span className="ml-auto h-10 w-14 rounded-lg border bg-cover bg-center" style={{ backgroundImage: `url("${value.replace(/"/g, '%22')}")` }} aria-label={`${label} preview`} />}
+    </div>
+  </div>;
+}
+
 function HomepagePreview({ homepage, device }: { homepage: HomepageSettings; device: Device }) {
   const compact = device !== 'desktop';
   return <div className="min-h-[620px] bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 text-slate-950">
@@ -428,4 +657,11 @@ function selectedRuleLabel(rule?: SectionRule) {
 function clamp(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function arrayMove<T>(items: T[], from: number, to: number) {
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
 }

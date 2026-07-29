@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   Star, Shield, Camera, Battery, Cpu, Trophy,
   TrendingUp, Clock, Smartphone, Tag, ExternalLink, Layers,
-  Check, Newspaper, BarChart3, Target, CircleDollarSign, ChevronRight,
+  Check, Newspaper, CircleDollarSign, ChevronRight,
   Search, GitCompareArrows, BadgeDollarSign, ShieldCheck, ArrowRight,
   BellRing, BadgeCheck, Store, SearchCheck, FlaskConical,
 } from 'lucide-react';
@@ -234,6 +234,20 @@ function PriceCategorySidebar() {
   );
 }
 
+function ReleaseYearCategories() {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 7 }, (_, index) => currentYear + 1 - index);
+  return <aside className="card-premium h-fit p-3.5" aria-labelledby="home-year-categories-title">
+    <div className="mb-2.5 flex items-center gap-2">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50"><Clock className="h-5 w-5 text-violet-600" /></div>
+      <div><h2 id="home-year-categories-title" className="text-sm font-bold">Phones by Year</h2><p className="text-[11px] text-muted-foreground">Browse release generations</p></div>
+    </div>
+    <nav className="grid grid-cols-2 gap-2" aria-label="Browse phones by release year">
+      {years.map(year => <Link key={year} href={`/phones?year=${year}`} className="rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-center text-xs font-bold text-gray-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">{year}</Link>)}
+    </nav>
+  </aside>;
+}
+
 // ============ TRUST / WHY PHONEDOCK ============
 function TrustSection({ totalPhones, totalBrands }: { totalPhones?: number; totalBrands?: number }) {
   const tp = totalPhones || 0;
@@ -456,7 +470,7 @@ function ExplorePhoneDockTools() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -467,6 +481,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const titles = cms.titles || {};
   const visible = (key: string) => sections[key] !== false;
   const sectionOrder = normalizeHomepageSectionOrder(cms.sectionOrder);
+  const contentWidthClass = cms.contentWidth === 'full' ? 'max-w-none' : cms.contentWidth === 'wide' ? 'max-w-[1440px]' : 'max-w-7xl';
   const renderOrderedSection = (key: OrderedHomepageSection) => {
     if (!visible(key)) return null;
     switch (key) {
@@ -511,10 +526,10 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
         <div className="relative">
           <div className="glass-orb glass-orb-cyan" />
           <div className="glass-orb glass-orb-yellow" />
-          <div className="glass-page-bg max-w-7xl mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10">
+          <div className={`glass-page-bg ${contentWidthClass} mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10`} style={{ backgroundColor: cms.pageBackground || undefined }}>
 
             {/* ===== 1. HERO ===== */}
-            {cms.heroEnabled !== false && <section className="hero-gradient rounded-3xl text-white relative sky-glow">
+            {cms.heroEnabled !== false && <section className="hero-gradient rounded-3xl text-white relative sky-glow" style={{ backgroundColor: cms.heroBackground || undefined, backgroundImage: cms.heroBackgroundImage ? `linear-gradient(rgba(15,23,42,.74),rgba(3,105,161,.72)),url("${cms.heroBackgroundImage.replace(/"/g, '%22')}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
               {/* Background effects — clipped to rounded corners */}
               <div className="hero-shimmer-effect absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
                 <div className="hero-particles">
@@ -555,7 +570,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
                   <div className="h-[330px] w-full flex-shrink-0 sm:h-[390px] lg:h-[470px] lg:w-[55%]">
                     {heroPhones.length > 0 ? (
-                      <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} />
+                      <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} position={{ desktopX: cms.heroDesktopX, desktopY: cms.heroDesktopY, desktopScale: cms.heroDesktopScale, desktopRotate: cms.heroDesktopRotate, mobileX: cms.heroMobileX, mobileY: cms.heroMobileY, mobileScale: cms.heroMobileScale, mobileRotate: cms.heroMobileRotate, imageFit: cms.heroImageFit }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="w-7 h-7 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
@@ -575,15 +590,18 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
 
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0">
                 {visible('brands') && <BrandsGrid brands={data.brands} />}
               </div>
-              <PriceCategorySidebar />
+              <div className="space-y-4">
+                {cms.showPriceCategories !== false && <PriceCategorySidebar />}
+                {cms.showYearCategories !== false && <ReleaseYearCategories />}
+              </div>
             </div>
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
-            <div className="space-y-10 sm:space-y-14">
+            <div style={{ display: 'grid', gap: `${cms.sectionGap || 56}px` }}>
               {sectionOrder.map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
             </div>
 

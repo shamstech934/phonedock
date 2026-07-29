@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -19,9 +20,14 @@ export interface HeroPhone {
   specs?: { ram?: string; mainCamera?: string; battery?: string; chipset?: string; display?: string; storage?: string } | null;
 }
 
-interface Props { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; showInfo?: boolean }
+interface StagePosition {
+  desktopX?: number; desktopY?: number; desktopScale?: number; desktopRotate?: number;
+  mobileX?: number; mobileY?: number; mobileScale?: number; mobileRotate?: number;
+  imageFit?: 'contain' | 'cover';
+}
+interface Props { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; showInfo?: boolean; position?: StagePosition }
 
-export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true }: Props) {
+export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true, position }: Props) {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchStart = useRef(0);
@@ -61,7 +67,19 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         <div className="absolute inset-x-[14%] bottom-[43px] h-[54px] rounded-[50%] border border-sky-200/60 bg-[radial-gradient(ellipse,rgba(125,211,252,.5)_0%,rgba(30,64,175,.34)_48%,rgba(2,6,23,.82)_76%)] shadow-[0_0_28px_rgba(56,189,248,.65)] [transform:rotateX(59deg)]" />
       </div>
 
-      <div className="absolute inset-x-8 top-4 bottom-[120px] overflow-visible [perspective:1100px] sm:top-5 lg:top-6">
+      <div
+        className="hero-stage-position absolute inset-x-8 top-4 bottom-[120px] overflow-visible [perspective:1100px] sm:top-5 lg:top-6"
+        style={{
+          '--desktop-x': `${position?.desktopX || 0}px`,
+          '--desktop-y': `${position?.desktopY || 0}px`,
+          '--desktop-scale': `${(position?.desktopScale || 100) / 100}`,
+          '--desktop-rotate': `${position?.desktopRotate || 0}deg`,
+          '--mobile-x': `${position?.mobileX || 0}px`,
+          '--mobile-y': `${position?.mobileY || 0}px`,
+          '--mobile-scale': `${(position?.mobileScale || 100) / 100}`,
+          '--mobile-rotate': `${position?.mobileRotate || 0}deg`,
+        } as CSSProperties}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={phone.id}
@@ -79,7 +97,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                 sizes="(max-width: 640px) 190px, 290px"
                 priority={current === 0}
                 unoptimized
-                className="object-contain p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1"
+                className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-slate-300">No image</div>
@@ -103,6 +121,17 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         <button onClick={previous} aria-label="Previous phone" className="absolute left-2 top-1/2 z-30 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/45 text-white backdrop-blur hover:bg-white/15"><ChevronLeft className="h-5 w-5" /></button>
         <button onClick={next} aria-label="Next phone" className="absolute right-2 top-1/2 z-30 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/45 text-white backdrop-blur hover:bg-white/15"><ChevronRight className="h-5 w-5" /></button>
       </>}
+      <style jsx>{`
+        .hero-stage-position {
+          transform: translate(var(--mobile-x), var(--mobile-y)) scale(var(--mobile-scale)) rotate(var(--mobile-rotate));
+          transform-origin: center bottom;
+        }
+        @media (min-width: 1024px) {
+          .hero-stage-position {
+            transform: translate(var(--desktop-x), var(--desktop-y)) scale(var(--desktop-scale)) rotate(var(--desktop-rotate));
+          }
+        }
+      `}</style>
     </div>
   );
 }

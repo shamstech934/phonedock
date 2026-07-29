@@ -18,7 +18,11 @@ interface AutocompleteResult {
   brand: { id: string; name: string; slug: string } | null;
 }
 
-interface HeaderSiteSettings { siteName?: string; logo?: string; }
+interface HeaderSiteSettings {
+  siteName?: string;
+  logo?: string;
+  navigation?: Array<{ label: string; url: string; enabled: boolean }>;
+}
 
 const POPULAR_SEARCHES = ['Samsung Galaxy S24', 'iPhone 15', 'Xiaomi 14', 'Redmi Note 13', 'Poco X6'];
 
@@ -55,7 +59,7 @@ export function Header() {
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.settings) setSiteSettings({ siteName: d.settings.siteName, logo: d.settings.logo }); })
+      .then(d => { if (d?.settings) setSiteSettings({ siteName: d.settings.siteName, logo: d.settings.logo, navigation: d.settings.homepage?.navigation }); })
       .catch(() => { /* keep defaults on failure */ });
   }, []);
 
@@ -139,7 +143,7 @@ export function Header() {
 
   const toggleTheme = () => { setTheme(theme === 'dark' ? 'light' : 'dark'); };
 
-  const navLinks = [
+  const defaultNavLinks = [
     { label: 'Home', href: '/' },
     { label: 'Phones', href: '/phones' },
     { label: 'Brands', href: '/brands' },
@@ -147,6 +151,9 @@ export function Header() {
     { label: 'Rankings', href: '/rankings' },
     { label: 'Reviews', href: '/reviews' },
   ];
+  const navLinks = Array.isArray(siteSettings.navigation)
+    ? siteSettings.navigation.filter(item => item.enabled && item.label && item.url).map(item => ({ label: item.label, href: item.url }))
+    : defaultNavLinks;
 
   const moreLinks = [
     { label: 'Buying Guides', href: '/buying-guides', icon: BookOpen },
