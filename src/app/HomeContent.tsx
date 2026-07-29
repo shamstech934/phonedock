@@ -41,18 +41,20 @@ const QUICK_CATEGORIES = [
 
 function QuickCategoryStrip() {
   return (
-    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-      {QUICK_CATEGORIES.map(cat => (
-        <Link
-          key={cat.label}
-          href={cat.href}
-          className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/60 border border-gray-200/60 text-xs font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all duration-200"
-        >
-          <span>{cat.emoji}</span>
-          {cat.label}
-        </Link>
-      ))}
-    </div>
+    <nav aria-label="Popular phone categories" className="mx-auto w-fit max-w-full rounded-2xl border border-white/70 bg-white/35 p-1.5 shadow-[0_12px_36px_rgba(15,23,42,.06)] backdrop-blur-xl">
+      <div className="flex snap-x snap-mandatory justify-start gap-1.5 overflow-x-auto no-scrollbar lg:justify-center">
+        {QUICK_CATEGORIES.map(cat => (
+          <Link
+            key={cat.label}
+            href={cat.href}
+            className="group flex min-h-10 shrink-0 snap-start items-center gap-1.5 rounded-xl border border-transparent px-3.5 py-2 text-xs font-semibold text-gray-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white/80 hover:text-blue-700 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <span className="transition-transform group-hover:scale-110" aria-hidden="true">{cat.emoji}</span>
+            {cat.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
   );
 }
 

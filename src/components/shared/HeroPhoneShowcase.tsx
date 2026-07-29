@@ -30,20 +30,39 @@ interface Props { phones: HeroPhone[]; autoplay?: boolean; intervalMs?: number; 
 export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, showInfo = true, position }: Props) {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [validImageIds, setValidImageIds] = useState<Set<string> | null>(null);
   const touchStart = useRef(0);
-  const next = useCallback(() => setCurrent(value => (value + 1) % phones.length), [phones.length]);
-  const previous = useCallback(() => setCurrent(value => (value - 1 + phones.length) % phones.length), [phones.length]);
+  const carouselPhones = validImageIds ? phones.filter(phone => validImageIds.has(phone.id)) : [];
+  const slideCount = carouselPhones.length;
+  const activeIndex = slideCount ? current % slideCount : 0;
+  const phone = carouselPhones[activeIndex];
+  const next = useCallback(() => setCurrent(value => slideCount ? (value + 1) % slideCount : 0), [slideCount]);
+  const previous = useCallback(() => setCurrent(value => slideCount ? (value - 1 + slideCount) % slideCount : 0), [slideCount]);
+
+  // Validate remote/local thumbnails before admitting a phone to the carousel.
+  // This prevents captions from rotating through visually empty slides.
+  useEffect(() => {
+    let cancelled = false;
+    setValidImageIds(null);
+    setCurrent(0);
+    const valid = new Set<string>();
+    Promise.all(phones.map(phone => new Promise<void>(resolve => {
+      if (!phone.thumbnail) { resolve(); return; }
+      const probe = new window.Image();
+      probe.onload = () => { valid.add(phone.id); resolve(); };
+      probe.onerror = () => resolve();
+      probe.src = phone.thumbnail;
+    }))).then(() => { if (!cancelled) setValidImageIds(valid); });
+    return () => { cancelled = true; };
+  }, [phones]);
 
   useEffect(() => {
-    if (!autoplay || paused || phones.length < 2) return;
+    if (!autoplay || paused || slideCount < 2) return;
     const timer = setInterval(next, Math.max(2000, intervalMs));
     return () => clearInterval(timer);
-  }, [autoplay, intervalMs, next, paused, phones.length]);
+  }, [autoplay, intervalMs, next, paused, slideCount]);
 
   if (!phones.length) return null;
-  const phone = phones[current];
-
   return (
     <div
       className="relative h-full w-full select-none overflow-hidden"
@@ -83,38 +102,38 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
       >
         <AnimatePresence mode="wait">
           <motion.div
-            key={phone.id}
+            key={phone?.id || 'hero-stage-loading'}
             initial={{ opacity: 0, y: 25, rotateY: -24, rotateZ: -2, scale: .86 }}
             animate={{ opacity: 1, y: [5, -2, 5], rotateY: -14, rotateZ: 3, scale: .94 }}
             exit={{ opacity: 0, y: -15, rotateY: 18, scale: .9 }}
             transition={{ opacity: { duration: .35 }, scale: { duration: .45 }, rotateY: { duration: .5 }, rotateZ: { duration: .5 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
             className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
           >
-            {phone.thumbnail && !failedImages.has(phone.id) ? (
+            {phone ? (
               <Image
                 src={phone.thumbnail}
                 alt={phone.modelName}
                 fill
                 sizes="(max-width: 640px) 190px, 290px"
-                priority={current === 0}
+                priority={activeIndex === 0}
                 unoptimized
-                onError={() => {
-                  setFailedImages(previous => new Set(previous).add(phone.id));
-                  if (phones.length > 1) window.setTimeout(next, 250);
-                }}
+                onError={() => setValidImageIds(previousIds => {
+                  const nextIds = new Set(previousIds || []);
+                  nextIds.delete(phone.id);
+                  return nextIds;
+                })}
                 className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
-                <Smartphone className="h-20 w-20 text-sky-200/40" />
-                <span>Image unavailable</span>
+                {validImageIds === null ? <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-sky-300" /> : <><Smartphone className="h-20 w-20 text-sky-200/40" /><span>No valid hero images</span></>}
               </div>
             )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {showInfo && (
+      {showInfo && phone && (
         <AnimatePresence mode="wait">
           <motion.div key={`caption-${phone.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-2 left-1/2 z-20 flex w-[82%] max-w-[460px] -translate-x-1/2 items-center rounded-2xl border border-sky-300/35 bg-slate-950/75 px-4 py-3 shadow-[0_16px_36px_rgba(0,0,0,.32)] backdrop-blur-xl">
             <Link href={`/phones/${phone.slug}`} className="min-w-0 flex-1 truncate text-sm font-extrabold text-white hover:text-sky-200">{phone.modelName}</Link>
@@ -125,10 +144,14 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         </AnimatePresence>
       )}
 
-      {phones.length > 1 && <>
+      {slideCount > 1 && <>
         <button onClick={previous} aria-label="Previous phone" className="absolute left-2 top-1/2 z-30 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/45 text-white backdrop-blur hover:bg-white/15"><ChevronLeft className="h-5 w-5" /></button>
         <button onClick={next} aria-label="Next phone" className="absolute right-2 top-1/2 z-30 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-slate-950/45 text-white backdrop-blur hover:bg-white/15"><ChevronRight className="h-5 w-5" /></button>
       </>}
+      {slideCount > 1 && <div className="absolute bottom-[78px] left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/45 px-3 py-1.5 backdrop-blur">
+        {carouselPhones.map((slide, index) => <button key={slide.id} type="button" onClick={() => setCurrent(index)} aria-label={`Show ${slide.modelName}`} aria-current={index === activeIndex ? 'true' : undefined} className={`h-1.5 rounded-full transition-all ${index === activeIndex ? 'w-6 bg-sky-300' : 'w-1.5 bg-white/35 hover:bg-white/70'}`} />)}
+        <span className="ml-1 text-[9px] font-bold tabular-nums text-white/65">{activeIndex + 1}/{slideCount}</span>
+      </div>}
       <style jsx>{`
         .hero-stage-position {
           transform: translate(var(--mobile-x), var(--mobile-y)) scale(var(--mobile-scale)) rotate(var(--mobile-rotate));
