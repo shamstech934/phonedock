@@ -154,6 +154,7 @@ export default function AdminPhonesPage() {
   const handleBulkAction = async (action: string) => {
     if (selected.size === 0) return;
     setBulkLoading(true);
+    setError('');
     try {
       const ids = Array.from(selected);
       const updates: Record<string, any> = {};
@@ -174,7 +175,16 @@ export default function AdminPhonesPage() {
           body: JSON.stringify(updates),
         })
       ));
-      if (responses.some(response => !response.ok)) throw new Error('One or more phone updates failed');
+      const failures = await Promise.all(
+        responses
+          .filter(response => !response.ok)
+          .map(async response => {
+            const payload = await response.json().catch(() => ({}));
+            const issues = Array.isArray(payload.issues) ? payload.issues.join(', ') : '';
+            return issues || payload.error || `Update failed (HTTP ${response.status})`;
+          }),
+      );
+      if (failures.length > 0) throw new Error([...new Set(failures)].join(' | '));
       setSelected(new Set()); fetchPhones(); fetchStats();
     } catch (error) { setError(error instanceof Error ? error.message : 'Bulk update failed'); } finally { setBulkLoading(false); }
   };
@@ -291,6 +301,16 @@ export default function AdminPhonesPage() {
       </div>
 
       {/* ─── Stats Cards ─── */}
+      {error && (
+        <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <div>
+            <p className="font-semibold">Action could not be completed</p>
+            <p className="mt-0.5">{error}</p>
+          </div>
+          <button type="button" onClick={() => setError('')} className="shrink-0 font-semibold text-red-700 hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {[
