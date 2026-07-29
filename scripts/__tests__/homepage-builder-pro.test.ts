@@ -40,6 +40,8 @@ assert.match(homeContent, /filter\(key => key !== 'latest'\)/, 'Latest Phones mu
 assert.match(heroShowcase, /validImageIds/, 'hero must track only phone images that successfully load');
 assert.match(heroShowcase, /new window\.Image\(\)/, 'hero must preflight selected images before admitting their slides');
 assert.match(heroShowcase, /naturalWidth >= 80/, 'hero must reject tiny placeholder images that create empty-looking slides');
+assert.match(heroShowcase, /Publish each successful image immediately/, 'one slow remote image must not block all valid hero slides');
+assert.doesNotMatch(heroShowcase, /Promise\.all\(phones\.map/, 'hero image validation must not deadlock behind one pending remote image');
 assert.match(heroShowcase, /carouselPhones/, 'hero navigation must rotate through valid slides only');
 assert.match(heroShowcase, /slideCount < 2/, 'hero autoplay must stop when fewer than two valid images exist');
 assert.doesNotMatch(heroShowcase, /mix-blend-multiply/, 'hero product images must remain visible on the dark stage');

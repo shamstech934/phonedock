@@ -32,7 +32,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
   const [paused, setPaused] = useState(false);
   const [validImageIds, setValidImageIds] = useState<Set<string> | null>(null);
   const touchStart = useRef(0);
-  const carouselPhones = validImageIds ? phones.filter(phone => validImageIds.has(phone.id)) : [];
+  const carouselPhones = validImageIds ? phones.filter(phone => validImageIds.has(phone.id)).slice(0, 6) : [];
   const slideCount = carouselPhones.length;
   const activeIndex = slideCount ? current % slideCount : 0;
   const phone = carouselPhones[activeIndex];
@@ -45,20 +45,41 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
     let cancelled = false;
     setValidImageIds(null);
     setCurrent(0);
-      const valid = new Set<string>();
-      Promise.all(phones.map(phone => new Promise<void>(resolve => {
-        if (!phone.thumbnail) { resolve(); return; }
-        const probe = new window.Image();
-        probe.onload = () => {
-          // Reject tracking pixels and tiny placeholder assets. They technically
-          // load, but produce an apparently empty hero slide.
-          if (probe.naturalWidth >= 80 && probe.naturalHeight >= 80) valid.add(phone.id);
-          resolve();
-        };
-      probe.onerror = () => resolve();
+    let remaining = phones.length;
+    const probes: HTMLImageElement[] = [];
+    const finishProbe = () => {
+      remaining -= 1;
+      if (!cancelled && remaining <= 0) {
+        setValidImageIds(previous => previous ?? new Set());
+      }
+    };
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setValidImageIds(previous => previous ?? new Set());
+    }, 8000);
+
+    phones.forEach(phone => {
+      if (!phone.thumbnail) { finishProbe(); return; }
+      const probe = new window.Image();
+      probes.push(probe);
+      probe.onload = () => {
+        // Reject tracking pixels and tiny placeholder assets. They technically
+        // load, but produce an apparently empty hero slide.
+        if (!cancelled && probe.naturalWidth >= 80 && probe.naturalHeight >= 80) {
+          // Publish each successful image immediately. One slow remote host must
+          // never keep every other hero phone behind a loading spinner.
+          setValidImageIds(previous => new Set([...(previous || []), phone.id]));
+        }
+        finishProbe();
+      };
+      probe.onerror = finishProbe;
       probe.src = phone.thumbnail;
-    }))).then(() => { if (!cancelled) setValidImageIds(valid); });
-    return () => { cancelled = true; };
+    });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      probes.forEach(probe => { probe.onload = null; probe.onerror = null; });
+    };
   }, [phones]);
 
   useEffect(() => {

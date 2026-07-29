@@ -250,6 +250,17 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
   if (slugs.length) {
     const order = new Map(slugs.map((slug, index) => [slug, index]));
     phones.sort((a, b) => (order.get(a.slug) ?? 999) - (order.get(b.slug) ?? 999));
+
+    // Keep admin-selected phones first, then provide spare candidates. Remote
+    // thumbnail hosts can temporarily throttle or remove an asset; the client
+    // validates these candidates and uses up to six working images.
+    const fallbackPhones = await Phone.find({ ...cardReady, slug: { $nin: slugs } })
+      .sort({ featured: -1, createdAt: -1 })
+      .limit(6)
+      .select(HOME_PHONE_PROJECTION)
+      .populate('brand')
+      .lean();
+    phones = [...phones, ...fallbackPhones].slice(0, 12);
   }
 
   if (phones.length === 0) {
