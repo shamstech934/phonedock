@@ -6,7 +6,7 @@
 
 import { Types } from 'mongoose';
 import { unstable_cache } from 'next/cache';
-import { Phone, Brand, News, PhoneSpecs, Sponsor, Video } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneImage, Sponsor, Video } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones, type PhoneDocOrJson } from '@/app/api/[[...path]]/handlers/helpers';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
@@ -269,8 +269,24 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
   }
 
   const ids = phones.map(p => p._id);
-  const specsArr = await PhoneSpecs.find({ phoneId: { $in: ids } }).lean();
+  const [specsArr, heroImages] = await Promise.all([
+    PhoneSpecs.find({ phoneId: { $in: ids } }).lean(),
+    PhoneImage.find({ phoneId: { $in: ids }, url: { $ne: '' } })
+      .select('phoneId url sortOrder')
+      .sort({ phoneId: 1, sortOrder: 1 })
+      .lean(),
+  ]);
   const specsMap = buildSpecsMap(specsArr);
+  const heroImageMap = new Map<string, string>();
+  for (const image of heroImages) {
+    const phoneId = image.phoneId?.toString();
+    if (phoneId && !heroImageMap.has(phoneId) && image.url) {
+      heroImageMap.set(phoneId, image.url);
+    }
+  }
 
-  return attachSpecsToRawPhones(phones as unknown as PhoneDocOrJson[], specsMap);
+  return attachSpecsToRawPhones(phones as unknown as PhoneDocOrJson[], specsMap).map(phone => ({
+    ...phone,
+    heroImage: heroImageMap.get(phone.id) || phone.thumbnail,
+  }));
 }

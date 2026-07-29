@@ -13,6 +13,7 @@ export interface HeroPhone {
   modelName: string;
   slug: string;
   thumbnail: string;
+  heroImage?: string;
   pricePKR: number;
   ptaStatus: string;
   ptaApproved: boolean;
@@ -31,11 +32,14 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
   const [validImageIds, setValidImageIds] = useState<Set<string> | null>(null);
+  const [lowResolutionImageIds, setLowResolutionImageIds] = useState<Set<string>>(new Set());
   const touchStart = useRef(0);
   const carouselPhones = validImageIds ? phones.filter(phone => validImageIds.has(phone.id)).slice(0, 6) : [];
   const slideCount = carouselPhones.length;
   const activeIndex = slideCount ? current % slideCount : 0;
   const phone = carouselPhones[activeIndex];
+  const activeImageSource = phone?.heroImage || phone?.thumbnail || '';
+  const isLowResolution = phone ? lowResolutionImageIds.has(phone.id) : false;
   const next = useCallback(() => setCurrent(value => slideCount ? (value + 1) % slideCount : 0), [slideCount]);
   const previous = useCallback(() => setCurrent(value => slideCount ? (value - 1 + slideCount) % slideCount : 0), [slideCount]);
 
@@ -44,6 +48,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
   useEffect(() => {
     let cancelled = false;
     setValidImageIds(null);
+    setLowResolutionImageIds(new Set());
     setCurrent(0);
     let remaining = phones.length;
     const probes: HTMLImageElement[] = [];
@@ -58,13 +63,17 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
     }, 8000);
 
     phones.forEach(phone => {
-      if (!phone.thumbnail) { finishProbe(); return; }
+      const imageSource = phone.heroImage || phone.thumbnail;
+      if (!imageSource) { finishProbe(); return; }
       const probe = new window.Image();
       probes.push(probe);
       probe.onload = () => {
         // Reject tracking pixels and tiny placeholder assets. They technically
         // load, but produce an apparently empty hero slide.
         if (!cancelled && probe.naturalWidth >= 80 && probe.naturalHeight >= 80) {
+          if (probe.naturalWidth < 600 || probe.naturalHeight < 600) {
+            setLowResolutionImageIds(previous => new Set([...previous, phone.id]));
+          }
           // Publish each successful image immediately. One slow remote host must
           // never keep every other hero phone behind a loading spinner.
           setValidImageIds(previous => new Set([...(previous || []), phone.id]));
@@ -72,7 +81,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         finishProbe();
       };
       probe.onerror = finishProbe;
-      probe.src = phone.thumbnail;
+      probe.src = imageSource;
     });
 
     return () => {
@@ -129,15 +138,16 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
           initial={{ opacity: 0, y: 18, rotateY: -18, scale: .9 }}
           animate={{ opacity: 1, y: [4, -3, 4], rotateY: -12, rotateZ: 2, scale: .96 }}
           transition={{ opacity: { duration: .3 }, scale: { duration: .4 }, rotateY: { duration: .45 }, rotateZ: { duration: .45 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
-          className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
+          className={`relative mx-auto h-full [transform-style:preserve-3d] ${isLowResolution ? 'w-[58%] max-w-[225px]' : 'w-[72%] max-w-[290px]'}`}
         >
             {phone ? (
-              <div className="absolute inset-0 rounded-[42%] bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,.12),transparent_64%)]">
+              <div className="absolute inset-0 overflow-hidden rounded-[2rem] border border-white/70 bg-gradient-to-br from-white via-slate-50 to-sky-100 p-3 shadow-[0_28px_55px_rgba(0,0,0,.42),inset_0_1px_0_rgba(255,255,255,.9)]">
+                <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(125deg,rgba(255,255,255,.5)_0%,transparent_38%,rgba(56,189,248,.08)_72%,rgba(255,255,255,.32)_100%)]" />
                 <Image
-                  src={phone.thumbnail}
+                  src={activeImageSource}
                   alt={phone.modelName}
                   fill
-                  sizes="(max-width: 640px) 190px, 290px"
+                  sizes={isLowResolution ? '(max-width: 640px) 160px, 225px' : '(max-width: 640px) 190px, 290px'}
                   priority={activeIndex === 0}
                   unoptimized
                   onError={() => setValidImageIds(previousIds => {
@@ -145,8 +155,9 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                     nextIds.delete(phone.id);
                     return nextIds;
                   })}
-                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-normal contrast-105 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
+                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-4 mix-blend-normal contrast-105 drop-shadow-[0_22px_18px_rgba(15,23,42,.28)] sm:p-3`}
                 />
+                <span className="pointer-events-none absolute bottom-2 left-1/2 z-[3] h-1 w-10 -translate-x-1/2 rounded-full bg-slate-300/70" aria-hidden="true" />
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
