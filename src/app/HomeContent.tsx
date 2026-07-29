@@ -141,14 +141,23 @@ import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 // ============ BRANDS GRID ============
 
 const PRIORITY_ORDER = ['samsung', 'apple', 'google', 'xiaomi', 'oneplus', 'vivo', 'oppo', 'realme', 'motorola', 'nothing', 'honor', 'tecno', 'infinix'];
+const CURATED_BRAND_DIRECTORY: Brand[] = [
+  ['Samsung', 'samsung'], ['Apple', 'apple'], ['Google', 'google'], ['Xiaomi', 'xiaomi'],
+  ['OnePlus', 'oneplus'], ['Vivo', 'vivo'], ['OPPO', 'oppo'], ['Realme', 'realme'],
+  ['Motorola', 'motorola'], ['Nothing', 'nothing'], ['Honor', 'honor'], ['Tecno', 'tecno'],
+  ['Infinix', 'infinix'],
+].map(([name, slug]) => ({
+  id: `curated-${slug}`, name, slug, logo: OFFICIAL_LOGOS[slug] || '',
+  country: '', description: '', _count: { phones: 0 },
+}));
 
 function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: number }) {
-  if (!brands.length) return null;
-
   // Brand navigation must remain usable even while phones are still drafts or
   // temporarily fail the public card-readiness gate. Hiding every brand when
   // counts are zero leaves a large blank homepage column.
-  const sorted = [...brands].sort((a, b) => {
+  const brandBySlug = new Map(CURATED_BRAND_DIRECTORY.map(brand => [brand.slug, brand]));
+  brands.forEach(brand => brandBySlug.set(brand.slug.toLowerCase(), brand));
+  const sorted = [...brandBySlug.values()].sort((a, b) => {
     const aIdx = PRIORITY_ORDER.indexOf(a.slug.toLowerCase());
     const bIdx = PRIORITY_ORDER.indexOf(b.slug.toLowerCase());
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
@@ -168,7 +177,7 @@ function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: num
         {displayBrands.map(brand => {
           const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
           return (
-            <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
+            <Link key={brand.id} href={brand.id.startsWith('curated-') ? `/phones?brand=${brand.slug}` : `/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
               <div className="flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 transition-colors group-hover:bg-blue-50 dark:group-hover:bg-sky-500/15" style={{ width: logoSize, height: logoSize }}>
                 {logoSrc ? (
                   <Image src={logoSrc} alt={`${brand.name} logo`} width={Math.max(28, logoSize - 12)} height={Math.max(28, logoSize - 12)} className="h-[72%] w-[72%] object-contain" unoptimized />
@@ -593,7 +602,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
               <div className="min-w-0">
                 {visible('brands') && <BrandsGrid brands={data.brands} logoSize={cms.brandLogoSize || 48} />}
               </div>
-              <div className="space-y-4 lg:sticky lg:top-24">
+              <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar />}
                 {cms.showYearCategories !== false && <ReleaseYearCategories />}
               </div>

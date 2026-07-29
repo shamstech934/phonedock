@@ -30,6 +30,8 @@ assert.match(builder, /uploadImage/, 'builder must support managed image uploads
 assert.match(handler, /revalidatePath\('\/admin\/homepage-builder'\)/, 'settings update must revalidate the Pro Builder');
 assert.doesNotMatch(homeContent, /brands\.filter\(b => \(b\._count\?\.phones \|\| 0\) > 0\)/, 'brand navigation must not disappear when public phone counts are temporarily zero');
 assert.match(homeContent, /'View brand'/, 'zero-count brands must retain useful navigation text');
-assert.match(homeContent, /space-y-4 lg:sticky lg:top-24/, 'price and year panels must share one non-overlapping sticky stack');
+assert.match(homeContent, /CURATED_BRAND_DIRECTORY/, 'homepage must retain a curated brand directory when MongoDB returns only a partial brand list');
+assert.match(homeContent, /brandBySlug\.set/, 'database brands must merge into the curated directory instead of replacing it');
+assert.match(homeContent, /isolate flex flex-col gap-5/, 'price and year panels must use an isolated flex stack that cannot overlap');
 
 console.log('homepage-builder-pro: all assertions passed');
