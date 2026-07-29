@@ -142,14 +142,13 @@ import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 
 const PRIORITY_ORDER = ['samsung', 'apple', 'google', 'xiaomi', 'oneplus', 'vivo', 'oppo', 'realme', 'motorola', 'nothing', 'honor', 'tecno', 'infinix'];
 
-function BrandsGrid({ brands }: { brands: Brand[] }) {
+function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: number }) {
   if (!brands.length) return null;
 
-  // Only show brands that have at least 1 phone
-  const brandsWithPhones = brands.filter(b => (b._count?.phones || 0) > 0);
-
-  // Sort: priority brands first, then by phone count
-  const sorted = [...brandsWithPhones].sort((a, b) => {
+  // Brand navigation must remain usable even while phones are still drafts or
+  // temporarily fail the public card-readiness gate. Hiding every brand when
+  // counts are zero leaves a large blank homepage column.
+  const sorted = [...brands].sort((a, b) => {
     const aIdx = PRIORITY_ORDER.indexOf(a.slug.toLowerCase());
     const bIdx = PRIORITY_ORDER.indexOf(b.slug.toLowerCase());
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
@@ -170,15 +169,15 @@ function BrandsGrid({ brands }: { brands: Brand[] }) {
           const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
           return (
             <Link key={brand.id} href={`/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 transition-colors group-hover:bg-blue-50 dark:group-hover:bg-sky-500/15 sm:h-11 sm:w-11">
+              <div className="flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 transition-colors group-hover:bg-blue-50 dark:group-hover:bg-sky-500/15" style={{ width: logoSize, height: logoSize }}>
                 {logoSrc ? (
-                  <Image src={logoSrc} alt={brand.name} width={32} height={32} className="object-contain" unoptimized />
+                  <Image src={logoSrc} alt={`${brand.name} logo`} width={Math.max(28, logoSize - 12)} height={Math.max(28, logoSize - 12)} className="h-[72%] w-[72%] object-contain" unoptimized />
                 ) : (
                   <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
                 )}
               </div>
               <span className="text-[11px] sm:text-xs font-semibold text-gray-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-sky-300 transition-colors line-clamp-1">{brand.name}</span>
-              <span className="text-[10px] text-muted-foreground">{brand._count?.phones || 0} phones</span>
+              <span className="text-[10px] text-muted-foreground">{(brand._count?.phones || 0) > 0 ? `${brand._count?.phones} phones` : 'View brand'}</span>
             </Link>
           );
         })}
@@ -200,7 +199,7 @@ function PriceCategorySidebar() {
   const categories = PRICE_CATEGORIES.filter(category => !category.missing);
 
   return (
-    <aside className="card-premium h-fit p-3.5 lg:-mt-10 lg:self-start lg:sticky lg:top-24" aria-labelledby="home-price-categories-title">
+    <aside className="card-premium h-fit p-3.5" aria-labelledby="home-price-categories-title">
       <div className="mb-2.5 flex items-center gap-2">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
           <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
@@ -470,7 +469,7 @@ function ExplorePhoneDockTools() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -592,9 +591,9 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0">
-                {visible('brands') && <BrandsGrid brands={data.brands} />}
+                {visible('brands') && <BrandsGrid brands={data.brands} logoSize={cms.brandLogoSize || 48} />}
               </div>
-              <div className="space-y-4">
+              <div className="space-y-4 lg:sticky lg:top-24">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar />}
                 {cms.showYearCategories !== false && <ReleaseYearCategories />}
               </div>

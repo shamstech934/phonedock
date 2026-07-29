@@ -6,6 +6,7 @@ const root = process.cwd();
 const builder = fs.readFileSync(path.join(root, 'src/app/admin/homepage-builder/page.tsx'), 'utf8');
 const layout = fs.readFileSync(path.join(root, 'src/app/admin/layout.tsx'), 'utf8');
 const handler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handlers/admin-crud.ts'), 'utf8');
+const homeContent = fs.readFileSync(path.join(root, 'src/app/HomeContent.tsx'), 'utf8');
 
 assert.match(layout, /Homepage Builder', href: '\/admin\/homepage-builder'/, 'sidebar must open the Pro Builder');
 assert.match(layout, /Site Settings', href: '\/admin\/settings'/, 'legacy settings must remain available as a safe fallback');
@@ -27,5 +28,8 @@ assert.match(builder, /3D stage positioning/, 'builder must expose precise hero 
 assert.match(builder, /release-year categories/, 'builder must expose release-year category controls');
 assert.match(builder, /uploadImage/, 'builder must support managed image uploads');
 assert.match(handler, /revalidatePath\('\/admin\/homepage-builder'\)/, 'settings update must revalidate the Pro Builder');
+assert.doesNotMatch(homeContent, /brands\.filter\(b => \(b\._count\?\.phones \|\| 0\) > 0\)/, 'brand navigation must not disappear when public phone counts are temporarily zero');
+assert.match(homeContent, /'View brand'/, 'zero-count brands must retain useful navigation text');
+assert.match(homeContent, /space-y-4 lg:sticky lg:top-24/, 'price and year panels must share one non-overlapping sticky stack');
 
 console.log('homepage-builder-pro: all assertions passed');
