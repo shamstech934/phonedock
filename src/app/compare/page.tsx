@@ -34,10 +34,17 @@ function CompareContent() {
   const [acError, setAcError] = useState(false);
   const acAbortRef = useRef<AbortController | null>(null);
 
-  // Load pre-selected phones from URL on mount
+  // Hydrate every URL selection with the full comparison payload. Autocomplete
+  // results are intentionally lightweight and must never drive the comparison UI.
   useEffect(() => {
-    if (!slugsParam) { setLoading(false); return; }
+    if (!slugsParam) {
+      setSelected([]);
+      setCompared(false);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
+    setLoading(true);
     const slugs = normalizeCompareValues(slugsParam);
     fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
       .then(r => {
@@ -59,7 +66,7 @@ function CompareContent() {
       setLoading(false);
     }).catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slugsParam]);
 
   // Debounced autocomplete search
   useEffect(() => {
@@ -114,7 +121,8 @@ function CompareContent() {
     setSelected(next);
     setCompared(false);
     if (next.length >= 2) {
-      setTimeout(() => { setCompared(true); setPickerOpen(false); updateURL(next); }, 100);
+      setPickerOpen(false);
+      updateURL(next);
     } else {
       updateURL(next);
     }
@@ -167,13 +175,18 @@ function CompareContent() {
     { label: 'Value', key: 'valueScore' as const, icon: Tag, gradient: 'from-amber-500 to-orange-500' },
   ];
 
+  const safeScore = (value: unknown, multiplier = 1) => {
+    const score = Number(value) * multiplier;
+    return Number.isFinite(score) && score > 0 ? Math.min(100, score) : 0;
+  };
+
   const metrics = [
-    { label: 'Overall', get: (p: Phone) => p.overallRating * 10 },
-    { label: 'Camera', get: (p: Phone) => p.cameraScore },
-    { label: 'Performance', get: (p: Phone) => p.performanceScore },
-    { label: 'Battery', get: (p: Phone) => p.batteryScore },
-    { label: 'Display', get: (p: Phone) => p.displayScore },
-    { label: 'Value', get: (p: Phone) => p.valueScore },
+    { label: 'Overall', get: (p: Phone) => safeScore(p.overallRating, 10) },
+    { label: 'Camera', get: (p: Phone) => safeScore(p.cameraScore) },
+    { label: 'Performance', get: (p: Phone) => safeScore(p.performanceScore) },
+    { label: 'Battery', get: (p: Phone) => safeScore(p.batteryScore) },
+    { label: 'Display', get: (p: Phone) => safeScore(p.displayScore) },
+    { label: 'Value', get: (p: Phone) => safeScore(p.valueScore) },
   ];
 
   const specRows = [
@@ -217,8 +230,12 @@ function CompareContent() {
   ];
 
   const getFilteredSpecRows = (rows: typeof specRows) => {
-    if (!onlyDifferences) return rows;
-    return rows.filter(row => {
+    const populatedRows = rows.filter(row => comparePhones.some(phone => {
+      const value = row.get(phone);
+      return value && value !== 'undefined' && value !== 'null' && value !== '[object Object]';
+    }));
+    if (!onlyDifferences) return populatedRows;
+    return populatedRows.filter(row => {
       const values = comparePhones.map(p => row.get(p) || '');
       return new Set(values).size > 1;
     });
@@ -503,7 +520,7 @@ function CompareContent() {
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0 w-16 justify-end">
                             {winnerIds.includes(s.phone.id) && <Trophy className="w-3.5 h-3.5 text-blue-500" />}
-                            <span className={`text-xs font-bold ${winnerIds.includes(s.phone.id) ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score}</span>
+                            <span className={`text-xs font-bold ${winnerIds.includes(s.phone.id) ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score > 0 ? Math.round(s.score) : '—'}</span>
                           </div>
                         </div>
                       ))}
