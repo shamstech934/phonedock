@@ -45,11 +45,16 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
     let cancelled = false;
     setValidImageIds(null);
     setCurrent(0);
-    const valid = new Set<string>();
-    Promise.all(phones.map(phone => new Promise<void>(resolve => {
-      if (!phone.thumbnail) { resolve(); return; }
-      const probe = new window.Image();
-      probe.onload = () => { valid.add(phone.id); resolve(); };
+      const valid = new Set<string>();
+      Promise.all(phones.map(phone => new Promise<void>(resolve => {
+        if (!phone.thumbnail) { resolve(); return; }
+        const probe = new window.Image();
+        probe.onload = () => {
+          // Reject tracking pixels and tiny placeholder assets. They technically
+          // load, but produce an apparently empty hero slide.
+          if (probe.naturalWidth >= 80 && probe.naturalHeight >= 80) valid.add(phone.id);
+          resolve();
+        };
       probe.onerror = () => resolve();
       probe.src = phone.thumbnail;
     }))).then(() => { if (!cancelled) setValidImageIds(valid); });
@@ -110,20 +115,22 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
             className="relative mx-auto h-full w-[72%] max-w-[290px] [transform-style:preserve-3d]"
           >
             {phone ? (
-              <Image
-                src={phone.thumbnail}
-                alt={phone.modelName}
-                fill
-                sizes="(max-width: 640px) 190px, 290px"
-                priority={activeIndex === 0}
-                unoptimized
-                onError={() => setValidImageIds(previousIds => {
-                  const nextIds = new Set(previousIds || []);
-                  nextIds.delete(phone.id);
-                  return nextIds;
-                })}
-                className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-multiply contrast-110 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
-              />
+              <div className="absolute inset-0 rounded-[42%] bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,.12),transparent_64%)]">
+                <Image
+                  src={phone.thumbnail}
+                  alt={phone.modelName}
+                  fill
+                  sizes="(max-width: 640px) 190px, 290px"
+                  priority={activeIndex === 0}
+                  unoptimized
+                  onError={() => setValidImageIds(previousIds => {
+                    const nextIds = new Set(previousIds || []);
+                    nextIds.delete(phone.id);
+                    return nextIds;
+                  })}
+                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} p-2 mix-blend-normal contrast-105 drop-shadow-[0_32px_24px_rgba(0,0,0,.55)] sm:p-1`}
+                />
+              </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
                 {validImageIds === null ? <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-sky-300" /> : <><Smartphone className="h-20 w-20 text-sky-200/40" /><span>No valid hero images</span></>}

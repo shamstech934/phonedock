@@ -39,8 +39,11 @@ assert.match(homeContent, /renderOrderedSection\('latest'\)/, 'Latest Phones mus
 assert.match(homeContent, /filter\(key => key !== 'latest'\)/, 'Latest Phones must not render twice after moving into the brand column');
 assert.match(heroShowcase, /validImageIds/, 'hero must track only phone images that successfully load');
 assert.match(heroShowcase, /new window\.Image\(\)/, 'hero must preflight selected images before admitting their slides');
+assert.match(heroShowcase, /naturalWidth >= 80/, 'hero must reject tiny placeholder images that create empty-looking slides');
 assert.match(heroShowcase, /carouselPhones/, 'hero navigation must rotate through valid slides only');
 assert.match(heroShowcase, /slideCount < 2/, 'hero autoplay must stop when fewer than two valid images exist');
+assert.doesNotMatch(heroShowcase, /mix-blend-multiply/, 'hero product images must remain visible on the dark stage');
+assert.match(heroShowcase, /mix-blend-normal/, 'hero product images must use stable normal compositing');
 assert.match(homeContent, /aria-label="Popular phone categories"/, 'quick categories must expose an accessible navigation landmark');
 assert.match(homeContent, /lg:justify-center/, 'quick categories must center as a group on desktop');
 assert.match(globalCss, /background: rgba\(240, 244, 248, 0\.94\)/, 'sticky header must be opaque enough to prevent hero text showing through it');
