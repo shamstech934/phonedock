@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Pause, Play, ShieldCheck, Smartphone } from 'lucide-react';
+import { Battery, Camera, ChevronLeft, ChevronRight, Cpu, Pause, Play, ShieldCheck, Smartphone } from 'lucide-react';
 import { formatPrice } from './formatPrice';
 
 export interface HeroPhone {
@@ -40,6 +40,11 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
   const phone = carouselPhones[activeIndex];
   const activeImageSource = phone?.heroImage || phone?.thumbnail || '';
   const isLowResolution = phone ? lowResolutionImageIds.has(phone.id) : false;
+  const featureCards = phone ? [
+    { label: 'Camera', value: phone.specs?.mainCamera, icon: Camera, tone: 'text-sky-300' },
+    { label: 'Battery', value: phone.specs?.battery, icon: Battery, tone: 'text-emerald-300' },
+    { label: 'Performance', value: phone.specs?.chipset || phone.specs?.ram, icon: Cpu, tone: 'text-violet-300' },
+  ].filter(card => card.value).slice(0, 3) : [];
   const next = useCallback(() => setCurrent(value => slideCount ? (value + 1) % slideCount : 0), [slideCount]);
   const previous = useCallback(() => setCurrent(value => slideCount ? (value - 1 + slideCount) % slideCount : 0), [slideCount]);
 
@@ -107,21 +112,11 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         if (Math.abs(difference) > 50) (difference > 0 ? next : previous)();
       }}
     >
-      {/* Concentric light wall behind the floating product. */}
-      <div className="pointer-events-none absolute left-1/2 top-[42%] h-[390px] w-[390px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(14,165,233,.48)_0%,rgba(14,116,207,.16)_38%,transparent_70%)] blur-xl" />
-      {[320, 255, 190].map(size => (
-        <div key={size} className="pointer-events-none absolute left-1/2 top-[41%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-300/10" style={{ width: size, height: size }} />
-      ))}
-
-      {/* Multi-layer neon podium matching the selected Floating 3D Stage. */}
-      <div className="pointer-events-none absolute bottom-[38px] left-1/2 h-[106px] w-[88%] max-w-[510px] -translate-x-1/2">
-        <div className="absolute inset-x-0 bottom-0 h-[74px] rounded-[50%] border border-sky-400/55 bg-blue-950/65 shadow-[0_0_35px_rgba(14,165,233,.38)] [transform:rotateX(64deg)]" />
-        <div className="absolute inset-x-[8%] bottom-[22px] h-[72px] rounded-[50%] border-2 border-cyan-300/80 bg-gradient-to-b from-sky-500/35 to-blue-950/90 shadow-[0_0_18px_rgba(34,211,238,.85),0_18px_22px_rgba(0,0,0,.34)] [transform:rotateX(61deg)]" />
-        <div className="absolute inset-x-[14%] bottom-[43px] h-[54px] rounded-[50%] border border-sky-200/60 bg-[radial-gradient(ellipse,rgba(125,211,252,.5)_0%,rgba(30,64,175,.34)_48%,rgba(2,6,23,.82)_76%)] shadow-[0_0_28px_rgba(56,189,248,.65)] [transform:rotateX(59deg)]" />
-      </div>
+      <div className="pointer-events-none absolute inset-3 rounded-[1.75rem] border border-white/10 bg-slate-950/20 shadow-[inset_0_1px_0_rgba(255,255,255,.08)] backdrop-blur-[2px]" />
+      <div className="pointer-events-none absolute left-[28%] top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/15 blur-3xl" />
 
       <div
-        className="hero-stage-position absolute inset-x-8 top-4 bottom-[120px] overflow-visible [perspective:1100px] sm:top-5 lg:top-6"
+        className="hero-stage-position absolute bottom-[108px] left-5 top-5 w-[44%] overflow-visible [perspective:1100px] sm:left-7 lg:left-8"
         style={{
           '--desktop-x': `${position?.desktopX || 0}px`,
           '--desktop-y': `${position?.desktopY || 0}px`,
@@ -138,26 +133,24 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
           initial={{ opacity: 0, y: 18, rotateY: -18, scale: .9 }}
           animate={{ opacity: 1, y: [4, -3, 4], rotateY: -12, rotateZ: 2, scale: .96 }}
           transition={{ opacity: { duration: .3 }, scale: { duration: .4 }, rotateY: { duration: .45 }, rotateZ: { duration: .45 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
-          className={`relative mx-auto h-full [transform-style:preserve-3d] ${isLowResolution ? 'w-[58%] max-w-[225px]' : 'w-[72%] max-w-[290px]'}`}
+          className={`relative mx-auto h-full [transform-style:preserve-3d] ${isLowResolution ? 'w-[78%] max-w-[210px]' : 'w-full max-w-[260px]'}`}
         >
             {phone ? (
-              <div className="absolute inset-0 overflow-hidden rounded-[2rem] border border-white/70 bg-gradient-to-br from-white via-slate-50 to-sky-100 p-3 shadow-[0_28px_55px_rgba(0,0,0,.42),inset_0_1px_0_rgba(255,255,255,.9)]">
-                <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(125deg,rgba(255,255,255,.5)_0%,transparent_38%,rgba(56,189,248,.08)_72%,rgba(255,255,255,.32)_100%)]" />
+              <div className="absolute inset-0 overflow-hidden rounded-[1.75rem] border border-cyan-300/20 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.16),rgba(14,116,144,.08)_42%,rgba(2,6,23,.3)_78%)] shadow-[0_28px_55px_rgba(0,0,0,.3),inset_0_1px_0_rgba(255,255,255,.12)]">
                 <Image
                   src={activeImageSource}
                   alt={phone.modelName}
                   fill
                   sizes={isLowResolution ? '(max-width: 640px) 160px, 225px' : '(max-width: 640px) 190px, 290px'}
                   priority={activeIndex === 0}
-                  unoptimized
                   onError={() => setValidImageIds(previousIds => {
                     const nextIds = new Set(previousIds || []);
                     nextIds.delete(phone.id);
                     return nextIds;
                   })}
-                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-4 mix-blend-normal contrast-105 drop-shadow-[0_22px_18px_rgba(15,23,42,.28)] sm:p-3`}
+                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-3 mix-blend-normal contrast-105 drop-shadow-[0_22px_18px_rgba(15,23,42,.3)]`}
                 />
-                <span className="pointer-events-none absolute bottom-2 left-1/2 z-[3] h-1 w-10 -translate-x-1/2 rounded-full bg-slate-300/70" aria-hidden="true" />
+                <div className="pointer-events-none absolute inset-x-[12%] bottom-3 h-5 rounded-[50%] bg-cyan-300/20 blur-md" />
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
@@ -167,13 +160,26 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
         </motion.div>
       </div>
 
+      {phone && <div className="absolute bottom-[108px] right-5 top-5 z-20 flex w-[48%] flex-col justify-center gap-2.5 sm:right-7 lg:right-8">
+        {featureCards.length > 0 ? featureCards.map(({ label, value, icon: Icon, tone }) => (
+          <div key={label} className="rounded-xl border border-white/10 bg-slate-950/38 px-3 py-2.5 shadow-lg backdrop-blur-xl">
+            <div className={`mb-1 flex items-center gap-1.5 text-[9px] font-extrabold uppercase tracking-[.16em] ${tone}`}><Icon className="h-3.5 w-3.5" />{label}</div>
+            <p className="truncate text-xs font-bold text-white sm:text-sm" title={value}>{value}</p>
+          </div>
+        )) : (
+          <div className="rounded-xl border border-white/10 bg-slate-950/35 p-4 text-xs leading-5 text-slate-300 backdrop-blur-xl">
+            Detailed specifications will appear here when available.
+          </div>
+        )}
+        {phone.ptaApproved && <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-bold text-emerald-200"><ShieldCheck className="h-3.5 w-3.5" />PTA Approved</span>}
+      </div>}
+
       {showInfo && phone && (
         <AnimatePresence mode="wait">
-          <motion.div key={`caption-${phone.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-2 left-1/2 z-20 flex w-[82%] max-w-[460px] -translate-x-1/2 items-center rounded-2xl border border-sky-300/35 bg-slate-950/75 px-4 py-3 shadow-[0_16px_36px_rgba(0,0,0,.32)] backdrop-blur-xl">
+          <motion.div key={`caption-${phone.id}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-3 left-5 right-5 z-20 flex items-center rounded-2xl border border-sky-300/25 bg-slate-950/72 px-4 py-3 shadow-[0_16px_36px_rgba(0,0,0,.28)] backdrop-blur-xl sm:left-7 sm:right-7 lg:left-8 lg:right-8">
             <Link href={`/phones/${phone.slug}`} className="min-w-0 flex-1 truncate text-sm font-extrabold text-white hover:text-sky-200">{phone.modelName}</Link>
             <span className="mx-3 h-7 w-px bg-white/20" />
             <span className="shrink-0 text-sm font-black text-blue-400">{formatPrice(phone.pricePKR)}</span>
-            {phone.ptaApproved && <><span className="mx-3 h-7 w-px bg-white/20" /><span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-400/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300"><ShieldCheck className="h-3 w-3" />PTA</span></>}
           </motion.div>
         </AnimatePresence>
       )}

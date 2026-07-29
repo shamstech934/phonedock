@@ -19,6 +19,19 @@ type Device = 'desktop' | 'tablet' | 'mobile';
 type Tab = 'overview' | 'hero' | 'sections' | 'design' | 'navigation' | 'media' | 'preview';
 type SectionMode = 'automatic' | 'manual';
 
+interface HeroCampaign {
+  id: string;
+  name: string;
+  enabled: boolean;
+  desktopImage: string;
+  mobileImage: string;
+  alt: string;
+  startAt: string;
+  endAt: string;
+  overlay: number;
+  position: string;
+}
+
 interface PhoneOption {
   id?: string;
   slug: string;
@@ -78,6 +91,8 @@ interface HomepageSettings {
   heroMobileScale: number;
   heroMobileRotate: number;
   heroBackgroundImage: string;
+  heroCampaigns: HeroCampaign[];
+  heroCampaignSpeed: number;
   brandLogoSize: number;
   brandColumns: number;
   showPriceCategories: boolean;
@@ -170,6 +185,8 @@ const DEFAULT_HOMEPAGE: HomepageSettings = {
   heroMobileScale: 88,
   heroMobileRotate: 0,
   heroBackgroundImage: '',
+  heroCampaigns: [],
+  heroCampaignSpeed: 7000,
   brandLogoSize: 48,
   brandColumns: 7,
   showPriceCategories: true,
@@ -273,7 +290,7 @@ export default function HomepageBuilderPage() {
     setSaved(false);
   };
 
-  const upload = async (file: File | undefined, target: 'logo' | 'favicon' | 'heroBackground' | 'homepageOgImage' | OrderedHomepageSection) => {
+  const upload = async (file: File | undefined, target: string) => {
     if (!file) return;
     setUploading(target);
     setError('');
@@ -286,6 +303,10 @@ export default function HomepageBuilderPage() {
       } else if (target === 'homepageOgImage') {
         updateSetting('ogImage', result.url);
         updateHomepage('media', { ...homepage.media, homepageOgImage: result.url });
+      } else if (target.startsWith('campaign:')) {
+        const [, id, viewport] = target.split(':');
+        updateHomepage('heroCampaigns', homepage.heroCampaigns.map(campaign =>
+          campaign.id === id ? { ...campaign, [viewport === 'mobile' ? 'mobileImage' : 'desktopImage']: result.url } : campaign));
       } else {
         updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [target]: result.url } });
       }
@@ -350,6 +371,22 @@ export default function HomepageBuilderPage() {
     if (slug) next[index] = slug;
     else next[index] = '';
     updateHomepage('heroPhoneSlugs', next.slice(0, 6));
+  };
+
+  const addCampaign = () => {
+    const id = `campaign-${Date.now()}`;
+    updateHomepage('heroCampaigns', [...homepage.heroCampaigns, {
+      id,
+      name: '14 August Campaign',
+      enabled: true,
+      desktopImage: '',
+      mobileImage: '',
+      alt: 'PhoneDock Independence Day campaign',
+      startAt: '',
+      endAt: '',
+      overlay: 45,
+      position: 'center',
+    }]);
   };
 
   if (authLoading || loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>;
@@ -436,6 +473,40 @@ export default function HomepageBuilderPage() {
                 </select>
               </label>
             )}</div>
+          </Panel>
+          <Panel title="Seasonal background campaigns" subtitle="Schedule 14 August, Eid, launch events or sale artwork. Only active campaigns inside their date window rotate on the live hero.">
+            <div className="space-y-4">
+              <div className="flex items-end justify-between gap-3">
+                <NumberRange label="Background slide duration" value={homepage.heroCampaignSpeed} min={4000} max={20000} suffix="ms" onChange={value => updateHomepage('heroCampaignSpeed', value)} />
+                <button type="button" onClick={addCampaign} className="shrink-0 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white">Add campaign</button>
+              </div>
+              {homepage.heroCampaigns.length === 0 && <p className="rounded-xl border border-dashed border-slate-300 p-4 text-xs text-slate-500">No scheduled campaign yet. The normal hero background remains active.</p>}
+              {homepage.heroCampaigns.map((campaign, index) => {
+                const updateCampaign = (patch: Partial<HeroCampaign>) => updateHomepage('heroCampaigns', homepage.heroCampaigns.map(item => item.id === campaign.id ? { ...item, ...patch } : item));
+                return <div key={campaign.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-3 flex items-center gap-3">
+                    <strong className="text-sm text-slate-900">Campaign {index + 1}</strong>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${campaign.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{campaign.enabled ? 'Enabled' : 'Disabled'}</span>
+                    <button type="button" onClick={() => updateHomepage('heroCampaigns', homepage.heroCampaigns.filter(item => item.id !== campaign.id))} className="ml-auto text-xs font-bold text-red-600">Remove</button>
+                  </div>
+                  <div className="space-y-3">
+                    <Toggle label="Enable this campaign" checked={campaign.enabled} onChange={enabled => updateCampaign({ enabled })} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Campaign name" value={campaign.name} onChange={name => updateCampaign({ name })} />
+                      <Field label="Accessible image description" value={campaign.alt} onChange={alt => updateCampaign({ alt })} />
+                      <Field label="Starts (optional)" value={campaign.startAt} onChange={startAt => updateCampaign({ startAt })} type="datetime-local" />
+                      <Field label="Ends (optional)" value={campaign.endAt} onChange={endAt => updateCampaign({ endAt })} type="datetime-local" />
+                    </div>
+                    <MediaField label="Desktop campaign background" hint="Recommended 1920 × 760 px · WebP/AVIF · ideally under 350 KB" value={campaign.desktopImage} uploading={uploading === `campaign:${campaign.id}:desktop`} onUrlChange={desktopImage => updateCampaign({ desktopImage })} onFile={file => void upload(file, `campaign:${campaign.id}:desktop`)} />
+                    <MediaField label="Mobile campaign background" hint="Recommended 900 × 1200 px · WebP/AVIF · ideally under 220 KB" value={campaign.mobileImage} uploading={uploading === `campaign:${campaign.id}:mobile`} onUrlChange={mobileImage => updateCampaign({ mobileImage })} onFile={file => void upload(file, `campaign:${campaign.id}:mobile`)} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberRange label="Dark overlay" value={campaign.overlay} min={0} max={85} suffix="%" onChange={overlay => updateCampaign({ overlay })} />
+                      <label className="block text-xs font-semibold text-slate-600">Image focus<select className={inputClass} value={campaign.position} onChange={event => updateCampaign({ position: event.target.value })}><option value="center">Center</option><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></label>
+                    </div>
+                  </div>
+                </div>;
+              })}
+            </div>
           </Panel>
           <Panel title="3D stage positioning" subtitle="Adjust phone placement separately for desktop and mobile.">
             <div className="space-y-4">
@@ -554,8 +625,8 @@ export default function HomepageBuilderPage() {
         {tab === 'media' && <div className="space-y-4">
           <Panel title="Homepage media library" subtitle="Upload to the configured Cloudinary account or paste an existing image URL.">
             <div className="space-y-4">
-              <MediaField label="Hero background image" value={homepage.heroBackgroundImage || homepage.media.heroBackground} uploading={uploading === 'heroBackground'} onUrlChange={value => { updateHomepage('heroBackgroundImage', value); updateHomepage('media', { ...homepage.media, heroBackground: value }); }} onFile={file => void upload(file, 'heroBackground')} />
-              <MediaField label="Homepage social/OG image" value={String(settings.ogImage || homepage.media.homepageOgImage)} uploading={uploading === 'homepageOgImage'} onUrlChange={value => { updateSetting('ogImage', value); updateHomepage('media', { ...homepage.media, homepageOgImage: value }); }} onFile={file => void upload(file, 'homepageOgImage')} />
+              <MediaField label="Hero background image" hint="Recommended 1920 × 760 px · WebP/AVIF · under 350 KB" value={homepage.heroBackgroundImage || homepage.media.heroBackground} uploading={uploading === 'heroBackground'} onUrlChange={value => { updateHomepage('heroBackgroundImage', value); updateHomepage('media', { ...homepage.media, heroBackground: value }); }} onFile={file => void upload(file, 'heroBackground')} />
+              <MediaField label="Homepage social/OG image" hint="Required social ratio 1200 × 630 px · JPG/WebP · under 300 KB" value={String(settings.ogImage || homepage.media.homepageOgImage)} uploading={uploading === 'homepageOgImage'} onUrlChange={value => { updateSetting('ogImage', value); updateHomepage('media', { ...homepage.media, homepageOgImage: value }); }} onFile={file => void upload(file, 'homepageOgImage')} />
             </div>
           </Panel>
           <Panel title="Section images" subtitle="Each homepage category can have its own managed visual.">
@@ -610,13 +681,14 @@ function NumberRange({ label, value, min, max, suffix = '', onChange }: {
   </label>;
 }
 
-function MediaField({ label, value, uploading, onUrlChange, onFile }: {
-  label: string; value: string; uploading: boolean; onUrlChange: (value: string) => void; onFile: (file?: File) => void;
+function MediaField({ label, hint = 'Recommended 1600 × 900 px · WebP/AVIF · under 300 KB', value, uploading, onUrlChange, onFile }: {
+  label: string; hint?: string; value: string; uploading: boolean; onUrlChange: (value: string) => void; onFile: (file?: File) => void;
 }) {
   return <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
     <label className="block text-xs font-semibold text-slate-600">{label}
       <input className={inputClass} value={value} placeholder="https://..." onChange={event => onUrlChange(event.target.value)} />
     </label>
+    <p className="mt-1 text-[10px] leading-4 text-slate-500">{hint}</p>
     <div className="mt-2 flex items-center gap-3">
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">
         {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}

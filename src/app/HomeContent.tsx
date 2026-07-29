@@ -19,6 +19,7 @@ import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
 import { HomeHeroSearch } from '@/components/home/HomeHeroSearch';
 import { HomeNewsletter } from '@/components/home/HomeNewsletter';
 import { HomeVideoSection } from '@/components/home/HomeVideoSection';
+import { HeroCampaignBackground, type HeroCampaign } from '@/components/home/HeroCampaignBackground';
 import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
 import { PRICE_CATEGORIES } from '@/lib/price-categories';
@@ -480,7 +481,7 @@ function ExplorePhoneDockTools() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroCampaigns?: HeroCampaign[]; heroCampaignSpeed?: number; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -539,7 +540,8 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
           <div className={`glass-page-bg ${contentWidthClass} mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10`} style={{ backgroundColor: cms.pageBackground || undefined }}>
 
             {/* ===== 1. HERO ===== */}
-            {cms.heroEnabled !== false && <section className="hero-gradient rounded-3xl text-white relative sky-glow" style={{ backgroundColor: cms.heroBackground || undefined, backgroundImage: cms.heroBackgroundImage ? `linear-gradient(rgba(15,23,42,.74),rgba(3,105,161,.72)),url("${cms.heroBackgroundImage.replace(/"/g, '%22')}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+            {cms.heroEnabled !== false && <section className="hero-gradient overflow-hidden rounded-3xl text-white relative sky-glow" style={{ backgroundColor: cms.heroBackground || undefined }}>
+              <HeroCampaignBackground campaigns={cms.heroCampaigns} fallback={cms.heroBackgroundImage} intervalMs={cms.heroCampaignSpeed} />
               {/* Background effects — clipped to rounded corners */}
               <div className="hero-shimmer-effect absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
                 <div className="hero-particles">

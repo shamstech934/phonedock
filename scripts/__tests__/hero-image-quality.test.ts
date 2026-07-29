@@ -7,9 +7,9 @@ const homeData = readFileSync('src/lib/fetch-home-data.ts', 'utf8');
 assert.match(showcase, /heroImage\?: string/);
 assert.match(showcase, /phone\.heroImage \|\| phone\.thumbnail/);
 assert.match(showcase, /naturalWidth < 600 \|\| probe\.naturalHeight < 600/);
-assert.match(showcase, /isLowResolution \? 'w-\[58%\] max-w-\[225px\]'/);
-assert.match(showcase, /from-white via-slate-50 to-sky-100/);
-assert.match(showcase, /rounded-\[2rem\]/);
+assert.match(showcase, /isLowResolution \? 'w-\[78%\] max-w-\[210px\]'/);
+assert.match(showcase, /bg-\[radial-gradient\(circle_at_50%_42%/);
+assert.match(showcase, /rounded-\[1\.75rem\]/);
 assert.doesNotMatch(showcase, /mix-blend-multiply/);
 
 assert.match(homeData, /PhoneImage\.find\(/);

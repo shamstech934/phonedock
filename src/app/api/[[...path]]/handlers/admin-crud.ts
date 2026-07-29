@@ -2127,6 +2127,29 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
         ? [...new Set(homepage.heroPhoneSlugs.filter((slug): slug is string => typeof slug === 'string').map(slug => slug.trim()).filter(Boolean))].slice(0, 6)
         : [];
       homepage.sectionOrder = normalizeHomepageSectionOrder(homepage.sectionOrder);
+      homepage.heroCampaigns = Array.isArray(homepage.heroCampaigns)
+        ? homepage.heroCampaigns.slice(0, 8).map((value, index) => {
+            const campaign = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+            const safeText = (input: unknown, max: number) => typeof input === 'string' ? input.trim().slice(0, max) : '';
+            const safeImage = (input: unknown) => {
+              const value = safeText(input, 2048);
+              return /^https:\/\/(res\.cloudinary\.com|images\.unsplash\.com|upload\.wikimedia\.org)\//i.test(value) ? value : '';
+            };
+            return {
+              id: safeText(campaign.id, 80) || `campaign-${index + 1}`,
+              name: safeText(campaign.name, 100),
+              enabled: campaign.enabled !== false,
+              desktopImage: safeImage(campaign.desktopImage),
+              mobileImage: safeImage(campaign.mobileImage),
+              alt: safeText(campaign.alt, 180),
+              startAt: safeText(campaign.startAt, 40),
+              endAt: safeText(campaign.endAt, 40),
+              overlay: Math.min(85, Math.max(0, Number(campaign.overlay) || 45)),
+              position: ['center', 'top', 'bottom', 'left', 'right'].includes(String(campaign.position)) ? campaign.position : 'center',
+            };
+          })
+        : [];
+      homepage.heroCampaignSpeed = Math.min(20000, Math.max(4000, Number(homepage.heroCampaignSpeed) || 7000));
       update.homepage = homepage;
     }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();

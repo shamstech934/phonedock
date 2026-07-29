@@ -8,6 +8,7 @@ const layout = fs.readFileSync(path.join(root, 'src/app/admin/layout.tsx'), 'utf
 const handler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handlers/admin-crud.ts'), 'utf8');
 const homeContent = fs.readFileSync(path.join(root, 'src/app/HomeContent.tsx'), 'utf8');
 const heroShowcase = fs.readFileSync(path.join(root, 'src/components/shared/HeroPhoneShowcase.tsx'), 'utf8');
+const campaignBackground = fs.readFileSync(path.join(root, 'src/components/home/HeroCampaignBackground.tsx'), 'utf8');
 const globalCss = fs.readFileSync(path.join(root, 'src/app/globals.css'), 'utf8');
 
 assert.match(layout, /Homepage Builder', href: '\/admin\/homepage-builder'/, 'sidebar must open the Pro Builder');
@@ -29,6 +30,14 @@ assert.match(builder, /Media library/, 'builder must expose media controls');
 assert.match(builder, /3D stage positioning/, 'builder must expose precise hero positioning');
 assert.match(builder, /release-year categories/, 'builder must expose release-year category controls');
 assert.match(builder, /uploadImage/, 'builder must support managed image uploads');
+assert.match(builder, /Seasonal background campaigns/, 'builder must expose scheduled seasonal hero campaigns');
+assert.match(builder, /1920 × 760 px/, 'hero media controls must show recommended desktop dimensions');
+assert.match(builder, /900 × 1200 px/, 'hero media controls must show recommended mobile dimensions');
+assert.match(builder, /datetime-local/, 'campaigns must support start and end scheduling');
+assert.match(handler, /homepage\.heroCampaigns = Array\.isArray/, 'campaign settings must be normalized server-side');
+assert.match(handler, /slice\(0, 8\)/, 'campaign count must be bounded');
+assert.match(campaignBackground, /isCampaignActive/, 'seasonal hero must respect campaign schedule windows');
+assert.match(campaignBackground, /Math\.max\(4000, intervalMs\)/, 'background rotation must avoid aggressive performance-hostile intervals');
 assert.match(handler, /revalidatePath\('\/admin\/homepage-builder'\)/, 'settings update must revalidate the Pro Builder');
 assert.doesNotMatch(homeContent, /brands\.filter\(b => \(b\._count\?\.phones \|\| 0\) > 0\)/, 'brand navigation must not disappear when public phone counts are temporarily zero');
 assert.match(homeContent, /'View brand'/, 'zero-count brands must retain useful navigation text');
@@ -49,6 +58,8 @@ assert.match(heroShowcase, /Resume phone slideshow/, 'autoplay must provide an e
 assert.doesNotMatch(heroShowcase, /<AnimatePresence mode="wait">\\s*<motion\.div\\s*key=\{phone/, 'the hero image must not deadlock behind an infinitely animated exiting stage');
 assert.doesNotMatch(heroShowcase, /mix-blend-multiply/, 'hero product images must remain visible on the dark stage');
 assert.match(heroShowcase, /mix-blend-normal/, 'hero product images must use stable normal compositing');
+assert.match(heroShowcase, /featureCards/, 'premium dashboard must derive feature cards from real phone specifications');
+assert.match(heroShowcase, /Detailed specifications will appear here when available/, 'premium dashboard must not fabricate missing specifications');
 assert.match(homeContent, /aria-label="Popular phone categories"/, 'quick categories must expose an accessible navigation landmark');
 assert.match(homeContent, /lg:justify-center/, 'quick categories must center as a group on desktop');
 assert.match(globalCss, /background: rgba\(240, 244, 248, 0\.94\)/, 'sticky header must be opaque enough to prevent hero text showing through it');
