@@ -211,10 +211,42 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
 
-    const sources = await PriceSource.find().sort({ priority: -1, createdAt: 1 }).lean();
+    const [sources, listingStats] = await Promise.all([
+      PriceSource.find().sort({ priority: -1, createdAt: 1 }).lean(),
+      PhoneRetailListing.aggregate<{
+        _id: Types.ObjectId;
+        total: number;
+        verified: number;
+        pending: number;
+        enabled: number;
+      }>([
+        {
+          $group: {
+            _id: '$sourceId',
+            total: { $sum: 1 },
+            verified: { $sum: { $cond: [{ $eq: ['$verificationStatus', 'verified'] }, 1, 0] } },
+            pending: { $sum: { $cond: [{ $eq: ['$verificationStatus', 'pending'] }, 1, 0] } },
+            enabled: { $sum: { $cond: ['$enabled', 1, 0] } },
+          },
+        },
+      ]),
+    ]);
+    const statsBySource = new Map(listingStats.map((item) => [item._id.toString(), item]));
     return NextResponse.json({
-      sources: sources.map((s: LeanSourceDoc) => ({
-        id: s._id?.toString(),
+      sources: sources.map((s: LeanSourceDoc) => {
+        const id = s._id?.toString();
+        const coverage = statsBySource.get(id);
+        const health = !s.enabled || s.status === 'paused'
+          ? 'paused'
+          : !s.trusted
+            ? 'setup'
+            : s.failureCount >= 3 || s.status === 'failed'
+              ? 'attention'
+              : (coverage?.verified || 0) === 0
+                ? 'no-listings'
+                : 'healthy';
+        return {
+        id,
         name: s.name,
         sourceType: s.sourceType,
         enabled: s.enabled,
@@ -227,7 +259,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         failureCount: s.failureCount || 0,
         status: s.status || 'active',
         notes: s.notes || '',
-      })),
+        listingCount: coverage?.total || 0,
+        enabledListings: coverage?.enabled || 0,
+        verifiedListings: coverage?.verified || 0,
+        pendingListings: coverage?.pending || 0,
+        health,
+      };
+      }),
     });
   }
 
@@ -686,6 +724,20 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       if (!domainAllowed) {
         return NextResponse.json({ error: `Domain "${urlDomain}" is not in the source's allowed domains` }, { status: 400 });
       }
+    }
+
+    const duplicate = await PhoneRetailListing.findOne({
+      sourceId,
+      $or: [
+        { productUrl },
+        { phoneId, productUrl },
+      ],
+    }).select('_id phoneId').lean();
+    if (duplicate) {
+      return NextResponse.json(
+        { error: 'This retailer URL is already linked to a phone for this source.' },
+        { status: 409 },
+      );
     }
 
     const listing = await PhoneRetailListing.create({

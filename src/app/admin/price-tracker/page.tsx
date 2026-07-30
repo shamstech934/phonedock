@@ -57,6 +57,11 @@ interface PriceSource {
   failures: number;
   baseUrl: string;
   allowedDomains: string[];
+  listingCount: number;
+  enabledListings: number;
+  verifiedListings: number;
+  pendingListings: number;
+  health: 'healthy' | 'setup' | 'paused' | 'attention' | 'no-listings';
 }
 
 interface PriceChange {
@@ -1100,6 +1105,7 @@ export default function AdminPriceTrackerPage() {
                   <th className="text-left px-4 py-3 font-medium">Type</th>
                   <th className="text-left px-4 py-3 font-medium">Status</th>
                   <th className="text-left px-4 py-3 font-medium">Trusted</th>
+                  <th className="text-left px-4 py-3 font-medium">Coverage</th>
                   <th className="text-right px-4 py-3 font-medium">Priority</th>
                   <th className="text-left px-4 py-3 font-medium">Last Checked</th>
                   <th className="text-right px-4 py-3 font-medium">Failures</th>
@@ -1154,6 +1160,30 @@ export default function AdminPriceTrackerPage() {
                         >
                           {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
                         </button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="min-w-[110px]">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className={
+                            src.health === 'healthy' ? 'font-semibold text-emerald-700' :
+                            src.health === 'attention' ? 'font-semibold text-red-600' :
+                            'font-medium text-amber-600'
+                          }>
+                            {src.health === 'healthy' ? 'Ready' :
+                             src.health === 'attention' ? 'Needs attention' :
+                             src.health === 'setup' ? 'Test required' :
+                             src.health === 'paused' ? 'Paused' : 'No verified links'}
+                          </span>
+                          <span className="text-gray-400">{src.verifiedListings}/{src.listingCount}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className={`h-full rounded-full ${src.health === 'healthy' ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                            style={{ width: `${src.listingCount > 0 ? Math.round((src.verifiedListings / src.listingCount) * 100) : 0}%` }}
+                          />
+                        </div>
+                        {src.pendingListings > 0 && <p className="mt-1 text-[10px] text-amber-600">{src.pendingListings} pending review</p>}
                       </div>
                     </td>
                   </tr>

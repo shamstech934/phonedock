@@ -49,6 +49,10 @@ PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ verificationStatus: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
+PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
+  unique: true,
+  partialFilterExpression: { productUrl: { $type: 'string', $gt: '' } },
+});
 
 export const PhoneRetailListing = mongoose.models.PhoneRetailListing || mongoose.model('PhoneRetailListing', PhoneRetailListingSchema);
 

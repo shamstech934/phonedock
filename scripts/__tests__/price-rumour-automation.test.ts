@@ -36,10 +36,13 @@ const trackerUi = fs.readFileSync(path.join(root, 'src/app/admin/price-tracker/p
 assert.match(trackerHandler, /segments\[2\] === 'auto-link'/);
 assert.match(trackerHandler, /verificationStatus: 'verified'/);
 assert.match(trackerHandler, /trackingCoveragePct/);
+assert.match(trackerHandler, /verifiedListings/);
+assert.match(trackerHandler, /This retailer URL is already linked/);
 assert.match(cronHandler, /handleAdminRunPriceSync/);
 assert.match(cronHandler, /requirePermission\(authResult\.admin, 'prices:edit'\)/);
 assert.match(trackerUi, /Run sync now/);
 assert.match(trackerUi, /Auto-link catalog/);
 assert.match(trackerUi, /Test & trust/);
+assert.match(trackerUi, /No verified links/);
 
 console.log('Price and rumour automation regression checks passed');
