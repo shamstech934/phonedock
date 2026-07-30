@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
@@ -115,13 +116,13 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
   return (
     <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
-      <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 sm:pb-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible">
+      <PhoneGrid page="home">
         {phones.slice(0, 8).map(p => (
-          <div key={p.id} className="shrink-0 w-[calc(50%-6px)] sm:w-auto">
+          <div key={p.id} className="min-w-0">
             <PhoneCard phone={p} />
           </div>
         ))}
-      </div>
+      </PhoneGrid>
     </section>
   );
 }
@@ -132,9 +133,9 @@ function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 's
   return (
     <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+      <PhoneGrid page="home">
         {phones.slice(0, 4).map(p => <PhoneCard key={p.id} phone={p} />)}
-      </div>
+      </PhoneGrid>
     </section>
   );
 }
@@ -398,9 +399,9 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
   return (
     <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.fuchsia}`}>
       <SectionHeader title="Latest Reviews" icon={Star} link="/reviews" linkText="All Reviews" />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+      <PhoneGrid page="home">
         {reviewedPhones.map(p => <PhoneCard key={p.id} phone={p} />)}
-      </div>
+      </PhoneGrid>
     </section>
   );
 }

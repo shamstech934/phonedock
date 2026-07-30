@@ -21,6 +21,7 @@ export interface ISettings extends Document {
   homepage: Record<string, unknown>;
   announcement: Record<string, unknown>;
   theme: Record<string, unknown>;
+  catalogLayout: Record<string, unknown>;
   updatedAt: Date;
 }
 
@@ -49,6 +50,15 @@ const SettingsSchema = new Schema<ISettings>({
   } },
   announcement: { type: Schema.Types.Mixed, default: { enabled: false, text: '', buttonText: '', buttonUrl: '', background: '#2563eb' } },
   theme: { type: Schema.Types.Mixed, default: { primaryColor: '#2563eb', secondaryColor: '#7c3aed', accentColor: '#06b6d4' } },
+  catalogLayout: { type: Schema.Types.Mixed, default: {
+    home: { desktop: 4, tablet: 3, mobile: 2, density: 'comfortable' },
+    phones: { desktop: 4, tablet: 3, mobile: 2, density: 'comfortable' },
+    brands: { desktop: 5, tablet: 3, mobile: 2, density: 'compact' },
+    search: { desktop: 4, tablet: 3, mobile: 2, density: 'comfortable' },
+    rankings: { desktop: 4, tablet: 3, mobile: 2, density: 'comfortable' },
+    related: { desktop: 4, tablet: 4, mobile: 2, density: 'compact' },
+    guides: { desktop: 5, tablet: 3, mobile: 2, density: 'compact' },
+  } },
 }, { timestamps: true });
 
 // Singleton: only one document

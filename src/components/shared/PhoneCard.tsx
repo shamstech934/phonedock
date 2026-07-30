@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor, Heart } from 'lucide-react';
+import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor, Heart, Archive, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
@@ -39,6 +39,13 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
   const displaySize = extractDisplaySize(phone.specs?.display);
   const formattedCategoryScore = formatCardScore(categoryScore);
   const formattedOverallRating = hideOverallRating ? null : formatCardScore(phone.overallRating);
+  const lifecycle = phone.availabilityStatus || (phone.upcoming ? 'coming_soon' : 'available');
+  const isDiscontinued = ['discontinued', 'cancelled'].includes(lifecycle);
+  const isRumoured = lifecycle === 'rumored';
+  const isUpcoming = phone.upcoming || ['announced', 'coming_soon'].includes(lifecycle);
+  const discountPercent = phone.originalPricePKR > phone.pricePKR && phone.pricePKR > 0
+    ? Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)
+    : 0;
 
   const handleQuickView = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -93,9 +100,19 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
                 <Star className="mr-0.5 h-3 w-3 fill-amber-400 text-amber-400" /> {formattedOverallRating}
               </Badge>
             )}
-            {phone.upcoming && (
+            {isUpcoming && (
               <Badge className="absolute bottom-2 left-2 bg-violet-600 text-white text-[10px] font-semibold shadow-sm shadow-violet-500/30">
-                <Clock className="w-3 h-3 mr-0.5" /> Upcoming
+                <Clock className="w-3 h-3 mr-0.5" /> Coming Soon
+              </Badge>
+            )}
+            {isRumoured && (
+              <Badge className="absolute bottom-2 left-2 bg-amber-500 text-slate-950 text-[10px] font-semibold shadow-sm">
+                <Radio className="mr-0.5 h-3 w-3" /> Rumoured
+              </Badge>
+            )}
+            {isDiscontinued && (
+              <Badge className="absolute bottom-2 left-2 bg-slate-700 text-white text-[10px] font-semibold shadow-sm">
+                <Archive className="mr-0.5 h-3 w-3" /> Discontinued
               </Badge>
             )}
             {phone.trending && (
@@ -110,9 +127,12 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             </div>
             <h3 data-testid="phone-card-title" className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">{phone.modelName}</h3>
             <div className="h-10 pt-1">
-              <p className="truncate text-sm font-bold text-blue-600">{formatPrice(phone.pricePKR)}</p>
-              {phone.originalPricePKR > phone.pricePKR && phone.originalPricePKR > 0 && (
-                <p className="truncate text-[10px] font-medium text-emerald-600 line-through">{formatPrice(phone.originalPricePKR)} <span className="font-bold text-emerald-700">-{Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)}%</span></p>
+              <p className={`truncate text-sm font-bold ${isDiscontinued ? 'text-slate-500' : 'text-blue-600'}`}>{isDiscontinued ? 'Discontinued' : formatPrice(phone.pricePKR)}</p>
+              {!isDiscontinued && discountPercent > 0 && (
+                <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium">
+                  <span className="truncate text-slate-400 line-through">{formatPrice(phone.originalPricePKR)}</span>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 font-extrabold text-emerald-700">-{discountPercent}%</span>
+                </p>
               )}
             </div>
             <div data-testid="phone-card-specs" className="grid h-16 min-h-16 max-h-16 grid-cols-2 grid-rows-3 content-start gap-1.5 overflow-hidden pt-1">

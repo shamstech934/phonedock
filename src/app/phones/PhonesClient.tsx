@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import type { Phone, Brand } from '@/components/shared/types';
 import { PRICE_CATEGORIES, getPriceCategory } from '@/lib/price-categories';
 
@@ -405,12 +406,12 @@ export default function PhonesClient({
             </aside>
             <div className="min-w-0 mt-5 lg:mt-0">
           {loading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+            <PhoneGrid page="phones">{Array(8).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</PhoneGrid>
           ) : phones.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+              <PhoneGrid page="phones">
                 {phones.map(p => <PhoneCard key={p.id} phone={p} />)}
-              </div>
+              </PhoneGrid>
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-4">
                   <Button variant="outline" size="sm" className="rounded-xl" disabled={pageParam <= 1} onClick={() => updateParam('page', String(pageParam - 1))}>

@@ -116,13 +116,41 @@ export default async function RootLayout({
   const primaryColor = theme?.primaryColor ? String(theme.primaryColor) : '';
   const secondaryColor = theme?.secondaryColor ? String(theme.secondaryColor) : '';
   const accentColor = theme?.accentColor ? String(theme.accentColor) : '';
-  const themeStyle = (primaryColor || secondaryColor || accentColor)
-    ? `:root{${primaryColor ? `--primary:${primaryColor};--ring:${primaryColor};` : ''}${secondaryColor ? `--secondary:${secondaryColor};` : ''}${accentColor ? `--accent:${accentColor};` : ''}}`
-    : '';
+  const rawCatalogLayout = (settings?.catalogLayout || {}) as Record<string, Record<string, unknown>>;
+  const layoutPages = ['home', 'phones', 'brands', 'search', 'rankings', 'related', 'guides'] as const;
+  const clampColumns = (value: unknown, fallback: number, max: number) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? Math.min(max, Math.max(1, parsed)) : fallback;
+  };
+  const catalogRules = layoutPages.map((page) => {
+    const config = rawCatalogLayout[page] || {};
+    const desktop = clampColumns(config.desktop, page === 'brands' || page === 'guides' ? 5 : 4, 10);
+    const tablet = clampColumns(config.tablet, 3, 6);
+    const mobile = clampColumns(config.mobile, 2, 3);
+    const compact = config.density === 'compact' || desktop >= 7;
+    return `
+      .phone-grid[data-page="${page}"]{--phone-grid-mobile:${mobile};--phone-grid-tablet:${tablet};--phone-grid-desktop:${desktop}}
+      ${compact ? `.phone-grid[data-page="${page}"] .phone-card{height:410px}.phone-grid[data-page="${page}"] .phone-card>div{padding:.65rem}` : ''}
+    `;
+  }).join('');
+  const themeStyle = `:root{${primaryColor ? `--primary:${primaryColor};--ring:${primaryColor};` : ''}${secondaryColor ? `--secondary:${secondaryColor};` : ''}${accentColor ? `--accent:${accentColor};` : ''}}
+    .phone-grid{display:grid;grid-template-columns:repeat(var(--phone-grid-mobile,2),minmax(0,1fr))}
+    .phone-grid .phone-card{container-type:inline-size}
+    @media(min-width:768px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-tablet,3),minmax(0,1fr))}}
+    @media(min-width:1280px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-desktop,4),minmax(0,1fr))}}
+    @container(max-width:190px){
+      .phone-card [data-testid="phone-card-specs"]{display:none}
+      .phone-card [data-testid="phone-card-actions"]{height:40px;min-height:40px}
+      .phone-card [data-testid="wishlist-action"],.phone-card [data-testid="compare-action"],.phone-card [data-testid="quick-view-action"]{display:none}
+      .phone-card [data-testid="phone-card-image"]{margin-bottom:.5rem}
+      .phone-card [data-testid="phone-card-title"]{font-size:.75rem;line-height:1rem;height:2rem;min-height:2rem}
+      .phone-card{height:330px!important}
+    }
+    ${catalogRules}`;
   return (
     <html lang="en-PK" suppressHydrationWarning>
       <head>
-        {themeStyle && <style dangerouslySetInnerHTML={{ __html: themeStyle }} />}
+        <style dangerouslySetInnerHTML={{ __html: themeStyle }} />
         {jsonLdAll.map((item, i) => (
           <script
             key={i}

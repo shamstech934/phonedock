@@ -9,16 +9,12 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/update-prices",
+      "path": "/api/cron/automation-pipeline",
       "schedule": "0 5 * * *"
     },
     {
       "path": "/api/cron/collector-sync",
       "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/sync-rumours",
-      "schedule": "30 3 * * *"
     }
   ]
 }

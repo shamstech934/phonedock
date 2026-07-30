@@ -8,6 +8,7 @@ import {
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
   ChevronDown, DollarSign, Key, Play, TrendingDown,
   ShieldCheck, Rocket, Sparkles,
+  Workflow, Grid3X3, Link2,
 } from 'lucide-react';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
 
@@ -22,8 +23,11 @@ interface NavLink {
 const adminLinks: NavLink[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
   { label: 'Analytics', href: '/admin/analytics', icon: Activity, permission: 'settings:read' },
+  { label: 'Automation Pipeline', href: '/admin/automation', icon: Workflow, permission: 'prices:read' },
   { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
   { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: Sparkles, permission: 'settings:read' },
+  { label: 'Card Layout Control', href: '/admin/layout-control', icon: Grid3X3, permission: 'settings:read' },
+  { label: 'Links & Hrefs', href: '/admin/homepage-builder?tab=navigation', icon: Link2, permission: 'settings:read' },
   { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
   { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },
   { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },

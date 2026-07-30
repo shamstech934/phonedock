@@ -17,6 +17,7 @@ import { Separator } from '@/components/ui/separator';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import { SectionHeader } from '@/components/shared/SectionHeader';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
@@ -1209,7 +1210,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
               {recommendationGroups.length > 0 && (
                 <section className="space-y-5 pt-4">
                   <SectionHeader title="Smart alternatives" icon={Smartphone} />
-                  <div data-testid="smart-alternatives-grid" className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-4">
+                  <PhoneGrid page="related" testId="smart-alternatives-grid">
                     {recommendationGroups.map(({ label, phone: item }) => (
                       <div key={item.id} className="flex h-full min-w-0 flex-col gap-2">
                         <div className="flex h-6 min-h-6 items-center overflow-hidden">
@@ -1218,7 +1219,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                         <div className="min-h-0 flex-1"><PhoneCard phone={item} /></div>
                       </div>
                     ))}
-                  </div>
+                  </PhoneGrid>
                 </section>
               )}
             </div>

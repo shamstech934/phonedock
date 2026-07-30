@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 import type { Brand, Phone } from '@/components/shared/types';
@@ -215,9 +216,9 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
           {/* Phone Grid */}
           {paginated.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              <PhoneGrid page="brands">
                 {paginated.map(p => <PhoneCard key={p.id} phone={p} />)}
-              </div>
+              </PhoneGrid>
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-4">
                   <Button variant="outline" size="sm" className="rounded-xl" disabled={page <= 1} onClick={() => setPage(page - 1)}>

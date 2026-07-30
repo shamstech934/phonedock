@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronRight, Lightbulb } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import { getTopPhones } from '@/lib/get-top-phones';
 import { Phone } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
@@ -52,7 +53,7 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
         </div>
       </div>
       <div className="mt-8 flex items-center gap-2"><Lightbulb className="h-5 w-5 text-amber-500" /><h2 className="text-2xl font-extrabold text-gray-900">Recommended phones</h2></div>
-      {phones.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{phones.map(p => <PhoneCard key={p.id} phone={p} />)}</div> : <div className="mt-5 rounded-2xl border bg-white p-8 text-center text-gray-500">No ranked phones available yet.</div>}
+      {phones.length ? <PhoneGrid page="guides" className="mt-5">{phones.map(p => <PhoneCard key={p.id} phone={p} />)}</PhoneGrid> : <div className="mt-5 rounded-2xl border bg-white p-8 text-center text-gray-500">No ranked phones available yet.</div>}
     </div>
   </main><Footer /></div>;
 }

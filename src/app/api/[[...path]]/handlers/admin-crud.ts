@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
@@ -59,6 +59,25 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       UserReview.countDocuments({ createdAt: { $gte: since } }),
       ContactRequest.countDocuments({ createdAt: { $gte: since } }),
     ]);
+    const [publishedPhones, lifecycleRows, discountedPhones, trackedPhoneIds, sourceHealth, pendingPriceChanges, activityByDay] = await Promise.all([
+      Phone.countDocuments({ deletedAt: null, status: 'published', active: true }),
+      Phone.aggregate([
+        { $match: { deletedAt: null, status: 'published', active: true } },
+        { $group: { _id: '$availabilityStatus', count: { $sum: 1 } } },
+      ]),
+      Phone.countDocuments({
+        deletedAt: null, status: 'published', active: true,
+        $expr: { $and: [{ $gt: ['$originalPricePKR', 0] }, { $gt: ['$originalPricePKR', '$pricePKR'] }] },
+      }),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified' }),
+      PriceSource.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      PriceTrackerHistory.countDocuments({ verificationStatus: 'pending' }),
+      ActivityLog.aggregate([
+        { $match: { createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
     return NextResponse.json({
       rangeDays: 30,
       totals: {
@@ -75,6 +94,16 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       integrations: {
         googleAnalytics: Boolean(process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID),
         microsoftClarity: Boolean(process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID),
+      },
+      operations: {
+        publishedPhones,
+        trackedPhones: trackedPhoneIds.length,
+        trackingCoveragePct: publishedPhones ? Math.round((trackedPhoneIds.length / publishedPhones) * 100) : 0,
+        discountedPhones,
+        pendingPriceChanges,
+        lifecycle: Object.fromEntries(lifecycleRows.map((row: { _id?: string; count: number }) => [row._id || 'unknown', row.count])),
+        sourceHealth: Object.fromEntries(sourceHealth.map((row: { _id?: string; count: number }) => [row._id || 'unknown', row.count])),
+        activityByDay: activityByDay.map((row: { _id: string; count: number }) => ({ date: row._id, count: row.count })),
       },
       generatedAt: new Date().toISOString(),
     }, { headers: { 'Cache-Control': 'no-store' } });
@@ -2116,7 +2145,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     await connectDB();
     const body = await req.json();
     const { Settings } = await import('@/lib/models');
-    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme'];
+    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout'];
     const update: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
@@ -2150,7 +2179,49 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
           })
         : [];
       homepage.heroCampaignSpeed = Math.min(20000, Math.max(4000, Number(homepage.heroCampaignSpeed) || 7000));
+      const safeHref = (input: unknown) => {
+        const value = typeof input === 'string' ? input.trim().slice(0, 500) : '';
+        if (value.startsWith('/') && !value.startsWith('//')) return value;
+        try {
+          const url = new URL(value);
+          return ['https:', 'mailto:'].includes(url.protocol) ? value : '';
+        } catch {
+          return '';
+        }
+      };
+      homepage.navigation = Array.isArray(homepage.navigation)
+        ? homepage.navigation.slice(0, 20).map((item) => {
+            const link = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+            return {
+              label: typeof link.label === 'string' ? link.label.trim().slice(0, 50) : '',
+              url: safeHref(link.url) || '/',
+              enabled: link.enabled !== false,
+            };
+          }).filter(link => link.label)
+        : [];
+      for (const key of ['cta1Url', 'cta2Url']) {
+        homepage[key] = safeHref(homepage[key]);
+      }
       update.homepage = homepage;
+    }
+    if (body.catalogLayout && typeof body.catalogLayout === 'object') {
+      const pages = ['home', 'phones', 'brands', 'search', 'rankings', 'related', 'guides'];
+      const source = body.catalogLayout as Record<string, unknown>;
+      const safeLayout: Record<string, unknown> = {};
+      const safeColumns = (value: unknown, fallback: number, max: number) => {
+        const parsed = Number(value);
+        return Number.isInteger(parsed) ? Math.min(max, Math.max(1, parsed)) : fallback;
+      };
+      for (const page of pages) {
+        const raw = source[page] && typeof source[page] === 'object' ? source[page] as Record<string, unknown> : {};
+        safeLayout[page] = {
+          desktop: safeColumns(raw.desktop, page === 'brands' || page === 'guides' ? 5 : 4, 10),
+          tablet: safeColumns(raw.tablet, 3, 6),
+          mobile: safeColumns(raw.mobile, 2, 3),
+          density: raw.density === 'compact' ? 'compact' : 'comfortable',
+        };
+      }
+      update.catalogLayout = safeLayout;
     }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
     // Make CMS changes visible immediately instead of waiting for the homepage cache window.
@@ -2158,6 +2229,11 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     revalidatePath('/');
     revalidatePath('/admin/settings');
     revalidatePath('/admin/homepage-builder');
+    revalidatePath('/admin/layout-control');
+    revalidatePath('/phones');
+    revalidatePath('/brands');
+    revalidatePath('/search');
+    revalidatePath('/rankings');
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_settings', details: 'Updated site settings', entityType: 'settings', entityId: 'main' }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, settings: { id: settings!._id?.toString(), ...settings, _id: undefined } });
   }

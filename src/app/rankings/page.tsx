@@ -3,6 +3,7 @@ import { Award, BatteryCharging, Camera, Gamepad2, Sparkles, WalletCards } from 
 import { getTopPhones } from '@/lib/get-top-phones';
 import { rankPhones, getRankingMethodology, type RankingCategory } from '@/lib/intelligence/rankings';
 import { PhoneCard } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
@@ -58,14 +59,14 @@ export default async function RankingsPage() {
               </div>
 
               {section.phones.length ? (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+                <PhoneGrid page="rankings">
                   {section.phones.map(item => (
                     <div key={item.phone.id} className="relative">
                       <span className="absolute left-2 top-2 z-10 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-white">#{item.rank}</span>
                       <PhoneCard phone={item.phone} />
                     </div>
                   ))}
-                </div>
+                </PhoneGrid>
               ) : (
                 <div className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">Ranking data will appear after phones have published scores.</div>
               )}

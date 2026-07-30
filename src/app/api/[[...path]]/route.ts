@@ -45,6 +45,7 @@ import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-qua
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { syncRumourFeeds } from '@/lib/rumour-sync';
+import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronAutomationPipeline } from './handlers/automation-pipeline';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -160,6 +161,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
       const cronResult = await handleCronUpdatePrices(req);
       if (cronResult) return cronResult;
+    }
+
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'automation-pipeline') {
+      return handleCronAutomationPipeline(req);
     }
 
     // Cron: /api/cron/sync-rumours — imports matching feed items as pending drafts.
@@ -328,6 +333,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Admin auth routes (session check)
     const authResult = await handleAdminAuthGet(req, segments);
     if (authResult) return authResult;
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'automation') {
+      return handleAdminAutomationStatus(req);
+    }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
     const crudResult = await handleAdminCrudGet(req, segments);
@@ -618,6 +627,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'run-sync') {
       return handleAdminRunPriceSync(req);
+    }
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'automation' && segments[2] === 'run') {
+      return handleAdminAutomationPipeline(req);
     }
 
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)

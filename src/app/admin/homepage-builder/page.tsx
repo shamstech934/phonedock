@@ -240,6 +240,13 @@ export default function HomepageBuilderPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested && ['overview', 'hero', 'sections', 'design', 'navigation', 'media', 'preview'].includes(requested)) {
+      setTab(requested as Tab);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setError('');
     try {

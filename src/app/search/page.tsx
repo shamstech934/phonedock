@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { PhoneCard, PhoneCardSkeleton } from '@/components/shared/PhoneCard';
+import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import type { Brand, Phone } from '@/components/shared/types';
 import { buildSmartSearchPlans, parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
@@ -108,7 +109,7 @@ function SearchContent() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="skeleton-shimmer h-8 w-64 rounded-lg mb-2" />
         <div className="skeleton-shimmer h-5 w-32 rounded-md mb-6" />
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</div>
+        <PhoneGrid page="search">{Array(6).fill(0).map((_, i) => <PhoneCardSkeleton key={i} />)}</PhoneGrid>
       </div>
     );
   }
@@ -194,11 +195,11 @@ function SearchContent() {
       {results.phones.length > 0 && (
         <section className="space-y-4">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Smartphone className="w-5 h-5 text-blue-500" /> {hasSmartIntent ? 'Top matches' : 'Phones'} ({results.phones.length})</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <PhoneGrid page="search">
             {results.phones.map(p => (
               <PhoneCard key={p.id} phone={p} />
             ))}
-          </div>
+          </PhoneGrid>
         </section>
       )}
 
