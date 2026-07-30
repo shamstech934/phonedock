@@ -717,6 +717,25 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     return cached({ settings: { id: publicSettings._id?.toString(), ...publicSettings, _id: undefined } }, 300, 600);
   }
 
+  // ---- /api/mobile/config (public, strictly allowlisted remote configuration) ----
+  if (segments.length === 2 && segments[0] === 'mobile' && segments[1] === 'config') {
+    const { getSettings } = await import('@/lib/models');
+    const settings = await getSettings();
+    const mobileApp = settings.mobileApp && typeof settings.mobileApp === 'object' ? settings.mobileApp : {};
+    return cached({
+      config: {
+        ...mobileApp,
+        branding: {
+          siteName: settings.siteName || 'PhoneDock',
+          tagline: settings.tagline || '',
+          logo: settings.logo || '',
+          primaryColor: typeof settings.theme?.primaryColor === 'string' ? settings.theme.primaryColor : '#1769ff',
+        },
+        serverTime: new Date().toISOString(),
+      },
+    }, 60, 300);
+  }
+
   // ---- /api/top-phones?sort=cameraScore|batteryScore|performanceScore|valueScore|overallRating&limit=10 ----
   if (segments.length === 1 && segments[0] === 'top-phones') {
     await connectDB();

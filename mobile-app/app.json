@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "PhoneDock",
+    "slug": "phonedock",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "phonedock",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-router"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "pk.phonedock.app"
+    },
+    "android": {
+      "package": "pk.phonedock.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1769ff"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

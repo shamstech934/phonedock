@@ -22,6 +22,7 @@ export interface ISettings extends Document {
   announcement: Record<string, unknown>;
   theme: Record<string, unknown>;
   catalogLayout: Record<string, unknown>;
+  mobileApp: Record<string, unknown>;
   updatedAt: Date;
 }
 
@@ -58,6 +59,29 @@ const SettingsSchema = new Schema<ISettings>({
     rankings: { desktop: 4, tablet: 3, mobile: 2, density: 'comfortable' },
     related: { desktop: 4, tablet: 4, mobile: 2, density: 'compact' },
     guides: { desktop: 5, tablet: 3, mobile: 2, density: 'compact' },
+  } },
+  mobileApp: { type: Schema.Types.Mixed, default: {
+    enabled: true,
+    maintenanceMode: false,
+    maintenanceTitle: 'PhoneDock is being improved',
+    maintenanceMessage: 'Please check back shortly.',
+    minimumVersion: '0.1.0',
+    latestVersion: '0.1.0',
+    forceUpdate: false,
+    updateUrlAndroid: '',
+    updateUrlIos: '',
+    supportUrl: '/contact',
+    homeSections: ['hero', 'latest', 'brands', 'features', 'priceGroups'],
+    navigation: {
+      home: true, phones: true, search: true, brands: true, saved: true,
+    },
+    features: {
+      compare: true, savedPhones: true, priceAlerts: false, news: false,
+      reviews: false, videos: false, account: false,
+    },
+    campaign: {
+      enabled: false, title: '', message: '', image: '', actionLabel: '', actionUrl: '',
+    },
   } },
 }, { timestamps: true });
 

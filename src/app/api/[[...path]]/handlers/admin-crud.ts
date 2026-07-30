@@ -2145,7 +2145,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     await connectDB();
     const body = await req.json();
     const { Settings } = await import('@/lib/models');
-    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout'];
+    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout','mobileApp'];
     const update: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
@@ -2223,6 +2223,64 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       }
       update.catalogLayout = safeLayout;
     }
+    if (body.mobileApp && typeof body.mobileApp === 'object') {
+      const source = body.mobileApp as Record<string, unknown>;
+      const safeText = (value: unknown, max = 180) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+      const safeVersion = (value: unknown, fallback: string) => {
+        const version = safeText(value, 24);
+        return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ? version : fallback;
+      };
+      const safeHref = (value: unknown) => {
+        const href = safeText(value, 500);
+        if (href.startsWith('/') && !href.startsWith('//')) return href;
+        try {
+          const url = new URL(href);
+          return url.protocol === 'https:' ? href : '';
+        } catch {
+          return '';
+        }
+      };
+      const allowedSections = ['hero', 'latest', 'brands', 'features', 'priceGroups'];
+      const homeSections = Array.isArray(source.homeSections)
+        ? [...new Set(source.homeSections.filter((value): value is string => typeof value === 'string' && allowedSections.includes(value)))].slice(0, allowedSections.length)
+        : allowedSections;
+      const navigationSource = source.navigation && typeof source.navigation === 'object' ? source.navigation as Record<string, unknown> : {};
+      const featureSource = source.features && typeof source.features === 'object' ? source.features as Record<string, unknown> : {};
+      const campaignSource = source.campaign && typeof source.campaign === 'object' ? source.campaign as Record<string, unknown> : {};
+      const boolMap = (keys: string[], values: Record<string, unknown>, defaults: Record<string, boolean>) =>
+        Object.fromEntries(keys.map(key => [key, typeof values[key] === 'boolean' ? values[key] : defaults[key]]));
+      update.mobileApp = {
+        enabled: source.enabled !== false,
+        maintenanceMode: source.maintenanceMode === true,
+        maintenanceTitle: safeText(source.maintenanceTitle, 80) || 'PhoneDock is being improved',
+        maintenanceMessage: safeText(source.maintenanceMessage, 240) || 'Please check back shortly.',
+        minimumVersion: safeVersion(source.minimumVersion, '0.1.0'),
+        latestVersion: safeVersion(source.latestVersion, '0.1.0'),
+        forceUpdate: source.forceUpdate === true,
+        updateUrlAndroid: safeHref(source.updateUrlAndroid),
+        updateUrlIos: safeHref(source.updateUrlIos),
+        supportUrl: safeHref(source.supportUrl) || '/contact',
+        homeSections,
+        navigation: boolMap(
+          ['home', 'phones', 'search', 'brands', 'saved'],
+          navigationSource,
+          { home: true, phones: true, search: true, brands: true, saved: true },
+        ),
+        features: boolMap(
+          ['compare', 'savedPhones', 'priceAlerts', 'news', 'reviews', 'videos', 'account'],
+          featureSource,
+          { compare: true, savedPhones: true, priceAlerts: false, news: false, reviews: false, videos: false, account: false },
+        ),
+        campaign: {
+          enabled: campaignSource.enabled === true,
+          title: safeText(campaignSource.title, 80),
+          message: safeText(campaignSource.message, 240),
+          image: safeHref(campaignSource.image),
+          actionLabel: safeText(campaignSource.actionLabel, 40),
+          actionUrl: safeHref(campaignSource.actionUrl),
+        },
+      };
+    }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
     // Make CMS changes visible immediately instead of waiting for the homepage cache window.
     const { revalidatePath } = await import('next/cache');
@@ -2230,6 +2288,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     revalidatePath('/admin/settings');
     revalidatePath('/admin/homepage-builder');
     revalidatePath('/admin/layout-control');
+    revalidatePath('/admin/mobile-control');
     revalidatePath('/phones');
     revalidatePath('/brands');
     revalidatePath('/search');
