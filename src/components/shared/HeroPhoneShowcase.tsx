@@ -130,13 +130,13 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
       >
         <motion.div
           key={phone?.id || 'hero-stage-loading'}
-          initial={{ opacity: 0, y: 18, rotateY: -18, scale: .9 }}
-          animate={{ opacity: 1, y: [4, -3, 4], rotateY: -12, rotateZ: 2, scale: .96 }}
+          initial={{ opacity: 0, y: 18, rotateY: -8, scale: .92 }}
+          animate={{ opacity: 1, y: [3, -4, 3], rotateY: -3, rotateZ: 0, scale: .98 }}
           transition={{ opacity: { duration: .3 }, scale: { duration: .4 }, rotateY: { duration: .45 }, rotateZ: { duration: .45 }, y: { duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
           className={`relative mx-auto h-full [transform-style:preserve-3d] ${isLowResolution ? 'w-[78%] max-w-[210px]' : 'w-full max-w-[260px]'}`}
         >
             {phone ? (
-              <div className="absolute inset-0 overflow-hidden rounded-[1.75rem] border border-cyan-300/20 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.16),rgba(14,116,144,.08)_42%,rgba(2,6,23,.3)_78%)] shadow-[0_28px_55px_rgba(0,0,0,.3),inset_0_1px_0_rgba(255,255,255,.12)]">
+              <div className="absolute inset-0 overflow-hidden rounded-[2.25rem] border border-white/70 bg-[radial-gradient(circle_at_50%_38%,#ffffff_0%,#f8fafc_52%,#e2e8f0_100%)] shadow-[0_28px_55px_rgba(0,0,0,.28),inset_0_1px_0_rgba(255,255,255,.95)]">
                 <Image
                   src={activeImageSource}
                   alt={phone.modelName}
@@ -148,9 +148,9 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                     nextIds.delete(phone.id);
                     return nextIds;
                   })}
-                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-3 mix-blend-normal contrast-105 drop-shadow-[0_22px_18px_rgba(15,23,42,.3)]`}
+                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-2 contrast-105 drop-shadow-[0_18px_16px_rgba(15,23,42,.22)]`}
                 />
-                <div className="pointer-events-none absolute inset-x-[12%] bottom-3 h-5 rounded-[50%] bg-cyan-300/20 blur-md" />
+                <div className="pointer-events-none absolute inset-x-[14%] bottom-2 h-4 rounded-[50%] bg-slate-500/20 blur-md" />
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs text-slate-300">
