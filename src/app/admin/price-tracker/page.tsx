@@ -24,6 +24,11 @@ interface OverviewStats {
   pendingReview: number;
   failedChecks: number;
   lastSuccessfulUpdate: string | null;
+  totalPublishedPhones: number;
+  trackingReadyPhones: number;
+  trackingCoveragePct: number;
+  totalSources: number;
+  enabledSources: number;
 }
 
 interface PhonePrice {
@@ -217,6 +222,7 @@ export default function AdminPriceTrackerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
 
   // ── Settings Tab ──
   const [settings, setSettings] = useState({ autoApproveThreshold: 2, reviewThreshold: 15, batchSize: 10, checkFrequency: 'daily' });
@@ -285,7 +291,13 @@ export default function AdminPriceTrackerPage() {
       const res = await fetch('/api/admin/price-tracker/sources', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price sources'));
       const d = await res.json();
-      setSources(d.sources || d.data || []);
+      const rows = d.sources || d.data || [];
+      setSources(rows.map((source: Record<string, unknown>) => ({
+        ...source,
+        type: source.sourceType || source.type || 'retailer',
+        lastChecked: source.lastCheckedAt || source.lastChecked || null,
+        failures: source.failureCount ?? source.failures ?? 0,
+      })) as PriceSource[]);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price sources'); }
   }, []);
 
@@ -349,6 +361,40 @@ export default function AdminPriceTrackerPage() {
       setTimeout(() => setSettingsSaved(false), 3000);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to save price tracker settings'); } finally { setSettingsSaving(false); }
   }, [settings]);
+
+  const runPriceSync = useCallback(async () => {
+    setActionLoading('run-sync'); setError(''); setActionMessage('');
+    try {
+      const response = await fetch('/api/admin/price-tracker/run-sync', {
+        method: 'POST', credentials: 'include',
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Price sync failed');
+      setActionMessage(`Sync complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.`);
+      await fetchOverview();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Price sync failed');
+    } finally {
+      setActionLoading('');
+    }
+  }, [fetchOverview]);
+
+  const autoLinkListings = useCallback(async () => {
+    setActionLoading('auto-link'); setError(''); setActionMessage('');
+    try {
+      const response = await fetch('/api/admin/price-tracker/auto-link', {
+        method: 'POST', credentials: 'include',
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Automatic linking failed');
+      setActionMessage(`Catalog linked: ${result.linked} new, ${result.alreadyLinked} already ready, ${result.unmatched} need a supported retailer URL.`);
+      await fetchOverview();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Automatic linking failed');
+    } finally {
+      setActionLoading('');
+    }
+  }, [fetchOverview]);
 
   // ── Load data on tab change ──
   useEffect(() => {
@@ -476,6 +522,43 @@ export default function AdminPriceTrackerPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update source'); }
   };
 
+  const handleTestAndTrustSource = async (source: PriceSource) => {
+    const productUrl = window.prompt(
+      `Paste one real ${source.name} phone product URL. PhoneDock will verify price extraction before trusting this source.`,
+      source.baseUrl,
+    );
+    if (!productUrl) return;
+    setActionLoading(`test-${source.id}`); setError(''); setActionMessage('');
+    try {
+      const testResponse = await fetch('/api/admin/price-tracker/test-source', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: productUrl.trim(), sourceId: source.id }),
+      });
+      const test = await testResponse.json();
+      if (!testResponse.ok) throw new Error(test.error || 'Source test failed');
+      if (!test.safeToEnable) {
+        throw new Error(test.reachable
+          ? 'Page opened, but a reliable PKR price was not detected. Do not trust this source yet.'
+          : 'Retailer page could not be reached. Check the URL or retailer access policy.');
+      }
+      const updateResponse = await fetch(`/api/admin/price-tracker/sources/${source.id}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trusted: true, enabled: true, status: 'active' }),
+      });
+      const update = await updateResponse.json();
+      if (!updateResponse.ok) throw new Error(update.error || 'Could not trust source');
+      setActionMessage(`${source.name} verified at PKR ${Number(test.detectedPrice).toLocaleString('en-PK')} and marked trusted.`);
+      await fetchSources();
+      await fetchOverview();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Source test failed');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
   const handleApproveReject = async (changeId: string, action: 'approve' | 'reject') => {
     setActionLoading(changeId);
     try {
@@ -530,11 +613,35 @@ export default function AdminPriceTrackerPage() {
      ═══════════════════════════════════════════════════════════ */
 
   const renderHeader = () => (
-    <div className="flex items-center justify-between mb-6">
+    <div className="mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Price Tracker</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Monitor and manage phone prices across sources</p>
+        <p className="text-sm text-gray-500 mt-0.5">Automatic multi-brand price checks, discounts and review safety</p>
       </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={autoLinkListings}
+            disabled={Boolean(actionLoading)}
+            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            <Globe className="h-4 w-4" />
+            {actionLoading === 'auto-link' ? 'Linking...' : 'Auto-link catalog'}
+          </button>
+          <button
+            type="button"
+            onClick={runPriceSync}
+            disabled={Boolean(actionLoading)}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${actionLoading === 'run-sync' ? 'animate-spin' : ''}`} />
+            {actionLoading === 'run-sync' ? 'Checking prices...' : 'Run sync now'}
+          </button>
+        </div>
+      </div>
+      {actionMessage && <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">{actionMessage}</div>}
+      {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">{error}</div>}
     </div>
   );
 
@@ -579,6 +686,30 @@ export default function AdminPriceTrackerPage() {
 
     return (
       <div>
+        {s && (
+          <div className="mb-6 overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-r from-slate-950 to-blue-950 text-white shadow-sm">
+            <div className="grid gap-5 p-5 lg:grid-cols-[1.25fr_.75fr]">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[.18em] text-sky-300">Automatic tracking readiness</p>
+                <div className="mt-2 flex items-end gap-3">
+                  <span className="text-3xl font-black">{s.trackingCoveragePct}%</span>
+                  <span className="pb-1 text-xs text-slate-300">{s.trackingReadyPhones} of {s.totalPublishedPhones} published phones linked</span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all" style={{ width: `${Math.min(100, s.trackingCoveragePct)}%` }} />
+                </div>
+                <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-300">
+                  PhoneDock checks only verified product pages from trusted domains. Add a retailer in Sources, test it, mark it trusted, then use Auto-link catalog. Daily Vercel cron handles every linked brand automatically.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.enabledSources}</p><p className="text-[10px] text-slate-300">Active sources</p></div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.pendingReview}</p><p className="text-[10px] text-slate-300">Need approval</p></div>
+                <button onClick={() => setActiveTab('sources')} className="col-span-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50">Configure sources</button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {stats.map((stat, i) => (
@@ -855,6 +986,17 @@ export default function AdminPriceTrackerPage() {
 
   const renderSources = () => (
     <div>
+      <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-5">
+        <h2 className="text-sm font-bold text-slate-900">Source setup — one time only</h2>
+        <div className="mt-3 grid gap-3 text-xs leading-5 text-slate-600 md:grid-cols-3">
+          <div><strong className="block text-slate-900">1. Choose a real retailer</strong>Use an official store or Pakistani retailer that permits automated access and shows prices on stable product pages.</div>
+          <div><strong className="block text-slate-900">2. Add and test domain</strong>Enter its HTTPS base URL and exact allowed domain. Test a product URL before trusting the source.</div>
+          <div><strong className="block text-slate-900">3. Link once, sync daily</strong>Imported phones carrying that retailer URL can be bulk-linked. After that, daily cron checks all brands.</div>
+        </div>
+        <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] text-slate-600">
+          Recommended source order: official brand store/API first, authorised retailer feed second, marketplace last. PhoneDock cannot reliably invent product URLs; each tracked phone needs a genuine product page or feed record.
+        </p>
+      </div>
       {/* Add Source Button */}
       <div className="flex justify-end mb-4">
         <button
@@ -997,7 +1139,6 @@ export default function AdminPriceTrackerPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <button className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Edit</button>
                         <button
                           onClick={() => handleToggleSource(src.id)}
                           className={`p-1 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
@@ -1005,7 +1146,14 @@ export default function AdminPriceTrackerPage() {
                         >
                           {src.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                         </button>
-                        <button className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Test</button>
+                        <button
+                          type="button"
+                          onClick={() => handleTestAndTrustSource(src)}
+                          disabled={Boolean(actionLoading)}
+                          className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
+                        </button>
                       </div>
                     </td>
                   </tr>

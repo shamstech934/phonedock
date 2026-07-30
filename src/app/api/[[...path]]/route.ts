@@ -40,7 +40,7 @@ import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv } from './handlers/import-v2';
 import { handleDownloadSample } from './handlers/download';
 import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
-import { handleCronUpdatePrices } from './handlers/cron-update-prices';
+import { handleAdminRunPriceSync, handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-quality';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
@@ -615,6 +615,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     // Collector routes (sources, jobs, review, test)
     const collectorResult = await handleCollectorPost(req, segments);
     if (collectorResult) return collectorResult;
+
+    if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'run-sync') {
+      return handleAdminRunPriceSync(req);
+    }
 
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)
     const priceTrackerPostResult = await handlePriceTrackerPost(req, segments);

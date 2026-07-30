@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { extractRetailPrice } from '../../src/lib/price-extraction';
 import { parseRumourFeed } from '../../src/lib/rumour-sync';
 
@@ -26,5 +28,18 @@ assert.equal(items[0].title, 'Galaxy Z prototype reportedly leaks');
 assert.equal(items[0].link, 'https://example.com/galaxy-z-leak');
 assert.ok(items[0].publishedAt instanceof Date);
 assert.throws(() => parseRumourFeed('<!DOCTYPE foo><rss/>'), /DTD/);
+
+const root = path.resolve(import.meta.dirname, '../..');
+const trackerHandler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handlers/price-tracker.ts'), 'utf8');
+const cronHandler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handlers/cron-update-prices.ts'), 'utf8');
+const trackerUi = fs.readFileSync(path.join(root, 'src/app/admin/price-tracker/page.tsx'), 'utf8');
+assert.match(trackerHandler, /segments\[2\] === 'auto-link'/);
+assert.match(trackerHandler, /verificationStatus: 'verified'/);
+assert.match(trackerHandler, /trackingCoveragePct/);
+assert.match(cronHandler, /handleAdminRunPriceSync/);
+assert.match(cronHandler, /requirePermission\(authResult\.admin, 'prices:edit'\)/);
+assert.match(trackerUi, /Run sync now/);
+assert.match(trackerUi, /Auto-link catalog/);
+assert.match(trackerUi, /Test & trust/);
 
 console.log('Price and rumour automation regression checks passed');

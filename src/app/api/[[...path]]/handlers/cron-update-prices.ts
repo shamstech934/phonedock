@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'crypto';
 import { Phone, PriceHistory } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { SystemState } from '@/lib/models';
-import { connectDB } from './helpers';
+import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
@@ -323,6 +323,32 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   }
 
   return NextResponse.json(summary);
+}
+
+/**
+ * Lets an authorised administrator run the exact same protected job without
+ * exposing CRON_SECRET to the browser. Scheduled Vercel cron runs continue to
+ * use handleCronUpdatePrices directly.
+ */
+export async function handleAdminRunPriceSync(req: NextRequest): Promise<NextResponse> {
+  const authResult = await getAdminFromRequest(req);
+  if (authResult.error) return authResult.error;
+  const permissionError = requirePermission(authResult.admin, 'prices:edit');
+  if (permissionError) return permissionError;
+
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json(
+      { error: 'CRON_SECRET is not configured. Add it in Vercel Environment Variables first.' },
+      { status: 503 },
+    );
+  }
+
+  const headers = new Headers(req.headers);
+  headers.set('x-cron-secret', cronSecret);
+  const internalRequest = new NextRequest(req.url, { method: 'GET', headers });
+  return (await handleCronUpdatePrices(internalRequest))
+    || NextResponse.json({ error: 'Price sync did not return a result.' }, { status: 500 });
 }
 
 // ── Helper: apply detected price to Phone document ──

@@ -148,7 +148,7 @@ export function HeroPhoneShowcase({ phones, autoplay = true, intervalMs = 5000, 
                     nextIds.delete(phone.id);
                     return nextIds;
                   })}
-                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-2 contrast-105 drop-shadow-[0_18px_16px_rgba(15,23,42,.22)]`}
+                  className={`${position?.imageFit === 'cover' ? 'object-cover' : 'object-contain'} z-[2] p-2 mix-blend-normal contrast-105 drop-shadow-[0_18px_16px_rgba(15,23,42,.22)]`}
                 />
                 <div className="pointer-events-none absolute inset-x-[14%] bottom-2 h-4 rounded-[50%] bg-slate-500/20 blur-md" />
               </div>

@@ -93,6 +93,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       lastSuccessfulUpdate,
       totalSources,
       enabledSources,
+      totalPublishedPhones,
+      trackedPhoneIds,
     ] = await Promise.all([
       Phone.countDocuments({ currentPrice: { $gt: 0 } }),
       Phone.countDocuments({ priceMode: 'manual', currentPrice: { $gt: 0 } }),
@@ -104,6 +106,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       PriceTrackerHistory.findOne({ verificationStatus: { $ne: 'pending' } }).sort({ capturedAt: -1 }).lean(),
       PriceSource.countDocuments({}),
       PriceSource.countDocuments({ enabled: true, status: 'active' }),
+      Phone.countDocuments({ active: true, status: 'published' }),
+      PhoneRetailListing.distinct('phoneId', {
+        enabled: true,
+        verificationStatus: 'verified',
+      }),
     ]);
 
     return NextResponse.json({
@@ -117,6 +124,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       lastSuccessfulUpdate: lastSuccessfulUpdate?.capturedAt || null,
       totalSources,
       enabledSources,
+      totalPublishedPhones,
+      trackingReadyPhones: trackedPhoneIds.length,
+      trackingCoveragePct: totalPublishedPhones > 0
+        ? Math.round((trackedPhoneIds.length / totalPublishedPhones) * 100)
+        : 0,
     });
   }
 
@@ -387,6 +399,97 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 // ============ PRICE TRACKER POST ============
 
 export async function handlePriceTrackerPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/price-tracker/auto-link ----
+  // Converts already imported, source-backed phone records into verified
+  // tracker listings in one operation. A URL is linked only when its hostname
+  // belongs to an enabled, trusted source allowlist.
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'auto-link') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const sources = await PriceSource.find({
+      enabled: true,
+      trusted: true,
+      status: 'active',
+      allowedDomains: { $exists: true, $ne: [] },
+    }).select('_id name allowedDomains').lean();
+
+    if (!sources.length) {
+      return NextResponse.json(
+        { error: 'No enabled trusted source with allowed domains exists. Configure and test a source first.' },
+        { status: 400 },
+      );
+    }
+
+    const phones = await Phone.find({
+      active: true,
+      status: 'published',
+      sourceUrl: { $regex: '^https://' },
+    }).select('_id modelName sourceUrl').lean();
+
+    let linked = 0;
+    let alreadyLinked = 0;
+    let unmatched = 0;
+    const examples: string[] = [];
+
+    for (const phone of phones) {
+      let hostname = '';
+      try {
+        hostname = new URL(phone.sourceUrl).hostname.toLowerCase();
+      } catch {
+        unmatched++;
+        continue;
+      }
+
+      const source = sources.find(candidate => (candidate.allowedDomains || []).some((domain: string) => {
+        const clean = domain.trim().toLowerCase().replace(/^\./, '');
+        return clean && (hostname === clean || hostname.endsWith(`.${clean}`));
+      }));
+      if (!source) {
+        unmatched++;
+        if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
+        continue;
+      }
+
+      const existing = await PhoneRetailListing.findOne({
+        phoneId: phone._id,
+        sourceId: source._id,
+        productUrl: phone.sourceUrl,
+      }).select('_id').lean();
+      if (existing) {
+        alreadyLinked++;
+        continue;
+      }
+
+      await PhoneRetailListing.create({
+        phoneId: phone._id,
+        sourceId: source._id,
+        productUrl: phone.sourceUrl,
+        sourceTitle: phone.modelName,
+        enabled: true,
+        verificationStatus: 'verified',
+      });
+      linked++;
+    }
+
+    await ActivityLog.create({
+      adminId: admin._id,
+      action: 'auto_link_price_listings',
+      details: `Auto-linked ${linked} price listings; ${alreadyLinked} already linked; ${unmatched} unmatched.`,
+      entityType: 'price_source',
+    }).catch((error: unknown) => console.error('[ActivityLog:auto-link]', error));
+
+    return NextResponse.json({
+      success: true,
+      scanned: phones.length,
+      linked,
+      alreadyLinked,
+      unmatched,
+      unmatchedExamples: examples,
+    });
+  }
+
   // ---- /api/admin/price-tracker/update-price ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'update-price') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
