@@ -59,4 +59,15 @@ and pause it when extraction becomes unreliable.
 - Review **Pending Review** before approving large price changes.
 - Check **Price Changes** for unexpected spikes.
 - Do not unlock manually protected prices until the underlying source is fixed.
+# Price automation operating flow
+
+1. Open **Admin → Price Tracker → Sources**.
+2. Add a retailer using its HTTPS homepage and allowed hostname.
+3. Use **Test & trust**. A source is not eligible for automatic checks until it is trusted.
+4. Run **Auto-link catalog** from the Price Tracker overview.
+5. Open **Source Gaps**. This queue contains imported phone URLs whose retailer hostname is not covered.
+6. Configure the missing retailer, test it, then run Auto-link again. Matching queue entries resolve automatically.
+7. Run **Run sync now** for a controlled test. Normal changes are applied; changes above the review threshold go to **Pending Review**.
+
+The Sources table reports verified/total listing coverage. `Ready` means the source is active, trusted and has at least one verified listing. `No verified links` means the source exists but the cron has nothing eligible to check.
 

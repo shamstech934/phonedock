@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
 // ─── PriceSource ────────────────────────────────────────────────────────
 const PriceSourceSchema = new Schema({
@@ -55,6 +55,22 @@ PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
 });
 
 export const PhoneRetailListing = mongoose.models.PhoneRetailListing || mongoose.model('PhoneRetailListing', PhoneRetailListingSchema);
+
+const PriceMatchCandidateSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone', required: true, index: true },
+  sourceUrl: { type: String, required: true },
+  hostname: { type: String, required: true, index: true },
+  status: { type: String, enum: ['pending', 'resolved', 'ignored'], default: 'pending', index: true },
+  reason: { type: String, default: 'No trusted source covers this hostname.' },
+  resolvedSourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource', default: null },
+  resolvedAt: { type: Date, default: null },
+}, { timestamps: true });
+
+PriceMatchCandidateSchema.index({ phoneId: 1, sourceUrl: 1 }, { unique: true });
+PriceMatchCandidateSchema.index({ status: 1, hostname: 1, createdAt: -1 });
+
+export const PriceMatchCandidate = mongoose.models.PriceMatchCandidate
+  || mongoose.model('PriceMatchCandidate', PriceMatchCandidateSchema);
 
 // ─── PriceTrackerHistory ────────────────────────────────────────────────
 const PriceTrackerHistorySchema = new Schema({

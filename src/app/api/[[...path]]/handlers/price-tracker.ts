@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Types } from 'mongoose';
-import type { IPhone } from '@/lib/models/Phone';
 import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/models';
-import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
+import { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { parseBoundedInt } from '@/lib/http';
@@ -53,6 +52,15 @@ interface LeanListingDoc {
 }
 
 interface LeanPhoneMini { currentPrice?: number; previousPrice?: number; modelName?: string; slug?: string }
+interface LeanMatchCandidate {
+  _id: Types.ObjectId;
+  phoneId?: LeanPopulatedPhone | null;
+  sourceUrl: string;
+  hostname: string;
+  status: 'pending' | 'resolved' | 'ignored';
+  reason: string;
+  createdAt?: Date;
+}
 
 // ── Price Tracker Settings (stored in SystemState) ──
 const PT_SETTINGS_KEY = 'price_tracker_settings';
@@ -95,6 +103,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       enabledSources,
       totalPublishedPhones,
       trackedPhoneIds,
+      pendingSourceGaps,
     ] = await Promise.all([
       Phone.countDocuments({ currentPrice: { $gt: 0 } }),
       Phone.countDocuments({ priceMode: 'manual', currentPrice: { $gt: 0 } }),
@@ -111,6 +120,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         enabled: true,
         verificationStatus: 'verified',
       }),
+      PriceMatchCandidate.countDocuments({ status: 'pending' }),
     ]);
 
     return NextResponse.json({
@@ -126,6 +136,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       enabledSources,
       totalPublishedPhones,
       trackingReadyPhones: trackedPhoneIds.length,
+      pendingSourceGaps,
       trackingCoveragePct: totalPublishedPhones > 0
         ? Math.round((trackedPhoneIds.length / totalPublishedPhones) * 100)
         : 0,
@@ -422,6 +433,35 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     });
   }
 
+  // ---- /api/admin/price-tracker/match-queue ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'match-queue') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'prices:read'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const requestedStatus = new URL(req.url).searchParams.get('status') || 'pending';
+    const status = ['pending', 'resolved', 'ignored'].includes(requestedStatus) ? requestedStatus : 'pending';
+    const candidates = await PriceMatchCandidate.find({ status })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate('phoneId', 'modelName slug thumbnail currentPrice')
+      .lean();
+
+    return NextResponse.json({
+      candidates: candidates.map((candidate: LeanMatchCandidate) => ({
+        id: candidate._id.toString(),
+        phoneId: candidate.phoneId?._id?.toString() || '',
+        phoneName: candidate.phoneId?.modelName || 'Unknown phone',
+        phoneSlug: candidate.phoneId?.slug || '',
+        sourceUrl: candidate.sourceUrl,
+        hostname: candidate.hostname,
+        status: candidate.status,
+        reason: candidate.reason,
+        createdAt: candidate.createdAt || null,
+      })),
+    });
+  }
+
   // ---- /api/admin/price-tracker/settings ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'settings') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
@@ -487,6 +527,19 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       if (!source) {
         unmatched++;
         if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
+        await PriceMatchCandidate.findOneAndUpdate(
+          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+          {
+            $set: {
+              hostname,
+              status: 'pending',
+              reason: `No enabled trusted source covers ${hostname}.`,
+              resolvedSourceId: null,
+              resolvedAt: null,
+            },
+          },
+          { upsert: true, setDefaultsOnInsert: true },
+        );
         continue;
       }
 
@@ -497,6 +550,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       }).select('_id').lean();
       if (existing) {
         alreadyLinked++;
+        await PriceMatchCandidate.updateOne(
+          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+          { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
+        );
         continue;
       }
 
@@ -508,6 +565,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         enabled: true,
         verificationStatus: 'verified',
       });
+      await PriceMatchCandidate.updateOne(
+        { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+        { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
+      );
       linked++;
     }
 
@@ -526,6 +587,30 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       unmatched,
       unmatchedExamples: examples,
     });
+  }
+
+  // ---- /api/admin/price-tracker/match-queue/:id/ignore ----
+  if (segments.length === 5 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'match-queue' && segments[4] === 'ignore') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const candidate = await PriceMatchCandidate.findByIdAndUpdate(
+      segments[3],
+      { $set: { status: 'ignored', resolvedAt: new Date() } },
+      { new: true },
+    );
+    if (!candidate) return NextResponse.json({ error: 'Match candidate not found' }, { status: 404 });
+
+    await ActivityLog.create({
+      adminId: admin._id,
+      action: 'ignore_price_match_candidate',
+      details: `Ignored price source gap for ${candidate.hostname}.`,
+      entityType: 'price_source',
+      entityId: candidate._id.toString(),
+    }).catch((error: unknown) => console.error('[ActivityLog:match-queue]', error));
+
+    return NextResponse.json({ success: true, id: candidate._id.toString() });
   }
 
   // ---- /api/admin/price-tracker/update-price ----

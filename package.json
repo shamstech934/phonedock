@@ -5,6 +5,7 @@
   "packageManager": "npm@11.16.0",
   "scripts": {
     "doctor:runtime": "node scripts/runtime-doctor.mjs",
+    "security:scan": "node scripts/security-secret-scan.mjs",
     "dev": "next dev -p 3000",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

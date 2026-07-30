@@ -38,11 +38,15 @@ assert.match(trackerHandler, /verificationStatus: 'verified'/);
 assert.match(trackerHandler, /trackingCoveragePct/);
 assert.match(trackerHandler, /verifiedListings/);
 assert.match(trackerHandler, /This retailer URL is already linked/);
+assert.match(trackerHandler, /segments\[2\] === 'match-queue'/);
+assert.match(trackerHandler, /PriceMatchCandidate/);
 assert.match(cronHandler, /handleAdminRunPriceSync/);
 assert.match(cronHandler, /requirePermission\(authResult\.admin, 'prices:edit'\)/);
 assert.match(trackerUi, /Run sync now/);
 assert.match(trackerUi, /Auto-link catalog/);
 assert.match(trackerUi, /Test & trust/);
 assert.match(trackerUi, /No verified links/);
+assert.match(trackerUi, /Source Gaps/);
+assert.match(trackerUi, /No unresolved source gaps/);
 
 console.log('Price and rumour automation regression checks passed');

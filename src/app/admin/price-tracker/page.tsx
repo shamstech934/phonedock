@@ -29,6 +29,7 @@ interface OverviewStats {
   trackingCoveragePct: number;
   totalSources: number;
   enabledSources: number;
+  pendingSourceGaps: number;
 }
 
 interface PhonePrice {
@@ -101,6 +102,16 @@ interface PhoneOption {
   brand: string;
 }
 
+interface MatchCandidate {
+  id: string;
+  phoneName: string;
+  phoneSlug: string;
+  sourceUrl: string;
+  hostname: string;
+  reason: string;
+  createdAt: string | null;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
    ═══════════════════════════════════════════════════════════ */
@@ -109,6 +120,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'phones', label: 'Phones', icon: Smartphone },
   { id: 'sources', label: 'Sources', icon: Globe },
+  { id: 'matches', label: 'Source Gaps', icon: AlertTriangle },
   { id: 'changes', label: 'Price Changes', icon: Activity },
   { id: 'pending', label: 'Pending Review', icon: AlertCircle },
   { id: 'history', label: 'History', icon: History },
@@ -198,6 +210,7 @@ export default function AdminPriceTrackerPage() {
   const [sources, setSources] = useState<PriceSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSource, setNewSource] = useState({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
+  const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
 
   // ── Price Changes Tab ──
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -231,7 +244,7 @@ export default function AdminPriceTrackerPage() {
 
   // ── Settings Tab ──
   const [settings, setSettings] = useState({ autoApproveThreshold: 2, reviewThreshold: 15, batchSize: 10, checkFrequency: 'daily' });
-  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
@@ -304,6 +317,17 @@ export default function AdminPriceTrackerPage() {
         failures: source.failureCount ?? source.failures ?? 0,
       })) as PriceSource[]);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price sources'); }
+  }, []);
+
+  const fetchMatchCandidates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/price-tracker/match-queue?status=pending', { credentials: 'include' });
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to load source gaps'));
+      const data = await res.json();
+      setMatchCandidates(data.candidates || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load source gaps');
+    }
   }, []);
 
   const fetchChanges = useCallback(async () => {
@@ -407,12 +431,13 @@ export default function AdminPriceTrackerPage() {
       case 'overview': fetchOverview(); break;
       case 'phones': fetchPhones(); break;
       case 'sources': fetchSources(); break;
+      case 'matches': fetchMatchCandidates(); break;
       case 'changes': fetchChanges(); break;
       case 'pending': fetchPending(); break;
       case 'history': fetchPhoneOptions(); break;
       case 'settings': fetchSettings(); break;
     }
-  }, [activeTab, fetchOverview, fetchPhones, fetchSources, fetchChanges, fetchPending, fetchPhoneOptions, fetchSettings]);
+  }, [activeTab, fetchOverview, fetchPhones, fetchSources, fetchMatchCandidates, fetchChanges, fetchPending, fetchPhoneOptions, fetchSettings]);
 
   // Re-fetch phones when filters change (only on phones tab)
   useEffect(() => {
@@ -710,6 +735,9 @@ export default function AdminPriceTrackerPage() {
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.enabledSources}</p><p className="text-[10px] text-slate-300">Active sources</p></div>
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.pendingReview}</p><p className="text-[10px] text-slate-300">Need approval</p></div>
+                <button onClick={() => setActiveTab('matches')} className="col-span-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">
+                  Review {s.pendingSourceGaps || 0} source gaps
+                </button>
                 <button onClick={() => setActiveTab('sources')} className="col-span-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50">Configure sources</button>
               </div>
             </div>
@@ -1199,6 +1227,86 @@ export default function AdminPriceTrackerPage() {
   /* ═══════════════════════════════════════════════════════════
      TAB 4: PRICE CHANGES
      ═══════════════════════════════════════════════════════════ */
+
+  const handleIgnoreMatchCandidate = async (id: string) => {
+    setActionLoading(`ignore-match-${id}`);
+    setError('');
+    try {
+      const response = await fetch(`/api/admin/price-tracker/match-queue/${id}/ignore`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(await responseError(response, 'Failed to ignore source gap'));
+      setMatchCandidates(current => current.filter(candidate => candidate.id !== id));
+      setActionMessage('Source gap ignored.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to ignore source gap');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const renderMatchCandidates = () => (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+        <p className="text-sm font-semibold text-blue-900">How this queue works</p>
+        <p className="mt-1 text-xs leading-5 text-blue-700">
+          Auto-link scans imported retailer URLs. Add and test the missing retailer in Sources, then run Auto-link again.
+        </p>
+      </div>
+      {matchCandidates.length === 0 ? (
+        <div className="rounded-xl border border-gray-100 bg-white p-8 text-center shadow-sm">
+          <CheckCircle className="mx-auto h-8 w-8 text-emerald-500" />
+          <p className="mt-3 text-sm font-semibold text-gray-900">No unresolved source gaps</p>
+          <p className="mt-1 text-xs text-gray-500">Run Auto-link catalog after importing phones to refresh this queue.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-gray-100 bg-gray-50/70 text-xs text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Phone</th>
+                  <th className="px-4 py-3 text-left font-medium">Missing source</th>
+                  <th className="px-4 py-3 text-left font-medium">Reason</th>
+                  <th className="px-4 py-3 text-left font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {matchCandidates.map(candidate => (
+                  <tr key={candidate.id} className="text-sm">
+                    <td className="px-4 py-3 font-medium text-gray-900">{candidate.phoneName}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-700">{candidate.hostname}</p>
+                      <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="block max-w-[280px] truncate text-xs text-blue-600 hover:underline">
+                        {candidate.sourceUrl}
+                      </a>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{candidate.reason}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setActiveTab('sources')} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+                          Configure source
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleIgnoreMatchCandidate(candidate.id)}
+                          disabled={actionLoading === `ignore-match-${candidate.id}`}
+                          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {actionLoading === `ignore-match-${candidate.id}` ? 'Ignoring...' : 'Ignore'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const renderChanges = () => (
     <div>
@@ -1923,6 +2031,7 @@ export default function AdminPriceTrackerPage() {
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'phones' && renderPhones()}
       {activeTab === 'sources' && renderSources()}
+      {activeTab === 'matches' && renderMatchCandidates()}
       {activeTab === 'changes' && renderChanges()}
       {activeTab === 'pending' && renderPending()}
       {activeTab === 'history' && renderHistory()}
