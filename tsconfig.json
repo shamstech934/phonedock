@@ -41,6 +41,7 @@
     "examples",
     "scripts",
     "skills",
+    "mobile-app",
     "e2e",
     "playwright.config.ts"
   ]

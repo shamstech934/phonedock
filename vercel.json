@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/collector-sync",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/sync-rumours",
+      "schedule": "30 3 * * *"
     }
   ]
 }

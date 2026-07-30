@@ -44,6 +44,7 @@ import { handleCronUpdatePrices } from './handlers/cron-update-prices';
 import { handleDataQualityGet, handleDataQualityPost } from './handlers/data-quality';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
+import { syncRumourFeeds } from '@/lib/rumour-sync';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -159,6 +160,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'update-prices') {
       const cronResult = await handleCronUpdatePrices(req);
       if (cronResult) return cronResult;
+    }
+
+    // Cron: /api/cron/sync-rumours — imports matching feed items as pending drafts.
+    // Automatic publishing is deliberately forbidden: rumours require editorial review.
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'sync-rumours') {
+      const secret = req.headers.get('x-cron-secret') || req.headers.get('authorization')?.replace('Bearer ', '');
+      if (!isValidCronSecret(secret)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      await connectDB();
+      return NextResponse.json(await syncRumourFeeds());
     }
 
     // Cron: /api/cron/collector-sync — triggers due collector source syncs (Scheduler)

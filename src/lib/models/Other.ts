@@ -14,12 +14,21 @@ const NewsSchema = new Schema({
   seoDescription: { type: String, default: '' },
   views: { type: Number, default: 0 },
   status: { type: String, default: 'published' },
+  sourceName: { type: String, default: '' },
+  sourceUrl: { type: String, default: '' },
+  sourcePublishedAt: { type: Date, default: null },
+  autoImported: { type: Boolean, default: false },
+  ingestionKey: { type: String, default: undefined },
+  confidence: { type: Number, min: 0, max: 1, default: 0 },
+  reviewNotes: { type: String, default: '' },
 }, { timestamps: true });
 
 NewsSchema.index({ slug: 1 }, { unique: true });
 NewsSchema.index({ status: 1 });
 NewsSchema.index({ published: 1, status: 1 });
 NewsSchema.index({ published: 1, status: 1, createdAt: -1 });
+NewsSchema.index({ ingestionKey: 1 }, { unique: true, sparse: true });
+NewsSchema.index({ autoImported: 1, status: 1, createdAt: -1 });
 
 export const News = mongoose.models.News || mongoose.model('News', NewsSchema);
 

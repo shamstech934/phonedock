@@ -7,6 +7,7 @@ import { connectDB } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
+import { extractRetailPrice } from '@/lib/price-extraction';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -152,23 +153,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           } else {
             const html = await response.text();
 
-            // Extract price (PKR)
-            const pricePatterns = [
-              /(?:PKR|Rs\.?|₨)\s*([\d,]+(?:\.\d{1,2})?)/i,
-              /price[^>]*>\s*(?:PKR|Rs\.?|₨)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-              /"price"\s*:\s*"?([\d,]+(?:\.\d{1,2})?)"?/i,
-              /data-price="([\d,]+(?:\.\d{1,2})?)"/i,
-            ];
-            for (const pattern of pricePatterns) {
-              const m = html.match(pattern);
-              if (m) {
-                const parsed = parseFloat(m[1].replace(/,/g, ''));
-                if (parsed > 0) {
-                  detectedPrice = parsed;
-                  break;
-                }
-              }
-            }
+            const extracted = extractRetailPrice(html);
+            detectedPrice = extracted?.price ?? null;
 
             // Check availability
             if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
