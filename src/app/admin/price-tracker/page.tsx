@@ -29,6 +29,7 @@ interface OverviewStats {
   trackingCoveragePct: number;
   totalSources: number;
   enabledSources: number;
+  readySources: number;
   pendingSourceGaps: number;
 }
 
@@ -575,7 +576,14 @@ export default function AdminPriceTrackerPage() {
       const updateResponse = await fetch(`/api/admin/price-tracker/sources/${source.id}`, {
         method: 'PUT', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trusted: true, enabled: true, status: 'active' }),
+        body: JSON.stringify({
+          trusted: true,
+          enabled: true,
+          status: 'active',
+          allowedDomains: source.allowedDomains.length > 0
+            ? source.allowedDomains
+            : [new URL(productUrl.trim()).hostname.replace(/^www\./, '')],
+        }),
       });
       const update = await updateResponse.json();
       if (!updateResponse.ok) throw new Error(update.error || 'Could not trust source');
@@ -671,7 +679,6 @@ export default function AdminPriceTrackerPage() {
         </div>
       </div>
       {actionMessage && <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">{actionMessage}</div>}
-      {error && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">{error}</div>}
     </div>
   );
 
@@ -733,7 +740,7 @@ export default function AdminPriceTrackerPage() {
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.enabledSources}</p><p className="text-[10px] text-slate-300">Active sources</p></div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.readySources ?? 0}</p><p className="text-[10px] text-slate-300">Ready sources</p></div>
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.pendingReview}</p><p className="text-[10px] text-slate-300">Need approval</p></div>
                 <button onClick={() => setActiveTab('matches')} className="col-span-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">
                   Review {s.pendingSourceGaps || 0} source gaps
@@ -1143,7 +1150,12 @@ export default function AdminPriceTrackerPage() {
               <tbody className="divide-y divide-gray-50">
                 {sources.map((src) => (
                   <tr key={src.id} className="text-sm hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{src.name}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">{src.name}</p>
+                      <p className={`mt-0.5 max-w-[180px] truncate text-[10px] ${src.allowedDomains.length ? 'text-gray-400' : 'font-medium text-amber-600'}`}>
+                        {src.allowedDomains.length ? src.allowedDomains.join(', ') : 'No allowed domain'}
+                      </p>
+                    </td>
                     <td className="px-4 py-3">
                       <Badge className={
                         src.type === 'retailer' ? 'bg-blue-100 text-blue-700' :
@@ -1165,30 +1177,6 @@ export default function AdminPriceTrackerPage() {
                       ) : (
                         <span className="text-xs text-gray-400">No</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{src.priority}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{src.lastChecked ? timeAgo(src.lastChecked) : '—'}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={src.failures > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}>{src.failures}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleToggleSource(src.id)}
-                          className={`p-1 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
-                          title={src.status === 'active' ? 'Pause' : 'Activate'}
-                        >
-                          {src.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleTestAndTrustSource(src)}
-                          disabled={Boolean(actionLoading)}
-                          className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
-                        </button>
-                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="min-w-[110px]">
@@ -1212,6 +1200,30 @@ export default function AdminPriceTrackerPage() {
                           />
                         </div>
                         {src.pendingListings > 0 && <p className="mt-1 text-[10px] text-amber-600">{src.pendingListings} pending review</p>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600">{src.priority}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{src.lastChecked ? timeAgo(src.lastChecked) : '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={src.failures > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}>{src.failures}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleSource(src.id)}
+                          className={`p-1 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
+                          title={src.status === 'active' ? 'Pause' : 'Activate'}
+                        >
+                          {src.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTestAndTrustSource(src)}
+                          disabled={Boolean(actionLoading)}
+                          className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
+                        </button>
                       </div>
                     </td>
                   </tr>

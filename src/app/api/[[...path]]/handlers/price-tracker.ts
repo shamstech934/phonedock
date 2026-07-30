@@ -101,6 +101,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       lastSuccessfulUpdate,
       totalSources,
       enabledSources,
+      readySources,
       totalPublishedPhones,
       trackedPhoneIds,
       pendingSourceGaps,
@@ -115,6 +116,12 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       PriceTrackerHistory.findOne({ verificationStatus: { $ne: 'pending' } }).sort({ capturedAt: -1 }).lean(),
       PriceSource.countDocuments({}),
       PriceSource.countDocuments({ enabled: true, status: 'active' }),
+      PriceSource.countDocuments({
+        enabled: true,
+        status: 'active',
+        trusted: true,
+        allowedDomains: { $exists: true, $ne: [] },
+      }),
       Phone.countDocuments({ active: true, status: 'published' }),
       PhoneRetailListing.distinct('phoneId', {
         enabled: true,
@@ -134,6 +141,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       lastSuccessfulUpdate: lastSuccessfulUpdate?.capturedAt || null,
       totalSources,
       enabledSources,
+      readySources,
       totalPublishedPhones,
       trackingReadyPhones: trackedPhoneIds.length,
       pendingSourceGaps,
