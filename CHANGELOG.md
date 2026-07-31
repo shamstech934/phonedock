@@ -44,3 +44,9 @@ No intentional breaking API change is declared; integrations with internal catch
 - Documented required and grouped production environment variables.
 - Removed unused legacy AI enrichment runtime and its direct legacy tests.
 - Archived historical root reports without deleting them.
+
+## Phase 9 — Admin Navigation Consolidation
+- Grouped the oversized admin sidebar into focused work areas.
+- Added permission-aware nested links and active-group expansion.
+- Replaced mobile horizontal admin tabs with a grouped selector.
+- Statically verified all 40 linked admin routes exist.

@@ -1,76 +1,94 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  BarChart3, Smartphone, Layers, Newspaper, Star, Clock, Upload,
-  LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
-  ChevronDown, DollarSign, Key, Play, TrendingDown,
-  ShieldCheck, Rocket, Sparkles, BrainCircuit,
-  Workflow, Grid3X3, Link2, AppWindow, ClipboardCheck,
+  LogOut, Eye, Shield, Key, ChevronDown, Newspaper, BrainCircuit,
+  Workflow, Settings, Menu, Database, WandSparkles, LayoutDashboard,
 } from 'lucide-react';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
+
+interface NavChild {
+  label: string;
+  href: string;
+  permission?: string;
+}
 
 interface NavLink {
   label: string;
   href: string;
   icon: React.ElementType;
   permission?: string;
-  children?: { label: string; href: string }[];
+  children?: NavChild[];
 }
 
+// Keep the sidebar focused: frequently used destinations stay direct while
+// related tools live inside six clear work areas.
 const adminLinks: NavLink[] = [
-  { label: 'Dashboard', href: '/admin/dashboard', icon: BarChart3, permission: 'phones:read' },
-  { label: 'Analytics', href: '/admin/analytics', icon: Activity, permission: 'settings:read' },
-  { label: 'Automation Pipeline', href: '/admin/automation', icon: Workflow, permission: 'prices:read' },
-  { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
-  { label: 'Launch Intelligence', href: '/admin/launch-intelligence', icon: Rocket, permission: 'news:read' },
-  { label: 'Intelligence Center', href: '/admin/intelligence-center', icon: BrainCircuit, permission: 'phones:read' },
-  { label: 'Continuous Monitoring', href: '/admin/continuous-monitoring', icon: Radio, permission: 'phones:read' },
-  { label: 'Release Readiness', href: '/admin/release-readiness', icon: ClipboardCheck, permission: 'settings:read' },
-  { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: Sparkles, permission: 'settings:read' },
-  { label: 'Card Layout Control', href: '/admin/layout-control', icon: Grid3X3, permission: 'settings:read' },
-  { label: 'Mobile App Control', href: '/admin/mobile-control', icon: AppWindow, permission: 'settings:read' },
-  { label: 'Links & Hrefs', href: '/admin/homepage-builder?tab=navigation', icon: Link2, permission: 'settings:read' },
-  { label: 'Phones', href: '/admin/phones', icon: Smartphone, permission: 'phones:read' },
-  { label: 'Brands', href: '/admin/brands', icon: Layers, permission: 'brands:read' },
-  { label: 'News', href: '/admin/news', icon: Newspaper, permission: 'news:read' },
-  { label: 'Sponsors', href: '/admin/sponsors', icon: DollarSign, permission: 'sponsors:read' },
-  { label: 'Price Tracker', href: '/admin/price-tracker', icon: TrendingDown, permission: 'prices:read' },
-  { label: 'Videos', href: '/admin/videos', icon: Play, permission: 'videos:read' },
-  { label: 'Reviews', href: '/admin/reviews', icon: Star, permission: 'phones:read' },
-  { label: 'Review Engine', href: '/admin/review-engine', icon: Sparkles, permission: 'phones:edit' },
-  { label: 'Activity', href: '/admin/activity', icon: Clock, permission: 'activity:read' },
-  { label: 'Import', href: '/admin/import-v2', icon: Upload, permission: 'imports:read' },
-  { label: 'Collector', href: '/admin/collector', icon: Radio, permission: 'collectors:read', children: [
-    { label: 'Overview', href: '/admin/collector' },
-    { label: 'Discover', href: '/admin/collector/discover' },
-    { label: 'Sources', href: '/admin/collector/sources' },
-    { label: 'Jobs', href: '/admin/collector/jobs' },
-    { label: 'Review', href: '/admin/collector/review' },
-    { label: 'Logs', href: '/admin/collector/logs' },
-    { label: 'History', href: '/admin/collector/history' },
-    { label: 'Settings', href: '/admin/collector/settings' },
+  { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard, permission: 'phones:read' },
+  { label: 'Content', href: '/admin/content', icon: Newspaper, children: [
+    { label: 'Phones', href: '/admin/phones', permission: 'phones:read' },
+    { label: 'Brands', href: '/admin/brands', permission: 'brands:read' },
+    { label: 'News', href: '/admin/news', permission: 'news:read' },
+    { label: 'Videos', href: '/admin/videos', permission: 'videos:read' },
+    { label: 'Reviews', href: '/admin/reviews', permission: 'phones:read' },
+    { label: 'Review Engine', href: '/admin/review-engine', permission: 'phones:edit' },
+    { label: 'Sponsors', href: '/admin/sponsors', permission: 'sponsors:read' },
   ]},
-  { label: 'AI Research', href: '/admin/ai-research', icon: Sparkles, permission: 'ai-research:read' },
-  { label: 'Sync', href: '/admin/sync', icon: RefreshCw, permission: 'phones:edit' },
-  { label: 'Data Quality', href: '/admin/data-quality', icon: ShieldCheck, permission: 'data-quality:read' },
-  { label: 'Site Settings', href: '/admin/settings', icon: Settings, permission: 'settings:read' },
-  { label: 'Users', href: '/admin/users', icon: Users, permission: 'users:read' },
+  { label: 'Data Operations', href: '/admin/data-operations', icon: Database, children: [
+    { label: 'Import', href: '/admin/import-v2', permission: 'imports:read' },
+    { label: 'Collector', href: '/admin/collector', permission: 'collectors:read' },
+    { label: 'Collector Discover', href: '/admin/collector/discover', permission: 'collectors:read' },
+    { label: 'Collector Sources', href: '/admin/collector/sources', permission: 'collectors:read' },
+    { label: 'Collector Jobs', href: '/admin/collector/jobs', permission: 'collectors:read' },
+    { label: 'Collector Review', href: '/admin/collector/review', permission: 'collectors:read' },
+    { label: 'Collector Logs', href: '/admin/collector/logs', permission: 'collectors:read' },
+    { label: 'Collector History', href: '/admin/collector/history', permission: 'collectors:read' },
+    { label: 'Collector Settings', href: '/admin/collector/settings', permission: 'collectors:manage' },
+    { label: 'Sync', href: '/admin/sync', permission: 'phones:edit' },
+    { label: 'Data Quality', href: '/admin/data-quality', permission: 'data-quality:read' },
+    { label: 'Price Tracker', href: '/admin/price-tracker', permission: 'prices:read' },
+  ]},
+  { label: 'Intelligence', href: '/admin/intelligence', icon: BrainCircuit, children: [
+    { label: 'Launch Center', href: '/admin/launch-center', permission: 'settings:read' },
+    { label: 'Launch Intelligence', href: '/admin/launch-intelligence', permission: 'news:read' },
+    { label: 'Intelligence Center', href: '/admin/intelligence-center', permission: 'phones:read' },
+    { label: 'AI Research', href: '/admin/ai-research', permission: 'ai-research:read' },
+    { label: 'Continuous Monitoring', href: '/admin/continuous-monitoring', permission: 'phones:read' },
+  ]},
+  { label: 'Website', href: '/admin/website', icon: WandSparkles, children: [
+    { label: 'Homepage Builder', href: '/admin/homepage-builder', permission: 'settings:read' },
+    { label: 'Card Layout Control', href: '/admin/layout-control', permission: 'settings:read' },
+    { label: 'Mobile App Control', href: '/admin/mobile-control', permission: 'settings:read' },
+  ]},
+  { label: 'Automation & Health', href: '/admin/operations', icon: Workflow, children: [
+    { label: 'Automation Pipeline', href: '/admin/automation', permission: 'prices:read' },
+    { label: 'Analytics', href: '/admin/analytics', permission: 'settings:read' },
+    { label: 'Release Readiness', href: '/admin/release-readiness', permission: 'settings:read' },
+    { label: 'Activity Log', href: '/admin/activity', permission: 'activity:read' },
+  ]},
+  { label: 'System', href: '/admin/system', icon: Settings, children: [
+    { label: 'Site Settings', href: '/admin/settings', permission: 'settings:read' },
+    { label: 'Users', href: '/admin/users', permission: 'users:read' },
+  ]},
 ];
 
+function childIsActive(pathname: string, href: string): boolean {
+  const cleanHref = href.split('?')[0];
+  if (cleanHref === '/admin/collector') return pathname === cleanHref;
+  return pathname === cleanHref || pathname.startsWith(cleanHref + '/');
+}
+
 function isActive(pathname: string, link: NavLink): boolean {
-  if (link.href === '/admin/dashboard') return pathname === link.href;
-  if (link.children) {
-    return pathname === link.href || pathname.startsWith(link.href + '/');
-  }
-  return pathname === link.href || pathname.startsWith(link.href + '/');
+  if (link.children) return link.children.some(child => childIsActive(pathname, child.href));
+  return childIsActive(pathname, link.href);
 }
 
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { admin, loading, logout } = useAdmin();
   const pathname = usePathname();
+  const router = useRouter();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pwData, setPwData] = useState({ current: '', newPw: '', confirm: '' });
@@ -87,10 +105,11 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [admin]);
 
-  // Auto-open collector group if on a collector sub-page
+  // Keep the current work area open after navigation.
   useEffect(() => {
-    if (pathname.startsWith('/admin/collector')) {
-      setOpenGroups(prev => new Set(prev).add('/admin/collector'));
+    const activeGroup = adminLinks.find(link => link.children?.some(child => childIsActive(pathname, child.href)));
+    if (activeGroup) {
+      setOpenGroups(prev => new Set(prev).add(activeGroup.href));
     }
   }, [pathname]);
 
@@ -158,19 +177,23 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // Filter links based on permissions
-  const filteredLinks = adminLinks.filter(link => {
-    if (!link.permission) return true;
-    const rolePerms: Record<string, string[]> = {
-      superadmin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','users:manage','settings:read','settings:manage','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix'],
-      admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix'],
-      editor: ['phones:read','phones:create','phones:edit','brands:read','news:read','news:create','news:edit','activity:read','media:upload'],
-      reviewer: ['phones:read','brands:read','news:read','activity:read','collectors:read'],
-      viewer: ['phones:read','brands:read','news:read','activity:read'],
-      moderator: ['phones:read','phones:edit','brands:read','news:read','news:edit','activity:read','reviews:read','reviews:manage','media:upload'],
-    };
-    return (rolePerms[admin.role] || []).includes(link.permission);
-  });
+  // Filter links and nested destinations based on role permissions.
+  const rolePerms: Record<string, string[]> = {
+    superadmin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','users:manage','settings:read','settings:manage','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix','ai-research:read'],
+    admin: ['phones:read','phones:create','phones:edit','phones:delete','phones:publish','phones:seed','brands:read','brands:create','brands:edit','brands:delete','news:read','news:create','news:edit','news:delete','news:publish','sponsors:read','sponsors:manage','imports:read','imports:execute','collectors:read','collectors:manage','users:read','settings:read','activity:read','media:upload','media:delete','trash:read','trash:restore','trash:delete','videos:read','videos:edit','videos:manage','prices:read','prices:edit','data-quality:read','data-quality:scan','data-quality:fix','ai-research:read'],
+    editor: ['phones:read','phones:create','phones:edit','brands:read','news:read','news:create','news:edit','activity:read','media:upload'],
+    reviewer: ['phones:read','brands:read','news:read','activity:read','collectors:read'],
+    viewer: ['phones:read','brands:read','news:read','activity:read'],
+    moderator: ['phones:read','phones:edit','brands:read','news:read','news:edit','activity:read','reviews:read','reviews:manage','media:upload'],
+  };
+  const hasPermission = (permission?: string) => !permission || (rolePerms[admin.role] || []).includes(permission);
+  const filteredLinks = adminLinks
+    .map(link => link.children
+      ? { ...link, children: link.children.filter(child => hasPermission(child.permission)) }
+      : link)
+    .filter(link => hasPermission(link.permission) && (!link.children || link.children.length > 0));
+  const flatMobileLinks = filteredLinks.flatMap(link => link.children || [{ label: link.label, href: link.href, permission: link.permission }]);
+  const currentMobileHref = flatMobileLinks.find(link => childIsActive(pathname, link.href))?.href || '/admin/dashboard';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
@@ -226,7 +249,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                   <Link
                     href={hasChildren ? '#' : link.href}
                     onClick={e => { if (hasChildren) { e.preventDefault(); toggleGroup(link.href); } }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${active && !hasChildren ? 'bg-blue-50 text-blue-600 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${active ? 'bg-blue-50 text-blue-700 shadow-sm shadow-blue-500/10' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                   >
                     <link.icon className="w-4 h-4" />
                     <span className="flex-1">{link.label}</span>
@@ -240,14 +263,14 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
                   {showChildren && (
                     <div className="ml-7 pl-3 border-l border-gray-100 space-y-0.5 mt-0.5 mb-1">
                       {link.children!.map(child => {
-                        const childActive = pathname === child.href;
+                        const childActive = childIsActive(pathname, child.href);
                         return (
                           <Link
                             key={child.href}
                             href={child.href}
                             className={`block w-full px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${childActive ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
                           >
-                            {child.label}
+                            <span className="flex items-center justify-between gap-2"><span>{child.label}</span>{child.href === '/admin/videos' && pendingVideoCount > 0 && <span className="inline-flex min-w-[18px] h-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">{pendingVideoCount}</span>}</span>
                           </Link>
                         );
                       })}
@@ -259,28 +282,30 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           </nav>
         </aside>
 
-        {/* Mobile tabs */}
-        <div className="lg:hidden border-b border-gray-100 bg-white">
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                <Shield className="w-3.5 h-3.5 text-white" />
+        {/* Mobile navigation: one compact selector replaces dozens of horizontal tabs. */}
+        <div className="lg:hidden border-b border-gray-100 bg-white px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="w-7 h-7 shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+                <Menu className="w-4 h-4 text-white" />
               </div>
-              <span className="text-xs font-semibold text-gray-900">{admin.name || admin.email}</span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-gray-900">Admin navigation</p>
+                <p className="truncate text-[10px] text-gray-500">{admin.name || admin.email}</p>
+              </div>
             </div>
-          </div>
-          <div className="flex overflow-x-auto px-3 pb-2.5 gap-1.5 no-scrollbar">
-            {filteredLinks.filter(l => !l.children).map(link => {
-              const active = isActive(pathname, link);
-              return (
-                <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${active ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
-                  <link.icon className="w-3 h-3" />{link.label}
-                  {link.href === '/admin/videos' && pendingVideoCount > 0 && (
-                    <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold">{pendingVideoCount}</span>
-                  )}
-                </Link>
-              );
-            })}
+            <select
+              aria-label="Choose admin page"
+              value={currentMobileHref}
+              onChange={event => router.push(event.target.value)}
+              className="max-w-[62%] rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+            >
+              {filteredLinks.map(link => link.children ? (
+                <optgroup key={link.href} label={link.label}>
+                  {link.children.map(child => <option key={child.href} value={child.href}>{child.label}</option>)}
+                </optgroup>
+              ) : <option key={link.href} value={link.href}>{link.label}</option>)}
+            </select>
           </div>
         </div>
 
