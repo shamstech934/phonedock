@@ -56,3 +56,10 @@ No intentional breaking API change is declared; integrations with internal catch
 - Added consolidated `release:gate` verification command.
 - Verified 87 application routes with no broken or unsafe static internal links.
 - Added JSON audit artifact and production audit report.
+
+## 20.0.0 — Consolidated Production Candidate
+
+- Consolidated all SpecsDekh rebranding and production audit sprints into one package.
+- Added a final aggregate release audit and admin/API contract audit to the release gate.
+- Preserved backward-compatible database configuration while standardizing production documentation.
+- Included all cumulative import, routing, cron, admin UX, automation, launch intelligence, and Price Tracker safeguards.

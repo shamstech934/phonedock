@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-07-31T23:31:15.075Z",
+  "project": "SpecsDekh",
+  "version": "20.0.0",
+  "passed": true,
+  "results": [
+    {
+      "name": "Static routes and branding",
+      "command": "node scripts/production-static-audit.mjs",
+      "passed": true,
+      "status": 0,
+      "stdout": "SpecsDekh production static audit\n{\n  \"pages\": 87,\n  \"routes\": 87,\n  \"scannedFiles\": 300,\n  \"brokenInternalLinks\": 0,\n  \"unsafeRelativeLinks\": 0,\n  \"hardcodedOldOrigins\": 0,\n  \"visibleLegacyBrandReferences\": 0,\n  \"missingRequiredFiles\": 0,\n  \"missingRequiredScripts\": 0\n}\n\nPASS: No release-blocking static findings.",
+      "stderr": ""
+    },
+    {
+      "name": "Vercel cron contracts",
+      "command": "node scripts/cron-config-audit.mjs",
+      "passed": true,
+      "status": 0,
+      "stdout": "✓ Cron configuration audit passed (5 jobs).\n  0 2 * * * UTC  /api/cron/sync-youtube\n  0 6 * * * UTC  /api/cron/check-price-drops\n  0 5 * * * UTC  /api/cron/automation-pipeline\n  0 4 * * * UTC  /api/cron/collector-sync\n  30 3 * * * UTC  /api/cron/continuous-monitoring",
+      "stderr": ""
+    },
+    {
+      "name": "Admin/API contracts",
+      "command": "node scripts/admin-production-audit.mjs",
+      "passed": true,
+      "status": 0,
+      "stdout": "{\n  \"generatedAt\": \"2026-07-31T23:31:15.012Z\",\n  \"adminPages\": 45,\n  \"adminSourceFiles\": 80,\n  \"apiSourceFiles\": 29,\n  \"literalAdminApiEndpoints\": 92,\n  \"endpointEvidenceMissing\": [],\n  \"findings\": [],\n  \"buildCertification\": {\n    \"status\": \"blocked-in-audit-environment\",\n    \"command\": \"npm ci --ignore-scripts\",\n    \"blocker\": \"Internal npm mirror returns 404 for transitive zod-validation-error@4.0.2 required by eslint-plugin-react-hooks.\"\n  }\n}",
+      "stderr": ""
+    },
+    {
+      "name": "Secret scan",
+      "command": "node scripts/security-secret-scan.mjs",
+      "passed": true,
+      "status": 0,
+      "stdout": "Secret scan passed (1010 source files checked).",
+      "stderr": ""
+    }
+  ],
+  "runtimeCertification": {
+    "staticChecksCompleted": true,
+    "dependencyInstallCompleted": false,
+    "runtimeDoctorCommand": "npm run doctor:runtime",
+    "note": "Run npm ci and npm run release:gate in GitHub Actions or Vercel to certify lint, TypeScript, tests, and production build."
+  }
+}
