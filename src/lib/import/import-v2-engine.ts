@@ -15,7 +15,7 @@
 
 import { Types, type QueryFilter, type UpdateQuery } from 'mongoose';
 import type { IPhone } from '@/lib/models/Phone';
-import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark } from '@/lib/models';
+import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark, PriceHistory } from '@/lib/models';
 import { ImportJob, ImportBatch } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { revalidatePublicContent } from '@/lib/revalidate';
@@ -90,6 +90,25 @@ interface SpecsChangeItem {
   fields?: Record<string, string>;
 }
 
+interface BenchmarkChangeItem {
+  phoneId: Types.ObjectId;
+  changeType: 'created' | 'updated';
+  beforeFields: Record<string, unknown>;
+  afterFields: Record<string, unknown>;
+}
+
+interface ImageSnapshotItem {
+  url: string;
+  altText: string;
+  sortOrder: number;
+}
+
+interface ImageChangeItem {
+  phoneId: Types.ObjectId;
+  beforeImages: ImageSnapshotItem[];
+  afterImages: ImageSnapshotItem[];
+}
+
 interface PhoneUpdateOp {
   filter: QueryFilter<IPhone>;
   update: UpdateQuery<IPhone>;
@@ -129,6 +148,8 @@ interface BatchResult {
   errors: BatchErrorItem[];
   fieldChanges: FieldChangeItem[];
   specsChanges: SpecsChangeItem[];
+  benchmarkChanges: BenchmarkChangeItem[];
+  imageChanges: ImageChangeItem[];
   createdPhoneIds: Types.ObjectId[];
   updatedPhoneIds: Types.ObjectId[];
   // Dry-run simulation counts (not persisted to ImportJob)
@@ -340,7 +361,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
   const result: BatchResult = {
     created: 0, updated: 0, skipped: 0, failed: 0, replaced: 0,
-    errors: [], fieldChanges: [], specsChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
+    errors: [], fieldChanges: [], specsChanges: [], benchmarkChanges: [], imageChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
   };
 
   // Idempotency is scoped to the persisted source checksum and execution mode.
@@ -359,6 +380,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       errors: existingBatch.errors || [],
       fieldChanges: existingBatch.fieldChanges || [],
       specsChanges: existingBatch.specsChanges || [],
+      benchmarkChanges: existingBatch.benchmarkChanges || [],
+      imageChanges: existingBatch.imageChanges || [],
       createdPhoneIds: existingBatch.createdPhoneIds || [],
       updatedPhoneIds: existingBatch.updatedPhoneIds || [],
     };
@@ -461,6 +484,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const updatedIds: Types.ObjectId[] = [];
   const fieldChanges: FieldChangeItem[] = [];
   const specsChanges: SpecsChangeItem[] = []; // FIX #8: Track PhoneSpecs before-state
+  const benchmarkChanges: BenchmarkChangeItem[] = [];
+  const imageChanges: ImageChangeItem[] = [];
 
   for (const rec of validRecords) {
     const d = rec.normalizedData;
@@ -876,41 +901,70 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
 
     if (benchmarksForUpdatedPhones.length > 0) {
-      const benchmarkOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = benchmarksForUpdatedPhones.map(entry => ({
-        updateOne: {
-          filter: { phoneId: entry.phoneId },
-          update: { $set: { ...entry.benchmarkFields }, $setOnInsert: { phoneId: entry.phoneId } },
-          upsert: true,
-        },
-      }));
-      try {
-        await PhoneBenchmark.bulkWrite(benchmarkOps);
-      } catch (e: unknown) {
-        result.errors.push({
-          rowNumber: -1,
-          errorCode: 'BENCHMARKS_UPDATE_FAILED',
-          errorMessage: `Failed to update benchmarks: ${getErrorMsg(e).slice(0, 200)}`,
-          batchNumber,
-        });
+      for (const entry of benchmarksForUpdatedPhones) {
+        try {
+          const beforeDoc = await PhoneBenchmark.findOne({ phoneId: entry.phoneId }).lean();
+          const beforeFields: Record<string, unknown> = {};
+          if (beforeDoc) {
+            for (const key of Object.keys(entry.benchmarkFields)) {
+              beforeFields[key] = (beforeDoc as Record<string, unknown>)[key];
+            }
+          }
+          await PhoneBenchmark.findOneAndUpdate(
+            { phoneId: entry.phoneId },
+            { $set: entry.benchmarkFields, $setOnInsert: { phoneId: entry.phoneId } },
+            { upsert: true, new: true },
+          );
+          benchmarkChanges.push({
+            phoneId: entry.phoneId,
+            changeType: beforeDoc ? 'updated' : 'created',
+            beforeFields,
+            afterFields: entry.benchmarkFields,
+          });
+        } catch (e: unknown) {
+          result.errors.push({
+            rowNumber: -1,
+            errorCode: 'BENCHMARKS_UPDATE_FAILED',
+            errorMessage: `Failed to update benchmarks for phone ${entry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
+            batchNumber,
+            phoneId: entry.phoneId.toString(),
+          });
+        }
       }
     }
 
     if (imagesForUpdatedPhones.length > 0) {
       for (const entry of imagesForUpdatedPhones) {
+        const beforeDocs = await PhoneImage.find({ phoneId: entry.phoneId }).sort({ sortOrder: 1 }).lean();
+        const beforeImages: ImageSnapshotItem[] = beforeDocs.map((img: Record<string, unknown>) => ({
+          url: String(img.url || ''),
+          altText: String(img.altText || ''),
+          sortOrder: Number(img.sortOrder || 0),
+        })).filter((img: ImageSnapshotItem) => img.url);
+        const afterImages: ImageSnapshotItem[] = entry.images.map((url, sortOrder) => ({ url, altText: '', sortOrder }));
         try {
-          // Imported images replace the existing set for that phone — the CSV
-          // is treated as the current source of truth when images are provided.
           await PhoneImage.deleteMany({ phoneId: entry.phoneId });
           await PhoneImage.insertMany(
-            entry.images.map((url, sortOrder) => ({ phoneId: entry.phoneId, url, altText: '', sortOrder })),
-            { ordered: false },
+            afterImages.map(img => ({ phoneId: entry.phoneId, ...img })),
+            { ordered: true },
           );
+          imageChanges.push({ phoneId: entry.phoneId, beforeImages, afterImages });
         } catch (e: unknown) {
+          // Never leave a phone imageless because a replacement set failed.
+          try {
+            await PhoneImage.deleteMany({ phoneId: entry.phoneId });
+            if (beforeImages.length > 0) {
+              await PhoneImage.insertMany(beforeImages.map(img => ({ phoneId: entry.phoneId, ...img })), { ordered: true });
+            }
+          } catch (restoreError) {
+            console.error('[import] failed to restore previous images', restoreError);
+          }
           result.errors.push({
             rowNumber: -1,
             errorCode: 'IMAGES_UPDATE_FAILED',
             errorMessage: `Failed to update images for phone ${entry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
             batchNumber,
+            phoneId: entry.phoneId.toString(),
           });
         }
       }
@@ -931,6 +985,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   result.updatedPhoneIds = updatedIds;
   result.fieldChanges = fieldChanges;
   result.specsChanges = specsChanges;
+  result.benchmarkChanges = benchmarkChanges;
+  result.imageChanges = imageChanges;
 
   // FIX #6: Only update job counters if NOT dry-run
   if (!dryRun) {
@@ -948,6 +1004,26 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         $set: { status: 'processing' },
       },
     );
+  }
+
+  if (!dryRun) {
+    const historyRows: Array<{ phoneId: Types.ObjectId; storeName: null; price: number }> = [];
+    for (const docId of createdIds) {
+      const createdPhone = await Phone.findById(docId).select('pricePKR').lean();
+      const price = Number(createdPhone?.pricePKR || 0);
+      if (price > 0) historyRows.push({ phoneId: docId, storeName: null, price });
+    }
+    for (const change of fieldChanges) {
+      if (change.collection !== 'Phone' || change.field !== 'pricePKR') continue;
+      const price = Number(change.newValue || 0);
+      if (price > 0 && Number(change.oldValue || 0) !== price) {
+        historyRows.push({ phoneId: change.phoneId, storeName: null, price });
+      }
+    }
+    if (historyRows.length > 0) {
+      try { await PriceHistory.insertMany(historyRows, { ordered: false }); }
+      catch (e) { console.warn('[import] price history write failed', e); }
+    }
   }
 
   await completeBatch(importId, batchNumber, result, dryRun);
@@ -989,6 +1065,8 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
         updatedPhoneIds: result.updatedPhoneIds,
         fieldChanges: result.fieldChanges,
         specsChanges: result.specsChanges || [],
+        benchmarkChanges: result.benchmarkChanges || [],
+        imageChanges: result.imageChanges || [],
       },
     },
     { upsert: true },
@@ -1241,6 +1319,35 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
       } catch {
         conflicts++;
       }
+    }
+
+    for (const bc of batch.benchmarkChanges || []) {
+      try {
+        if (bc.changeType === 'created') {
+          await PhoneBenchmark.deleteOne({ phoneId: bc.phoneId });
+          continue;
+        }
+        const current = await PhoneBenchmark.findOne({ phoneId: bc.phoneId }).lean();
+        if (!current) { conflicts++; continue; }
+        const changedAfterImport = Object.entries(bc.afterFields || {}).some(([field, value]) =>
+          String((current as Record<string, unknown>)[field] ?? '') !== String(value ?? '')
+        );
+        if (changedAfterImport) { conflicts++; continue; }
+        await PhoneBenchmark.findOneAndUpdate({ phoneId: bc.phoneId }, { $set: bc.beforeFields || {} });
+      } catch { conflicts++; }
+    }
+
+    for (const ic of batch.imageChanges || []) {
+      try {
+        const currentDocs = await PhoneImage.find({ phoneId: ic.phoneId }).sort({ sortOrder: 1 }).lean();
+        const currentUrls = currentDocs.map((img: Record<string, unknown>) => String(img.url || ''));
+        const importedUrls = (ic.afterImages || []).map((img: ImageSnapshotItem) => img.url);
+        if (JSON.stringify(currentUrls) !== JSON.stringify(importedUrls)) { conflicts++; continue; }
+        await PhoneImage.deleteMany({ phoneId: ic.phoneId });
+        if ((ic.beforeImages || []).length > 0) {
+          await PhoneImage.insertMany(ic.beforeImages.map((img: ImageSnapshotItem) => ({ phoneId: ic.phoneId, ...img })), { ordered: true });
+        }
+      } catch { conflicts++; }
     }
   }
 

@@ -46,6 +46,17 @@ export interface IImportBatch {
     afterFields?: Record<string, string>;
     fields?: Record<string, string>;
   }[];
+  benchmarkChanges: {
+    phoneId: mongoose.Types.ObjectId;
+    changeType: 'created' | 'updated';
+    beforeFields: Record<string, unknown>;
+    afterFields: Record<string, unknown>;
+  }[];
+  imageChanges: {
+    phoneId: mongoose.Types.ObjectId;
+    beforeImages: { url: string; altText: string; sortOrder: number }[];
+    afterImages: { url: string; altText: string; sortOrder: number }[];
+  }[];
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -82,6 +93,26 @@ const SpecsChangeSchema = new Schema({
   fields: { type: Schema.Types.Mixed, default: {} },
 }, { _id: false, suppressReservedKeysWarning: true });
 
+
+const BenchmarkChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  changeType: { type: String, enum: ['created', 'updated'], required: true },
+  beforeFields: { type: Schema.Types.Mixed, default: {} },
+  afterFields: { type: Schema.Types.Mixed, default: {} },
+}, { _id: false, suppressReservedKeysWarning: true });
+
+const ImageSnapshotSchema = new Schema({
+  url: { type: String, required: true },
+  altText: { type: String, default: '' },
+  sortOrder: { type: Number, default: 0 },
+}, { _id: false });
+
+const ImageChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  beforeImages: { type: [ImageSnapshotSchema], default: [] },
+  afterImages: { type: [ImageSnapshotSchema], default: [] },
+}, { _id: false, suppressReservedKeysWarning: true });
+
 const ImportBatchSchema = new Schema<IImportBatch>({
   importId: { type: String, required: true, index: true },
   batchNumber: { type: Number, required: true },
@@ -102,6 +133,8 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   updatedPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   fieldChanges: { type: [FieldChangeSchema], default: [] },
   specsChanges: { type: [SpecsChangeSchema], default: [] },
+  benchmarkChanges: { type: [BenchmarkChangeSchema], default: [] },
+  imageChanges: { type: [ImageChangeSchema], default: [] },
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
 }, { timestamps: true, suppressReservedKeysWarning: true });
