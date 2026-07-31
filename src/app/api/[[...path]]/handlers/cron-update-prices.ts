@@ -85,11 +85,16 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     }
 
     // Fetch eligible listings: enabled, verified, with a trusted source
+    // Process a bounded oldest-first slice per invocation. This keeps every
+    // serverless request predictable; later cron/manual runs continue with the
+    // remaining listings instead of attempting the entire catalog at once.
     const listings = await PhoneRetailListing.find({
       enabled: true,
       verificationStatus: 'verified',
       sourceId: { $in: trustedSourceIds },
     })
+      .sort({ lastCheckedAt: 1, _id: 1 })
+      .limit(Math.max(1, Math.min(BATCH_SIZE, 50)))
       .populate('sourceId')
       .populate('phoneId')
       .lean();
@@ -170,9 +175,14 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle failed extraction ──
         if (fetchError) {
           summary.failed++;
-          await PriceSource.findByIdAndUpdate(source._id, {
-            $inc: { failureCount: 1 },
-          });
+          const failedSource = await PriceSource.findByIdAndUpdate(
+            source._id,
+            { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
+            { new: true },
+          );
+          if ((failedSource?.failureCount || 0) >= 5) {
+            await PriceSource.findByIdAndUpdate(source._id, { $set: { status: 'failed' } });
+          }
           continue;
         }
 
@@ -190,7 +200,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
 
           if (previousSourcePrice <= 0) {
-            // First detection — just record the price, no change to compute
+            // First successful detection from a trusted, verified listing.
+            // Apply it immediately unless the phone is manually locked, and
+            // create an auditable history row so public price history does not
+            // begin only after the second sync.
             await PhoneRetailListing.findByIdAndUpdate(listingId, {
               $set: {
                 currentSourcePrice: detectedPrice,
@@ -199,7 +212,24 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
                 lastChangedAt: new Date(),
               },
             });
-            // Update source health
+            if (phone.manualLock !== true) {
+              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, 0, source, 'correction');
+              if (slug) updatedSlugs.push(slug);
+            }
+            await PriceTrackerHistory.create({
+              phoneId: phone._id,
+              oldPrice: 0,
+              newPrice: detectedPrice,
+              difference: detectedPrice,
+              percentageChange: 0,
+              changeType: 'correction',
+              sourceType: 'retailer',
+              sourceId: source._id,
+              sourceUrl: listing.productUrl,
+              verificationStatus: 'confirmed',
+              capturedAt: new Date(),
+            });
+            summary.updated++;
             await PriceSource.findByIdAndUpdate(source._id, {
               $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
             });
@@ -300,9 +330,14 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         } else {
           // Price extraction failed (but page loaded) — keep old price, increment failure
           summary.failed++;
-          await PriceSource.findByIdAndUpdate(source._id, {
-            $inc: { failureCount: 1 },
-          });
+          const failedSource = await PriceSource.findByIdAndUpdate(
+            source._id,
+            { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
+            { new: true },
+          );
+          if ((failedSource?.failureCount || 0) >= 5) {
+            await PriceSource.findByIdAndUpdate(source._id, { $set: { status: 'failed' } });
+          }
         }
       }
     }
@@ -322,7 +357,17 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     );
   }
 
-  return NextResponse.json(summary);
+  const eligibleRemaining = await PhoneRetailListing.countDocuments({
+    enabled: true,
+    verificationStatus: 'verified',
+    sourceId: { $in: await PriceSource.find({ enabled: true, trusted: true, status: 'active' }).distinct('_id') },
+  });
+  return NextResponse.json({
+    ...summary,
+    batchLimit: Math.max(1, Math.min(BATCH_SIZE, 50)),
+    eligibleTotal: eligibleRemaining,
+    hasMore: eligibleRemaining > summary.processed,
+  });
 }
 
 /**

@@ -900,33 +900,45 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
   };
 
   const handleFixAll = async () => {
-    const confirmMsg = `This will auto-fix EVERY open issue matching the current filters (not just this page). Continue?`;
+    const confirmMsg = `This will auto-fix EVERY open issue matching the current filters in safe serverless batches. Continue?`;
     if (!window.confirm(confirmMsg)) return;
     setFixAllLoading(true);
+    let cursor: string | null = null;
+    let succeeded = 0;
+    let failed = 0;
+    let processed = 0;
     try {
-      const res = await fetch('/api/admin/data-quality/fix-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          severity: severityFilter || undefined,
-          issueType: defaultFilter?.issueType || undefined,
-          entityType: defaultFilter?.entityType || undefined,
-          search: search || undefined,
-          dryRun: false,
-        }),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        alert(`Fix all complete: ${result.succeeded} fixed, ${result.failed} failed, out of ${result.total} auto-fixable issues found.`);
-        fetchIssues(1);
-        onRefresh();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Fix all failed');
-      }
-    } catch (e) { console.error(e); alert('Fix all failed'); }
-    finally { setFixAllLoading(false); }
+      do {
+        const res = await fetch('/api/admin/data-quality/fix-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            severity: severityFilter || undefined,
+            issueType: defaultFilter?.issueType || undefined,
+            entityType: defaultFilter?.entityType || undefined,
+            search: search || undefined,
+            dryRun: false,
+            cursor,
+          }),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.error || 'Fix all failed');
+        succeeded += result.succeeded || 0;
+        failed += result.failed || 0;
+        processed += result.total || 0;
+        cursor = result.hasMore ? result.nextCursor : null;
+      } while (cursor);
+
+      alert(`Fix all complete: ${succeeded} fixed, ${failed} failed, ${processed} processed.`);
+      fetchIssues(1);
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : 'Fix all failed');
+    } finally {
+      setFixAllLoading(false);
+    }
   };
 
   const handleResolveIssue = async (issueId: string) => {

@@ -400,7 +400,7 @@ export default function AdminPriceTrackerPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Price sync failed');
-      setActionMessage(`Sync complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.`);
+      setActionMessage(`Sync batch complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
       await fetchOverview();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Price sync failed');

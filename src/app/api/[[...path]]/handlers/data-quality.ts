@@ -1086,9 +1086,10 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
   }
 
-  // POST /api/admin/data-quality/fix-all — fixes every OPEN, auto-fixable issue matching the
-  // current filters (not just the 50 issues loaded on the current admin page). Processes in
-  // batches to avoid request timeouts; safe to call repeatedly (idempotent).
+  // POST /api/admin/data-quality/fix-all
+  // Processes a small cursor-based chunk per request. The admin UI keeps calling
+  // this endpoint until hasMore=false, avoiding Vercel timeouts while still
+  // fixing the complete filtered queue.
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'fix-all') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -1096,14 +1097,12 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (permCheck) return permCheck;
 
     const body = await req.json().catch(() => ({}));
-    const { severity, issueType, entityType, search, dryRun } = body || {};
-    const BATCH_LIMIT = 2000; // hard ceiling per call to keep the request bounded
+    const { severity, issueType, entityType, search, dryRun, cursor } = body || {};
+    const CHUNK_SIZE = 25;
 
-    // Only ever consider issues whose rule actually supports auto-fix — no point queuing the rest.
-    const autoFixableTypes = ALL_QUALITY_RULES.filter(r => r.canAutoFix && typeof r.autoFix === 'function').map(r => r.ruleId);
-    if (autoFixableTypes.length === 0) {
-      return NextResponse.json({ total: 0, succeeded: 0, failed: 0, skipped: 0, errors: [] });
-    }
+    const autoFixableTypes = ALL_QUALITY_RULES
+      .filter(r => r.canAutoFix && typeof r.autoFix === 'function')
+      .map(r => r.ruleId);
     let allowedTypes = autoFixableTypes;
     if (issueType) {
       const requested = String(issueType).split(',').map((t: string) => t.trim()).filter(Boolean);
@@ -1113,6 +1112,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const query: Record<string, unknown> = { status: 'open', issueType: { $in: allowedTypes } };
     if (severity) query.severity = severity;
     if (entityType) query.entityType = entityType;
+    if (cursor && Types.ObjectId.isValid(String(cursor))) query._id = { $gt: new Types.ObjectId(String(cursor)) };
     if (search) {
       query.$or = [
         { entityId: { $regex: search, $options: 'i' } },
@@ -1120,11 +1120,15 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       ];
     }
 
-    const candidates = await DataQualityIssue.find(query).select('_id').limit(BATCH_LIMIT).lean();
+    const candidates = await DataQualityIssue.find(query)
+      .select('_id')
+      .sort({ _id: 1 })
+      .limit(CHUNK_SIZE)
+      .lean();
     const results = { total: candidates.length, succeeded: 0, failed: 0, errors: [] as string[] };
 
     for (const c of candidates) {
-      const issueId = (c._id as { toString(): string }).toString();
+      const issueId = c._id.toString();
       try {
         await executeAutoFix(issueId, authResult.admin._id.toString(), dryRun === true);
         results.succeeded++;
@@ -1134,17 +1138,22 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       }
     }
 
+    const nextCursor = candidates.length ? candidates[candidates.length - 1]._id.toString() : null;
+    const remainingQuery = { ...query } as Record<string, unknown>;
+    if (nextCursor) remainingQuery._id = { $gt: new Types.ObjectId(nextCursor) };
+    const hasMore = nextCursor ? await DataQualityIssue.exists(remainingQuery) : false;
+
     try {
       await ActivityLog.create({
         adminId: authResult.admin._id,
-        action: 'data_quality_fix_all',
-        details: `Fix-all matched ${results.total} issues: ${results.succeeded} succeeded, ${results.failed} failed${dryRun ? ' (dry run)' : ''}`,
+        action: 'data_quality_fix_all_chunk',
+        details: `Fix-all chunk: ${results.succeeded} succeeded, ${results.failed} failed${dryRun ? ' (dry run)' : ''}`,
         entityType: 'data_quality',
         entityId: '',
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json(results, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ ...results, nextCursor, hasMore: Boolean(hasMore), chunkSize: CHUNK_SIZE }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   // POST /api/admin/data-quality/bulk-fix
