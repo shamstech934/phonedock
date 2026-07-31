@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { News } from '@/lib/models';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { stageLaunchCandidate } from '@/lib/launch-intelligence';
 
 const MAX_FEEDS = 10;
 const MAX_ITEMS_PER_FEED = 30;
@@ -61,7 +62,7 @@ function slugify(value: string): string {
 export async function syncRumourFeeds() {
   const feeds = (process.env.RUMOUR_FEED_URLS || '').split(/[\n,]/)
     .map((value) => value.trim()).filter(Boolean).slice(0, MAX_FEEDS);
-  const summary = { feeds: feeds.length, scanned: 0, imported: 0, skipped: 0, errors: [] as string[] };
+  const summary = { feeds: feeds.length, scanned: 0, imported: 0, candidates: 0, skipped: 0, errors: [] as string[] };
 
   for (const feedUrl of feeds) {
     let feedHost = '';
@@ -87,7 +88,7 @@ export async function syncRumourFeeds() {
           .replace(/\s+/g, ' ').trim().slice(0, 320);
         const baseSlug = slugify(item.title) || `rumour-${ingestionKey.slice(0, 12)}`;
         const slug = await News.exists({ slug: baseSlug }) ? `${baseSlug}-${ingestionKey.slice(0, 8)}` : baseSlug;
-        await News.create({
+        const news = await News.create({
           title: item.title.slice(0, 220), slug, content: '', excerpt, category: 'Rumors',
           author: 'SpecsDekh News Desk', published: false, featured: false, status: 'pending',
           sourceName: feedHost, sourceUrl: item.link, sourcePublishedAt: item.publishedAt,
@@ -95,6 +96,19 @@ export async function syncRumourFeeds() {
           reviewNotes: 'Automatically imported. Verify the original source and facts before publishing.',
         });
         summary.imported++;
+        try {
+          const staged = await stageLaunchCandidate({
+            title: item.title,
+            description: excerpt,
+            sourceNewsId: news._id,
+            sourceName: feedHost,
+            sourceUrl: item.link,
+            sourcePublishedAt: item.publishedAt,
+          });
+          if (staged.created) summary.candidates++;
+        } catch (candidateError) {
+          summary.errors.push(`${feedHost}: candidate staging failed (${candidateError instanceof Error ? candidateError.message : 'unknown error'})`);
+        }
       }
     } catch (error) {
       summary.errors.push(`${feedHost}: ${error instanceof Error ? error.message : 'Feed sync failed'}`);

@@ -25,6 +25,7 @@ const adminLinks: NavLink[] = [
   { label: 'Analytics', href: '/admin/analytics', icon: Activity, permission: 'settings:read' },
   { label: 'Automation Pipeline', href: '/admin/automation', icon: Workflow, permission: 'prices:read' },
   { label: 'Launch Center', href: '/admin/launch-center', icon: Rocket, permission: 'settings:read' },
+  { label: 'Launch Intelligence', href: '/admin/launch-intelligence', icon: Rocket, permission: 'news:read' },
   { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: Sparkles, permission: 'settings:read' },
   { label: 'Card Layout Control', href: '/admin/layout-control', icon: Grid3X3, permission: 'settings:read' },
   { label: 'Mobile App Control', href: '/admin/mobile-control', icon: AppWindow, permission: 'settings:read' },

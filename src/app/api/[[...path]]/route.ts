@@ -46,6 +46,7 @@ import { syncYouTubeVideos } from '@/lib/video-sync';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { syncRumourFeeds } from '@/lib/rumour-sync';
 import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronAutomationPipeline } from './handlers/automation-pipeline';
+import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './handlers/launch-intelligence';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -336,6 +337,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'automation') {
       return handleAdminAutomationStatus(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
+      return handleLaunchIntelligenceGet(req);
     }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
@@ -630,6 +635,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     }
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'automation' && segments[2] === 'run') {
       return handleAdminAutomationPipeline(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
+      return handleLaunchIntelligencePost(req);
     }
 
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)

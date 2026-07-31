@@ -909,7 +909,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
     let processed = 0;
     try {
       do {
-        const res = await fetch('/api/admin/data-quality/fix-all', {
+        const response: Response = await fetch('/api/admin/data-quality/fix-all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -922,12 +922,19 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
             cursor,
           }),
         });
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(result.error || 'Fix all failed');
+        const result: {
+          error?: string;
+          succeeded?: number;
+          failed?: number;
+          total?: number;
+          hasMore?: boolean;
+          nextCursor?: string | null;
+        } = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Fix all failed');
         succeeded += result.succeeded || 0;
         failed += result.failed || 0;
         processed += result.total || 0;
-        cursor = result.hasMore ? result.nextCursor : null;
+        cursor = result.hasMore ? (result.nextCursor ?? null) : null;
       } while (cursor);
 
       alert(`Fix all complete: ${succeeded} fixed, ${failed} failed, ${processed} processed.`);
