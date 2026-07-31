@@ -8,6 +8,7 @@ import { revalidatePricePages } from '@/lib/revalidate';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
+import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -113,7 +114,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const listing of batch) {
         summary.processed++;
         const listingId = listing._id;
-        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean } | null;
+        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string } | null;
         const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string } | null;
 
         if (!phone || !source) {
@@ -157,6 +158,33 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             fetchError = true;
           } else {
             const html = await response.text();
+
+            const validation = validateRetailListingPage({
+              html,
+              phoneModel: phone.modelName || '',
+              brandName: phone.brandName || '',
+              expectedRam: (listing as unknown as { ram?: string }).ram || '',
+              expectedStorage: (listing as unknown as { storage?: string }).storage || '',
+              expectedPtaStatus: (listing as unknown as { ptaStatus?: string }).ptaStatus || phone.ptaStatus || '',
+            });
+
+            if (!validation.valid) {
+              await PhoneRetailListing.findByIdAndUpdate(listingId, {
+                $set: {
+                  sourceTitle: validation.title,
+                  verificationStatus: 'pending',
+                  availability: 'unknown',
+                  lastCheckedAt: new Date(),
+                },
+              });
+              summary.pending++;
+              console.warn(`[cron:prices] Listing moved to pending review: ${listing.productUrl} — ${validation.reasons.join('; ')}`);
+              continue;
+            }
+
+            if (validation.title) {
+              await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: { sourceTitle: validation.title } });
+            }
 
             const extracted = extractRetailPrice(html);
             detectedPrice = extracted?.price ?? null;

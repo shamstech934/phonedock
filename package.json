@@ -47,7 +47,8 @@
     "release:gate": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:cron && npm run lint && npm run typecheck && npm test && npm run build",
     "smoke:production": "node scripts/production-smoke-test.mjs",
     "ci:release": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:cron && npm run lint && npm run typecheck && npm test && npm run build",
-    "audit:cron": "node scripts/cron-config-audit.mjs"
+    "audit:cron": "node scripts/cron-config-audit.mjs",
+    "test:price-listing-validation": "tsx scripts/__tests__/retailer-listing-validation.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
