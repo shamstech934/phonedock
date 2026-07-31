@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'PhoneDock — Pakistan Smartphone Database',
-    short_name: 'PhoneDock',
+    name: 'SpecsDekh — Pakistan Smartphone Database',
+    short_name: 'SpecsDekh',
     description: 'Compare smartphone specifications, prices, PTA status, benchmarks, and reviews in Pakistan.',
     start_url: '/',
     display: 'standalone',

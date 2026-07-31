@@ -896,7 +896,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'PhoneDock-PriceChecker/1.0 (compatible; bot)',
+          'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
         redirect: 'follow',

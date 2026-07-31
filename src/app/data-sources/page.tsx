@@ -6,7 +6,7 @@ import { Database, RefreshCw, Globe, CheckCircle, FileText } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Data Sources',
-  description: 'Learn where PhoneDock gets its phone data, our methodology, and how often we update our database.',
+  description: 'Learn where SpecsDekh gets its phone data, our methodology, and how often we update our database.',
   alternates: { canonical: `${getBaseUrl()}/data-sources` },
 };
 
@@ -28,7 +28,7 @@ export default function DataSourcesPage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Our Data Sources</h2>
               <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                PhoneDock compiles phone data from multiple authoritative sources to ensure accuracy and comprehensiveness. Our data pipeline combines automated collection with manual verification:
+                SpecsDekh compiles phone data from multiple authoritative sources to ensure accuracy and comprehensiveness. Our data pipeline combines automated collection with manual verification:
               </p>
               <div className="space-y-3">
                 {[

@@ -22,7 +22,7 @@ export default function GlobalError({
           style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '24px' }}
         >
           <section style={{ width: '100%', maxWidth: '440px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '20px', padding: '32px', boxShadow: '0 18px 45px rgba(15, 23, 42, 0.08)' }}>
-            <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#2563eb' }}>PhoneDock</p>
+            <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#2563eb' }}>SpecsDekh</p>
             <h1 style={{ margin: '0 0 10px', fontSize: '24px' }}>Something went wrong</h1>
             <p style={{ margin: '0 0 22px', color: '#64748b', lineHeight: 1.6 }}>
               The page could not be loaded. Please try again. Your data has not been changed.

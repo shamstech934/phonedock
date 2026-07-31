@@ -10,10 +10,10 @@ const faqs = [
   {
     category: 'General',
     questions: [
-      { q: 'What is PhoneDock?', a: 'PhoneDock is Pakistan\'s most comprehensive smartphone database. We provide detailed specifications, pricing in Pakistani Rupees (PKR), PTA approval status, comparison tools, and expert reviews for all major phone brands available in Pakistan.' },
-      { q: 'Is PhoneDock free to use?', a: 'Yes, PhoneDock is completely free. Our core features — phone database, comparison tools, and reviews — will always be free. We may show advertisements and affiliate links to support our operations.' },
+      { q: 'What is SpecsDekh?', a: 'SpecsDekh is Pakistan\'s most comprehensive smartphone database. We provide detailed specifications, pricing in Pakistani Rupees (PKR), PTA approval status, comparison tools, and expert reviews for all major phone brands available in Pakistan.' },
+      { q: 'Is SpecsDekh free to use?', a: 'Yes, SpecsDekh is completely free. Our core features — phone database, comparison tools, and reviews — will always be free. We may show advertisements and affiliate links to support our operations.' },
       { q: 'How often is the data updated?', a: 'Phone prices are updated daily, specifications are verified weekly, and new phones are added within 24-48 hours of their official announcement. PTA status is checked bi-weekly against the official DIRBS database.' },
-      { q: 'Do you sell phones?', a: 'No, PhoneDock is an information and comparison platform. We do not sell phones directly. However, we provide links to authorized retailers where you can purchase phones at the best available prices.' },
+      { q: 'Do you sell phones?', a: 'No, SpecsDekh is an information and comparison platform. We do not sell phones directly. However, we provide links to authorized retailers where you can purchase phones at the best available prices.' },
     ],
   },
   {
@@ -36,7 +36,7 @@ const faqs = [
     category: 'Features & Tools',
     questions: [
       { q: 'How does the comparison tool work?', a: 'Our comparison tool lets you select up to 3 phones and compare them side-by-side across all specifications, prices, ratings, and PTA status. Simply search for phones and add them to the comparison to see a detailed breakdown.' },
-      { q: 'How are phone ratings calculated?', a: 'PhoneDock ratings are based on five categories: Camera (25%), Performance (20%), Battery (20%), Display (15%), and Value for Money (20%). Each category is scored 0-10 based on testing and analysis. For full details, see our Rating Methodology page.' },
+      { q: 'How are phone ratings calculated?', a: 'SpecsDekh ratings are based on five categories: Camera (25%), Performance (20%), Battery (20%), Display (15%), and Value for Money (20%). Each category is scored 0-10 based on testing and analysis. For full details, see our Rating Methodology page.' },
       { q: 'Can I suggest a phone to be added?', a: 'Yes! If a phone is missing from our database, please use the Contact page to send us the phone name and brand. We\'ll add it as soon as possible, typically within 24-48 hours.' },
     ],
   },
@@ -64,7 +64,7 @@ export default function FAQPage() {
               <HelpCircle className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">Frequently Asked Questions</h1>
-            <p className="text-sm text-muted-foreground mt-2">Find answers to common questions about PhoneDock</p>
+            <p className="text-sm text-muted-foreground mt-2">Find answers to common questions about SpecsDekh</p>
           </div>
 
           <div className="space-y-6 animate-fade-in">

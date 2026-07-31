@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { getBaseUrl } from '@/lib/urls';
 
-const SITE_NAME = 'PhoneDock Pakistan';
+const SITE_NAME = 'SpecsDekh Pakistan';
 const DEFAULT_OG_IMAGE = '/opengraph-image';
 
 export function absoluteUrl(path = '/') {

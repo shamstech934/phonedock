@@ -31,7 +31,7 @@ type MobileSettings = {
 const defaults: MobileSettings = {
   enabled: true,
   maintenanceMode: false,
-  maintenanceTitle: 'PhoneDock is being improved',
+  maintenanceTitle: 'SpecsDekh is being improved',
   maintenanceMessage: 'Please check back shortly.',
   minimumVersion: '0.1.0',
   latestVersion: '0.1.0',

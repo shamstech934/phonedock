@@ -25,7 +25,7 @@ type GuideSlug = keyof typeof guides;
 export function generateStaticParams() { return Object.keys(guides).map(slug => ({ slug })); }
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params; const guide = guides[slug as GuideSlug]; if (!guide) return {};
-  return { title: `${guide.title} | PhoneDock`, description: guide.intro, alternates: { canonical: `${BASE_URL}/buying-guides/${slug}` } };
+  return { title: `${guide.title} | SpecsDekh`, description: guide.intro, alternates: { canonical: `${BASE_URL}/buying-guides/${slug}` } };
 }
 
 async function getPhones(slug: GuideSlug): Promise<PhoneType[]> {

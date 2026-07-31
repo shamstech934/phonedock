@@ -59,5 +59,5 @@ export function getRankingMethodology(category: RankingCategory): string {
   if (category === 'budget') {
     return 'Budget rankings balance value, performance and camera scores against current Pakistan pricing. Phones with missing price data are excluded.';
   }
-  return `This ranking uses PhoneDock's weighted ${categoryLabels[category]} score. Missing signals are ignored rather than treated as zero, and confidence reflects how much verified score data is available.`;
+  return `This ranking uses SpecsDekh's weighted ${categoryLabels[category]} score. Missing signals are ignored rather than treated as zero, and confidence reflects how much verified score data is available.`;
 }

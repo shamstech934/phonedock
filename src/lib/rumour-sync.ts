@@ -89,7 +89,7 @@ export async function syncRumourFeeds() {
         const slug = await News.exists({ slug: baseSlug }) ? `${baseSlug}-${ingestionKey.slice(0, 8)}` : baseSlug;
         await News.create({
           title: item.title.slice(0, 220), slug, content: '', excerpt, category: 'Rumors',
-          author: 'PhoneDock News Desk', published: false, featured: false, status: 'pending',
+          author: 'SpecsDekh News Desk', published: false, featured: false, status: 'pending',
           sourceName: feedHost, sourceUrl: item.link, sourcePublishedAt: item.publishedAt,
           autoImported: true, ingestionKey, confidence: 0.55,
           reviewNotes: 'Automatically imported. Verify the original source and facts before publishing.',

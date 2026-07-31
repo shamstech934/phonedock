@@ -5,7 +5,7 @@ import { Footer } from '@/components/shared/Footer';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
-  description: 'PhoneDock privacy policy. Learn how we collect, use, and protect your personal information when you visit our website.',
+  description: 'SpecsDekh privacy policy. Learn how we collect, use, and protect your personal information when you visit our website.',
   alternates: { canonical: `${getBaseUrl()}/privacy-policy` },
 };
 
@@ -24,7 +24,7 @@ export default function PrivacyPolicyPage() {
             <section className="mb-6">
               <h2 className="font-bold text-lg text-gray-900 mb-2">1. Introduction</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                PhoneDock (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website phonedock.pk (the &quot;Site&quot;). This policy applies to all visitors, users, and others who access the Site.
+                SpecsDekh (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website specsdekh.com (the &quot;Site&quot;). This policy applies to all visitors, users, and others who access the Site.
               </p>
             </section>
 
@@ -56,7 +56,7 @@ export default function PrivacyPolicyPage() {
             <section className="mb-6">
               <h2 className="font-bold text-lg text-gray-900 mb-2">4. Cookies</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                PhoneDock uses cookies — small text files placed on your device — to enhance your experience. We use both session cookies (which expire when you close your browser) and persistent cookies (which remain until they expire or are deleted). You can control cookies through your browser settings; however, disabling cookies may affect certain features of the Site.
+                SpecsDekh uses cookies — small text files placed on your device — to enhance your experience. We use both session cookies (which expire when you close your browser) and persistent cookies (which remain until they expire or are deleted). You can control cookies through your browser settings; however, disabling cookies may affect certain features of the Site.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-2">
                 We also use third-party analytics services (such as Google Analytics) that may set their own cookies to help us understand how visitors use our Site.
@@ -88,7 +88,7 @@ export default function PrivacyPolicyPage() {
                 <li>Withdraw consent for any data processing based on your consent</li>
               </ul>
               <p className="text-sm text-gray-600 leading-relaxed mt-2">
-                To exercise any of these rights, please contact us at privacy@phonedock.pk.
+                To exercise any of these rights, please contact us at privacy@specsdekh.com.
               </p>
             </section>
 
@@ -105,7 +105,7 @@ export default function PrivacyPolicyPage() {
                 We may update this Privacy Policy from time to time. Any changes will be posted on this page with an updated &quot;Last updated&quot; date. We encourage you to review this policy periodically to stay informed about how we protect your information.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
-                If you have any questions about this Privacy Policy, please contact us at <strong>privacy@phonedock.pk</strong>.
+                If you have any questions about this Privacy Policy, please contact us at <strong>privacy@specsdekh.com</strong>.
               </p>
             </section>
           </div>

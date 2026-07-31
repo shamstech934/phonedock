@@ -13,7 +13,7 @@ const BASE_URL = getBaseUrl();
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings().catch(() => null);
-  const siteName = settings?.siteName || "PhoneDock";
+  const siteName = settings?.siteName || "SpecsDekh";
   const titleSuffix = settings?.titleSuffix || `${siteName} Pakistan`;
   const description = settings?.metaDescription || "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.";
   const ogImage = settings?.ogImage || "/og-image.png";
@@ -73,7 +73,7 @@ export const viewport: Viewport = {
 const jsonLdWebSite = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "PhoneDock",
+  name: "SpecsDekh",
   url: BASE_URL,
   description: "Pakistan's #1 Smartphone Database - Compare specs, prices, PTA status, and read expert reviews",
   potentialAction: {
@@ -89,7 +89,7 @@ const jsonLdWebSite = {
 const jsonLdOrg = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "PhoneDock",
+  name: "SpecsDekh",
   url: BASE_URL,
   logo: `${BASE_URL}/logo.svg`,
   description: "Pakistan's #1 Smartphone Database - Compare specs, prices, PTA status, and read expert reviews for all major phone brands in Pakistan.",
@@ -97,7 +97,7 @@ const jsonLdOrg = {
   contactPoint: {
     "@type": "ContactPoint",
     contactType: "customer support",
-    email: "info@phonedock.pk",
+    email: "info@specsdekh.com",
     availableLanguage: ["English", "Urdu"],
   },
   address: {

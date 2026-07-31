@@ -1,5 +1,5 @@
 /**
- * Next.js Proxy — PhoneDock Production
+ * Next.js Proxy — SpecsDekh Production
  *
  * Responsibilities:
  *  1. Block unauthenticated /admin/* requests (redirect to /admin/login)

@@ -26,7 +26,7 @@ export function CookieConsent() {
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-gray-950 dark:text-white">Cookies, analytics and ads</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            PhoneDock uses essential storage and, with permission, analytics and advertising tools to improve the site and keep it free. Read our{' '}
+            SpecsDekh uses essential storage and, with permission, analytics and advertising tools to improve the site and keep it free. Read our{' '}
             <Link href="/privacy-policy" className="font-medium text-blue-600 hover:underline">Privacy Policy</Link>.
           </p>
         </div>

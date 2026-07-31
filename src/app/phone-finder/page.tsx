@@ -4,7 +4,7 @@ import { Footer } from '@/components/shared/Footer';
 import { SmartPhoneFinder } from './SmartPhoneFinder';
 
 export const metadata: Metadata = {
-  title: 'Smart Phone Finder Pakistan | PhoneDock',
+  title: 'Smart Phone Finder Pakistan | SpecsDekh',
   description: 'Describe your budget and priorities in plain language and get matching smartphone filters for Pakistan.',
   alternates: { canonical: '/phone-finder' },
 };

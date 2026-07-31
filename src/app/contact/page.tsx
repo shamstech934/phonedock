@@ -62,7 +62,7 @@ export default function ContactPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 animate-fade-in">
             {[
-              { icon: Mail, label: 'Email', value: 'info@phonedock.pk' },
+              { icon: Mail, label: 'Email', value: 'info@specsdekh.com' },
               { icon: Phone, label: 'Phone', value: 'Not available (email preferred)' },
               { icon: MapPin, label: 'Location', value: 'Pakistan' },
             ].map(item => (

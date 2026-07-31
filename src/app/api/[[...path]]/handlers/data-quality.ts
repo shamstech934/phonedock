@@ -626,7 +626,7 @@ function csvSafe(val: string): string {
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
 
   // POST /api/admin/data-quality/spec-dataset/import
-  // Imports normalized rows into PhoneDock's own MongoDB dataset. No runtime
+  // Imports normalized rows into SpecsDekh's own MongoDB dataset. No runtime
   // dependency on third-party APIs is used after import.
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-dataset' && segments[3] === 'import') {
     const authResult = await getAdminFromRequest(req);
@@ -683,7 +683,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
   }
 
   // POST /api/admin/data-quality/spec-enrichment/search
-  // Searches PhoneDock's local imported dataset only.
+  // Searches SpecsDekh's local imported dataset only.
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'search') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -714,7 +714,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       sourceName: row.sourceName || 'Imported dataset',
     })).filter(c => c.score >= 25).sort((a, b) => b.score - a.score).slice(0, 10);
     const datasetCount = await DeviceSpecDataset.countDocuments();
-    return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'PhoneDock local dataset', datasetCount });
+    return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'SpecsDekh local dataset', datasetCount });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/batch-apply
@@ -781,14 +781,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const numbers = { ramGB: numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i), storageGB: numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i), batteryMAh: numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i), mainCameraMP: numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i), screenSizeInch: numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i) };
     Object.entries(numbers).forEach(([k,v]) => { if (v) update[k] = v; });
     await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
-    phone.sourceName = clean(body.sourceName, 120) || 'PhoneDock local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString()); await phone.save();
+    phone.sourceName = clean(body.sourceName, 120) || 'SpecsDekh local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString()); await phone.save();
     try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_applied', details: `Applied reviewed local dataset specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, phoneId, updatedFields: Object.keys(update).filter(key => update[key] !== '' && update[key] != null) });
   }
 
   // POST /api/admin/data-quality/repair-import
   // Accepts both exported repair work packs (Phone ID) and the standard
-  // PhoneDock import-ready CSV format (slug / brand + model). Rows are resolved
+  // SpecsDekh import-ready CSV format (slug / brand + model). Rows are resolved
   // against existing phones before any write so a missing MongoDB ObjectId does
   // not incorrectly reject an otherwise valid reviewed CSV.
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && (segments[2] === 'repair-import' || segments[2] === 'repair-import-v2')) {
@@ -928,7 +928,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
           const update = { ...populated, ...Object.fromEntries(Object.entries(numeric).filter(([, value]) => value !== null)) };
           if (!dryRun) {
             specsOps.push({ updateOne: { filter: { phoneId: phone._id }, update: { $set: update, $setOnInsert: { phoneId: phone._id } }, upsert: true } });
-            phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { sourceName: clean(row.sourceName || row['Source Name'], 120) || 'PhoneDock reviewed CSV', sourceUrl: clean(row.sourceUrl || row['Source URL'], 1000), lastVerifiedAt: new Date(), dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
+            phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { sourceName: clean(row.sourceName || row['Source Name'], 120) || 'SpecsDekh reviewed CSV', sourceUrl: clean(row.sourceUrl || row['Source URL'], 1000), lastVerifiedAt: new Date(), dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
           }
         } else if (type === 'images') {
           const thumbnail = clean(row.thumbnailUrl || row['Thumbnail URL'] || row.thumbnail || row.imageUrl, 1500);

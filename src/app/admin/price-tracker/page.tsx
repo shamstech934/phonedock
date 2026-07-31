@@ -555,7 +555,7 @@ export default function AdminPriceTrackerPage() {
 
   const handleTestAndTrustSource = async (source: PriceSource) => {
     const productUrl = window.prompt(
-      `Paste one real ${source.name} phone product URL. PhoneDock will verify price extraction before trusting this source.`,
+      `Paste one real ${source.name} phone product URL. SpecsDekh will verify price extraction before trusting this source.`,
       source.baseUrl,
     );
     if (!productUrl) return;
@@ -736,7 +736,7 @@ export default function AdminPriceTrackerPage() {
                   <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all" style={{ width: `${Math.min(100, s.trackingCoveragePct)}%` }} />
                 </div>
                 <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-300">
-                  PhoneDock checks only verified product pages from trusted domains. Add a retailer in Sources, test it, mark it trusted, then use Auto-link catalog. Daily Vercel cron handles every linked brand automatically.
+                  SpecsDekh checks only verified product pages from trusted domains. Add a retailer in Sources, test it, mark it trusted, then use Auto-link catalog. Daily Vercel cron handles every linked brand automatically.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
@@ -1034,7 +1034,7 @@ export default function AdminPriceTrackerPage() {
           <div><strong className="block text-slate-900">3. Link once, sync daily</strong>Imported phones carrying that retailer URL can be bulk-linked. After that, daily cron checks all brands.</div>
         </div>
         <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] text-slate-600">
-          Recommended source order: official brand store/API first, authorised retailer feed second, marketplace last. PhoneDock cannot reliably invent product URLs; each tracked phone needs a genuine product page or feed record.
+          Recommended source order: official brand store/API first, authorised retailer feed second, marketplace last. SpecsDekh cannot reliably invent product URLs; each tracked phone needs a genuine product page or feed record.
         </p>
       </div>
       {/* Add Source Button */}

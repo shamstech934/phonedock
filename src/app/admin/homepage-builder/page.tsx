@@ -388,7 +388,7 @@ export default function HomepageBuilderPage() {
       enabled: true,
       desktopImage: '',
       mobileImage: '',
-      alt: 'PhoneDock Independence Day campaign',
+      alt: 'SpecsDekh Independence Day campaign',
       startAt: '',
       endAt: '',
       overlay: 45,
@@ -439,7 +439,7 @@ export default function HomepageBuilderPage() {
 
       <main className="border-r border-slate-200 p-4 sm:p-5">
         {tab === 'overview' && <div className="space-y-4">
-          <Panel title="Builder status" subtitle="A safe control room for the existing PhoneDock homepage.">
+          <Panel title="Builder status" subtitle="A safe control room for the existing SpecsDekh homepage.">
             <div className="grid grid-cols-2 gap-3">
               <Stat value={homepage.sectionOrder.filter(key => homepage.sections[key]).length} label="Visible sections" />
               <Stat value={homepage.heroPhoneSlugs.filter(Boolean).length || 'Auto'} label="Hero phones" />
@@ -608,7 +608,7 @@ export default function HomepageBuilderPage() {
         {tab === 'navigation' && <div className="space-y-4">
           <Panel title="Brand identity" subtitle="Logo and name are already consumed by the public header.">
             <div className="space-y-3">
-              <Field label="Website name" value={String(settings.siteName || 'PhoneDock')} onChange={value => updateSetting('siteName', value)} />
+              <Field label="Website name" value={String(settings.siteName || 'SpecsDekh')} onChange={value => updateSetting('siteName', value)} />
               <Field label="Tagline" value={String(settings.tagline || '')} onChange={value => updateSetting('tagline', value)} />
               <MediaField label="Header logo" value={String(settings.logo || '')} uploading={uploading === 'logo'} onUrlChange={value => updateSetting('logo', value)} onFile={file => void upload(file, 'logo')} />
               <MediaField label="Browser favicon" value={String(settings.favicon || '')} uploading={uploading === 'favicon'} onUrlChange={value => updateSetting('favicon', value)} onFile={file => void upload(file, 'favicon')} />

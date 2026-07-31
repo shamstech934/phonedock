@@ -1104,8 +1104,8 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
         const acceptLink = `${baseUrl}/admin/accept-invite?token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
         await transporter.sendMail({
           from: process.env.EMAIL_USER, to: email.toLowerCase(),
-          subject: `Invitation to join PhoneDock Admin`,
-          html: `<p>You've been invited to join PhoneDock as <strong>${assignedRole}</strong>.</p><p><a href="${acceptLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Accept Invitation</a></p><p>This link expires in ${expiresInHours} hours.</p>`,
+          subject: `Invitation to join SpecsDekh Admin`,
+          html: `<p>You've been invited to join SpecsDekh as <strong>${assignedRole}</strong>.</p><p><a href="${acceptLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Accept Invitation</a></p><p>This link expires in ${expiresInHours} hours.</p>`,
         });
       }
     } catch (e) { console.error('[Invite] Email failed:', (e as Error).message); }
@@ -2252,7 +2252,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       update.mobileApp = {
         enabled: source.enabled !== false,
         maintenanceMode: source.maintenanceMode === true,
-        maintenanceTitle: safeText(source.maintenanceTitle, 80) || 'PhoneDock is being improved',
+        maintenanceTitle: safeText(source.maintenanceTitle, 80) || 'SpecsDekh is being improved',
         maintenanceMessage: safeText(source.maintenanceMessage, 240) || 'Please check back shortly.',
         minimumVersion: safeVersion(source.minimumVersion, '0.1.0'),
         latestVersion: safeVersion(source.latestVersion, '0.1.0'),

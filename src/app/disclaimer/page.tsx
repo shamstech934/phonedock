@@ -6,7 +6,7 @@ import { AlertTriangle, Shield, Info } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Disclaimer',
-  description: 'Important disclaimers about pricing, PTA status, and general website usage on PhoneDock.',
+  description: 'Important disclaimers about pricing, PTA status, and general website usage on SpecsDekh.',
   alternates: { canonical: `${getBaseUrl()}/disclaimer` },
 };
 
@@ -21,7 +21,7 @@ export default function DisclaimerPage() {
               <AlertTriangle className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">Disclaimer</h1>
-            <p className="text-sm text-muted-foreground mt-2">Important information about using PhoneDock</p>
+            <p className="text-sm text-muted-foreground mt-2">Important information about using SpecsDekh</p>
           </div>
 
           <div className="space-y-5 animate-fade-in">
@@ -33,14 +33,14 @@ export default function DisclaimerPage() {
                 <h2 className="font-bold text-lg text-gray-900">Pricing Disclaimer</h2>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                All phone prices displayed on PhoneDock are in Pakistani Rupees (PKR) and represent <strong>approximate market prices</strong> at the time of our last update. These prices are compiled from various online and offline retailers across Pakistan, including but not limited to Daraz, Telemart, PriceOye, and physical markets in major cities.
+                All phone prices displayed on SpecsDekh are in Pakistani Rupees (PKR) and represent <strong>approximate market prices</strong> at the time of our last update. These prices are compiled from various online and offline retailers across Pakistan, including but not limited to Daraz, Telemart, PriceOye, and physical markets in major cities.
               </p>
               <ul className="text-sm text-gray-600 leading-relaxed space-y-1.5 list-disc pl-5 mt-3">
                 <li>Actual prices may vary significantly from our listed prices</li>
                 <li>Prices may differ between cities (Karachi, Lahore, Islamabad, etc.)</li>
                 <li>Promotional prices, flash sales, and bundle deals are not always reflected</li>
                 <li>Tax and shipping costs may apply and are not included in listed prices</li>
-                <li>PhoneDock is <strong>not a retailer</strong> and does not sell any products</li>
+                <li>SpecsDekh is <strong>not a retailer</strong> and does not sell any products</li>
               </ul>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
                 We strongly recommend verifying the current price with the retailer before making any purchase decision.
@@ -55,7 +55,7 @@ export default function DisclaimerPage() {
                 <h2 className="font-bold text-lg text-gray-900">PTA Disclaimer</h2>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                PhoneDock provides PTA (Pakistan Telecommunication Authority) approval status information as a convenience to our users. However, we want to make the following clear:
+                SpecsDekh provides PTA (Pakistan Telecommunication Authority) approval status information as a convenience to our users. However, we want to make the following clear:
               </p>
               <ul className="text-sm text-gray-600 leading-relaxed space-y-1.5 list-disc pl-5 mt-3">
                 <li>PTA approval statuses are sourced from publicly available PTA databases and manufacturer declarations</li>
@@ -65,7 +65,7 @@ export default function DisclaimerPage() {
                 <li>Using non-PTA-approved devices in Pakistan may result in network blocking or penalties</li>
               </ul>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
-                The PTA status listed on PhoneDock should be used as a starting point for research, not as a definitive legal reference.
+                The PTA status listed on SpecsDekh should be used as a starting point for research, not as a definitive legal reference.
               </p>
             </section>
 
@@ -77,7 +77,7 @@ export default function DisclaimerPage() {
                 <h2 className="font-bold text-lg text-gray-900">General Website Disclaimer</h2>
               </div>
               <p className="text-sm text-gray-600 leading-relaxed">
-                The information provided on PhoneDock is for general informational purposes only. While we strive to keep the information up to date and correct, we make no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability, or availability with respect to the website or the information, products, services, or related graphics contained on the website for any purpose.
+                The information provided on SpecsDekh is for general informational purposes only. While we strive to keep the information up to date and correct, we make no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability, or availability with respect to the website or the information, products, services, or related graphics contained on the website for any purpose.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
                 Any reliance you place on such information is therefore strictly at your own risk. In no event will we be liable for any loss or damage, including without limitation, indirect or consequential loss or damage, or any loss or damage whatsoever arising from loss of data or profits arising out of, or in connection with, the use of this website.

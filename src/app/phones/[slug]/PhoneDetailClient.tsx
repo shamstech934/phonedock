@@ -219,7 +219,7 @@ function BuyingInsight({ phone }: { phone: Phone }) {
   if (available.length < 2) {
     return (
       <div className="card-premium p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">SpecsDekh buying insight</p>
         <h3 className="mt-1 text-xl font-bold text-gray-900">Compare the essentials before buying</h3>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Detailed category scores are not available for this phone yet. Check its chipset, camera, battery, display and current price, then compare it with nearby alternatives below.
@@ -238,7 +238,7 @@ function BuyingInsight({ phone }: { phone: Phone }) {
     <div className="card-premium p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">SpecsDekh buying insight</p>
           <h3 className="mt-1 text-xl font-bold text-gray-900">{verdict}</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Best for <strong className="text-gray-800">{best[0].toLowerCase()}</strong>, with {priceValue}. Its weakest scored area is {weakest[0].toLowerCase()}, so buyers focused on that should compare nearby options first.
@@ -744,7 +744,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   </button>
                   <PhoneShareMenu title={`${p.brand?.name || ''} ${p.modelName}`.trim()} text={`${p.modelName} price, full specifications and review in Pakistan`} compact />
                 </div>
-                <a href={`mailto:info@phonedock.pk?subject=Incorrect info: ${p.modelName}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-blue-500 transition-colors justify-center">
+                <a href={`mailto:info@specsdekh.com?subject=Incorrect info: ${p.modelName}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-blue-500 transition-colors justify-center">
                   <AlertTriangle className="w-3 h-3" /> Report incorrect information
                 </a>
               </div>

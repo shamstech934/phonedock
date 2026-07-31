@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-labelledby="title desc">
+  <title id="title">SpecsDekh</title>
+  <desc id="desc">SpecsDekh brand logo</desc>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#g)"/>
+  <path d="M43.5 18.5c-3.2-2.8-7-4.2-11.4-4.2-7.1 0-12 3.9-12 9.3 0 5.7 4.6 7.7 11.2 9.1 5.5 1.2 7.2 2.1 7.2 4.5 0 2.5-2.4 4.2-6.2 4.2-4.3 0-8.2-1.6-11.7-4.9l-4.4 5.1c4.2 4.1 9.6 6.2 16 6.2 8 0 13.5-4.2 13.5-10.5 0-5.7-4.1-8-11.5-9.7-5.5-1.2-6.9-2-6.9-4.2 0-2 1.9-3.5 5-3.5 3.1 0 6.1 1.1 8.8 3.4l2.4-4.8z" fill="#fff"/>
+  <text x="76" y="42" font-family="Inter,Arial,sans-serif" font-size="31" font-weight="800" fill="#0F172A">Specs</text>
+  <text x="166" y="42" font-family="Inter,Arial,sans-serif" font-size="31" font-weight="800" fill="#2563EB">Dekh</text>
+</svg>

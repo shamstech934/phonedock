@@ -29,7 +29,7 @@ export default function ReviewEngineAdminPage() {
     <div className="max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Sparkles className="w-6 h-6 text-violet-600" /> Smart Review Engine</h1>
-        <p className="text-sm text-muted-foreground mt-1">Generate deterministic scores, pros, cons and buying verdicts from existing PhoneDock data. No external AI or fabricated specs.</p>
+        <p className="text-sm text-muted-foreground mt-1">Generate deterministic scores, pros, cons and buying verdicts from existing SpecsDekh data. No external AI or fabricated specs.</p>
       </div>
 
       <div className="card-premium p-5 space-y-5">

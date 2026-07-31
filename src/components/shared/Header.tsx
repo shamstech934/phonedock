@@ -161,7 +161,7 @@ export function Header() {
     { label: 'PTA Approved', href: '/phones?pta=approved', icon: Shield },
     { label: 'Price Tracker', href: '/price-ranges', icon: BarChart3 },
     { label: 'News', href: '/news', icon: Newspaper },
-    { label: 'About PhoneDock', href: '/about', icon: Info },
+    { label: 'About SpecsDekh', href: '/about', icon: Info },
     { label: 'Contact', href: '/contact', icon: Mail },
     { label: 'Wishlist', href: '/wishlist', icon: Heart },
     { label: 'Recently Viewed', href: '/recently-viewed', icon: Clock3 },
@@ -173,7 +173,7 @@ export function Header() {
         <div className="flex items-center justify-between h-14 sm:h-16">
           <Link href="/" className="flex items-center gap-2.5">
             {siteSettings.logo ? (
-              <Image src={siteSettings.logo} alt={siteSettings.siteName || 'PhoneDock'} width={36} height={36} className="w-9 h-9 rounded-xl object-contain" unoptimized />
+              <Image src={siteSettings.logo} alt={siteSettings.siteName || 'SpecsDekh'} width={36} height={36} className="w-9 h-9 rounded-xl object-contain" unoptimized />
             ) : (
               <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
                 <Smartphone className="w-5 h-5 text-white" />

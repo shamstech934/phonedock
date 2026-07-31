@@ -27,7 +27,7 @@ export interface ISettings extends Document {
 }
 
 const SettingsSchema = new Schema<ISettings>({
-  siteName: { type: String, default: 'PhoneDock' },
+  siteName: { type: String, default: 'SpecsDekh' },
   tagline: { type: String, default: '' },
   contactEmail: { type: String, default: '' },
   supportEmail: { type: String, default: '' },
@@ -63,7 +63,7 @@ const SettingsSchema = new Schema<ISettings>({
   mobileApp: { type: Schema.Types.Mixed, default: {
     enabled: true,
     maintenanceMode: false,
-    maintenanceTitle: 'PhoneDock is being improved',
+    maintenanceTitle: 'SpecsDekh is being improved',
     maintenanceMessage: 'Please check back shortly.',
     minimumVersion: '0.1.0',
     latestVersion: '0.1.0',
@@ -96,5 +96,22 @@ export async function getSettings(): Promise<ISettings> {
     const created = await Settings.create({});
     settings = await Settings.findById(created._id).lean() as unknown as ISettings;
   }
+
+  // One-time, backward-compatible brand migration for databases created before SpecsDekh.
+  // Internal collection names and authentication issuers remain unchanged.
+  const legacyUpdates: Record<string, string> = {};
+  if (!settings.siteName || settings.siteName === 'PhoneDock') legacyUpdates.siteName = 'SpecsDekh';
+  if (!settings.titleSuffix || settings.titleSuffix.includes('PhoneDock')) legacyUpdates.titleSuffix = 'SpecsDekh Pakistan';
+  if (!settings.contactEmail || settings.contactEmail.endsWith('@phonedock.pk')) legacyUpdates.contactEmail = 'info@specsdekh.com';
+  if (!settings.supportEmail || settings.supportEmail.endsWith('@phonedock.pk')) legacyUpdates.supportEmail = 'support@specsdekh.com';
+  if (!settings.logo) legacyUpdates.logo = '/logo.svg';
+  if (!settings.favicon) legacyUpdates.favicon = '/favicon.svg';
+  if (!settings.ogImage) legacyUpdates.ogImage = '/og-image.png';
+
+  if (Object.keys(legacyUpdates).length > 0) {
+    await Settings.updateOne({ _id: settings._id }, { $set: legacyUpdates });
+    settings = { ...settings, ...legacyUpdates } as ISettings;
+  }
+
   return settings as ISettings;
 }

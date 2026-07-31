@@ -13,7 +13,7 @@ export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: 'Best Phones in Pakistan 2026 – Smart Rankings',
-  description: 'PhoneDock smart rankings for the best overall, gaming, camera, battery, value and budget phones in Pakistan.',
+  description: 'SpecsDekh smart rankings for the best overall, gaming, camera, battery, value and budget phones in Pakistan.',
   alternates: { canonical: `${BASE_URL}/rankings` },
 };
 
@@ -38,7 +38,7 @@ export default async function RankingsPage() {
       <section className="border-b bg-white">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:py-16">
           <div className="max-w-3xl">
-            <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">PhoneDock Intelligence</span>
+            <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">SpecsDekh Intelligence</span>
             <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">Smart phone rankings for Pakistan</h1>
             <p className="mt-4 text-base leading-7 text-slate-600 sm:text-lg">Rankings combine verified scores, Pakistan pricing and data-confidence checks. Missing specifications are never silently treated as zero.</p>
           </div>

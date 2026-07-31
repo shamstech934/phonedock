@@ -332,7 +332,7 @@ function TrustSection({ totalPhones, totalBrands }: { totalPhones?: number; tota
                 Built for Pakistani buyers
               </div>
               <h2 id="why-phonedock-title" className="font-display text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                Why people use PhoneDock
+                Why people use SpecsDekh
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
                 Clear phone data, useful buying tools and Pakistan-focused guidance in one place.
@@ -442,13 +442,13 @@ const PHONEDOCK_TOOLS = [
   },
 ];
 
-function ExplorePhoneDockTools() {
+function ExploreSpecsDekhTools() {
   return (
     <section id="phonedock-tools" className="scroll-mt-28 space-y-5" aria-labelledby="phonedock-tools-title">
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-600">Useful shortcuts</p>
-          <h2 id="phonedock-tools-title" className="font-display text-xl font-extrabold tracking-tight text-gray-950 sm:text-2xl">Explore PhoneDock Tools</h2>
+          <h2 id="phonedock-tools-title" className="font-display text-xl font-extrabold tracking-tight text-gray-950 sm:text-2xl">Explore SpecsDekh Tools</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">Working tools designed to make smartphone research faster and easier.</p>
         </div>
       </div>
@@ -620,7 +620,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             </div>
 
             {/* ===== 16-18. COMING SOON TEASERS ===== */}
-            <ExplorePhoneDockTools />
+            <ExploreSpecsDekhTools />
 
             {/* ===== 19. SPONSOR BANNER ===== */}
             {visible('sponsors') && data.sponsors && data.sponsors.length > 0 && (

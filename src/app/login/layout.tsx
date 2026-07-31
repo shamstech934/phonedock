@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Sign In',
-  description: 'Sign in to your PhoneDock account.',
+  description: 'Sign in to your SpecsDekh account.',
   robots: { index: false, follow: true },
   alternates: { canonical: '/login' },
 };

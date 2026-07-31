@@ -6,7 +6,7 @@ import { Footer } from '@/components/shared/Footer';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 export const metadata: Metadata = {
-  title: 'Phone Buying Guides for Pakistan | PhoneDock',
+  title: 'Phone Buying Guides for Pakistan | SpecsDekh',
   description: 'Simple smartphone buying guides for gaming, camera, battery, value and PTA-approved phones in Pakistan.',
   alternates: { canonical: `${BASE_URL}/buying-guides` },
 };
@@ -23,7 +23,7 @@ export default function BuyingGuidesPage() {
   return <div className="min-h-screen flex flex-col"><Header /><main className="flex-1">
     <section className="border-b bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:py-20">
-        <div className="flex items-center gap-2 text-blue-300"><Sparkles className="h-5 w-5" /><span className="text-sm font-bold uppercase tracking-widest">PhoneDock Guides</span></div>
+        <div className="flex items-center gap-2 text-blue-300"><Sparkles className="h-5 w-5" /><span className="text-sm font-bold uppercase tracking-widest">SpecsDekh Guides</span></div>
         <h1 className="mt-4 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">Choose your next phone with confidence</h1>
         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">Practical Pakistan-focused guides based on price, scores, specifications and PTA status.</p>
       </div>

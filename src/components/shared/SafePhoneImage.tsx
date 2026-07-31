@@ -25,7 +25,7 @@ const ALLOWED_HOSTS = new Set([
   'images.unsplash.com',
   'upload.wikimedia.org',
   'i.ytimg.com',
-  'phonedock.pk',
+  'specsdekh.com',
   'localhost',
 ]);
 

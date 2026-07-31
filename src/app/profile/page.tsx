@@ -102,7 +102,7 @@ export default function ProfilePage() {
               {profile.avatarUrl ? <img src={profile.avatarUrl} alt="Profile avatar" className="h-full w-full object-cover" /> : initials}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-blue-100">PhoneDock account</p>
+              <p className="text-sm font-semibold text-blue-100">SpecsDekh account</p>
               <h1 className="mt-1 truncate text-3xl font-black tracking-tight">{profile.name || 'Your profile'}</h1>
               <p className="mt-1 truncate text-sm text-blue-100">{profile.email}</p>
             </div>
@@ -111,7 +111,7 @@ export default function ProfilePage() {
 
         <form onSubmit={save} className="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-            <div className="mb-6 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-blue-50 text-blue-600"><UserRound className="h-5 w-5"/></div><div><h2 className="font-black text-slate-950">Personal details</h2><p className="text-sm text-slate-500">Used to personalize your PhoneDock experience.</p></div></div>
+            <div className="mb-6 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-blue-50 text-blue-600"><UserRound className="h-5 w-5"/></div><div><h2 className="font-black text-slate-950">Personal details</h2><p className="text-sm text-slate-500">Used to personalize your SpecsDekh experience.</p></div></div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-semibold text-slate-700">Name<input value={profile.name} maxLength={80} required onChange={event => updateField('name', event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
               <label className="text-sm font-semibold text-slate-700">Email<input value={profile.email} readOnly className="mt-1.5 h-11 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 px-3 font-normal text-slate-500" /></label>

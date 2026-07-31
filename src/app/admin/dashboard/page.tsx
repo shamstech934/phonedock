@@ -86,7 +86,7 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {admin?.name || 'Admin'}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with PhoneDock</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with SpecsDekh</p>
         </div>
         <Link href="/" className="self-start bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 h-9 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
           <Eye className="w-4 h-4 shrink-0" /> View Site

@@ -7,7 +7,7 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'How We Test Phones',
-  description: 'Learn about PhoneDock\'s phone testing methodology, benchmark procedures, and how we evaluate smartphones.',
+  description: 'Learn about SpecsDekh\'s phone testing methodology, benchmark procedures, and how we evaluate smartphones.',
   alternates: { canonical: `${getBaseUrl()}/how-we-test` },
 };
 
@@ -29,7 +29,7 @@ export default function HowWeTestPage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Our Testing Philosophy</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                At PhoneDock, our testing is designed to reflect real-world usage for Pakistani consumers. We evaluate phones based on what matters most in daily life — camera quality in different lighting conditions, battery life with typical usage patterns, display quality for media consumption, and performance for gaming and multitasking.
+                At SpecsDekh, our testing is designed to reflect real-world usage for Pakistani consumers. We evaluate phones based on what matters most in daily life — camera quality in different lighting conditions, battery life with typical usage patterns, display quality for media consumption, and performance for gaming and multitasking.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
                 Every phone in our database that carries a rating has been evaluated using a consistent methodology to ensure fair and comparable results across all price ranges and brands.

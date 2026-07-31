@@ -18,7 +18,7 @@ import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 interface PhoneData {

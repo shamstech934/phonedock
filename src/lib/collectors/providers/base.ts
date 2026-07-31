@@ -80,7 +80,7 @@ export abstract class BaseProvider {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = {
-        'User-Agent': 'PhoneDock-Collector/1.0',
+        'User-Agent': 'SpecsDekh-Collector/1.0',
         'Accept': 'application/json',
         ...this.config.headers,
         ...(options.headers as Record<string, string> || {}),

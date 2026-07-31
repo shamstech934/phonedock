@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Brand } from '@/lib/models';
 import { connectDBSafe } from '@/lib/mongodb';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
 
 export async function generateMetadata({
   params,

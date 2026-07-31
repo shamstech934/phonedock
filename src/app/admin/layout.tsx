@@ -176,7 +176,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-sm text-gray-900 hidden sm:block">PhoneDock Admin</span>
+          <span className="font-bold text-sm text-gray-900 hidden sm:block">SpecsDekh Admin</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
           <button

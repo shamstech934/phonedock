@@ -15,7 +15,7 @@ export default function LaunchCenterPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">PhoneDock 2.0</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">SpecsDekh 2.0</p>
           <h1 className="mt-1 text-2xl font-bold text-gray-950">Launch Center</h1>
           <p className="mt-1 text-sm text-gray-500">Ek screen par deployment, earning, analytics aur security setup check karein.</p>
         </div>

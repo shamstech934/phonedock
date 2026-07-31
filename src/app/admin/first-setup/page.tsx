@@ -162,7 +162,7 @@ export default function FirstSetupPage() {
           </div>
           <h1 className="text-xl font-extrabold text-gray-900">First Admin Setup</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Create the first superadmin account for PhoneDock
+            Create the first superadmin account for SpecsDekh
           </p>
         </div>
 

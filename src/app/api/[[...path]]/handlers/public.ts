@@ -726,7 +726,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       config: {
         ...mobileApp,
         branding: {
-          siteName: settings.siteName || 'PhoneDock',
+          siteName: settings.siteName || 'SpecsDekh',
           tagline: settings.tagline || '',
           logo: settings.logo || '',
           primaryColor: typeof settings.theme?.primaryColor === 'string' ? settings.theme.primaryColor : '#1769ff',
@@ -883,7 +883,7 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
           from: process.env.EMAIL_USER,
           to: process.env.EMAIL_USER, // Send to site owner
           replyTo: cleanEmail,
-          subject: `[PhoneDock Contact] ${cleanSubject}`,
+          subject: `[SpecsDekh Contact] ${cleanSubject}`,
           html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:20px">
             <h2 style="color:#1a1a1a;margin-bottom:16px">New Contact Message</h2>
             <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -892,7 +892,7 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
               <tr><td style="padding:8px 0;color:#666;font-size:14px">Subject</td><td style="padding:8px 0;font-size:14px;font-weight:500">${cleanSubject}</td></tr>
             </table>
             <div style="background:#f9fafb;border-radius:8px;padding:16px;font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap">${cleanMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-            <p style="color:#999;font-size:12px;margin-top:16px">Sent from PhoneDock contact form</p>
+            <p style="color:#999;font-size:12px;margin-top:16px">Sent from SpecsDekh contact form</p>
           </div>`,
         });
       } catch (emailErr: unknown) {
