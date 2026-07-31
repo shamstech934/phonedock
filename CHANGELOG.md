@@ -50,3 +50,9 @@ No intentional breaking API change is declared; integrations with internal catch
 - Added permission-aware nested links and active-group expansion.
 - Replaced mobile horizontal admin tabs with a grouped selector.
 - Statically verified all 40 linked admin routes exist.
+
+## Phase 10 — Final Production Audit & Release Gate
+- Added static route/link/branding/origin audit.
+- Added consolidated `release:gate` verification command.
+- Verified 87 application routes with no broken or unsafe static internal links.
+- Added JSON audit artifact and production audit report.
