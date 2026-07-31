@@ -29,3 +29,5 @@ export { AIResearchDraft } from './AIResearchDraft';
 export { LaunchCandidate } from './LaunchCandidate';
 
 export { MonitoringRun } from './MonitoringRun';
+
+export { PakistanMarketSignal } from './PakistanMarketSignal';

@@ -1,3 +1,12 @@
+# SpecsDekh 23.0.0 — Pakistan Intelligence
+
+- Added a low-load Pakistan market review module.
+- Detects missing PTA status, missing Pakistan price, missing retailer coverage, stale verification, retailer price conflicts and missing Pakistan launch dates.
+- Reuses trusted verified Price Tracker listings instead of paid AI or web scraping.
+- Adds safe admin-reviewed price/PTA recommendations with Activity Log and Price History tracking.
+- Scans are capped at 500 phones and default to 150 per run.
+- Nothing publishes automatically.
+
 # Changelog
 
 ## 1.0.0-rc.1 — 2026-07-22

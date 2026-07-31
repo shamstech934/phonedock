@@ -54,6 +54,7 @@ const adminLinks: NavLink[] = [
     { label: 'Launch Center', href: '/admin/launch-center', permission: 'settings:read' },
     { label: 'Launch Intelligence', href: '/admin/launch-intelligence', permission: 'news:read' },
     { label: 'Intelligence Center', href: '/admin/intelligence-center', permission: 'phones:read' },
+    { label: 'Pakistan Intelligence', href: '/admin/pakistan-intelligence', permission: 'prices:read' },
     { label: 'AI Research', href: '/admin/ai-research', permission: 'ai-research:read' },
     { label: 'Continuous Monitoring', href: '/admin/continuous-monitoring', permission: 'phones:read' },
   ]},
