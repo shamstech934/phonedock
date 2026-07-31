@@ -27,3 +27,5 @@ export { AIResearchJob } from './AIResearchJob';
 export { AIResearchDraft } from './AIResearchDraft';
 
 export { LaunchCandidate } from './LaunchCandidate';
+
+export { MonitoringRun } from './MonitoringRun';

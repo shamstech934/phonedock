@@ -48,6 +48,8 @@ import { syncRumourFeeds } from '@/lib/rumour-sync';
 import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronAutomationPipeline } from './handlers/automation-pipeline';
 import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './handlers/launch-intelligence';
 import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
+import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
+import { runContinuousMonitoring } from '@/lib/continuous-monitoring';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -178,6 +180,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       }
       await connectDB();
       return NextResponse.json(await syncRumourFeeds());
+    }
+
+    // Cron: /api/cron/continuous-monitoring — daily bounded review-first checks.
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'continuous-monitoring') {
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '') || req.headers.get('x-cron-secret');
+      if (!isValidCronSecret(secret)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      await connectDB();
+      return NextResponse.json(await runContinuousMonitoring({ trigger: 'cron', syncFeeds: true }));
     }
 
     // Cron: /api/cron/collector-sync — triggers due collector source syncs (Scheduler)
@@ -346,6 +356,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'intelligence-center') {
       return handleIntelligenceCenterGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
+      return handleContinuousMonitoringGet(req);
     }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
@@ -644,6 +658,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
       return handleLaunchIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
+      return handleContinuousMonitoringPost(req);
     }
 
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)
