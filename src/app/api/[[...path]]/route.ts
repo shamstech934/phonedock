@@ -47,6 +47,7 @@ import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscrib
 import { syncRumourFeeds } from '@/lib/rumour-sync';
 import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronAutomationPipeline } from './handlers/automation-pipeline';
 import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './handlers/launch-intelligence';
+import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -341,6 +342,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
       return handleLaunchIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'intelligence-center') {
+      return handleIntelligenceCenterGet(req);
     }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
