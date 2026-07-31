@@ -63,3 +63,13 @@ No intentional breaking API change is declared; integrations with internal catch
 - Added a final aggregate release audit and admin/API contract audit to the release gate.
 - Preserved backward-compatible database configuration while standardizing production documentation.
 - Included all cumulative import, routing, cron, admin UX, automation, launch intelligence, and Price Tracker safeguards.
+
+## 21.0.0 — AI Research Queue Hardening
+
+- Replaced monolithic AI research requests with queued, cursor-based jobs.
+- Added serverless-safe bounded job batches and resumable progress.
+- Added per-phone failure tracking without losing completed drafts.
+- Added pending-draft deduplication so repeated runs update review drafts instead of multiplying them.
+- Added manual job run and cancellation endpoints.
+- Updated Admin AI Research to process bounded batches with live progress.
+- Added a release-gate audit for the AI research queue contract.

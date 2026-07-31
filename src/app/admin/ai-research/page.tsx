@@ -79,15 +79,26 @@ export default function AiResearchPage() {
 
       const res = await fetch('/api/admin/ai-research/jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ type, phoneIds }),
+        body: JSON.stringify({ type, phoneIds, batchSize: 2 }),
       });
-      const result = await res.json();
-      if (!res.ok) { setJobMessage(result.error || 'Job failed to start.'); setRunning(false); return; }
-      setJobMessage(`Done: ${result.generated} draft(s) generated, ${result.failed} failed, out of ${result.total} phone(s) requested.`);
+      const queued = await res.json();
+      if (!res.ok) { setJobMessage(queued.error || 'Job failed to queue.'); setRunning(false); return; }
+
+      let current = queued;
+      setJobMessage(`Queued ${queued.total} phone(s). Processing bounded batches…`);
+      for (let attempt = 0; attempt < 30 && ['queued', 'running'].includes(current.status); attempt++) {
+        const batchRes = await fetch(`/api/admin/ai-research/jobs/${queued.jobId}/run`, {
+          method: 'POST', credentials: 'include',
+        });
+        current = await batchRes.json();
+        if (!batchRes.ok) throw new Error(current.error || 'Research batch failed.');
+        setJobMessage(`Processed ${current.processed}/${current.total} · drafts ${current.generated} · failed ${current.failed}`);
+      }
+      setJobMessage(`Finished: ${current.generated || 0} draft(s), ${current.failed || 0} failed, status ${current.status}.`);
       setSlugsInput('');
       fetchData();
-    } catch {
-      setJobMessage('Job failed — check your network and try again.');
+    } catch (error) {
+      setJobMessage(error instanceof Error ? error.message : 'Job failed — check your network and try again.');
     } finally { setRunning(false); }
   };
 
