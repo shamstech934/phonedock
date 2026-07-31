@@ -46,6 +46,32 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
 
+  // Canonical host redirect: keep one public URL for SEO, cookies, and sharing.
+  if (req.nextUrl.hostname.toLowerCase() === 'www.specsdekh.com') {
+    const canonicalUrl = req.nextUrl.clone();
+    canonicalUrl.hostname = 'specsdekh.com';
+    canonicalUrl.protocol = 'https:';
+    canonicalUrl.port = '';
+    return NextResponse.redirect(canonicalUrl, 308);
+  }
+
+  // Recover malformed nested admin authentication URLs from stale bookmarks
+  // or historical relative links, e.g. /compare/admin/login.
+  const nestedAdminAuthRoutes = [
+    '/admin/login',
+    '/admin/forgot-password',
+    '/admin/reset-password',
+    '/admin/first-setup',
+  ];
+  const recoveredAdminRoute = nestedAdminAuthRoutes.find(
+    (route) => pathname !== route && pathname.endsWith(route),
+  );
+  if (recoveredAdminRoute) {
+    const recoveredUrl = req.nextUrl.clone();
+    recoveredUrl.pathname = recoveredAdminRoute;
+    return NextResponse.redirect(recoveredUrl, 308);
+  }
+
   // Maintenance mode: block public pages (never admin, API, or static assets)
   // so an admin can still log in and turn it back off.
   if (!isStaticAsset(pathname) && !pathname.startsWith('/admin') && !pathname.startsWith('/api')) {
