@@ -8,7 +8,7 @@ const supportedMajors = new Set([22, 24]);
 
 if (!supportedMajors.has(major)) {
   console.error(
-    `PhoneDock supports Node.js 22.x and 24.x LTS. Current runtime: ${process.version}. ` +
+    `SpecsDekh supports Node.js 22.x and 24.x LTS. Current runtime: ${process.version}. ` +
     'Switch to Node 22 or Node 24 before running npm ci or production builds.',
   );
   process.exit(1);
@@ -62,5 +62,5 @@ if (missingTools.length > 0) {
   process.exit(1);
 }
 
-console.log(`PhoneDock runtime is healthy (Node ${process.version}, npm dependencies installed).`);
+console.log(`SpecsDekh runtime is healthy (Node ${process.version}, npm dependencies installed).`);
 console.log(`Declared Node engine: ${packageJson.engines?.node || 'not set'}`);
