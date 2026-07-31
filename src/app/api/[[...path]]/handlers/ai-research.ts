@@ -5,6 +5,7 @@ import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { getAIStatus, type EnrichmentType } from '@/lib/ai-enrichment';
 import { processAIResearchJob } from '@/lib/ai-research-worker';
 import { parseBoundedInt } from '@/lib/http';
+import { getAIResearchPolicy } from '@/lib/ai-research-policy';
 
 const VALID_TYPES: EnrichmentType[] = ['specs', 'images', 'prices'];
 
@@ -19,7 +20,7 @@ export async function handleAiResearchGet(req: NextRequest, segments: string[]):
 
   // ---- /api/admin/ai-research/status ----
   if (segments.length === 3 && segments[2] === 'status') {
-    return NextResponse.json(getAIStatus());
+    return NextResponse.json({ ...getAIStatus(), policy: getAIResearchPolicy() });
   }
 
   // ---- /api/admin/ai-research/jobs ----
@@ -66,12 +67,14 @@ export async function handleAiResearchPost(req: NextRequest, segments: string[])
   // ---- /api/admin/ai-research/jobs (create a bounded queued job) ----
   if (segments.length === 3 && segments[2] === 'jobs') {
     const body = await req.json();
+    const policy = getAIResearchPolicy();
+    if (!policy.enabled) return NextResponse.json({ error: 'AI Research is disabled by AI_RESEARCH_MODE=off' }, { status: 409 });
     const type = String(body.type || '') as EnrichmentType;
     const rawIds: string[] = Array.isArray(body.phoneIds) ? body.phoneIds : [];
-    const phoneIds = [...new Set(rawIds.filter(id => mongoose.isValidObjectId(id)).slice(0, 50))];
-    const batchSize = Math.min(5, Math.max(1, Number(body.batchSize || 2)));
+    const phoneIds = [...new Set(rawIds.filter(id => mongoose.isValidObjectId(id)).slice(0, policy.maxPhonesPerJob))];
+    const batchSize = Math.min(policy.batchSize, Math.max(1, Number(body.batchSize || policy.batchSize)));
     if (!VALID_TYPES.includes(type)) return NextResponse.json({ error: 'type must be one of specs, images, prices' }, { status: 400 });
-    if (phoneIds.length === 0) return NextResponse.json({ error: 'phoneIds is required (max 50 per job)' }, { status: 400 });
+    if (phoneIds.length === 0) return NextResponse.json({ error: `phoneIds is required (max ${policy.maxPhonesPerJob} per job)` }, { status: 400 });
 
     const status = getAIStatus();
     if (!status.configured[type]) {
@@ -84,18 +87,22 @@ export async function handleAiResearchPost(req: NextRequest, segments: string[])
     const job = await AIResearchJob.create({
       type,
       status: 'queued',
+      mode: policy.mode === 'standard' ? 'standard' : 'lite',
       phoneIds: existingIds,
       total: existingIds.length,
       batchSize,
       cursor: 0,
       processed: 0,
       generated: 0,
+      skipped: 0,
       failed: 0,
+      providerCalls: 0,
+      maxProviderCalls: policy.maxProviderCallsPerJob,
       createdBy: admin._id,
     });
 
     try { await ActivityLog.create({ adminId: admin._id, action: 'ai_research_job_queued', details: `Queued ${type} research for ${existingIds.length} phone(s)`, entityType: 'phone' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, jobId: job._id, status: job.status, total: job.total, batchSize: job.batchSize });
+    return NextResponse.json({ success: true, jobId: job._id, status: job.status, total: job.total, batchSize: job.batchSize, mode: job.mode, maxProviderCalls: job.maxProviderCalls });
   }
 
   // ---- /api/admin/ai-research/jobs/:id/run (one serverless-safe batch) ----
@@ -112,11 +119,17 @@ export async function handleAiResearchPost(req: NextRequest, segments: string[])
       processed: result.job.processed,
       generated: result.job.generated,
       failed: result.job.failed,
+      skipped: result.job.skipped,
+      providerCalls: result.job.providerCalls,
+      maxProviderCalls: result.job.maxProviderCalls,
+      nextRunAfter: result.job.nextRunAfter,
       cursor: result.job.cursor,
       processedThisRun: result.processedThisRun,
       generatedThisRun: result.generatedThisRun,
       failuresThisRun: result.failuresThisRun,
-    });
+      skippedThisRun: result.skippedThisRun,
+      throttled: result.throttled,
+    }, { status: result.throttled ? 429 : 200 });
   }
 
   // ---- /api/admin/ai-research/jobs/:id/cancel ----

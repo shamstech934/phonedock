@@ -13,6 +13,16 @@ interface AIStatus {
   tavily: boolean;
   imageSearch: boolean;
   configured: { specs: boolean; images: boolean; prices: boolean };
+  policy: {
+    mode: 'off' | 'lite' | 'standard';
+    enabled: boolean;
+    maxPhonesPerJob: number;
+    batchSize: number;
+    maxProviderCallsPerJob: number;
+    cooldownSeconds: number;
+    draftFreshHours: number;
+    autoRun: boolean;
+  };
 }
 
 interface DraftPhone { modelName?: string; slug?: string; thumbnail?: string }
@@ -66,7 +76,8 @@ export default function AiResearchPage() {
   const runJob = async () => {
     const slugs = slugsInput.split(',').map(s => s.trim()).filter(Boolean);
     if (slugs.length === 0) { setJobMessage('Enter at least one phone slug.'); return; }
-    if (slugs.length > 10) { setJobMessage('Max 10 phones per job — split into multiple runs.'); return; }
+    const maxPhones = status?.policy?.maxPhonesPerJob || 5;
+    if (slugs.length > maxPhones) { setJobMessage(`Max ${maxPhones} phones per job in ${status?.policy?.mode || 'lite'} mode — split into multiple runs.`); return; }
     setRunning(true);
     setJobMessage(null);
     try {
@@ -79,7 +90,7 @@ export default function AiResearchPage() {
 
       const res = await fetch('/api/admin/ai-research/jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ type, phoneIds, batchSize: 2 }),
+        body: JSON.stringify({ type, phoneIds, batchSize: status?.policy?.batchSize || 1 }),
       });
       const queued = await res.json();
       if (!res.ok) { setJobMessage(queued.error || 'Job failed to queue.'); setRunning(false); return; }
@@ -91,8 +102,20 @@ export default function AiResearchPage() {
           method: 'POST', credentials: 'include',
         });
         current = await batchRes.json();
+        if (batchRes.status === 429 && current.throttled) {
+          const waitMs = current.nextRunAfter
+            ? Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()))
+            : Math.max(1000, (status?.policy?.cooldownSeconds || 20) * 1000);
+          setJobMessage(`Lite-mode cooldown · continuing in ${Math.ceil(waitMs / 1000)}s…`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          continue;
+        }
         if (!batchRes.ok) throw new Error(current.error || 'Research batch failed.');
-        setJobMessage(`Processed ${current.processed}/${current.total} · drafts ${current.generated} · failed ${current.failed}`);
+        setJobMessage(`Processed ${current.processed}/${current.total} · drafts ${current.generated} · skipped ${current.skipped || 0} · failed ${current.failed} · AI calls ${current.providerCalls || 0}/${current.maxProviderCalls || 0}`);
+        if (current.nextRunAfter && ['queued', 'running'].includes(current.status)) {
+          const waitMs = Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()));
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+        }
       }
       setJobMessage(`Finished: ${current.generated || 0} draft(s), ${current.failed || 0} failed, status ${current.status}.`);
       setSlugsInput('');
@@ -135,7 +158,10 @@ export default function AiResearchPage() {
 
       {/* Provider status */}
       <div className="card-premium p-5">
-        <h3 className="font-bold text-sm text-gray-900 mb-3">Provider Status</h3>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="font-bold text-sm text-gray-900">Provider Status</h3>
+          <Badge variant="secondary" className="text-[10px] capitalize">{status?.policy?.mode || 'lite'} mode</Badge>
+        </div>
         {status?.providerConfigured ? (
           <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50 mb-3">
             <CheckCircle className="w-3 h-3 mr-1" /> {status.providerName} connected
@@ -151,6 +177,11 @@ export default function AiResearchPage() {
             </div>
           ))}
         </div>
+        {status?.policy && (
+          <p className="text-[11px] text-muted-foreground mt-3">
+            Load protection: max {status.policy.maxPhonesPerJob} phones/job, {status.policy.batchSize} phone/batch, {status.policy.maxProviderCallsPerJob} provider calls/job, {status.policy.cooldownSeconds}s cooldown. Fresh pending drafts are reused for {status.policy.draftFreshHours} hours.
+          </p>
+        )}
         {!status?.providerConfigured && (
           <p className="text-[11px] text-muted-foreground mt-3">
             Set <code>AI_PROVIDER</code> plus its API key (OpenRouter or OpenAI), and <code>TAVILY_API_KEY</code> for research, in your environment variables to enable this.
@@ -170,12 +201,12 @@ export default function AiResearchPage() {
           <input
             value={slugsInput}
             onChange={e => setSlugsInput(e.target.value)}
-            placeholder="phone-slug-1, phone-slug-2 (max 10)"
+            placeholder={`phone-slug-1, phone-slug-2 (max ${status?.policy?.maxPhonesPerJob || 5})`}
             className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2"
           />
           <button
             onClick={runJob}
-            disabled={running || !status?.configured[type]}
+            disabled={running || !status?.policy?.enabled || !status?.configured[type]}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-violet-500 hover:bg-violet-600 disabled:opacity-50 rounded-lg transition-colors"
           >
             {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Run
