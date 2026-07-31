@@ -13,12 +13,9 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'en-PK',
     categories: ['technology', 'shopping', 'utilities'],
     icons: [
-      {
-        src: '/logo.svg',
-        sizes: 'any',
-        type: 'image/svg+xml',
-        purpose: 'any',
-      },
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   };
 }

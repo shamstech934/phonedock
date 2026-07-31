@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const titleSuffix = settings?.titleSuffix || `${siteName} Pakistan`;
   const description = settings?.metaDescription || "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.";
   const ogImage = settings?.ogImage || "/og-image.png";
-  const favicon = settings?.favicon || "/logo.svg";
+  const favicon = settings?.favicon || "/favicon.svg";
 
   return {
     metadataBase: new URL(BASE_URL),
@@ -54,7 +54,11 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: siteName,
     category: "technology",
     manifest: "/manifest.webmanifest",
-    icons: { icon: favicon, shortcut: favicon, apple: favicon },
+    icons: {
+      icon: [{ url: favicon, type: "image/svg+xml" }, { url: "/favicon.ico" }],
+      shortcut: "/favicon.ico",
+      apple: "/apple-touch-icon.png",
+    },
     verification: {
       google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
       other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION

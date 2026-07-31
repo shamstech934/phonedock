@@ -218,7 +218,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       `/admin/phones/${row._id.toString()}/edit`,
     ]);
     const csv = '\uFEFF' + [header, ...csvRows].map(row => row.map(quote).join(',')).join('\n');
-    const filename = `phonedock-missing-${type}-all.csv`;
+    const filename = `specsdekh-missing-${type}-all.csv`;
 
     return new NextResponse(csv, {
       status: 200,

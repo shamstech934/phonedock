@@ -137,7 +137,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Lightweight production health check. Deliberately does not expose environment values.
     if (segments.length === 1 && segments[0] === 'health') {
       return NextResponse.json(
-        { status: 'ok', service: 'phonedock', version: APP_VERSION },
+        { status: 'ok', service: 'specsdekh', version: APP_VERSION },
         { status: 200, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
       );
     }

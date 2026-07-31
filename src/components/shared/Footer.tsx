@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Smartphone, Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
+import Image from 'next/image';
+import { Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
 
 const FOOTER_BRANDS = ['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'];
 
@@ -35,11 +36,9 @@ export function Footer() {
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 mb-10">
           <div className="col-span-2 sm:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Smartphone className="w-5 h-5 text-white" />
-              </div>
+              <Image src="/logo.svg" alt="SpecsDekh" width={32} height={32} className="h-8 w-8 rounded-xl object-contain shadow-lg shadow-blue-500/20" />
               <span className="font-display font-extrabold text-lg text-white">
-                {settings.siteName ? settings.siteName : <>Phone<span className="text-blue-400">Dock</span></>}
+                {settings.siteName ? settings.siteName : <>Specs<span className="text-blue-400">Dekh</span></>}
               </span>
             </Link>
             <p className="text-sm leading-relaxed text-gray-400">{settings.footerText || 'A growing smartphone database for Pakistan. Compare available specs and prices before buying.'}</p>

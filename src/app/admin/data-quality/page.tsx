@@ -458,7 +458,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `phonedock-missing-${type}-${suffix}.csv`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `specsdekh-missing-${type}-${suffix}.csv`; anchor.click(); URL.revokeObjectURL(url);
   };
 
   const exportPageCsv = () => downloadItemsCsv(items, `page-${page}`);

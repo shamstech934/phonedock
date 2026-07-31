@@ -182,7 +182,7 @@ export function Header() {
             {siteSettings.siteName ? (
               <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">{siteSettings.siteName}</span>
             ) : (
-              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
+              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Specs<span className="text-blue-700">Dekh</span></span>
             )}
           </Link>
 
