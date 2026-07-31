@@ -27,8 +27,12 @@ export function validateProductionEnvironment(env: NodeJS.ProcessEnv = process.e
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const mongo = validateMongoUri(env.MONGODB_URI);
+  const mongoUri = env.MONGODB_URI || env.MONGO_URL;
+  const mongo = validateMongoUri(mongoUri);
   if (!mongo.valid) errors.push(mongo.error || 'MONGODB_URI is invalid.');
+  if (!configured(env, 'MONGODB_URI') && configured(env, 'MONGO_URL')) {
+    warnings.push('MONGO_URL is supported for backward compatibility. Rename it to MONGODB_URI when convenient.');
+  }
   validateSecret(env, 'JWT_SECRET', errors);
   validateSecret(env, 'CRON_SECRET', errors);
   if (configured(env, 'USER_JWT_SECRET')) validateSecret(env, 'USER_JWT_SECRET', errors);

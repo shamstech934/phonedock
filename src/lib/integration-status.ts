@@ -11,7 +11,7 @@ const has = (name: string) => Boolean(process.env[name]?.trim());
 
 export function getIntegrationChecks(): IntegrationCheck[] {
   return [
-    { key: 'MONGODB_URI', label: 'MongoDB Atlas', category: 'Core', configured: has('MONGODB_URI'), required: true, hint: 'MongoDB Atlas connection string' },
+    { key: 'MONGODB_URI', label: 'MongoDB Atlas', category: 'Core', configured: has('MONGODB_URI') || has('MONGO_URL'), required: true, hint: 'MongoDB Atlas connection string (MONGODB_URI preferred; MONGO_URL supported)' },
     { key: 'JWT_SECRET', label: 'Admin session security', category: 'Security', configured: has('JWT_SECRET'), required: true, hint: 'Random secret, minimum 32 characters' },
     { key: 'NEXT_PUBLIC_BASE_URL', label: 'Public website URL', category: 'SEO', configured: has('NEXT_PUBLIC_BASE_URL'), required: true, hint: 'Example: https://specsdekh.com' },
     { key: 'NEXT_PUBLIC_ADSENSE_CLIENT', label: 'Google AdSense', category: 'Monetization', configured: has('NEXT_PUBLIC_ADSENSE_CLIENT'), required: false, hint: 'Publisher ID, for example ca-pub-123...' },
