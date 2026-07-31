@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 export default function EditNewsPage() {
   const router = useRouter();
@@ -47,8 +48,8 @@ export default function EditNewsPage() {
         body: JSON.stringify({ ...form, slug: form.slug || generateSlug(form.title) }),
       });
       const data = await res.json();
-      if (res.ok) { router.push('/admin/news'); } else { alert(data.error || 'Failed to update'); }
-    } catch { alert('Network error'); }
+      if (res.ok) { router.push('/admin/news'); } else { toast({ variant: 'destructive', title: 'Unable to update article', description: data.error || 'Failed to update' }); }
+    } catch { toast({ variant: 'destructive', title: 'Network error', description: 'Please check your connection and try again.' }); }
     setLoading(false);
   };
 

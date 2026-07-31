@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
+import { toast } from '@/hooks/use-toast';
 
 interface CollectorSource {
   id: string; name: string; type: string; endpoint?: string;
@@ -71,7 +72,7 @@ export default function AdminCollectorSourcesPage() {
     const response = await fetch(`/api/collector/sources/${source.id}/test`, { method: 'POST', credentials: 'include' });
     const result = await response.json();
     if (!response.ok) setError(result.error || result.message || 'Connection test failed');
-    else alert(`Connected: ${result.sampleCount || 0} sample records in ${result.latencyMs || 0}ms`);
+    else toast({ title: 'Connection successful', description: `Connected: ${result.sampleCount || 0} sample records in ${result.latencyMs || 0}ms` });
     fetchSources();
   };
 

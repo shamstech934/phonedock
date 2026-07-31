@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/lib/useAdmin';
+import { toast } from '@/hooks/use-toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck, AlertTriangle, AlertCircle, Info, XCircle,
@@ -216,7 +217,7 @@ export default function DataQualityPage() {
                 });
                 if (res.ok) {
                   const data = await res.json();
-                  alert(`Cleaned up ${data.deleted} issues`);
+                  toast({ title: 'Cleanup complete', description: `Cleaned up ${data.deleted} issues` });
                   fetchSummary();
                 }
               } catch (e) { console.error(e); }
@@ -873,7 +874,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         setBulkAction('');
         fetchIssues(1);
         onRefresh();
-        alert(`Bulk action complete: ${result.succeeded} succeeded, ${result.failed} failed`);
+        toast({ title: 'Bulk action complete', description: `${result.succeeded} succeeded, ${result.failed} failed` });
       }
     } catch (e) { console.error(e); }
     finally { setActionLoading(false); }
@@ -890,12 +891,12 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       });
       const result = await res.json();
       if (!res.ok || result.success === false) {
-        alert(result.error || 'Auto-fix failed for this issue');
+        toast({ variant: 'destructive', title: 'Auto-fix failed', description: result.error || 'Auto-fix failed for this issue' });
       } else {
         fetchIssues();
         onRefresh();
       }
-    } catch (e) { console.error(e); alert('Auto-fix failed'); }
+    } catch (e) { console.error(e); toast({ variant: 'destructive', title: 'Auto-fix failed', description: 'The issue could not be fixed. Please try again.' }); }
     finally { setFixingId(null); }
   };
 
@@ -937,12 +938,12 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         cursor = result.hasMore ? (result.nextCursor ?? null) : null;
       } while (cursor);
 
-      alert(`Fix all complete: ${succeeded} fixed, ${failed} failed, ${processed} processed.`);
+      toast({ title: 'Fix all complete', description: `${succeeded} fixed, ${failed} failed, ${processed} processed.` });
       fetchIssues(1);
       onRefresh();
     } catch (e) {
       console.error(e);
-      alert(e instanceof Error ? e.message : 'Fix all failed');
+      toast({ variant: 'destructive', title: 'Fix all failed', description: e instanceof Error ? e.message : 'Fix all failed' });
     } finally {
       setFixAllLoading(false);
     }
@@ -991,7 +992,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         credentials: 'include',
         body: JSON.stringify({ entityIds }),
       });
-      if (res.ok) alert('Re-scan started');
+      if (res.ok) toast({ title: 'Re-scan started', description: 'Data Quality is scanning the selected record again.' });
     } catch (e) { console.error(e); }
   };
 
@@ -1284,7 +1285,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
         onRefresh();
       } else {
         const data = await res.json();
-        alert(data.error || 'Merge failed');
+        toast({ variant: 'destructive', title: 'Merge failed', description: data.error || 'Merge failed' });
       }
     } catch (e) { console.error(e); }
     finally { setMerging(null); }

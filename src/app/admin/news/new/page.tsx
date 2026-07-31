@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 export default function NewNewsPage() {
   const router = useRouter();
@@ -20,8 +21,8 @@ export default function NewNewsPage() {
         body: JSON.stringify({ ...form, slug: form.slug || generateSlug(form.title) }),
       });
       const data = await res.json();
-      if (res.ok) { router.push('/admin/news'); } else { alert(data.error || 'Failed to create'); }
-    } catch { alert('Network error'); }
+      if (res.ok) { router.push('/admin/news'); } else { toast({ variant: 'destructive', title: 'Unable to create article', description: data.error || 'Failed to create' }); }
+    } catch { toast({ variant: 'destructive', title: 'Network error', description: 'Please check your connection and try again.' }); }
     setLoading(false);
   };
 

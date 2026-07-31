@@ -1,42 +1,11 @@
 {
-  "generatedAt": "2026-07-31T23:11:23.494Z",
+  "generatedAt": "2026-07-31T23:13:28.516Z",
   "adminPages": 45,
   "adminSourceFiles": 80,
   "apiSourceFiles": 29,
   "literalAdminApiEndpoints": 92,
   "endpointEvidenceMissing": [],
-  "findings": [
-    {
-      "severity": "medium",
-      "type": "placeholder-marker",
-      "file": "src/app/admin/automation/page.tsx"
-    },
-    {
-      "severity": "low",
-      "type": "browser-alert",
-      "file": "src/app/admin/collector/sources/page.tsx"
-    },
-    {
-      "severity": "low",
-      "type": "browser-alert",
-      "file": "src/app/admin/data-quality/page.tsx"
-    },
-    {
-      "severity": "medium",
-      "type": "placeholder-marker",
-      "file": "src/app/admin/homepage-builder/page.tsx"
-    },
-    {
-      "severity": "low",
-      "type": "browser-alert",
-      "file": "src/app/admin/news/[id]/edit/page.tsx"
-    },
-    {
-      "severity": "low",
-      "type": "browser-alert",
-      "file": "src/app/admin/news/new/page.tsx"
-    }
-  ],
+  "findings": [],
   "buildCertification": {
     "status": "blocked-in-audit-environment",
     "command": "npm ci --ignore-scripts",

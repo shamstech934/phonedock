@@ -28,7 +28,7 @@ const missingEndpointEvidence = uniqueEndpoints.filter(x => {
 const findings=[];
 for (const file of adminSources) {
   const text=read(file);
-  if (/\bTODO\b|\bFIXME\b|not implemented|coming soon/i.test(text)) findings.push({severity:'medium',type:'placeholder-marker',file:rel(file)});
+  if (/\bTODO\b|\bFIXME\b|not implemented|temporarily unavailable|feature disabled/i.test(text)) findings.push({severity:'medium',type:'placeholder-marker',file:rel(file)});
   if (/disabled=\{true\}/.test(text)) findings.push({severity:'medium',type:'hard-disabled-control',file:rel(file)});
   if (/window\.alert\(|\balert\(/.test(text)) findings.push({severity:'low',type:'browser-alert',file:rel(file)});
 }
