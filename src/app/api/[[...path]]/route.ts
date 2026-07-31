@@ -49,6 +49,7 @@ import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronA
 import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './handlers/launch-intelligence';
 import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
 import { handlePakistanIntelligenceGet, handlePakistanIntelligencePost } from './handlers/pakistan-intelligence';
+import { handleImageIntelligenceGet, handleImageIntelligencePost } from './handlers/image-intelligence';
 import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
 import { handleReleaseReadinessGet } from './handlers/release-readiness';
 import { runContinuousMonitoring } from '@/lib/continuous-monitoring';
@@ -364,6 +365,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return handlePakistanIntelligenceGet(req);
     }
 
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'image-intelligence') {
+      return handleImageIntelligenceGet(req);
+    }
+
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
       return handleContinuousMonitoringGet(req);
     }
@@ -672,6 +677,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'pakistan-intelligence') {
       return handlePakistanIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'image-intelligence') {
+      return handleImageIntelligencePost(req);
     }
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {

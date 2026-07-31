@@ -30,7 +30,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Install exact dependencies
-        run: npm ci --no-audit --fund=false
+        run: npm ci --include=dev --no-audit --fund=false
 
       - name: Runtime doctor
         run: npm run doctor:runtime
