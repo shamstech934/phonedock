@@ -8,7 +8,7 @@ import {
   LogOut, Eye, Shield, RefreshCw, Radio, Activity, Settings, Users,
   ChevronDown, DollarSign, Key, Play, TrendingDown,
   ShieldCheck, Rocket, Sparkles, BrainCircuit,
-  Workflow, Grid3X3, Link2, AppWindow,
+  Workflow, Grid3X3, Link2, AppWindow, ClipboardCheck,
 } from 'lucide-react';
 import { useAdmin, AdminAuthProvider } from '@/lib/useAdmin';
 
@@ -28,6 +28,7 @@ const adminLinks: NavLink[] = [
   { label: 'Launch Intelligence', href: '/admin/launch-intelligence', icon: Rocket, permission: 'news:read' },
   { label: 'Intelligence Center', href: '/admin/intelligence-center', icon: BrainCircuit, permission: 'phones:read' },
   { label: 'Continuous Monitoring', href: '/admin/continuous-monitoring', icon: Radio, permission: 'phones:read' },
+  { label: 'Release Readiness', href: '/admin/release-readiness', icon: ClipboardCheck, permission: 'settings:read' },
   { label: 'Homepage Builder', href: '/admin/homepage-builder', icon: Sparkles, permission: 'settings:read' },
   { label: 'Card Layout Control', href: '/admin/layout-control', icon: Grid3X3, permission: 'settings:read' },
   { label: 'Mobile App Control', href: '/admin/mobile-control', icon: AppWindow, permission: 'settings:read' },
