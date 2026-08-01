@@ -254,6 +254,8 @@ export default function AdminPriceTrackerPage() {
   const [, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [cronConfigured, setCronConfigured] = useState(false);
+  const [cronSchedule, setCronSchedule] = useState('0 1 * * *');
 
   const responseError = async (response: Response, fallback: string) => {
     const body = await response.json().catch(() => ({})) as { error?: string };
@@ -384,6 +386,8 @@ export default function AdminPriceTrackerPage() {
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price tracker settings'));
       const d = await res.json();
       setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
+      setCronConfigured(Boolean(d.cronConfigured));
+      setCronSchedule(typeof d.cronSchedule === 'string' && d.cronSchedule ? d.cronSchedule : '0 1 * * *');
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price tracker settings'); } finally { setSettingsLoading(false); }
   }, []);
 
@@ -1312,21 +1316,21 @@ export default function AdminPriceTrackerPage() {
                           type="button"
                           onClick={() => openEditSource(src)}
                           disabled={Boolean(actionLoading)}
-                          className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
                           title="Edit source"
                           aria-label={`Edit ${src.name}`}
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          <Pencil className="w-3.5 h-3.5" /> Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => { setDeletingSource(src); setDeleteConfirmText(''); setError(''); }}
                           disabled={Boolean(actionLoading)}
-                          className="p-1.5 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"
                           title="Delete source"
                           aria-label={`Delete ${src.name}`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" /> Delete
                         </button>
                         <button
                           type="button"
@@ -1927,15 +1931,27 @@ export default function AdminPriceTrackerPage() {
             <code className="text-xs text-gray-800 font-mono">0 1 * * * curl -s -H &quot;x-cron-secret: $CRON_SECRET&quot; https://your-domain.com/api/cron/update-prices</code>
           </div>
         </div>
-        <div className="mt-3 flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
-          <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-medium text-yellow-700">CRON_SECRET Required</p>
-            <p className="text-xs text-yellow-600 mt-0.5">
-              The cron endpoint requires a <code className="font-mono bg-yellow-100 px-1 rounded">CRON_SECRET</code> environment variable.
-              Requests must include <code className="font-mono bg-yellow-100 px-1 rounded">x-cron-secret: YOUR_SECRET</code> header or <code className="font-mono bg-yellow-100 px-1 rounded">Authorization: Bearer YOUR_SECRET</code>.
+        <div className={`mt-3 flex items-start gap-2 rounded-lg border p-3 ${cronConfigured ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+          {cronConfigured ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+          <div className="flex-1">
+            <p className={`text-xs font-semibold ${cronConfigured ? 'text-emerald-800' : 'text-amber-800'}`}>
+              {cronConfigured ? 'CRON_SECRET configured' : 'CRON_SECRET required'}
+            </p>
+            <p className={`mt-0.5 text-xs ${cronConfigured ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {cronConfigured
+                ? `Protected price-sync endpoint is ready. Current schedule: ${cronSchedule}.`
+                : 'Add CRON_SECRET in Vercel Environment Variables, then redeploy. The secret value is never exposed here.'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={runPriceSync}
+            disabled={!cronConfigured || actionLoading === 'run-sync'}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${actionLoading === 'run-sync' ? 'animate-spin' : ''}`} />
+            {actionLoading === 'run-sync' ? 'Running…' : 'Run now'}
+          </button>
         </div>
       </div>
     </div>

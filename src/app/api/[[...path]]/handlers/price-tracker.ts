@@ -501,7 +501,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const permCheck = requirePermission(authResult.admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
     const settings = await getPriceTrackerSettings();
-    return NextResponse.json(settings);
+    return NextResponse.json({
+      ...settings,
+      cronConfigured: Boolean(process.env.CRON_SECRET),
+      cronSchedule: process.env.PRICE_SYNC_CRON || '0 1 * * *',
+    });
   }
 
   return undefined;
