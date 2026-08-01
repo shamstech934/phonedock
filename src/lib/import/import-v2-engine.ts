@@ -144,12 +144,24 @@ interface BatchProcessInput {
   recordEnd?: number;
 }
 
+interface ImportRowAction {
+  rowNumber: number;
+  brand?: string;
+  model?: string;
+  action: 'create' | 'update' | 'replace' | 'skip' | 'fail';
+  matchedPhoneId?: string;
+  matchedSlug?: string;
+  matchType?: string;
+  reason: string;
+}
+
 interface BatchResult {
   created: number;
   updated: number;
   skipped: number;
   failed: number;
   replaced: number;
+  rowActions: ImportRowAction[];
   errors: BatchErrorItem[];
   fieldChanges: FieldChangeItem[];
   specsChanges: SpecsChangeItem[];
@@ -366,7 +378,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
   const result: BatchResult = {
     created: 0, updated: 0, skipped: 0, failed: 0, replaced: 0,
-    errors: [], fieldChanges: [], specsChanges: [], benchmarkChanges: [], imageChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
+    rowActions: [], errors: [], fieldChanges: [], specsChanges: [], benchmarkChanges: [], imageChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
   };
 
   // Idempotency is scoped to the persisted source checksum and execution mode.
@@ -382,6 +394,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       skipped: existingBatch.skipped || 0,
       failed: existingBatch.failed || 0,
       replaced: existingBatch.replaced || 0,
+      rowActions: existingBatch.rowActions || [],
       errors: existingBatch.errors || [],
       fieldChanges: existingBatch.fieldChanges || [],
       specsChanges: existingBatch.specsChanges || [],
@@ -519,6 +532,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     const brand = brandMap.get(d.brand.toLowerCase());
 
     if (!brand) {
+      result.rowActions.push({ rowNumber: rec.originalRowNumber, brand: d.brand, model: d.model, action: 'fail', reason: `Brand \"${d.brand}\" not found` });
       result.errors.push({ rowNumber: rec.originalRowNumber, errorCode: 'BRAND_NOT_FOUND', errorMessage: `Brand "${d.brand}" not found`, brand: d.brand, model: d.model, batchNumber });
       result.failed++;
       continue;
@@ -548,6 +562,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     if (dup.isDuplicate && exactExisting) {
       if (duplicateMode === 'skip') {
         result.skipped++;
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'skip',
+          matchedPhoneId: dup.existingPhoneId,
+          matchedSlug: dup.existingSlug,
+          matchType: dup.matchType,
+          reason: `Exact existing phone matched; duplicateMode=skip`,
+        });
         result.errors.push({
           rowNumber: rec.originalRowNumber,
           brand: d.brand,
@@ -658,6 +682,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
         }
 
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'update',
+          matchedPhoneId: existingPhone._id.toString(),
+          matchedSlug: existingPhone.slug,
+          matchType: dup.matchType,
+          reason: `Exact brand + normalized model matched existing phone`,
+        });
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: updateFields },
@@ -748,6 +782,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
         }
 
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'replace',
+          matchedPhoneId: existingPhone._id.toString(),
+          matchedSlug: existingPhone.slug,
+          matchType: dup.matchType,
+          reason: `Exact brand + normalized model matched; existing record replaced`,
+        });
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: replaceFields },
@@ -759,6 +803,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         continue;
       }
 
+      result.rowActions.push({ rowNumber: rec.originalRowNumber, brand: d.brand, model: d.model, action: 'skip', matchedPhoneId: dup.existingPhoneId, matchedSlug: dup.existingSlug, matchType: dup.matchType, reason: `Existing phone matched but duplicate mode did not allow a write` });
       result.skipped++;
       continue;
     }
@@ -783,6 +828,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         batchNumber,
       });
     }
+
+    result.rowActions.push({
+      rowNumber: rec.originalRowNumber,
+      brand: d.brand,
+      model: d.model,
+      action: 'create',
+      matchedSlug: d.slug,
+      matchType: 'none',
+      reason: 'No exact brand + normalized model match found; creating a new phone',
+    });
 
     const phoneData: Record<string, unknown> = {
       brandId: brand._id,
@@ -1137,6 +1192,7 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
         replaced: result.replaced,
         skipped: result.skipped,
         failed: result.failed,
+        rowActions: result.rowActions.slice(0, 500),
         errors: result.errors.slice(0, 100),
         createdPhoneIds: result.createdPhoneIds,
         updatedPhoneIds: result.updatedPhoneIds,

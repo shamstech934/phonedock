@@ -632,6 +632,16 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
     ImportJob.find().sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     ImportJob.countDocuments({}),
   ]);
+  const importIds = jobs.map(job => job.importId);
+  const batches = importIds.length > 0
+    ? await ImportBatch.find({ importId: { $in: importIds } }).sort({ importId: 1, batchNumber: 1 }).lean()
+    : [];
+  const batchesByImport = new Map<string, typeof batches>();
+  for (const batch of batches) {
+    const current = batchesByImport.get(batch.importId) || [];
+    current.push(batch);
+    batchesByImport.set(batch.importId, current);
+  }
 
   return NextResponse.json({
     success: true,
@@ -656,6 +666,21 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
       duration: j.startedAt && j.completedAt ? Math.round(j.completedAt.getTime() - j.startedAt.getTime()) : null,
       rollbackStatus: j.rollbackStatus,
       errorSummary: j.errorSummary,
+      batches: (batchesByImport.get(j.importId) || []).map(batch => ({
+        batchNumber: batch.batchNumber,
+        status: batch.status,
+        total: batch.recordCount,
+        created: batch.created,
+        updated: batch.updated,
+        replaced: batch.replaced,
+        skipped: batch.skipped,
+        failed: batch.failed,
+        startedAt: batch.startedAt,
+        completedAt: batch.completedAt,
+        durationMs: batch.startedAt && batch.completedAt ? batch.completedAt.getTime() - batch.startedAt.getTime() : null,
+        rowActions: batch.rowActions || [],
+        errors: batch.errors || [],
+      })),
     })),
     total,
     page,

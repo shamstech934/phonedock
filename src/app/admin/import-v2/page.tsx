@@ -68,6 +68,17 @@ interface PreviewRecord {
   errors: string[];
 }
 
+interface ImportRowAction {
+  rowNumber: number;
+  brand: string;
+  model: string;
+  action: 'create' | 'update' | 'replace' | 'skip' | 'fail';
+  matchedPhoneId?: string;
+  matchedSlug?: string;
+  matchType?: string;
+  reason: string;
+}
+
 interface BatchInfo {
   batchNumber: number;
   status: BatchStatus;
@@ -79,7 +90,9 @@ interface BatchInfo {
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
+  rowActions?: ImportRowAction[];
 }
+
 
 interface JobProgress {
   jobId: string;
@@ -248,6 +261,20 @@ function normalizeBatches(value: unknown): BatchInfo[] {
       startedAt: typeof batch.startedAt === 'string' ? batch.startedAt : undefined,
       completedAt: typeof batch.completedAt === 'string' ? batch.completedAt : undefined,
       durationMs: typeof batch.durationMs === 'number' ? batch.durationMs : undefined,
+      rowActions: Array.isArray(batch.rowActions) ? batch.rowActions.map((raw) => {
+        const action = (raw || {}) as Record<string, unknown>;
+        const actionType = String(action.action || 'fail');
+        return {
+          rowNumber: Number(action.rowNumber || 0),
+          brand: String(action.brand || ''),
+          model: String(action.model || ''),
+          action: (['create', 'update', 'replace', 'skip', 'fail'].includes(actionType) ? actionType : 'fail') as ImportRowAction['action'],
+          matchedPhoneId: typeof action.matchedPhoneId === 'string' ? action.matchedPhoneId : undefined,
+          matchedSlug: typeof action.matchedSlug === 'string' ? action.matchedSlug : undefined,
+          matchType: typeof action.matchType === 'string' ? action.matchType : undefined,
+          reason: String(action.reason || ''),
+        };
+      }) : [],
     };
   });
 }
@@ -1665,6 +1692,49 @@ export default function ImportV2Page() {
                                       </TableBody>
                                     </Table>
                                   </ScrollArea>
+                                  {h.batches.some(batch => (batch.rowActions?.length || 0) > 0) && (
+                                    <div className="mt-4">
+                                      <div className="text-xs text-gray-500 mb-2 font-medium">Row decisions</div>
+                                      <ScrollArea className="max-h-80 rounded-lg border bg-white">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead className="text-xs">Row</TableHead>
+                                              <TableHead className="text-xs">Phone</TableHead>
+                                              <TableHead className="text-xs">Action</TableHead>
+                                              <TableHead className="text-xs">Matched record</TableHead>
+                                              <TableHead className="text-xs">Reason</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {h.batches.flatMap(batch => batch.rowActions || []).map((action, index) => (
+                                              <TableRow key={`${action.rowNumber}-${action.action}-${index}`}>
+                                                <TableCell className="text-xs font-mono">{action.rowNumber || '-'}</TableCell>
+                                                <TableCell className="text-xs">
+                                                  <div className="font-medium text-gray-900">{action.brand} {action.model}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                  <Badge className={`text-xs ${action.action === 'create' ? 'bg-green-100 text-green-700' : action.action === 'update' ? 'bg-blue-100 text-blue-700' : action.action === 'replace' ? 'bg-purple-100 text-purple-700' : action.action === 'skip' ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {action.action === 'create' ? 'CREATE NEW' : action.action.toUpperCase()}
+                                                  </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-xs">
+                                                  {action.matchedSlug ? (
+                                                    <div>
+                                                      <div className="font-mono text-gray-700">{action.matchedSlug}</div>
+                                                      {action.matchedPhoneId && <div className="text-[10px] text-gray-400">ID: {action.matchedPhoneId}</div>}
+                                                      {action.matchType && <div className="text-[10px] text-gray-400">Match: {action.matchType}</div>}
+                                                    </div>
+                                                  ) : <span className="text-gray-400">No existing phone</span>}
+                                                </TableCell>
+                                                <TableCell className="text-xs text-gray-600 max-w-sm">{action.reason}</TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </ScrollArea>
+                                    </div>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             )}

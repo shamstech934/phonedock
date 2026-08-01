@@ -16,6 +16,16 @@ export interface IImportBatch {
   replaced: number;
   skipped: number;
   failed: number;
+  rowActions: {
+    rowNumber: number;
+    brand?: string;
+    model?: string;
+    action: 'create' | 'update' | 'replace' | 'skip' | 'fail';
+    matchedPhoneId?: string;
+    matchedSlug?: string;
+    matchType?: string;
+    reason: string;
+  }[];
   errors: {
     rowNumber: number;
     brand?: string;
@@ -62,6 +72,18 @@ export interface IImportBatch {
   createdAt: Date;
   updatedAt: Date;
 }
+
+
+const RowActionSchema = new Schema({
+  rowNumber: Number,
+  brand: String,
+  model: String,
+  action: { type: String, enum: ['create', 'update', 'replace', 'skip', 'fail'], required: true },
+  matchedPhoneId: String,
+  matchedSlug: String,
+  matchType: String,
+  reason: { type: String, default: '' },
+}, { _id: false, suppressReservedKeysWarning: true });
 
 const BatchErrorSchema = new Schema({
   rowNumber: Number,
@@ -128,6 +150,7 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   replaced: { type: Number, default: 0 },
   skipped: { type: Number, default: 0 },
   failed: { type: Number, default: 0 },
+  rowActions: { type: [RowActionSchema], default: [] },
   errors: { type: [BatchErrorSchema], default: [] },
   createdPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   updatedPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
