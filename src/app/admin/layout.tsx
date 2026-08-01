@@ -70,6 +70,7 @@ const adminLinks: NavLink[] = [
   { label: 'Automation & Health', href: '/admin/operations', icon: Workflow, children: [
     { label: 'Automation Pipeline', href: '/admin/automation', permission: 'prices:read' },
     { label: 'Analytics', href: '/admin/analytics', permission: 'settings:read' },
+    { label: 'SEO Monitoring', href: '/admin/seo-monitoring', permission: 'settings:read' },
     { label: 'Release Readiness', href: '/admin/release-readiness', permission: 'settings:read' },
     { label: 'Activity Log', href: '/admin/activity', permission: 'activity:read' },
   ]},

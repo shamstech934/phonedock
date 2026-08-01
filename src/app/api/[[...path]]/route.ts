@@ -55,6 +55,7 @@ import { handlePriceIntelligenceV2Get, handlePriceIntelligenceV2Post } from './h
 import { handleYouTubeIntelligenceGet, handleYouTubeIntelligencePost } from './handlers/youtube-intelligence';
 import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
 import { handleReleaseReadinessGet } from './handlers/release-readiness';
+import { handleSeoMonitoringGet } from './handlers/seo-monitoring';
 import { runContinuousMonitoring } from '@/lib/continuous-monitoring';
 
 type HandlerResult = Promise<NextResponse | undefined>;
@@ -390,6 +391,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'release-readiness') {
       return handleReleaseReadinessGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seo-monitoring') {
+      return handleSeoMonitoringGet(req);
     }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
