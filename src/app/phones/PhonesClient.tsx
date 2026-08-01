@@ -117,10 +117,16 @@ export default function PhonesClient({
     }
 
     // RAM
-    if (ramParam !== 'All') params.set('ramMin', ramParam);
+    if (ramParam !== 'All') {
+      params.set('ramMin', ramParam);
+      params.set('ramMax', ramParam);
+    }
 
     // Storage
-    if (storageParam !== 'All') params.set('storageMin', storageParam);
+    if (storageParam !== 'All') {
+      params.set('storageMin', storageParam);
+      params.set('storageMax', storageParam);
+    }
 
     // Sort
     const sortMap: Record<string, string> = {

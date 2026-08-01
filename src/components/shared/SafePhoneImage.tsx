@@ -13,6 +13,7 @@ interface SafePhoneImageProps {
   className?: string;
   fallbackClassName?: string;
   priority?: boolean;
+  fallbackLabel?: string;
 }
 
 // Track failed URLs at module level to prevent repeated retries
@@ -63,6 +64,7 @@ export function SafePhoneImage({
   className = '',
   fallbackClassName,
   priority = false,
+  fallbackLabel,
 }: SafePhoneImageProps) {
   const [broken, setBroken] = useState(() => {
     if (!src) return true;
@@ -96,14 +98,17 @@ export function SafePhoneImage({
   if (broken || !effectiveSrc) {
     return (
       <div
-        className={`flex items-center justify-center bg-[#F8FAFC] ${fallbackClassName || className}`}
+        className={`flex flex-col items-center justify-center gap-2 bg-[#F8FAFC] ${fallbackClassName || className}`}
         style={!width || !height ? undefined : { width: iconSize.w, height: iconSize.h }}
         aria-hidden="true"
       >
         <Smartphone
           className="text-gray-300"
-          style={{ width: Math.max(iconSize.w * 0.5, 16), height: Math.max(iconSize.h * 0.5, 16) }}
+          style={{ width: Math.max(iconSize.w * 0.42, 16), height: Math.max(iconSize.h * 0.42, 16) }}
         />
+        {fallbackLabel && (
+          <span className="px-2 text-center text-[10px] font-semibold text-slate-400">{fallbackLabel}</span>
+        )}
       </div>
     );
   }

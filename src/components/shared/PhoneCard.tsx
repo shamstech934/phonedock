@@ -84,6 +84,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
               width={200}
               height={200}
               className="p-4 transition-transform duration-500 ease-out group-hover:scale-[1.035]"
+              fallbackLabel="Image unavailable"
             />
             {phone.ptaApproved && (
               <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
