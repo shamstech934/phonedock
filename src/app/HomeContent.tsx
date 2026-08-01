@@ -245,8 +245,8 @@ function PriceCategorySidebar({ ranges = DEFAULT_HOME_PRICE_RANGES, limit = 6 }:
       <div className="mb-2.5 flex items-center gap-2"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50"><CircleDollarSign className="h-5 w-5 text-blue-500" /></div><div><h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900 dark:text-white">Phones by Price</h2><p className="text-[11px] text-muted-foreground">Choose your exact budget</p></div></div>
       <nav className="grid max-h-[420px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-1" aria-label="Browse phones by price category">
         {categories.map(category => {
-          const query = new URLSearchParams({ minPrice: String(category.min) });
-          if (category.max !== null) query.set('maxPrice', String(category.max));
+          const query = new URLSearchParams({ priceMin: String(category.min) });
+          if (category.max !== null) query.set('priceMax', String(category.max));
           return <Link key={category.id} href={`/phones?${query.toString()}`} className="group flex min-h-11 items-center justify-between rounded-xl border border-gray-200/70 bg-white/55 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50"><span className="text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span><ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-blue-500" /></Link>;
         })}
       </nav>

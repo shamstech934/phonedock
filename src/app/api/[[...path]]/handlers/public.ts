@@ -5,6 +5,7 @@ import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailCon
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
+import { numericSpecClause } from '@/lib/spec-filter-fallback';
 import { normalizeCompareValues } from '@/lib/compare';
 import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
@@ -297,14 +298,12 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
-      if (!isNaN(ramMin)) specFilter.ramGB = { ...((specFilter.ramGB as Record<string, number>) || {}), $gte: ramMin };
-      if (!isNaN(ramMax)) specFilter.ramGB = { ...((specFilter.ramGB as Record<string, number>) || {}), $lte: ramMax };
-      if (!isNaN(storageMin)) specFilter.storageGB = { ...((specFilter.storageGB as Record<string, number>) || {}), $gte: storageMin };
-      if (!isNaN(storageMax)) specFilter.storageGB = { ...((specFilter.storageGB as Record<string, number>) || {}), $lte: storageMax };
-      if (!isNaN(screenMin)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $gte: screenMin };
-      if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $lte: screenMax };
-      if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
-      if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+      const numericClauses: Record<string, unknown>[] = [];
+      if (!isNaN(ramMin) || !isNaN(ramMax)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: !isNaN(ramMin) ? ramMin : undefined, max: !isNaN(ramMax) ? ramMax : undefined }));
+      if (!isNaN(storageMin) || !isNaN(storageMax)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: !isNaN(storageMin) ? storageMin : undefined, max: !isNaN(storageMax) ? storageMax : undefined }));
+      if (!isNaN(screenMin) || !isNaN(screenMax)) numericClauses.push(numericSpecClause({ numericField: 'screenSizeInch', textField: 'display', kind: 'screen', min: !isNaN(screenMin) ? screenMin : undefined, max: !isNaN(screenMax) ? screenMax : undefined }));
+      if (!isNaN(cameraMin)) numericClauses.push(numericSpecClause({ numericField: 'mainCameraMP', textField: 'mainCamera', kind: 'camera', min: cameraMin }));
+      if (!isNaN(batteryMin)) numericClauses.push(numericSpecClause({ numericField: 'batteryMAh', textField: 'battery', kind: 'battery', min: batteryMin }));
       if (displayType) specFilter.displayType = { $regex: escapeRegex(displayType), $options: 'i' };
       if (chipset) specFilter.chipset = { $regex: escapeRegex(chipset), $options: 'i' };
       if (!isNaN(refreshMin)) {
@@ -322,6 +321,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
       else if (nfcFilter === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
+      if (numericClauses.length) specFilter.$and = numericClauses;
 
       const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
       filter._id = { ...((filter._id as Record<string, unknown>) || {}), $in: matchingSpecPhoneIds };

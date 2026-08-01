@@ -7,6 +7,7 @@ import { buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/han
 import type { Brand as BrandType, Phone as PhoneType } from '@/components/shared/types';
 import { getPriceCategory } from '@/lib/price-categories';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { numericSpecClause } from '@/lib/spec-filter-fallback';
 
 export interface PhoneListParams {
   page?: string;
@@ -17,6 +18,8 @@ export interface PhoneListParams {
   priceMin?: string;
   priceMax?: string;
   displayType?: string;
+  screenMin?: string;
+  screenMax?: string;
   refreshMin?: string;
   cameraMin?: string;
   batteryMin?: string;
@@ -164,15 +167,19 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (params.priceDrop === 'true') filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
 
   const specFilter: Record<string, unknown> = {};
+  const numericClauses: Record<string, unknown>[] = [];
   const ram = Number.parseFloat(params.ram || '');
   const storage = Number.parseFloat(params.storage || '');
+  const screenMin = Number.parseFloat(params.screenMin || '');
+  const screenMax = Number.parseFloat(params.screenMax || '');
   const refreshMin = Number.parseFloat(params.refreshMin || '');
   const cameraMin = Number.parseFloat(params.cameraMin || '');
   const batteryMin = Number.parseFloat(params.batteryMin || '');
-  if (Number.isFinite(ram)) specFilter.ramGB = { $gte: ram };
-  if (Number.isFinite(storage)) specFilter.storageGB = { $gte: storage };
-  if (Number.isFinite(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
-  if (Number.isFinite(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+  if (Number.isFinite(ram)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: ram }));
+  if (Number.isFinite(storage)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: storage }));
+  if (Number.isFinite(screenMin) || Number.isFinite(screenMax)) numericClauses.push(numericSpecClause({ numericField: 'screenSizeInch', textField: 'display', kind: 'screen', min: Number.isFinite(screenMin) ? screenMin : undefined, max: Number.isFinite(screenMax) ? screenMax : undefined }));
+  if (Number.isFinite(cameraMin)) numericClauses.push(numericSpecClause({ numericField: 'mainCameraMP', textField: 'mainCamera', kind: 'camera', min: cameraMin }));
+  if (Number.isFinite(batteryMin)) numericClauses.push(numericSpecClause({ numericField: 'batteryMAh', textField: 'battery', kind: 'battery', min: batteryMin }));
   if (params.displayType) specFilter.displayType = { $regex: escapeRegex(params.displayType), $options: 'i' };
   if (params.chipset) specFilter.chipset = { $regex: escapeRegex(params.chipset), $options: 'i' };
   if (Number.isFinite(refreshMin)) {
@@ -183,6 +190,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   else if (params['5g'] === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
   if (params.nfc === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
   else if (params.nfc === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
+  if (numericClauses.length) specFilter.$and = numericClauses;
   if (Object.keys(specFilter).length > 0) {
     const ids = await PhoneSpecs.find(specFilter).distinct('phoneId');
     filter._id = { $in: ids };
@@ -236,6 +244,8 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   }
   if (Number.isFinite(ram)) apiParams.set('ramMin', String(ram));
   if (Number.isFinite(storage)) apiParams.set('storageMin', String(storage));
+  if (Number.isFinite(screenMin)) apiParams.set('screenMin', String(screenMin));
+  if (Number.isFinite(screenMax)) apiParams.set('screenMax', String(screenMax));
   if (Number.isFinite(refreshMin)) apiParams.set('refreshMin', String(refreshMin));
   if (Number.isFinite(cameraMin)) apiParams.set('cameraMin', String(cameraMin));
   if (Number.isFinite(batteryMin)) apiParams.set('batteryMin', String(batteryMin));
