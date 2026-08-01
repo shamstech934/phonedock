@@ -5,6 +5,7 @@ import { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandida
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { parseBoundedInt } from '@/lib/http';
+import { PRICE_SOURCE_TYPES as PRICE_SOURCE_TYPE_VALUES } from '@/lib/price-source-types';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -72,7 +73,7 @@ export const DEFAULT_PT_SETTINGS = {
   checkFrequency: 'daily',   // daily | twice-daily | hourly
 };
 
-const PRICE_SOURCE_TYPES = new Set(['retailer', 'marketplace', 'official']);
+const PRICE_SOURCE_TYPES = new Set<string>(PRICE_SOURCE_TYPE_VALUES);
 
 function normalizeSourceBaseUrl(value: unknown): string {
   const raw = String(value || '').trim();

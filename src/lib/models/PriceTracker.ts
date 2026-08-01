@@ -1,9 +1,10 @@
 import mongoose, { Schema } from 'mongoose';
+import { PRICE_SOURCE_TYPES } from '@/lib/price-source-types';
 
 // ─── PriceSource ────────────────────────────────────────────────────────
 const PriceSourceSchema = new Schema({
   name: { type: String, required: true },
-  sourceType: { type: String, enum: ['retailer', 'marketplace', 'official'], default: 'retailer' },
+  sourceType: { type: String, enum: PRICE_SOURCE_TYPES, default: 'retailer' },
   enabled: { type: Boolean, default: true },
   trusted: { type: Boolean, default: false },
   baseUrl: { type: String, default: '' },
