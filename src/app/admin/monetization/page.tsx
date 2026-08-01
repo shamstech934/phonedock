@@ -116,7 +116,14 @@ export default function MonetizationPage() {
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <ActionCard
+          title="Affiliate link manager"
+          description="Phone-specific PriceOye, Mega aur Daraz links, availability, priority aur click tracking manage karein."
+          href="/admin/affiliate-links"
+          action="Manage affiliate links"
+          icon={MousePointerClick}
+        />
         <ActionCard
           title="Sponsor campaigns"
           description="Sponsored banners, impressions, clicks aur active/paused campaigns manage karein."
