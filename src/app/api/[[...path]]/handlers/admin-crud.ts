@@ -1196,15 +1196,17 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (!['published', 'draft', 'pending', 'archived'].includes(requestedStatus)) {
       return NextResponse.json({ error: 'Invalid phone status' }, { status: 400 });
     }
+    let effectiveStatus = requestedStatus;
+    let publicationWarnings: string[] = [];
     if (requestedStatus === 'published') {
       const pubCheck = requirePermission(admin, 'phones:publish'); if (pubCheck) return pubCheck;
-      const publicationIssues = getPhonePublicationIssues({ brandId, modelName, slug, thumbnail, pricePKR, upcoming });
-      if (publicationIssues.length > 0) {
-        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
-      }
+      publicationWarnings = getPhonePublicationIssues({ brandId, modelName, slug, thumbnail, pricePKR, upcoming });
+      // Admin saves must never be blocked by incomplete catalogue data. Keep the
+      // record safe by saving it as draft until the publication requirements are met.
+      if (publicationWarnings.length > 0) effectiveStatus = 'draft';
     }
     const lifecycleStatus = isPhoneAvailabilityStatus(availabilityStatus) ? availabilityStatus : (upcoming ? 'coming_soon' : 'available');
-    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: ['rumored', 'announced', 'coming_soon'].includes(lifecycleStatus), availabilityStatus: lifecycleStatus, announcedAt: announcedAt || '', expectedLaunchAt: expectedLaunchAt || '', pakistanLaunchAt: pakistanLaunchAt || '', availableFrom: availableFrom || '', discontinuedAt: discontinuedAt || '', status: requestedStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
+    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: ['rumored', 'announced', 'coming_soon'].includes(lifecycleStatus), availabilityStatus: lifecycleStatus, announcedAt: announcedAt || '', expectedLaunchAt: expectedLaunchAt || '', pakistanLaunchAt: pakistanLaunchAt || '', availableFrom: availableFrom || '', discontinuedAt: discontinuedAt || '', status: effectiveStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: ImageInput, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
@@ -1215,7 +1217,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     revalidatePublicContent({ phoneSlug: slug });
-    return NextResponse.json({ success: true, id: phone._id?.toString(), slug });
+    return NextResponse.json({ success: true, id: phone._id?.toString(), slug, status: effectiveStatus, warnings: publicationWarnings });
   }
 
   // ---- /api/admin/brands (CREATE) ----
@@ -1806,11 +1808,12 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (manualLockReason !== undefined) phone.manualLockReason = String(manualLockReason).slice(0, 500);
     if (sourceUrl !== undefined) { phone.sourceUrl = String(sourceUrl); phone.sourceName = 'Manual Entry'; }
 
+    let publicationWarnings: string[] = [];
     if (phone.status === 'published') {
-      const publicationIssues = getPhonePublicationIssues(phone);
-      if (publicationIssues.length > 0) {
-        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
-      }
+      publicationWarnings = getPhonePublicationIssues(phone);
+      // Incomplete imported/legacy phones must remain editable. Saving is allowed,
+      // but the record is automatically moved to draft so it cannot leak publicly.
+      if (publicationWarnings.length > 0) phone.status = 'draft';
     }
 
     // Save phone — with clear error on failure
@@ -1923,7 +1926,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     revalidatePublicContent({ phoneSlug: phone.slug });
-    return NextResponse.json({ success: true, id: phone._id?.toString() });
+    return NextResponse.json({ success: true, id: phone._id?.toString(), status: phone.status, warnings: publicationWarnings });
 
     } catch (e: unknown) {
       // Catch-all for any uncaught error in the phone update flow
