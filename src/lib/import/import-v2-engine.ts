@@ -20,7 +20,7 @@ import { ImportJob, ImportBatch } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { revalidatePublicContent } from '@/lib/revalidate';
 import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo, type NormalizedPhoneImportRecord } from './normalize-phone-record';
-import { buildDuplicateIndex, checkDuplicate, getDuplicateKey } from './duplicate-detector';
+import { buildDuplicateIndex, checkDuplicate, getDuplicateKey, normalizePhoneIdentity } from './duplicate-detector';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
 
 const SPEC_FIELDS = new Set([
@@ -118,6 +118,11 @@ interface PhoneUpdateOp {
 /** Safely extract an error message from an unknown thrown value. */
 function getErrorMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Escape user/import text before placing it inside an exact-match RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // FIX #11: Valid state transitions for jobs
@@ -462,13 +467,35 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
   }
 
-  // Fetch existing phones for duplicate checking
-  const allSlugs = validRecords.map(r => r.normalizedData.slug).filter(Boolean);
-  const existingPhones = allSlugs.length > 0
-    ? await Phone.find({ slug: { $in: allSlugs } }).select('_id slug brandId modelName pricePKR releaseDate ptaStatus ptaApproved featured trending upcoming thumbnail description').lean()
+  // Fetch only exact identity candidates. Import writes must never use fuzzy
+  // matching because similar model names can belong to different brands or
+  // generations. An existing phone is considered the same record only when:
+  //   1) slug + brand + normalized model all agree, or
+  //   2) brandId + normalized model agree exactly (legacy slug migration).
+  const allSlugs = [...new Set(validRecords.map(r => r.normalizedData.slug).filter(Boolean))];
+  const brandIds = [...new Set([...brandMap.values()].map(item => item._id.toString()))]
+    .map(id => new Types.ObjectId(id));
+  const modelRegexes = [...new Set(validRecords.map(r => r.normalizedData.model).filter(Boolean))]
+    .map(model => new RegExp(`^${escapeRegExp(String(model))}$`, 'i'));
+  const existingPhones = (allSlugs.length > 0 || (brandIds.length > 0 && modelRegexes.length > 0))
+    ? await Phone.find({
+        $or: [
+          ...(allSlugs.length > 0 ? [{ slug: { $in: allSlugs } }] : []),
+          ...(brandIds.length > 0 && modelRegexes.length > 0
+            ? [{ brandId: { $in: brandIds }, modelName: { $in: modelRegexes } }]
+            : []),
+        ],
+      })
+        .select('_id slug brandId modelName pricePKR releaseDate ptaStatus ptaApproved featured trending upcoming thumbnail description status active deletedAt')
+        .lean()
     : [];
-  const phoneBySlug = new Map(existingPhones.map(p => [p.slug, p]));
-  const duplicateIndex = buildDuplicateIndex(existingPhones);
+
+  const exactIdentityKey = (brandId: Types.ObjectId | string, modelName: string) =>
+    `${String(brandId)}|${normalizePhoneIdentity(modelName)}`;
+  const phoneByIdentity = new Map(
+    existingPhones.map(phone => [exactIdentityKey(phone.brandId as Types.ObjectId, phone.modelName), phone]),
+  );
+  const phoneBySlug = new Map(existingPhones.map(phone => [phone.slug, phone]));
 
   // Build batch write operations
   const phonesToCreate: Record<string, unknown>[] = [];
@@ -497,9 +524,28 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       continue;
     }
 
-    const dup = checkDuplicate({ brand: d.brand, model: d.model, slug: d.slug, specs: d.specs }, duplicateIndex);
+    const slugCandidate = phoneBySlug.get(d.slug);
+    const identityCandidate = phoneByIdentity.get(exactIdentityKey(brand._id, d.model));
+    const exactExisting = (() => {
+      if (slugCandidate) {
+        const sameBrand = String(slugCandidate.brandId) === String(brand._id);
+        const sameModel = normalizePhoneIdentity(slugCandidate.modelName) === normalizePhoneIdentity(d.model);
+        if (sameBrand && sameModel) return slugCandidate;
+      }
+      return identityCandidate;
+    })();
 
-    if (dup.isDuplicate) {
+    const dup = exactExisting
+      ? {
+          isDuplicate: true,
+          matchType: exactExisting.slug === d.slug ? 'exact' as const : 'slug' as const,
+          existingSlug: exactExisting.slug,
+          existingPhoneId: exactExisting._id.toString(),
+          confidence: 1,
+        }
+      : { isDuplicate: false, matchType: 'none' as const, confidence: 0 };
+
+    if (dup.isDuplicate && exactExisting) {
       if (duplicateMode === 'skip') {
         result.skipped++;
         result.errors.push({
@@ -514,17 +560,39 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       }
 
       if (duplicateMode === 'update') {
-        if (!phoneBySlug.has(d.slug)) {
-          result.skipped++;
-          continue;
-        }
-        const existingPhone = phoneBySlug.get(d.slug)!;
+        const existingPhone = exactExisting;
         const updateFields: Record<string, unknown> = {
           updatedAt: new Date(),
           lastImportId: importId,
           lastImportAt: new Date(),
           lastImportMode: 'update',
+          // Exact legacy/draft matches are reactivated instead of remaining
+          // invisible after a successful import.
+          active: true,
+          deletedAt: null,
         };
+
+        if (publishMode === 'immediate') {
+          const publicationIssues = getPhonePublicationIssues({
+            brandId: brand._id,
+            modelName: d.model,
+            slug: d.slug,
+            thumbnail: d.thumbnail || existingPhone.thumbnail,
+            pricePKR: d.pricePKR || existingPhone.pricePKR,
+            upcoming: d.upcoming,
+          });
+          updateFields.status = publicationIssues.length === 0 ? 'published' : 'draft';
+          if (publicationIssues.length > 0) {
+            result.errors.push({
+              rowNumber: rec.originalRowNumber,
+              brand: d.brand,
+              model: d.model,
+              errorCode: 'UPDATED_AS_DRAFT',
+              errorMessage: `Exact existing record updated but kept as draft: ${publicationIssues.join('; ')}`,
+              batchNumber,
+            });
+          }
+        }
 
         if (d.pricePKR) updateFields.pricePKR = d.pricePKR;
         if (d.releaseDate) updateFields.releaseDate = d.releaseDate;
@@ -602,11 +670,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       }
 
       if (duplicateMode === 'replace') {
-        if (!phoneBySlug.has(d.slug)) {
-          result.skipped++;
-          continue;
-        }
-        const existingPhone = phoneBySlug.get(d.slug)!;
+        const existingPhone = exactExisting;
         const replaceFields: Record<string, unknown> = {
           modelName: d.model,
           pricePKR: d.pricePKR || 0,
@@ -625,7 +689,20 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           lastImportId: importId,
           lastImportAt: new Date(),
           lastImportMode: 'replace',
+          active: true,
+          deletedAt: null,
         };
+        if (publishMode === 'immediate') {
+          const publicationIssues = getPhonePublicationIssues({
+            brandId: brand._id,
+            modelName: d.model,
+            slug: d.slug,
+            thumbnail: d.thumbnail,
+            pricePKR: d.pricePKR,
+            upcoming: d.upcoming,
+          });
+          replaceFields.status = publicationIssues.length === 0 ? 'published' : 'draft';
+        }
 
         // Capture before-state for rollback
         for (const field of PHONE_REPLACEABLE_FIELDS) {
