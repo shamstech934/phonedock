@@ -46,7 +46,7 @@ const SettingsSchema = new Schema<ISettings>({
   homepage: { type: Schema.Types.Mixed, default: {
     heroEnabled: true, heroBadge: "Pakistan's #1 Phone Database", heroTitle: 'Find Your Perfect', heroHighlight: 'Smartphone', heroSubtitle: 'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.', searchPlaceholder: 'Search phones, brands or chipsets...', cta1Text: 'Browse Phones', cta1Url: '/phones', cta2Text: 'Compare', cta2Url: '/compare', heroAnimationEnabled: true, heroAnimationSpeed: 5000, heroShowPhoneInfo: true, heroPhoneSlugs: [],
     sections: { brands: true, latest: true, trending: true, camera: true, gaming: true, battery: true, budget: true, flagship: true, upcoming: true, reviews: true, videos: true, news: true, sponsors: true, newsletter: true, trust: true },
-    hideEmptySections: true, showOnlyBrandsWithPhones: true, brandLimit: 13, trendingMonths: 12, trendingMinRating: 7.5, trendingBalancePriceTiers: true,
+    hideEmptySections: true, showOnlyBrandsWithPhones: true, brandLimit: 11, brandColumns: 6, brandLogoSize: 56, trendingMonths: 12, trendingMinRating: 7.5, trendingBalancePriceTiers: true,
     yearMode: 'data', yearStart: 2015, yearEnd: new Date().getFullYear() + 1, yearLimit: 12,
     priceRanges: [
       { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
@@ -127,6 +127,25 @@ export async function getSettings(): Promise<ISettings> {
   if (Object.keys(legacyUpdates).length > 0) {
     await Settings.updateOne({ _id: settings._id }, { $set: legacyUpdates });
     settings = { ...settings, ...legacyUpdates } as ISettings;
+  }
+
+  // Migrate the old 7-column / 13-brand layout to complete six-column rows.
+  const homepage = (settings.homepage || {}) as Record<string, unknown>;
+  const homepageUpdates: Record<string, unknown> = {};
+  if (homepage.brandLimit === undefined || homepage.brandLimit === 13) homepageUpdates['homepage.brandLimit'] = 11;
+  if (homepage.brandColumns === undefined || homepage.brandColumns === 7) homepageUpdates['homepage.brandColumns'] = 6;
+  if (homepage.brandLogoSize === undefined || homepage.brandLogoSize === 48) homepageUpdates['homepage.brandLogoSize'] = 56;
+  if (Object.keys(homepageUpdates).length > 0) {
+    await Settings.updateOne({ _id: settings._id }, { $set: homepageUpdates });
+    settings = {
+      ...settings,
+      homepage: {
+        ...homepage,
+        brandLimit: homepageUpdates['homepage.brandLimit'] ?? homepage.brandLimit,
+        brandColumns: homepageUpdates['homepage.brandColumns'] ?? homepage.brandColumns,
+        brandLogoSize: homepageUpdates['homepage.brandLogoSize'] ?? homepage.brandLogoSize,
+      },
+    } as ISettings;
   }
 
   return settings as ISettings;

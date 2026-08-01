@@ -140,68 +140,67 @@ function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 's
   );
 }
 
-import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
+import { BrandLogo } from '@/components/shared/BrandLogo';
 
 // ============ BRANDS GRID ============
 
 const PRIORITY_ORDER = ['samsung', 'apple', 'google', 'xiaomi', 'oneplus', 'vivo', 'oppo', 'realme', 'motorola', 'nothing', 'honor', 'tecno', 'infinix'];
-const CURATED_BRAND_DIRECTORY: Brand[] = [
-  ['Samsung', 'samsung'], ['Apple', 'apple'], ['Google', 'google'], ['Xiaomi', 'xiaomi'],
-  ['OnePlus', 'oneplus'], ['Vivo', 'vivo'], ['OPPO', 'oppo'], ['Realme', 'realme'],
-  ['Motorola', 'motorola'], ['Nothing', 'nothing'], ['Honor', 'honor'], ['Tecno', 'tecno'],
-  ['Infinix', 'infinix'],
-].map(([name, slug]) => ({
-  id: `curated-${slug}`, name, slug, logo: OFFICIAL_LOGOS[slug] || '',
-  country: '', description: '', _count: { phones: 0 },
-}));
-
-function BrandsGrid({ brands, title = 'Popular Brands', logoSize = 48, onlyWithPhones = true, limit = 13, columns = 7 }: { brands: Brand[]; title?: string; logoSize?: number; onlyWithPhones?: boolean; limit?: number; columns?: number }) {
-  // Brand navigation must remain usable even while phones are still drafts or
-  // temporarily fail the public card-readiness gate. Hiding every brand when
-  // counts are zero leaves a large blank homepage column.
-  const sourceBrands = onlyWithPhones ? brands.filter(brand => (brand._count?.phones || 0) > 0) : [...CURATED_BRAND_DIRECTORY, ...brands];
+function BrandsGrid({ brands, title = 'Popular Brands', logoSize = 56, onlyWithPhones = true, limit = 11 }: { brands: Brand[]; title?: string; logoSize?: number; onlyWithPhones?: boolean; limit?: number; columns?: number }) {
+  // Keep brands with published phones first, then supplement the grid with
+  // active imported brands. This fills the second row without pretending that
+  // an empty brand has phones.
   const brandBySlug = new Map<string, Brand>();
-  sourceBrands.forEach(brand => brandBySlug.set(brand.slug.toLowerCase(), brand));
+  brands.forEach(brand => brandBySlug.set(brand.slug.toLowerCase(), brand));
+
   const sorted = [...brandBySlug.values()].sort((a, b) => {
+    const aCount = a._count?.phones || 0;
+    const bCount = b._count?.phones || 0;
+    if (onlyWithPhones && Boolean(aCount) !== Boolean(bCount)) return bCount ? 1 : -1;
     const aIdx = PRIORITY_ORDER.indexOf(a.slug.toLowerCase());
     const bIdx = PRIORITY_ORDER.indexOf(b.slug.toLowerCase());
     if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
     if (aIdx !== -1) return -1;
     if (bIdx !== -1) return 1;
-    return (b._count?.phones || 0) - (a._count?.phones || 0);
+    if (bCount !== aCount) return bCount - aCount;
+    return a.name.localeCompare(b.name);
   });
 
-  // Keep the final "All Brands" tile inside the same two-row desktop grid.
-  const displayBrands = sorted.slice(0, Math.max(1, limit));
+  const requestedBrandCount = Math.max(1, Number(limit || 11));
+  // Six desktop columns: 5/11/17 brands plus the final All Brands CTA fill
+  // complete rows and avoid the awkward half-empty second row.
+  const desiredBrandCount = requestedBrandCount >= 17 ? 17 : requestedBrandCount <= 5 ? 5 : 11;
+  const displayBrands = sorted.slice(0, desiredBrandCount);
   if (!displayBrands.length) return null;
 
   return (
-    <section>
+    <section className="min-w-0">
       <SectionHeader title={title} icon={Layers} link="/brands" linkText="All Brands" />
-      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-6" style={{ gridTemplateColumns: `repeat(${Math.max(4, Math.min(10, columns))}, minmax(0, 1fr))` }}>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {displayBrands.map(brand => {
-          const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
+          const phoneCount = brand._count?.phones || 0;
           return (
-            <Link key={brand.id} href={brand.id.startsWith('curated-') ? `/phones?brand=${brand.slug}` : `/brands/${brand.slug}`} className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
-              <div className="flex items-center justify-center rounded-xl bg-gray-100 dark:bg-slate-800 transition-colors group-hover:bg-blue-50 dark:group-hover:bg-sky-500/15" style={{ width: logoSize, height: logoSize }}>
-                {logoSrc ? (
-                  <Image src={logoSrc} alt={`${brand.name} logo`} width={Math.max(28, logoSize - 12)} height={Math.max(28, logoSize - 12)} className="h-[72%] w-[72%] object-contain" unoptimized />
-                ) : (
-                  <Layers className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
-                )}
-              </div>
-              <span className="text-[11px] sm:text-xs font-semibold text-gray-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-sky-300 transition-colors line-clamp-1">{brand.name}</span>
-              <span className="text-[10px] text-muted-foreground">{(brand._count?.phones || 0) > 0 ? `${brand._count?.phones} phones` : 'View brand'}</span>
+            <Link
+              key={brand.id}
+              href={`/brands/${brand.slug}`}
+              className="group flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/80 bg-white/70 p-3 text-center shadow-[0_12px_34px_rgba(15,23,42,.07)] backdrop-blur-md transition duration-300 hover:-translate-y-1 hover:border-blue-200 hover:bg-white hover:shadow-[0_18px_45px_rgba(37,99,235,.13)] dark:border-slate-700 dark:bg-slate-900/75 dark:hover:border-sky-500/40"
+            >
+              <BrandLogo name={brand.name} slug={brand.slug} logo={brand.logo} size={Math.max(52, logoSize)} className="transition-transform duration-300 group-hover:scale-105" />
+              <span className="line-clamp-1 text-xs font-bold text-slate-800 transition-colors group-hover:text-blue-700 dark:text-slate-100 dark:group-hover:text-sky-300">{brand.name}</span>
+              <span className={`text-[10px] ${phoneCount ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                {phoneCount ? `${phoneCount} phones` : 'Browse brand'}
+              </span>
             </Link>
           );
         })}
-        {/* All Brands card */}
-        <Link href="/brands" className="card-premium flex min-h-[122px] flex-col items-center justify-center gap-1.5 p-2.5 text-center transition-all duration-300 group hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:min-h-[132px] sm:p-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 transition-colors group-hover:bg-blue-100 sm:h-11 sm:w-11">
-            <Layers className="w-5 h-5 text-blue-500 group-hover:text-blue-600 transition-colors" />
+        <Link
+          href="/brands"
+          className="group flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-2xl border border-blue-200/80 bg-gradient-to-br from-blue-50/95 to-cyan-50/90 p-3 text-center shadow-[0_12px_34px_rgba(37,99,235,.09)] transition duration-300 hover:-translate-y-1 hover:border-blue-300 hover:shadow-[0_18px_45px_rgba(37,99,235,.15)] dark:border-sky-500/25 dark:from-sky-950/50 dark:to-cyan-950/30"
+        >
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-200 bg-white text-blue-600 shadow-sm transition-transform duration-300 group-hover:scale-105 dark:border-sky-500/30 dark:bg-slate-900 dark:text-sky-300">
+            <Layers className="h-6 w-6" />
           </div>
-          <span className="text-[11px] sm:text-xs font-semibold text-blue-600 group-hover:text-blue-700 transition-colors">All Brands</span>
-          <span className="text-[10px] text-muted-foreground">View all</span>
+          <span className="text-xs font-bold text-blue-700 dark:text-sky-300">All Brands</span>
+          <span className="text-[10px] text-blue-500/80 dark:text-sky-400/70">View full directory</span>
         </Link>
       </div>
     </section>
@@ -653,7 +652,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0 space-y-10 sm:space-y-14">
-                {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 48} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 13} columns={cms.brandColumns || 7} />}
+                {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 56} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 11} columns={cms.brandColumns || 6} />}
                 {renderOrderedSection('latest')}
               </div>
               <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
