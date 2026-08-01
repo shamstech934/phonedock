@@ -43,9 +43,9 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
     Brand.countDocuments({ active: { $ne: false } }),
     Phone.distinct('brandId', { status: 'published', brandId: { $exists: true, $ne: null } }),
     Phone.find({ status: 'published', $or: [{ slug: { $exists: false } }, { slug: '' }, { slug: null }] })
-      .select('brandName modelName slug').limit(8).lean(),
+      .select('brandId modelName slug').populate('brandId', 'name').limit(8).lean(),
     Phone.find({ status: 'published', $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] })
-      .select('brandName modelName slug pricePKR').limit(8).lean(),
+      .select('brandId modelName slug pricePKR').populate('brandId', 'name').limit(8).lean(),
   ]);
 
   const imagePhoneIds = await PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } });
@@ -137,11 +137,11 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
     examples: {
       missingSlug: missingSlugExamples.map((phone) => ({
         id: String(phone._id),
-        label: `${phone.brandName || ''} ${phone.modelName || ''}`.trim() || 'Unnamed phone',
+        label: `${((phone as unknown as { brandId?: { name?: string } }).brandId?.name || '')} ${(phone as unknown as { modelName?: string }).modelName || ''}`.trim() || 'Unnamed phone',
       })),
       missingPrice: missingPriceExamples.map((phone) => ({
         id: String(phone._id),
-        label: `${phone.brandName || ''} ${phone.modelName || ''}`.trim() || 'Unnamed phone',
+        label: `${((phone as unknown as { brandId?: { name?: string } }).brandId?.name || '')} ${(phone as unknown as { modelName?: string }).modelName || ''}`.trim() || 'Unnamed phone',
         slug: phone.slug || '',
       })),
     },

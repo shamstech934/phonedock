@@ -90,6 +90,26 @@ export default async function PhoneDetailPage({ params }: Props) {
     } : undefined,
   } : null;
 
+  const phoneSpecs = (phone as unknown as { specs?: { battery?: string; ram?: string; storage?: string; mainCamera?: string; display?: string } }).specs || {};
+  const faqJsonLd = phone ? {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: `What is the price of ${brand} ${model} in Pakistan?`,
+        acceptedAnswer: { '@type': 'Answer', text: phone.pricePKR > 0 ? `${brand} ${model} price in Pakistan is PKR ${phone.pricePKR.toLocaleString()}. Prices can change by retailer and variant.` : `${brand} ${model} price in Pakistan is not confirmed yet.` },
+      },
+      {
+        '@type': 'Question',
+        name: `Is ${brand} ${model} PTA approved?`,
+        acceptedAnswer: { '@type': 'Answer', text: phone.ptaApproved ? `Yes, ${brand} ${model} is listed as PTA approved.` : `${brand} ${model} PTA approval is listed as ${phone.ptaStatus || 'unknown'}. Confirm the exact device IMEI before purchase.` },
+      },
+      ...(phoneSpecs.battery ? [{ '@type': 'Question', name: `What is the battery capacity of ${brand} ${model}?`, acceptedAnswer: { '@type': 'Answer', text: `${brand} ${model} battery specification is ${phoneSpecs.battery}.` } }] : []),
+      ...(phoneSpecs.ram || phoneSpecs.storage ? [{ '@type': 'Question', name: `How much RAM and storage does ${brand} ${model} have?`, acceptedAnswer: { '@type': 'Answer', text: `${brand} ${model} is listed with ${phoneSpecs.ram || 'multiple RAM options'} and ${phoneSpecs.storage || 'multiple storage options'}.` } }] : []),
+    ],
+  } : null;
+
   const breadcrumbJsonLd = phone ? {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
@@ -105,6 +125,7 @@ export default async function PhoneDetailPage({ params }: Props) {
     <>
       {productJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(productJsonLd) }} />}
       {breadcrumbJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }} />}
+      {faqJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd) }} />}
       <PhoneDetailClient slug={slug} initialData={data} />
     </>
   );

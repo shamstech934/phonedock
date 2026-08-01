@@ -3,6 +3,7 @@ import { connectDBSafe } from '@/lib/mongodb';
 import { Phone, Brand, News, UserReview } from '@/lib/models';
 
 import { getBaseUrl } from '@/lib/urls';
+import { SEO_SPEC_LANDINGS } from '@/lib/seo-growth';
 
 const BASE_URL = getBaseUrl();
 
@@ -33,6 +34,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/faq`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE_URL}/about`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'monthly', priority: 0.4 },
     ...['gaming-phones','camera-phones','battery-phones','value-phones','pta-approved-phones'].map((slug) => ({ url: `${BASE_URL}/buying-guides/${slug}`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly' as const, priority: 0.8 })),
+    ...SEO_SPEC_LANDINGS.map((item) => ({ url: `${BASE_URL}/phones-by-spec/${item.type}/${item.value}`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly' as const, priority: 0.7 })),
   ];
 
   try {
