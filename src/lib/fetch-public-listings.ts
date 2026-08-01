@@ -57,17 +57,26 @@ const loadPublicBrands = cache(async (): Promise<BrandType[]> => {
     ]),
   ]);
   const countMap = new Map(counts.map((item: { _id: { toString(): string }; phones: number }) => [item._id.toString(), item.phones]));
-  return brands.map(brand => ({
-    id: brand._id.toString(),
-    name: brand.name,
-    slug: brand.slug,
-    logo: brand.logo || '',
-    country: brand.country || '',
-    description: brand.description || '',
-    _count: { phones: countMap.get(brand._id.toString()) || 0 },
-  }));
+  return brands
+    .map(brand => ({
+      id: brand._id.toString(),
+      name: brand.name,
+      slug: brand.slug,
+      logo: brand.logo || '',
+      country: brand.country || '',
+      description: brand.description || '',
+      _count: { phones: countMap.get(brand._id.toString()) || 0 },
+    }))
+    // Public brand directory should grow with real imported/published data.
+    // Empty catalogue placeholders remain manageable in Admin → Brands, but
+    // are intentionally hidden from visitors until at least one phone exists.
+    .filter(brand => (brand._count?.phones || 0) > 0)
+    .sort((a, b) => {
+      const countDifference = (b._count?.phones || 0) - (a._count?.phones || 0);
+      return countDifference || a.name.localeCompare(b.name);
+    });
 });
-export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v1'], { revalidate: 900, tags: ['brands', 'phones'] });
+export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v2-non-empty'], { revalidate: 900, tags: ['brands', 'phones'] });
 
 async function loadPublicBrandDetail(slug: string): Promise<{ brand: BrandType | null; phones: PhoneType[] }> {
   await connectDB();

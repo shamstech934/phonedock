@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
-import { Layers, ChevronRight, Search, Smartphone } from 'lucide-react';
+import { Layers, ChevronRight, Search } from 'lucide-react';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
-import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
+import { BrandLogo } from '@/components/shared/BrandLogo';
 import type { Brand } from '@/components/shared/types';
 
 export default function BrandsClient({ initialBrands }: { initialBrands: Brand[] }) {
@@ -69,9 +68,13 @@ export default function BrandsClient({ initialBrands }: { initialBrands: Brand[]
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filtered.map(brand => (
                   <Link key={brand.id} href={`/brands/${brand.slug}`} className="phone-card glass-shine p-5 cursor-pointer group block">
-                    <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
-                      {(() => { const src = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug?.toLowerCase()] || brand.logo; return src ? <Image src={src} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />; })()}
-                    </div>
+                    <BrandLogo
+                      name={brand.name}
+                      slug={brand.slug}
+                      logo={brand.logo}
+                      size={56}
+                      className="mb-4 transition-transform duration-200 group-hover:scale-105"
+                    />
                     <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
                     <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
                     {brand.country && <p className="text-[10px] text-muted-foreground mt-0.5">{brand.country}</p>}
@@ -92,9 +95,13 @@ export default function BrandsClient({ initialBrands }: { initialBrands: Brand[]
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {items.map(brand => (
                         <Link key={brand.id} href={`/brands/${brand.slug}`} className="phone-card glass-shine p-5 cursor-pointer group block">
-                          <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-blue-50 transition-colors">
-                            {(() => { const src = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug?.toLowerCase()] || brand.logo; return src ? <Image src={src} alt={brand.name} width={40} height={40} className="object-contain" unoptimized /> : <Layers className="w-6 h-6 text-gray-400 group-hover:text-blue-500 transition-colors" />; })()}
-                          </div>
+                          <BrandLogo
+                            name={brand.name}
+                            slug={brand.slug}
+                            logo={brand.logo}
+                            size={56}
+                            className="mb-4 transition-transform duration-200 group-hover:scale-105"
+                          />
                           <h3 className="font-bold text-sm text-gray-900 group-hover:text-blue-600 transition-colors">{brand.name}</h3>
                           <p className="text-xs text-muted-foreground mt-1">{brand._count?.phones || 0} phones</p>
                           {brand.country && <p className="text-[10px] text-muted-foreground mt-0.5">{brand.country}</p>}
