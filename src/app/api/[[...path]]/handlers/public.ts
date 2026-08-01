@@ -11,6 +11,7 @@ import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -227,8 +228,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const search = url.searchParams.get('search') || '';
     const brand = url.searchParams.get('brand') || '';
-    const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
-    const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'createdAt';
+    const ALLOWED_SORTS = new Set(['createdAt', 'releaseDate', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
+    const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'releaseDate';
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
 
     // Boolean/enum filters
@@ -329,7 +330,11 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     if (andFilters.length > 0) filter.$and = andFilters;
 
     const [phones, rawTotal] = await Promise.all([
-      Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit)
+      Phone.find(filter).sort(
+        (sort === 'createdAt' || sort === 'releaseDate')
+          ? (order === -1 ? PHONE_NEWEST_SORT : PHONE_OLDEST_SORT)
+          : rankedPhoneSort(sort, order)
+      ).skip((page - 1) * limit).limit(limit)
         .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .populate('brand').lean(),
       Phone.countDocuments(filter),
@@ -407,7 +412,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
             },
           },
         },
-        { $sort: { _rank: 1, modelName: 1 } },
+        { $sort: { _rank: 1, releaseDate: -1, availableFrom: -1, announcedAt: -1, createdAt: -1, modelName: 1 } },
         { $limit: 12 },
         { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
       ]).option({ maxTimeMS: 5000 });
@@ -430,7 +435,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         ],
       })
         .select('slug modelName thumbnail pricePKR brandId')
-        .sort({ modelName: 1 })
+        .sort(PHONE_NEWEST_SORT)
         .limit(12)
         .populate('brand')
         .lean() as unknown as AutocompletePhone[];
@@ -457,7 +462,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
       PhonePrice.find({ phoneId: phone._id }).limit(10).lean(),
-      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
+      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort(PHONE_NEWEST_SORT).limit(6).populate('brand').lean(),
       Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
       // Check CollectedPhone for specs fallback (phones created via collector approval)
       CollectedPhone.findOne({ approvedPhoneId: phone._id, status: { $in: ['approved', 'imported'] } }).lean(),
@@ -591,7 +596,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const limit = parseBoundedInt(url.searchParams.get('limit'), 100, { max: 250 });
     const sortParam = url.searchParams.get('sort');
     const sortMap: Record<string, Record<string, 1 | -1>> = {
-      newest: { createdAt: -1 },
+      newest: { ...PHONE_NEWEST_SORT },
       price_low: { pricePKR: 1 },
       price_high: { pricePKR: -1 },
       rating: { overallRating: -1 },
@@ -662,7 +667,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
           },
         },
       },
-      { $sort: { _rank: 1, modelName: 1 } },
+      { $sort: { _rank: 1, releaseDate: -1, availableFrom: -1, announcedAt: -1, createdAt: -1, modelName: 1 } },
       { $limit: 20 },
       { $project: { description: 0, pros: 0, cons: 0, reviewSummary: 0, reviewVerdict: 0, seoTitle: 0, seoDescription: 0, keywords: 0, sourceName: 0, sourceUrl: 0, searchText: 0, _rank: 0 } },
     ]).option({ maxTimeMS: 3000 });
@@ -752,7 +757,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       [sort]: { $gt: 0 },
     })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .sort({ [sort]: order }).limit(limit).lean();
+      .sort(rankedPhoneSort(sort, order)).limit(limit).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
     const brandIds = [...new Set(raw.map(p => p.brandId?.toString()).filter(Boolean))];
     let brandMap = new Map<string, LeanBrand>();
@@ -771,7 +776,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   if (segments.length === 1 && segments[0] === 'upcoming-phones') {
     await connectDB();
     const raw = await Phone.find({ active: true, upcoming: true })
-      .sort({ createdAt: -1 }).limit(20).lean();
+      .sort({ ...PHONE_NEWEST_SORT, expectedLaunchAt: 1 }).limit(20).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
     const brandIds = [...new Set(raw.map(p => p.brandId?.toString()).filter(Boolean))];
     let brandMap = new Map<string, LeanBrand>();

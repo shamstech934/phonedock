@@ -82,3 +82,11 @@ No intentional breaking API change is declared; integrations with internal catch
 - Added manual job run and cancellation endpoints.
 - Updated Admin AI Research to process bounded batches with live progress.
 - Added a release-gate audit for the AI research queue contract.
+
+## v27.5 — Global Phone Date Ordering
+- Added one canonical chronology sort for public and admin phone lists.
+- Newer release years and dates now appear before older phones automatically.
+- Brand pages, homepage sections, search results, related phones, price groups, hero fallbacks, and the admin phone list now use the same ordering rules.
+- Ranking sections keep their score priority and use release chronology as a deterministic tie-breaker.
+- Missing exact dates fall back through availability, Pakistan launch, announcement, expected launch, creation time, and document ID.
+- Added a release-gate audit to prevent future regressions.

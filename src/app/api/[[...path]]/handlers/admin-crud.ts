@@ -12,6 +12,7 @@ import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
 import { isPhoneAvailabilityStatus } from '@/lib/phone-lifecycle';
 import { normalizeHomepageSectionOrder } from '@/lib/homepage-builder';
+import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
 
 // ============ LOCAL TYPES ============
 
@@ -313,15 +314,15 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     if (url.searchParams.get('featured') === 'true') filter.featured = true;
     if (url.searchParams.get('trending') === 'true') filter.trending = true;
     // Sort
-    let sort: MongooseSort = { createdAt: -1 };
+    let sort: MongooseSort = { ...PHONE_NEWEST_SORT };
     const sortParam = url.searchParams.get('sort');
-    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    if (sortParam === 'oldest') sort = { ...PHONE_OLDEST_SORT };
     else if (sortParam === 'price-low') sort = { pricePKR: 1 };
     else if (sortParam === 'price-high') sort = { pricePKR: -1 };
     else if (sortParam === 'name-az') sort = { modelName: 1 };
     else if (sortParam === 'name-za') sort = { modelName: -1 };
-    else if (sortParam === 'rating') sort = { overallRating: -1 };
-    else if (sortParam === 'views') sort = { views: -1 };
+    else if (sortParam === 'rating') sort = rankedPhoneSort('overallRating');
+    else if (sortParam === 'views') sort = rankedPhoneSort('views');
 
     const [phones, total] = await Promise.all([
       Phone.find(filter).sort(sort).skip(skip).limit(limit).populate('brand').lean(),

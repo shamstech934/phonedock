@@ -10,6 +10,7 @@ import { Phone, Brand, News, PhoneSpecs, PhoneImage, Sponsor, Video } from '@/li
 import { connectDB } from '@/lib/mongodb';
 import { phoneToJSON, buildSpecsMap, attachSpecsToJsonPhones, attachSpecsToRawPhones, type PhoneDocOrJson } from '@/app/api/[[...path]]/handlers/helpers';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { PHONE_NEWEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
 
 // ============ LOCAL TYPES ============
 
@@ -89,24 +90,24 @@ async function fetchHomeDataUncached() {
   const twelveMonthsAgoIso = twelveMonthsAgo.toISOString().slice(0, 10);
 
   const [featured, trending, latest, bestCamera, bestGaming, bestBattery, upcoming, catalog, news, videos] = await Promise.all([
-    Phone.find({ ...cardReady, featured: true }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, releaseDate: { $gte: twelveMonthsAgoIso }, $or: [{ trending: true }, { overallRating: { $gte: 7.5 } }, { views: { $gte: 100 } }] }).sort({ trending: -1, overallRating: -1, views: -1, releaseDate: -1, createdAt: -1 }).limit(24).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find(cardReady).sort({ releaseDate: -1, createdAt: -1 }).limit(24).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, cameraScore: { $gt: 0 } }).sort({ cameraScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, performanceScore: { $gt: 0 } }).sort({ performanceScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, batteryScore: { $gt: 0 } }).sort({ batteryScore: -1 }).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, featured: true }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, releaseDate: { $gte: twelveMonthsAgoIso }, $or: [{ trending: true }, { overallRating: { $gte: 7.5 } }, { views: { $gte: 100 } }] }).sort({ trending: -1, overallRating: -1, views: -1, ...PHONE_NEWEST_SORT }).limit(24).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find(cardReady).sort(PHONE_NEWEST_SORT).limit(24).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, cameraScore: { $gt: 0 } }).sort(rankedPhoneSort('cameraScore')).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, performanceScore: { $gt: 0 } }).sort(rankedPhoneSort('performanceScore')).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, batteryScore: { $gt: 0 } }).sort(rankedPhoneSort('batteryScore')).limit(4).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     Phone.find(upcomingReady).sort({ expectedLaunchAt: 1, releaseDate: -1, createdAt: -1 }).limit(16).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find(cardReady).sort({ releaseDate: -1, overallRating: -1, createdAt: -1 }).limit(240).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find(cardReady).sort({ ...PHONE_NEWEST_SORT, overallRating: -1 }).limit(240).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     News.find({ published: true, status: 'published' }).select('title slug excerpt category author image published createdAt').sort({ createdAt: -1 }).limit(6).lean(),
     Video.find({ active: true }).select('youtubeId title thumbnailUrl publishedAt duration category phoneId').sort({ publishedAt: -1 }).limit(4).populate('phoneId', 'modelName slug thumbnail brandId').lean(),
   ]);
 
   const [pc_above100k, pc_price60to100, pc_price40to60, pc_price20to40, pc_under20k, brandAgg, sponsors, totalPhones, totalBrands, releaseDateValues] = await Promise.all([
-    Phone.find({ ...cardReady, pricePKR: { $gt: 100000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, pricePKR: { $gt: 60000, $lte: 100000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, pricePKR: { $gt: 40000, $lte: 60000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, pricePKR: { $gt: 20000, $lte: 40000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
-    Phone.find({ ...cardReady, pricePKR: { $gt: 0, $lte: 20000 } }).sort({ createdAt: -1 }).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, pricePKR: { $gt: 100000 } }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, pricePKR: { $gt: 60000, $lte: 100000 } }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, pricePKR: { $gt: 40000, $lte: 60000 } }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, pricePKR: { $gt: 20000, $lte: 40000 } }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
+    Phone.find({ ...cardReady, pricePKR: { $gt: 0, $lte: 20000 } }).sort(PHONE_NEWEST_SORT).limit(8).select(HOME_PHONE_PROJECTION).populate('brand').lean(),
     Brand.aggregate([
       { $match: { active: true } },
       { $sort: { sortOrder: 1 } },
@@ -242,7 +243,7 @@ async function fetchHomeDataUncached() {
  */
 export const fetchHomeData = unstable_cache(
   fetchHomeDataUncached,
-  ['home-data-v3'],
+  ['home-data-v4-date-order'],
   { revalidate: 300, tags: ['home-data'] },
 );
 
@@ -256,7 +257,7 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
   let phones = slugs.length
     ? await Phone.find({ ...cardReady, slug: { $in: slugs } }).select(HOME_PHONE_PROJECTION).populate('brand').lean()
     : await Phone.find({ ...cardReady, featured: true })
-      .sort({ createdAt: -1 }).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
+      .sort(PHONE_NEWEST_SORT).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
 
   if (slugs.length) {
     const order = new Map(slugs.map((slug, index) => [slug, index]));
@@ -266,7 +267,7 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
     // thumbnail hosts can temporarily throttle or remove an asset; the client
     // validates these candidates and uses up to six working images.
     const fallbackPhones = await Phone.find({ ...cardReady, slug: { $nin: slugs } })
-      .sort({ featured: -1, createdAt: -1 })
+      .sort({ featured: -1, ...PHONE_NEWEST_SORT })
       .limit(6)
       .select(HOME_PHONE_PROJECTION)
       .populate('brand')
@@ -276,7 +277,7 @@ export async function fetchHeroPhones(selectedSlugs: string[] = []) {
 
   if (phones.length === 0) {
     phones = await Phone.find({ ...cardReady, pricePKR: { $gt: 150000 } })
-      .sort({ createdAt: -1 }).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
+      .sort(PHONE_NEWEST_SORT).limit(6).select(HOME_PHONE_PROJECTION).populate('brand').lean();
   }
 
   const ids = phones.map(p => p._id);
