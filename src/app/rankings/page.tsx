@@ -7,9 +7,10 @@ import { PhoneGrid } from '@/components/shared/PhoneGrid';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 
-// Rankings are database-backed and should be rendered on demand. Keeping this
-// boundary local allows the rest of the application to use static rendering.
-export const revalidate = 300;
+// Rankings depend on live MongoDB data. Render this route only at request time so
+// a temporary Atlas/TLS outage can never fail the production build.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: 'Best Phones in Pakistan 2026 – Smart Rankings',
@@ -27,11 +28,25 @@ const categories: Array<{ key: RankingCategory; title: string; icon: typeof Awar
 ];
 
 export default async function RankingsPage() {
-  const pools = await Promise.all(categories.map(category => getTopPhones(category.sort, 40)));
-  const sections = categories.map((category, index) => ({
-    ...category,
-    phones: rankPhones(pools[index], category.key, 5),
-  }));
+  // Keep each category isolated: one transient database/TLS failure should show an
+  // empty state for that category, not crash the entire page or deployment.
+  const results = await Promise.allSettled(
+    categories.map(category => getTopPhones(category.sort, 40)),
+  );
+
+  const sections = categories.map((category, index) => {
+    const result = results[index];
+    const pool = result?.status === 'fulfilled' ? result.value : [];
+
+    if (result?.status === 'rejected') {
+      console.error(`Rankings data unavailable for ${category.key}:`, result.reason);
+    }
+
+    return {
+      ...category,
+      phones: rankPhones(pool, category.key, 5),
+    };
+  });
 
   return (
     <main className="min-h-screen bg-slate-50">
