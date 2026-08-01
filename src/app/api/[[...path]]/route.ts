@@ -50,6 +50,9 @@ import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './han
 import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
 import { handlePakistanIntelligenceGet, handlePakistanIntelligencePost } from './handlers/pakistan-intelligence';
 import { handleImageIntelligenceGet, handleImageIntelligencePost } from './handlers/image-intelligence';
+import { handleSpecsIntelligenceGet, handleSpecsIntelligencePost } from './handlers/specs-intelligence';
+import { handlePriceIntelligenceV2Get, handlePriceIntelligenceV2Post } from './handlers/price-intelligence-v2';
+import { handleYouTubeIntelligenceGet, handleYouTubeIntelligencePost } from './handlers/youtube-intelligence';
 import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
 import { handleReleaseReadinessGet } from './handlers/release-readiness';
 import { runContinuousMonitoring } from '@/lib/continuous-monitoring';
@@ -369,6 +372,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return handleImageIntelligenceGet(req);
     }
 
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-intelligence') {
+      return handleSpecsIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {
+      return handlePriceIntelligenceV2Get(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'youtube-intelligence') {
+      return handleYouTubeIntelligenceGet(req);
+    }
+
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
       return handleContinuousMonitoringGet(req);
     }
@@ -681,6 +696,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'image-intelligence') {
       return handleImageIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-intelligence') {
+      return handleSpecsIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {
+      return handlePriceIntelligenceV2Post(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'youtube-intelligence') {
+      return handleYouTubeIntelligencePost(req);
     }
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {

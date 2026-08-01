@@ -32,3 +32,7 @@ export { MonitoringRun } from './MonitoringRun';
 
 export { PakistanMarketSignal } from './PakistanMarketSignal';
 export { ImageIntelligenceSignal } from './ImageIntelligenceSignal';
+
+export { SpecsIntelligenceSignal } from './SpecsIntelligenceSignal';
+export { PriceIntelligenceSignal } from './PriceIntelligenceSignal';
+export { YouTubeIntelligenceSignal } from './YouTubeIntelligenceSignal';

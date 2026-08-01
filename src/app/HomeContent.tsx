@@ -23,7 +23,6 @@ import { HomeVideoSection } from '@/components/home/HomeVideoSection';
 import { HeroCampaignBackground, type HeroCampaign } from '@/components/home/HeroCampaignBackground';
 import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
-import { PRICE_CATEGORIES } from '@/lib/price-categories';
 import { normalizeHomepageSectionOrder, type OrderedHomepageSection } from '@/lib/homepage-builder';
 
 // ============ QUICK CATEGORY STRIP ============
@@ -99,7 +98,7 @@ const CATEGORY_TONES: Record<CategoryTone, string> = {
 };
 
 // ============ PHONE SECTION (full card grid) ============
-function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky' }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone }) {
+function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky', cardCount = 8 }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone; cardCount?: number }) {
   if (!phones.length) {
     if (!showEmpty) return null;
     return (
@@ -117,7 +116,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
     <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
       <PhoneGrid page="home">
-        {phones.slice(0, 8).map(p => (
+        {phones.slice(0, cardCount).map(p => (
           <div key={p.id} className="min-w-0">
             <PhoneCard phone={p} />
           </div>
@@ -128,13 +127,13 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
 }
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
-function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky' }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone }) {
+function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 4 }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number }) {
   if (!phones.length) return null;
   return (
     <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
       <PhoneGrid page="home">
-        {phones.slice(0, 4).map(p => <PhoneCard key={p.id} phone={p} />)}
+        {phones.slice(0, cardCount).map(p => <PhoneCard key={p.id} phone={p} />)}
       </PhoneGrid>
     </section>
   );
@@ -155,12 +154,13 @@ const CURATED_BRAND_DIRECTORY: Brand[] = [
   country: '', description: '', _count: { phones: 0 },
 }));
 
-function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: number }) {
+function BrandsGrid({ brands, title = 'Popular Brands', logoSize = 48, onlyWithPhones = true, limit = 13, columns = 7 }: { brands: Brand[]; title?: string; logoSize?: number; onlyWithPhones?: boolean; limit?: number; columns?: number }) {
   // Brand navigation must remain usable even while phones are still drafts or
   // temporarily fail the public card-readiness gate. Hiding every brand when
   // counts are zero leaves a large blank homepage column.
-  const brandBySlug = new Map(CURATED_BRAND_DIRECTORY.map(brand => [brand.slug, brand]));
-  brands.forEach(brand => brandBySlug.set(brand.slug.toLowerCase(), brand));
+  const sourceBrands = onlyWithPhones ? brands.filter(brand => (brand._count?.phones || 0) > 0) : [...CURATED_BRAND_DIRECTORY, ...brands];
+  const brandBySlug = new Map<string, Brand>();
+  sourceBrands.forEach(brand => brandBySlug.set(brand.slug.toLowerCase(), brand));
   const sorted = [...brandBySlug.values()].sort((a, b) => {
     const aIdx = PRIORITY_ORDER.indexOf(a.slug.toLowerCase());
     const bIdx = PRIORITY_ORDER.indexOf(b.slug.toLowerCase());
@@ -171,13 +171,13 @@ function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: num
   });
 
   // Keep the final "All Brands" tile inside the same two-row desktop grid.
-  const displayBrands = sorted.slice(0, 13);
+  const displayBrands = sorted.slice(0, Math.max(1, limit));
   if (!displayBrands.length) return null;
 
   return (
     <section>
-      <SectionHeader title="Popular Brands" icon={Layers} link="/brands" linkText="All Brands" />
-      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-6 xl:grid-cols-7">
+      <SectionHeader title={title} icon={Layers} link="/brands" linkText="All Brands" />
+      <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:grid-cols-6" style={{ gridTemplateColumns: `repeat(${Math.max(4, Math.min(10, columns))}, minmax(0, 1fr))` }}>
         {displayBrands.map(brand => {
           const logoSrc = OFFICIAL_LOGOS[brand.name.toLowerCase()] || OFFICIAL_LOGOS[brand.slug.toLowerCase()] || brand.logo;
           return (
@@ -208,56 +208,43 @@ function BrandsGrid({ brands, logoSize = 48 }: { brands: Brand[]; logoSize?: num
 }
 
 // ============ SHOP BY PRICE SIDEBAR ============
-function PriceCategorySidebar() {
-  const categories = PRICE_CATEGORIES.filter(category => !category.missing);
+interface HomepagePriceRange { id: string; label: string; min: number; max: number | null; enabled: boolean; }
 
+const DEFAULT_HOME_PRICE_RANGES: HomepagePriceRange[] = [
+  { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
+  { id: '20k-40k', label: 'Rs. 20,001 – 40,000', min: 20001, max: 40000, enabled: true },
+  { id: '40k-60k', label: 'Rs. 40,001 – 60,000', min: 40001, max: 60000, enabled: true },
+  { id: '60k-80k', label: 'Rs. 60,001 – 80,000', min: 60001, max: 80000, enabled: true },
+  { id: '80k-100k', label: 'Rs. 80,001 – 100,000', min: 80001, max: 100000, enabled: true },
+  { id: '100k-150k', label: 'Rs. 100,001 – 150,000', min: 100001, max: 150000, enabled: true },
+  { id: '150k-200k', label: 'Rs. 150,001 – 200,000', min: 150001, max: 200000, enabled: true },
+  { id: '200k-300k', label: 'Rs. 200,001 – 300,000', min: 200001, max: 300000, enabled: true },
+  { id: '300k-400k', label: 'Rs. 300,001 – 400,000', min: 300001, max: 400000, enabled: true },
+  { id: '400k-500k', label: 'Rs. 400,001 – 500,000', min: 400001, max: 500000, enabled: true },
+  { id: '500k-600k', label: 'Rs. 500,001 – 600,000', min: 500001, max: 600000, enabled: true },
+  { id: '600k-plus', label: 'Above Rs. 600,000', min: 600001, max: null, enabled: true },
+];
+
+function PriceCategorySidebar({ ranges = DEFAULT_HOME_PRICE_RANGES }: { ranges?: HomepagePriceRange[] }) {
+  const categories = ranges.filter(category => category.enabled && category.label.trim());
   return (
     <aside className="card-premium h-fit p-3.5" aria-labelledby="home-price-categories-title">
-      <div className="mb-2.5 flex items-center gap-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50">
-          <CircleDollarSign className="h-5 w-5 text-blue-500" aria-hidden="true" />
-        </div>
-        <div>
-          <h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900 dark:text-white">Phones by Price</h2>
-          <p className="text-[11px] text-muted-foreground">Choose your budget</p>
-        </div>
-      </div>
-
-      <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2" aria-label="Browse phones by price category">
-        {categories.map(category => (
-          <Link
-            key={category.key}
-            href={`/phones?priceCategory=${category.key}`}
-            className="group flex min-h-12 items-center justify-between gap-1.5 rounded-xl border border-gray-200/70 dark:border-slate-700/70 bg-white/55 dark:bg-slate-900/65 px-2.5 py-1.5 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-          >
-            <span className="min-w-0">
-              <span className="block truncate text-xs font-semibold text-gray-800 dark:text-slate-100 group-hover:text-blue-700 dark:group-hover:text-sky-300">{category.label}</span>
-              <span className="block text-[10px] text-muted-foreground">{category.shortLabel}</span>
-            </span>
-            <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500 xl:block" aria-hidden="true" />
-          </Link>
-        ))}
+      <div className="mb-2.5 flex items-center gap-2"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50"><CircleDollarSign className="h-5 w-5 text-blue-500" /></div><div><h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900 dark:text-white">Phones by Price</h2><p className="text-[11px] text-muted-foreground">Choose your exact budget</p></div></div>
+      <nav className="grid max-h-[420px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-1" aria-label="Browse phones by price category">
+        {categories.map(category => {
+          const query = new URLSearchParams({ minPrice: String(category.min) });
+          if (category.max !== null) query.set('maxPrice', String(category.max));
+          return <Link key={category.id} href={`/phones?${query.toString()}`} className="group flex min-h-11 items-center justify-between rounded-xl border border-gray-200/70 bg-white/55 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50"><span className="text-xs font-semibold text-gray-800 group-hover:text-blue-700">{category.label}</span><ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-blue-500" /></Link>;
+        })}
       </nav>
-
-      <Link href="/price-ranges" className="mt-2.5 flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-        View all price ranges
-      </Link>
+      <Link href="/price-ranges" className="mt-2.5 flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700">View all price ranges</Link>
     </aside>
   );
 }
 
-function ReleaseYearCategories() {
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 7 }, (_, index) => currentYear + 1 - index);
-  return <aside className="card-premium h-fit p-3.5" aria-labelledby="home-year-categories-title">
-    <div className="mb-2.5 flex items-center gap-2">
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50"><Clock className="h-5 w-5 text-violet-600" /></div>
-      <div><h2 id="home-year-categories-title" className="text-sm font-bold">Phones by Year</h2><p className="text-[11px] text-muted-foreground">Browse release generations</p></div>
-    </div>
-    <nav className="grid grid-cols-2 gap-2" aria-label="Browse phones by release year">
-      {years.map(year => <Link key={year} href={`/phones?year=${year}`} className="rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-center text-xs font-bold text-gray-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">{year}</Link>)}
-    </nav>
-  </aside>;
+function ReleaseYearCategories({ years }: { years: number[] }) {
+  if (!years.length) return null;
+  return <aside className="card-premium h-fit p-3.5" aria-labelledby="home-year-categories-title"><div className="mb-2.5 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50"><Clock className="h-5 w-5 text-violet-600" /></div><div><h2 id="home-year-categories-title" className="text-sm font-bold">Phones by Year</h2><p className="text-[11px] text-muted-foreground">Years available in your imported data</p></div></div><nav className="grid max-h-[330px] grid-cols-2 gap-2 overflow-y-auto pr-1" aria-label="Browse phones by release year">{years.map(year => <Link key={year} href={`/phones?year=${year}`} className="rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 text-center text-xs font-bold text-gray-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">{year}</Link>)}</nav></aside>;
 }
 
 // ============ TRUST / WHY PHONEDOCK ============
@@ -482,29 +469,76 @@ function ExploreSpecsDekhTools() {
 }
 
 // ============ MAIN HOMEPAGE CONTENT ============
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroCampaigns?: HeroCampaign[]; heroCampaignSpeed?: number; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[] }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+interface HomepageSectionRule { mode?: 'automatic'|'manual'; brand?: string; year?: string; lifecycle?: string; priceMin?: string; priceMax?: string; cardCount?: number; manualPhoneSlugs?: string[]; showViewAll?: boolean; viewAllText?: string; viewAllUrl?: string; }
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroCampaigns?: HeroCampaign[]; heroCampaignSpeed?: number; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; brandColumns?: number; brandLimit?: number; showOnlyBrandsWithPhones?: boolean; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; hideEmptySections?: boolean; trendingMonths?: number; trendingMinRating?: number; trendingBalancePriceTiers?: boolean; yearMode?: 'data'|'manual'; yearStart?: number; yearEnd?: number; yearLimit?: number; priceRanges?: HomepagePriceRange[]; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[]; sectionRules?: Partial<Record<OrderedHomepageSection, HomepageSectionRule>> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
-  const flagshipPhones = data.featured.filter(p => p.pricePKR >= 150000).slice(0, 5);
-  const budgetPhones = data.featured.filter(p => p.pricePKR > 0 && p.pricePKR <= 40000).slice(0, 5);
   const cms = siteSettings?.homepage || {};
+  const catalog = data.catalog?.length ? data.catalog : [...data.latest, ...data.featured, ...data.trending];
   const sections = cms.sections || {};
   const titles = cms.titles || {};
+  const rules = cms.sectionRules || {};
   const visible = (key: string) => sections[key] !== false;
   const sectionOrder = normalizeHomepageSectionOrder(cms.sectionOrder);
   const contentWidthClass = cms.contentWidth === 'full' ? 'max-w-none' : cms.contentWidth === 'wide' ? 'max-w-[1440px]' : 'max-w-7xl';
+  const releaseYear = (phone: Phone) => Number(String(phone.releaseDate || '').slice(0, 4)) || 0;
+  const sectionRule = (key: OrderedHomepageSection) => rules[key] || {};
+  const filterByRule = (key: OrderedHomepageSection, source: Phone[]) => {
+    const rule = sectionRule(key);
+    let phones = [...source];
+    if (rule.mode === 'manual' && rule.manualPhoneSlugs?.length) {
+      const order = new Map(rule.manualPhoneSlugs.map((slug, index) => [slug, index]));
+      return catalog.filter(phone => order.has(phone.slug)).sort((a, b) => (order.get(a.slug) ?? 999) - (order.get(b.slug) ?? 999));
+    }
+    if (rule.brand) phones = phones.filter(phone => phone.brand?.slug === rule.brand || phone.brand?.name?.toLowerCase() === rule.brand?.toLowerCase());
+    if (rule.year) phones = phones.filter(phone => releaseYear(phone) === Number(rule.year));
+    if (rule.priceMin) phones = phones.filter(phone => phone.pricePKR >= Number(rule.priceMin));
+    if (rule.priceMax) phones = phones.filter(phone => phone.pricePKR <= Number(rule.priceMax));
+    if (rule.lifecycle === 'upcoming') phones = phones.filter(phone => phone.upcoming || ['rumored','announced','coming_soon'].includes(phone.availabilityStatus || ''));
+    if (rule.lifecycle === 'available') phones = phones.filter(phone => !phone.upcoming && (phone.availabilityStatus || 'available') === 'available');
+    if (rule.lifecycle === 'discontinued') phones = phones.filter(phone => phone.availabilityStatus === 'discontinued');
+    return phones;
+  };
+  const uniquePhones = (phones: Phone[]) => [...new Map(phones.map(phone => [phone.id, phone])).values()];
+  const latestPhones = filterByRule('latest', catalog).sort((a,b) => (b.releaseDate || b.createdAt || '').localeCompare(a.releaseDate || a.createdAt || ''));
+  const trendingCutoff = new Date(); trendingCutoff.setMonth(trendingCutoff.getMonth() - (cms.trendingMonths || 12));
+  const trendingCandidates = filterByRule('trending', catalog).filter(phone => {
+    const date = phone.releaseDate ? new Date(phone.releaseDate) : null;
+    const recent = Boolean(date && !Number.isNaN(date.getTime()) && date >= trendingCutoff);
+    return recent && (phone.trending || phone.overallRating >= (cms.trendingMinRating ?? 7.5) || (phone.views || 0) >= 100);
+  }).sort((a,b) => Number(b.trending)-Number(a.trending) || b.overallRating-a.overallRating || (b.views||0)-(a.views||0));
+  const balancedTrending = cms.trendingBalancePriceTiers === false ? trendingCandidates : uniquePhones([
+    ...trendingCandidates.filter(phone => phone.pricePKR > 0 && phone.pricePKR <= 40000).slice(0,3),
+    ...trendingCandidates.filter(phone => phone.pricePKR > 40000 && phone.pricePKR <= 100000).slice(0,3),
+    ...trendingCandidates.filter(phone => phone.pricePKR > 100000).slice(0,3),
+    ...trendingCandidates,
+  ]);
+  const cameraPhones = filterByRule('camera', catalog.filter(phone => phone.cameraScore > 0)).sort((a,b) => b.cameraScore-a.cameraScore || b.overallRating-a.overallRating);
+  const gamingPhones = filterByRule('gaming', catalog.filter(phone => phone.performanceScore > 0)).sort((a,b) => b.performanceScore-a.performanceScore || b.overallRating-a.overallRating);
+  const batteryPhones = filterByRule('battery', catalog.filter(phone => phone.batteryScore > 0)).sort((a,b) => b.batteryScore-a.batteryScore || b.overallRating-a.overallRating);
+  const budgetPhones = filterByRule('budget', catalog.filter(phone => phone.pricePKR >= 5000 && phone.pricePKR <= 40000)).sort((a,b) => b.valueScore-a.valueScore || b.overallRating-a.overallRating);
+  const flagshipPhones = filterByRule('flagship', catalog.filter(phone => phone.pricePKR > 150000)).sort((a,b) => b.overallRating-a.overallRating || b.performanceScore-a.performanceScore);
+  const upcomingPhones = filterByRule('upcoming', catalog.filter(phone => phone.upcoming || ['rumored','announced','coming_soon'].includes(phone.availabilityStatus || ''))).sort((a,b) => (a.expectedLaunchAt || a.releaseDate || '').localeCompare(b.expectedLaunchAt || b.releaseDate || ''));
+  const configuredYears = cms.yearMode === 'manual' ? Array.from({ length: Math.max(0, (cms.yearEnd || new Date().getFullYear()+1) - (cms.yearStart || 2015) + 1) }, (_, index) => (cms.yearEnd || new Date().getFullYear()+1) - index) : data.releaseYears || [];
+  const displayYears = configuredYears.slice(0, cms.yearLimit || 12);
+  const priceRanges = cms.priceRanges?.length ? cms.priceRanges : DEFAULT_HOME_PRICE_RANGES;
+  const showEmpty = cms.hideEmptySections === false;
+  const defaultLinks: Partial<Record<OrderedHomepageSection, string>> = { latest: '/phones?collection=latest&sort=newest', trending: '/phones?collection=trending&sort=trending', camera: '/best-camera-phone', gaming: '/best-gaming-phone', battery: '/best-battery-phone', budget: '/best-budget-phone', flagship: '/best-value-phone', upcoming: '/upcoming' };
+  const ruleLink = (key: OrderedHomepageSection) => sectionRule(key).viewAllUrl || defaultLinks[key];
+  const ruleLinkText = (key: OrderedHomepageSection, fallback: string) => sectionRule(key).showViewAll === false ? undefined : (sectionRule(key).viewAllText || fallback);
+  const ruleCount = (key: OrderedHomepageSection, fallback: number) => Math.max(1, Math.min(24, sectionRule(key).cardCount || fallback));
   const renderOrderedSection = (key: OrderedHomepageSection) => {
     if (!visible(key)) return null;
     switch (key) {
-      case 'latest': return <PhoneSection phones={data.latest} title={titles.latest || 'Latest Phones'} icon={Clock} link="/phones?collection=latest&sort=newest" linkText="View Latest" showEmpty tone="sky" />;
-      case 'trending': return <PhoneSection phones={data.trending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link="/phones?collection=trending&sort=trending" linkText="View Trending" showEmpty tone="rose" />;
-      case 'camera': return <PhoneSection phones={data.bestCamera} title={titles.camera || 'Best Camera Phones'} icon={Camera} link="/best-camera-phone" linkText="See All" tone="violet" />;
-      case 'gaming': return <PhoneSection phones={data.bestGaming} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link="/best-gaming-phone" linkText="See All" tone="indigo" />;
-      case 'battery': return <PhoneSection phones={data.bestBattery} title={titles.battery || 'Best Battery Phones'} icon={Battery} link="/best-battery-phone" linkText="See All" tone="emerald" />;
-      case 'budget': return <CompactTopPhones phones={budgetPhones} title={titles.budget || 'Budget Champions'} icon={Tag} link="/best-budget-phone" tone="amber" />;
-      case 'flagship': return <CompactTopPhones phones={flagshipPhones} title={titles.flagship || 'Premium Flagships'} icon={Star} link="/best-value-phone" linkText="See All" tone="orange" />;
-      case 'upcoming': return <CompactTopPhones phones={data.upcoming} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link="/upcoming" tone="cyan" />;
+      case 'latest': return <PhoneSection phones={latestPhones} title={titles.latest || 'Latest Phones'} icon={Clock} link={ruleLink('latest')} linkText={ruleLinkText('latest', 'View Latest')} showEmpty={showEmpty} tone="sky" cardCount={ruleCount('latest', 8)} />;
+      case 'trending': return <PhoneSection phones={balancedTrending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link={ruleLink('trending')} linkText={ruleLinkText('trending', 'View Trending')} showEmpty={showEmpty} tone="rose" cardCount={ruleCount('trending', 8)} />;
+      case 'camera': return <PhoneSection phones={cameraPhones} title={titles.camera || 'Best Camera Phones'} icon={Camera} link={ruleLink('camera')} linkText={ruleLinkText('camera', 'See All')} showEmpty={showEmpty} tone="violet" cardCount={ruleCount('camera', 4)} />;
+      case 'gaming': return <PhoneSection phones={gamingPhones} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link={ruleLink('gaming')} linkText={ruleLinkText('gaming', 'See All')} showEmpty={showEmpty} tone="indigo" cardCount={ruleCount('gaming', 4)} />;
+      case 'battery': return <PhoneSection phones={batteryPhones} title={titles.battery || 'Best Battery Phones'} icon={Battery} link={ruleLink('battery')} linkText={ruleLinkText('battery', 'See All')} showEmpty={showEmpty} tone="emerald" cardCount={ruleCount('battery', 4)} />;
+      case 'budget': return <CompactTopPhones phones={budgetPhones} cardCount={ruleCount('budget', 4)} title={titles.budget || 'Budget Champions'} icon={Tag} link={ruleLink('budget') || '/best-budget-phone'} linkText={ruleLinkText('budget', 'View All')} tone="amber" />;
+      case 'flagship': return <CompactTopPhones phones={flagshipPhones} cardCount={ruleCount('flagship', 4)} title={titles.flagship || 'Premium Flagships'} icon={Star} link={ruleLink('flagship') || '/best-value-phone'} linkText={ruleLinkText('flagship', 'See All')} tone="orange" />;
+      case 'upcoming': return <CompactTopPhones phones={upcomingPhones} cardCount={ruleCount('upcoming', 4)} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link={ruleLink('upcoming') || '/upcoming'} linkText={ruleLinkText('upcoming', 'View All')} tone="cyan" />;
       case 'reviews': return <HomeReviewsSection phones={data.featured} />;
       case 'videos': return <HomeVideoSection videos={data.videos} />;
       case 'news': return data.news.length > 0 ? (
@@ -605,12 +639,12 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0 space-y-10 sm:space-y-14">
-                {visible('brands') && <BrandsGrid brands={data.brands} logoSize={cms.brandLogoSize || 48} />}
+                {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 48} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 13} columns={cms.brandColumns || 7} />}
                 {renderOrderedSection('latest')}
               </div>
               <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
-                {cms.showPriceCategories !== false && <PriceCategorySidebar />}
-                {cms.showYearCategories !== false && <ReleaseYearCategories />}
+                {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} />}
+                {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears} />}
               </div>
             </div>
 

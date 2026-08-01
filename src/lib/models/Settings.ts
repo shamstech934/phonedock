@@ -46,6 +46,22 @@ const SettingsSchema = new Schema<ISettings>({
   homepage: { type: Schema.Types.Mixed, default: {
     heroEnabled: true, heroBadge: "Pakistan's #1 Phone Database", heroTitle: 'Find Your Perfect', heroHighlight: 'Smartphone', heroSubtitle: 'Compare specs, check PTA status, read reviews, and find the best prices in Pakistan.', searchPlaceholder: 'Search phones, brands or chipsets...', cta1Text: 'Browse Phones', cta1Url: '/phones', cta2Text: 'Compare', cta2Url: '/compare', heroAnimationEnabled: true, heroAnimationSpeed: 5000, heroShowPhoneInfo: true, heroPhoneSlugs: [],
     sections: { brands: true, latest: true, trending: true, camera: true, gaming: true, battery: true, budget: true, flagship: true, upcoming: true, reviews: true, videos: true, news: true, sponsors: true, newsletter: true, trust: true },
+    hideEmptySections: true, showOnlyBrandsWithPhones: true, brandLimit: 13, trendingMonths: 12, trendingMinRating: 7.5, trendingBalancePriceTiers: true,
+    yearMode: 'data', yearStart: 2015, yearEnd: new Date().getFullYear() + 1, yearLimit: 12,
+    priceRanges: [
+      { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
+      { id: '20k-40k', label: 'Rs. 20,001 – 40,000', min: 20001, max: 40000, enabled: true },
+      { id: '40k-60k', label: 'Rs. 40,001 – 60,000', min: 40001, max: 60000, enabled: true },
+      { id: '60k-80k', label: 'Rs. 60,001 – 80,000', min: 60001, max: 80000, enabled: true },
+      { id: '80k-100k', label: 'Rs. 80,001 – 100,000', min: 80001, max: 100000, enabled: true },
+      { id: '100k-150k', label: 'Rs. 100,001 – 150,000', min: 100001, max: 150000, enabled: true },
+      { id: '150k-200k', label: 'Rs. 150,001 – 200,000', min: 150001, max: 200000, enabled: true },
+      { id: '200k-300k', label: 'Rs. 200,001 – 300,000', min: 200001, max: 300000, enabled: true },
+      { id: '300k-400k', label: 'Rs. 300,001 – 400,000', min: 300001, max: 400000, enabled: true },
+      { id: '400k-500k', label: 'Rs. 400,001 – 500,000', min: 400001, max: 500000, enabled: true },
+      { id: '500k-600k', label: 'Rs. 500,001 – 600,000', min: 500001, max: 600000, enabled: true },
+      { id: '600k-plus', label: 'Above Rs. 600,000', min: 600001, max: null, enabled: true },
+    ],
     sectionOrder: ['latest', 'trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming', 'reviews', 'videos', 'news'],
     titles: { brands: 'Popular Brands', latest: 'Latest Phones', trending: 'Trending Phones', camera: 'Best Camera Phones', gaming: 'Best Gaming Phones', battery: 'Best Battery Phones', budget: 'Budget Champions', flagship: 'Premium Flagships', upcoming: 'Upcoming Phones', reviews: 'Latest Reviews', videos: 'Latest Videos', news: 'Latest News' }
   } },

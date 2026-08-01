@@ -186,6 +186,8 @@ export interface HomeData {
   bestGaming: Phone[];
   bestBattery: Phone[];
   upcoming: Phone[];
+  catalog: Phone[];
+  releaseYears: number[];
   news: NewsItem[];
   videos: HomeVideo[];
   priceCategories: {

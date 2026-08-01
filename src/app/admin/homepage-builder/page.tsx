@@ -58,6 +58,8 @@ interface SectionRule {
   viewAllUrl: string;
 }
 
+interface HomepagePriceRange { id: string; label: string; min: number; max: number | null; enabled: boolean; }
+
 interface HomepageSettings {
   heroEnabled: boolean;
   heroBadge: string;
@@ -98,6 +100,17 @@ interface HomepageSettings {
   showPriceCategories: boolean;
   showYearCategories: boolean;
   pricePanelSide: 'left' | 'right';
+  hideEmptySections: boolean;
+  showOnlyBrandsWithPhones: boolean;
+  brandLimit: number;
+  trendingMonths: number;
+  trendingMinRating: number;
+  trendingBalancePriceTiers: boolean;
+  yearMode: 'data' | 'manual';
+  yearStart: number;
+  yearEnd: number;
+  yearLimit: number;
+  priceRanges: HomepagePriceRange[];
   navigation: Array<{ label: string; url: string; enabled: boolean }>;
   media: {
     heroBackground: string;
@@ -192,6 +205,30 @@ const DEFAULT_HOMEPAGE: HomepageSettings = {
   showPriceCategories: true,
   showYearCategories: true,
   pricePanelSide: 'right',
+  hideEmptySections: true,
+  showOnlyBrandsWithPhones: true,
+  brandLimit: 13,
+  trendingMonths: 12,
+  trendingMinRating: 7.5,
+  trendingBalancePriceTiers: true,
+  yearMode: 'data',
+  yearStart: 2015,
+  yearEnd: new Date().getFullYear() + 1,
+  yearLimit: 12,
+  priceRanges: [
+    { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
+    { id: '20k-40k', label: 'Rs. 20,001 – 40,000', min: 20001, max: 40000, enabled: true },
+    { id: '40k-60k', label: 'Rs. 40,001 – 60,000', min: 40001, max: 60000, enabled: true },
+    { id: '60k-80k', label: 'Rs. 60,001 – 80,000', min: 60001, max: 80000, enabled: true },
+    { id: '80k-100k', label: 'Rs. 80,001 – 100,000', min: 80001, max: 100000, enabled: true },
+    { id: '100k-150k', label: 'Rs. 100,001 – 150,000', min: 100001, max: 150000, enabled: true },
+    { id: '150k-200k', label: 'Rs. 150,001 – 200,000', min: 150001, max: 200000, enabled: true },
+    { id: '200k-300k', label: 'Rs. 200,001 – 300,000', min: 200001, max: 300000, enabled: true },
+    { id: '300k-400k', label: 'Rs. 300,001 – 400,000', min: 300001, max: 400000, enabled: true },
+    { id: '400k-500k', label: 'Rs. 400,001 – 500,000', min: 400001, max: 500000, enabled: true },
+    { id: '500k-600k', label: 'Rs. 500,001 – 600,000', min: 500001, max: 600000, enabled: true },
+    { id: '600k-plus', label: 'Above Rs. 600,000', min: 600001, max: null, enabled: true },
+  ],
   navigation: [
     { label: 'Home', url: '/', enabled: true },
     { label: 'Phones', url: '/phones', enabled: true },
@@ -268,6 +305,7 @@ export default function HomepageBuilderPage() {
         sectionOrder: normalizeHomepageSectionOrder(current.sectionOrder),
         sectionRules: current.sectionRules || {},
         navigation: Array.isArray(current.navigation) ? current.navigation : DEFAULT_HOMEPAGE.navigation,
+        priceRanges: Array.isArray(current.priceRanges) && current.priceRanges.length ? current.priceRanges : DEFAULT_HOMEPAGE.priceRanges,
         media: {
           ...DEFAULT_HOMEPAGE.media,
           ...(current.media || {}),
@@ -574,7 +612,7 @@ export default function HomepageBuilderPage() {
               <Toggle label="Show “See all” link" checked={selectedRule.showViewAll} onChange={showViewAll => updateRule({ showViewAll })} />
               {selectedRule.showViewAll && <div className="grid grid-cols-2 gap-3"><Field label="Link text" value={selectedRule.viewAllText} onChange={viewAllText => updateRule({ viewAllText })} /><Field label="Link URL override" value={selectedRule.viewAllUrl} onChange={viewAllUrl => updateRule({ viewAllUrl })} /></div>}
               <MediaField label="Section cover/background image" value={homepage.media.sectionImages[selected] || ''} uploading={uploading === selected} onUrlChange={url => updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [selected]: url } })} onFile={file => void upload(file, selected)} />
-              <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800"><strong>Checkpoint note:</strong> rules are saved safely with the homepage configuration. Existing homepage data queries continue unchanged until the next rule-engine checkpoint, preventing accidental content loss.</p>
+              <p className="rounded-xl bg-emerald-50 p-3 text-xs leading-5 text-emerald-800"><strong>Live rule engine:</strong> these filters now control the public homepage. Empty or incomplete categories stay hidden when “Hide empty sections” is enabled.</p>
             </div>
           </Panel>
         </div>}
@@ -601,9 +639,22 @@ export default function HomepageBuilderPage() {
               <Toggle label="Show price categories" checked={homepage.showPriceCategories} onChange={value => updateHomepage('showPriceCategories', value)} />
               <Toggle label="Show release-year categories" checked={homepage.showYearCategories} onChange={value => updateHomepage('showYearCategories', value)} />
               <label className="block text-xs font-semibold text-slate-600">Category panel position<select className={inputClass} value={homepage.pricePanelSide} onChange={event => updateHomepage('pricePanelSide', event.target.value as HomepageSettings['pricePanelSide'])}><option value="right">Right side</option><option value="left">Left side</option></select></label>
+              <Toggle label="Hide sections with no qualifying phones" checked={homepage.hideEmptySections} onChange={value => updateHomepage('hideEmptySections', value)} />
+              <Toggle label="Show only brands that have published phones" checked={homepage.showOnlyBrandsWithPhones} onChange={value => updateHomepage('showOnlyBrandsWithPhones', value)} />
+              <Field label="Maximum brands on homepage" value={String(homepage.brandLimit)} onChange={value => updateHomepage('brandLimit', clamp(Number(value), 1, 30))} type="number" />
+              <div className="grid grid-cols-2 gap-3"><Field label="Trending period (months)" value={String(homepage.trendingMonths)} onChange={value => updateHomepage('trendingMonths', clamp(Number(value), 1, 36))} type="number" /><Field label="Trending minimum rating" value={String(homepage.trendingMinRating)} onChange={value => updateHomepage('trendingMinRating', Math.min(10, Math.max(0, Number(value))))} type="number" /></div>
+              <Toggle label="Balance Trending across low, mid and high prices" checked={homepage.trendingBalancePriceTiers} onChange={value => updateHomepage('trendingBalancePriceTiers', value)} />
+              <label className="block text-xs font-semibold text-slate-600">Year source<select className={inputClass} value={homepage.yearMode} onChange={event => updateHomepage('yearMode', event.target.value as HomepageSettings['yearMode'])}><option value="data">Automatically use years found in imported phones</option><option value="manual">Manual year range</option></select></label>
+              <div className="grid grid-cols-3 gap-3"><Field label="Start year" value={String(homepage.yearStart)} onChange={value => updateHomepage('yearStart', clamp(Number(value), 1990, 2100))} type="number" /><Field label="End year" value={String(homepage.yearEnd)} onChange={value => updateHomepage('yearEnd', clamp(Number(value), 1990, 2100))} type="number" /><Field label="Years to show" value={String(homepage.yearLimit)} onChange={value => updateHomepage('yearLimit', clamp(Number(value), 1, 40))} type="number" /></div>
             </div>
           </Panel>
         </div>}
+
+        {tab === 'design' && <div className="px-0">          <Panel title="Homepage price ranges" subtitle="These ranges power the public budget panel. Use exact PKR boundaries; disabled rows stay hidden.">
+            <div className="space-y-2">{homepage.priceRanges.map((range, index) => <div key={range.id} className="grid grid-cols-1 items-end sm:grid-cols-2 xl:grid-cols-[minmax(150px,1.5fr)_1fr_1fr_auto_auto] gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"><Field label="Label" value={range.label} onChange={label => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, label } : item))} /><Field label="Minimum" value={String(range.min)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, min: Math.max(0, Number(value)) } : item))} type="number" /><Field label="Maximum (blank = no limit)" value={range.max === null ? '' : String(range.max)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, max: value === '' ? null : Math.max(0, Number(value)) } : item))} type="number" /><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))} className={`mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold ${range.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{range.enabled ? 'On' : 'Off'}</button><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.filter((_, itemIndex) => itemIndex !== index))} className="mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold text-red-600">Remove</button></div>)}</div>
+            <button type="button" onClick={() => updateHomepage('priceRanges', [...homepage.priceRanges, { id: `range-${Date.now()}`, label: 'New price range', min: 0, max: null, enabled: true }])} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add price range</button>
+          </Panel>
+</div>}
 
         {tab === 'navigation' && <div className="space-y-4">
           <Panel title="Brand identity" subtitle="Logo and name are already consumed by the public header.">
@@ -711,7 +762,7 @@ function MediaField({ label, hint = 'Recommended 1600 × 900 px · WebP/AVIF · 
 function HomepagePreview({ homepage, device }: { homepage: HomepageSettings; device: Device }) {
   const compact = device !== 'desktop';
   return <div className="min-h-[620px] bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 text-slate-950">
-    <div className="flex h-12 items-center border-b bg-white/80 px-4"><strong className="text-sm">Phone<span className="text-blue-600">Dock</span></strong><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
+    <div className="flex h-12 items-center border-b bg-white/80 px-4"><strong className="text-sm">Specs<span className="text-blue-600">Dekh</span></strong><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
     {homepage.heroEnabled && <section className={`m-3 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-600 p-5 text-white ${compact ? 'min-h-72' : 'min-h-64'}`}>
       <div className={compact ? '' : 'grid grid-cols-2 items-center gap-5'}>
         <div><span className="rounded-full border border-white/20 px-2 py-1 text-[7px] font-bold">{homepage.heroBadge}</span><h3 className="mt-4 text-2xl font-black leading-tight">{homepage.heroTitle}<br /><span className="text-blue-400">{homepage.heroHighlight}</span></h3><p className="mt-2 line-clamp-2 text-[9px] leading-4 text-slate-300">{homepage.heroSubtitle}</p><div className="mt-4 flex gap-2"><span className="rounded-lg bg-blue-600 px-3 py-2 text-[8px] font-bold">{homepage.cta1Text}</span><span className="rounded-lg border border-white/20 px-3 py-2 text-[8px] font-bold">{homepage.cta2Text}</span></div></div>
