@@ -55,10 +55,12 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const includeHealth = searchParams.get('health') !== 'false';
 
     const [totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands] = await Promise.all([
-      Phone.countDocuments({ deletedAt: null }),
-      Phone.countDocuments({ deletedAt: null, status: 'published' }),
-      Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
-      Phone.countDocuments({ deletedAt: null, status: 'archived' }),
+      // Inventory totals include every Phone document so imported records cannot
+      // disappear merely because a legacy flag marked them inactive/deleted.
+      Phone.countDocuments({}),
+      Phone.countDocuments({ status: 'published' }),
+      Phone.countDocuments({ status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments({ status: 'archived' }),
       Brand.countDocuments({}),
     ]);
 
@@ -76,7 +78,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
-    const publishedPhoneIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+    const publishedPhoneIds = await Phone.find({ status: 'published' }).distinct('_id');
     const [phonesWithSpecs, phonesWithImages] = await Promise.all([
       PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
       PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
@@ -109,13 +111,24 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
-      $or: [
-        { chipset: { $ne: '' } },
-        { ram: { $ne: '' } },
-        { storage: { $ne: '' } },
-      ],
-    }).lean();
-    const completeSpecs = keySpecPhones.filter(s => s.chipset?.trim() && s.ram?.trim() && s.storage?.trim()).length;
+      phoneId: { $in: publishedPhoneIds },
+      chipset: { $nin: ['', null] },
+      ram: { $nin: ['', null] },
+      storage: { $nin: ['', null] },
+    }).select('phoneId').lean();
+    const completeSpecs = new Set(keySpecPhones.map(s => String(s.phoneId))).size;
+
+    // Catalog reconciliation diagnostics: these numbers explain exactly why the
+    // admin inventory and linked-spec counts may differ after old imports.
+    const [rawPhoneDocuments, inactivePhones, softDeletedPhones, rawSpecsDocuments, allSpecPhoneIds] = await Promise.all([
+      Phone.countDocuments({}),
+      Phone.countDocuments({ active: { $ne: true } }),
+      Phone.countDocuments({ deletedAt: { $ne: null } }),
+      PhoneSpecs.countDocuments({}),
+      PhoneSpecs.distinct('phoneId'),
+    ]);
+    const existingPhoneIds = new Set((await Phone.distinct('_id')).map(id => String(id)));
+    const orphanSpecPhoneIds = allSpecPhoneIds.filter(id => !existingPhoneIds.has(String(id)));
 
     // Trend data
     const todayStart = new Date();
@@ -152,6 +165,12 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         checkedAt: new Date().toISOString(),
         linkedSpecs: specPhoneIdSet.size,
         linkedImages: imagePhoneIdSet.size,
+        rawPhoneDocuments,
+        inactivePhones,
+        softDeletedPhones,
+        rawSpecsDocuments,
+        orphanSpecs: orphanSpecPhoneIds.length,
+        catalogDifference: Math.max(rawSpecsDocuments - rawPhoneDocuments, 0),
       },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache', Expires: '0' } });
   }

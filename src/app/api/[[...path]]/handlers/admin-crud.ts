@@ -234,14 +234,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
     const [total, published, draft, upcoming, trending, featured, ptaApproved, priceResult] = await Promise.all([
-      Phone.countDocuments({ active: true }),
-      Phone.countDocuments({ active: true, status: 'published' }),
-      Phone.countDocuments({ active: true, status: 'draft' }),
-      Phone.countDocuments({ active: true, upcoming: true }),
-      Phone.countDocuments({ active: true, trending: true }),
-      Phone.countDocuments({ active: true, featured: true }),
-      Phone.countDocuments({ active: true, ptaApproved: true }),
-      Phone.aggregate([{ $match: { active: true, pricePKR: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$pricePKR' } } }]),
+      Phone.countDocuments({}),
+      Phone.countDocuments({ status: 'published' }),
+      Phone.countDocuments({ status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments({ upcoming: true }),
+      Phone.countDocuments({ trending: true }),
+      Phone.countDocuments({ featured: true }),
+      Phone.countDocuments({ ptaApproved: true }),
+      Phone.aggregate([{ $match: { pricePKR: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$pricePKR' } } }]),
     ]);
     return NextResponse.json({ total, published, draft, upcoming, trending, featured, ptaApproved, avgPrice: Math.round(priceResult[0]?.avg || 0) });
   }
@@ -255,7 +255,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
     const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 500 });
     const skip = (page - 1) * limit;
-    const filter: Record<string, unknown> = { active: true };
+    // Admin inventory must show every Phone document, including legacy inactive
+    // and soft-deleted imports. Public APIs continue to enforce active/published.
+    const filter: Record<string, unknown> = {};
+    const visibility = url.searchParams.get('visibility') || 'all';
+    if (visibility === 'visible') { filter.active = true; filter.deletedAt = null; }
+    else if (visibility === 'inactive') filter.active = { $ne: true };
+    else if (visibility === 'deleted') filter.deletedAt = { $ne: null };
+    else if (visibility === 'non-deleted') filter.deletedAt = null;
     // Search
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
