@@ -66,6 +66,7 @@ const adminLinks: NavLink[] = [
     { label: 'Homepage Builder', href: '/admin/homepage-builder', permission: 'settings:read' },
     { label: 'Card Layout Control', href: '/admin/layout-control', permission: 'settings:read' },
     { label: 'Mobile App Control', href: '/admin/mobile-control', permission: 'settings:read' },
+    { label: 'Monetization Center', href: '/admin/monetization', permission: 'settings:read' },
   ]},
   { label: 'Automation & Health', href: '/admin/operations', icon: Workflow, children: [
     { label: 'Automation Pipeline', href: '/admin/automation', permission: 'prices:read' },
