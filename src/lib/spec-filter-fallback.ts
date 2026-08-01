@@ -19,7 +19,7 @@ function escapeNumber(value: number): string {
   return text.replace('.', '\\.');
 }
 
-function legacyRegex(kind: NumericSpecKind, min?: number, max?: number): RegExp {
+export function legacyRegex(kind: NumericSpecKind, min?: number, max?: number): RegExp {
   const values = valuesFor(kind).filter(value =>
     (min === undefined || value >= min) && (max === undefined || value <= max),
   );
@@ -57,10 +57,41 @@ export function numericSpecClause(options: {
   if (options.min !== undefined) range.$gte = options.min;
   if (options.max !== undefined) range.$lte = options.max;
 
+  const textMatch = { [options.textField]: { $regex: legacyRegex(options.kind, options.min, options.max) } };
+
+  // Imported catalogue data frequently keeps a human-readable multi-variant
+  // value (for example "6GB/8GB") while the legacy numeric helper field may
+  // contain only the first value ever imported. For exact RAM/storage filters,
+  // the text variants are therefore authoritative whenever they exist. The
+  // numeric field is used only as a fallback for records whose text value is
+  // genuinely missing. This prevents stale ramGB=4 data from making a
+  // "6GB/8GB" phone appear under the 4GB filter.
+  if (options.kind === 'ram' || options.kind === 'storage') {
+    const textMissing = {
+      $or: [
+        { [options.textField]: { $exists: false } },
+        { [options.textField]: null },
+        { [options.textField]: { $regex: /^\s*$/ } },
+      ],
+    };
+
+    return {
+      $or: [
+        textMatch,
+        {
+          $and: [
+            textMissing,
+            { [options.numericField]: range },
+          ],
+        },
+      ],
+    };
+  }
+
   return {
     $or: [
       { [options.numericField]: range },
-      { [options.textField]: { $regex: legacyRegex(options.kind, options.min, options.max) } },
+      textMatch,
     ],
   };
 }

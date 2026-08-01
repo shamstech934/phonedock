@@ -272,4 +272,4 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
 
   return { phones, total, queryKey: apiParams.toString() };
 }
-export const fetchPhoneListing = unstable_cache(loadPhoneListing, ['public-phone-listing-v1'], { revalidate: 300, tags: ['phones'] });
+export const fetchPhoneListing = unstable_cache(loadPhoneListing, ['public-phone-listing-v2-exact-variant-tokens'], { revalidate: 300, tags: ['phones'] });
