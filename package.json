@@ -7,7 +7,7 @@
     "doctor:runtime": "node scripts/runtime-doctor.mjs",
     "security:scan": "node scripts/security-secret-scan.mjs",
     "dev": "next dev -p 3000",
-    "lint": "eslint .",
+    "lint": "node scripts/run-eslint-ci.mjs",
     "typecheck": "tsc --noEmit",
     "test:v5.2": "tsx scripts/__tests__/compare-engine-v5.2.test.ts",
     "test": "tsx scripts/__tests__/compare-engine-v5.2.test.ts && tsx scripts/__tests__/critical-fix-round2.test.ts && tsx scripts/__tests__/final-release-hardening.test.ts && tsx scripts/__tests__/data-platform-v2.test.ts && tsx scripts/__tests__/deep-qa-regressions.test.ts && tsx scripts/__tests__/ssrf-guard.test.ts && tsx scripts/__tests__/sanitize-security.test.ts && tsx scripts/__tests__/phone-publication-gate.test.ts && tsx scripts/__tests__/phone-lifecycle.test.ts && tsx scripts/__tests__/homepage-builder.test.ts && tsx scripts/__tests__/homepage-builder-pro.test.ts && tsx scripts/__tests__/runtime-doctor.test.ts && tsx scripts/__tests__/compare-full-hydration.test.ts && tsx scripts/__tests__/compare-autocomplete-reliability.test.ts && tsx scripts/__tests__/compare-background-refresh.test.ts && tsx scripts/__tests__/category-ranking-pages.test.ts && tsx scripts/__tests__/hero-image-quality.test.ts && tsx scripts/__tests__/price-rumour-automation.test.ts && tsx scripts/__tests__/automation-layout-control.test.ts && tsx scripts/__tests__/mobile-control-center.test.ts",
@@ -60,7 +60,8 @@
     "audit:phone-date-order": "node scripts/phone-date-order-audit.mjs",
     "audit:seo-enterprise": "node scripts/seo-enterprise-audit.mjs",
     "audit:seo-growth": "node scripts/seo-growth-audit.mjs",
-    "audit:monetization-runtime": "node scripts/monetization-runtime-audit.mjs"
+    "audit:monetization-runtime": "node scripts/monetization-runtime-audit.mjs",
+    "lint:strict": "eslint ."
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
