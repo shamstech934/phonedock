@@ -72,6 +72,8 @@ export default function PhonesClient({
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
   const displayParam = searchParams.get('display') || 'all';
+  const directScreenMin = searchParams.get('screenMin') || '';
+  const directScreenMax = searchParams.get('screenMax') || '';
   const refreshParam = searchParams.get('refresh') || 'all';
   const cameraParam = searchParams.get('camera') || 'all';
   const batteryParam = searchParams.get('battery') || 'all';
@@ -147,6 +149,8 @@ export default function PhonesClient({
     // NFC filter
     if (nfcParam !== 'all') params.set('nfc', nfcParam);
     if (displayParam !== 'all') params.set('displayType', displayParam);
+    if (directScreenMin) params.set('screenMin', directScreenMin);
+    if (directScreenMax) params.set('screenMax', directScreenMax);
     if (refreshParam !== 'all') params.set('refreshMin', refreshParam);
     if (cameraParam !== 'all') params.set('cameraMin', cameraParam);
     if (batteryParam !== 'all') params.set('batteryMin', batteryParam);
@@ -204,7 +208,7 @@ export default function PhonesClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam, yearParam, availabilityParam]);
+  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, directScreenMin, directScreenMax, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam, yearParam, availabilityParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -229,7 +233,7 @@ export default function PhonesClient({
   }, [router]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
-  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, directScreenMin, directScreenMax, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 

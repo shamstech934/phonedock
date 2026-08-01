@@ -20,6 +20,7 @@ import { HeroPhoneShowcase } from '@/components/shared/HeroPhoneShowcase';
 import { HomeHeroSearch } from '@/components/home/HomeHeroSearch';
 import { HomeNewsletter } from '@/components/home/HomeNewsletter';
 import { HomeVideoSection } from '@/components/home/HomeVideoSection';
+import { HomeSmartFilterSidebar, type HomepageSmartFilterGroup } from '@/components/home/HomeSmartFilterSidebar';
 import { HeroCampaignBackground, type HeroCampaign } from '@/components/home/HeroCampaignBackground';
 import { AdSlot } from '@/components/monetization/AdSlot';
 import type { Phone, HomeData, Brand } from '@/components/shared/types';
@@ -214,19 +215,31 @@ const DEFAULT_HOME_PRICE_RANGES: HomepagePriceRange[] = [
   { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
   { id: '20k-40k', label: 'Rs. 20,001 – 40,000', min: 20001, max: 40000, enabled: true },
   { id: '40k-60k', label: 'Rs. 40,001 – 60,000', min: 40001, max: 60000, enabled: true },
-  { id: '60k-80k', label: 'Rs. 60,001 – 80,000', min: 60001, max: 80000, enabled: true },
-  { id: '80k-100k', label: 'Rs. 80,001 – 100,000', min: 80001, max: 100000, enabled: true },
-  { id: '100k-150k', label: 'Rs. 100,001 – 150,000', min: 100001, max: 150000, enabled: true },
-  { id: '150k-200k', label: 'Rs. 150,001 – 200,000', min: 150001, max: 200000, enabled: true },
-  { id: '200k-300k', label: 'Rs. 200,001 – 300,000', min: 200001, max: 300000, enabled: true },
-  { id: '300k-400k', label: 'Rs. 300,001 – 400,000', min: 300001, max: 400000, enabled: true },
-  { id: '400k-500k', label: 'Rs. 400,001 – 500,000', min: 400001, max: 500000, enabled: true },
-  { id: '500k-600k', label: 'Rs. 500,001 – 600,000', min: 500001, max: 600000, enabled: true },
-  { id: '600k-plus', label: 'Above Rs. 600,000', min: 600001, max: null, enabled: true },
+  { id: '60k-100k', label: 'Rs. 60,001 – 100,000', min: 60001, max: 100000, enabled: true },
+  { id: '100k-200k', label: 'Rs. 100,001 – 200,000', min: 100001, max: 200000, enabled: true },
+  { id: '200k-plus', label: 'Above Rs. 200,000', min: 200001, max: null, enabled: true },
 ];
 
-function PriceCategorySidebar({ ranges = DEFAULT_HOME_PRICE_RANGES }: { ranges?: HomepagePriceRange[] }) {
-  const categories = ranges.filter(category => category.enabled && category.label.trim());
+const DEFAULT_SMART_FILTER_GROUPS: HomepageSmartFilterGroup[] = [
+  { id: 'ram', title: 'Search by RAM', subtitle: 'Choose memory size', enabled: true, items: [
+    { id: 'ram-4', label: '4GB RAM', param: 'ram', value: '4', enabled: true }, { id: 'ram-6', label: '6GB RAM', param: 'ram', value: '6', enabled: true }, { id: 'ram-8', label: '8GB RAM', param: 'ram', value: '8', enabled: true }, { id: 'ram-12', label: '12GB RAM', param: 'ram', value: '12', enabled: true }, { id: 'ram-16', label: '16GB & above', param: 'ram', value: '16', enabled: true },
+  ]},
+  { id: 'storage', title: 'Search by Storage', subtitle: 'Choose internal storage', enabled: true, items: [
+    { id: 'storage-64', label: '64GB', param: 'storage', value: '64', enabled: true }, { id: 'storage-128', label: '128GB', param: 'storage', value: '128', enabled: true }, { id: 'storage-256', label: '256GB', param: 'storage', value: '256', enabled: true }, { id: 'storage-512', label: '512GB', param: 'storage', value: '512', enabled: true }, { id: 'storage-1tb', label: '1TB', param: 'storage', value: '1024', enabled: true },
+  ]},
+  { id: 'camera', title: 'Search by Camera', subtitle: 'Main camera resolution', enabled: true, items: [
+    { id: 'camera-13', label: '13MP+', param: 'camera', value: '13', enabled: true }, { id: 'camera-32', label: '32MP+', param: 'camera', value: '32', enabled: true }, { id: 'camera-50', label: '50MP+', param: 'camera', value: '50', enabled: true }, { id: 'camera-108', label: '108MP+', param: 'camera', value: '108', enabled: true }, { id: 'camera-200', label: '200MP+', param: 'camera', value: '200', enabled: true },
+  ]},
+  { id: 'screen', title: 'Search by Screen', subtitle: 'Display size', enabled: true, items: [
+    { id: 'screen-under6', label: 'Under 6.0 inch', param: 'screenMax', value: '5.99', enabled: true }, { id: 'screen-6-64', label: '6.0 – 6.4 inch', param: 'screenRange', value: '6|6.4', enabled: true }, { id: 'screen-65-67', label: '6.5 – 6.7 inch', param: 'screenRange', value: '6.5|6.7', enabled: true }, { id: 'screen-68', label: '6.8 inch+', param: 'screenMin', value: '6.8', enabled: true },
+  ]},
+  { id: 'features', title: 'More Phone Filters', subtitle: 'Popular capabilities', enabled: true, items: [
+    { id: 'feature-5g', label: '5G Phones', param: '5g', value: 'yes', enabled: true }, { id: 'feature-battery', label: '5000mAh+', param: 'battery', value: '5000', enabled: true }, { id: 'feature-refresh', label: '120Hz+', param: 'refresh', value: '120', enabled: true }, { id: 'feature-nfc', label: 'NFC', param: 'nfc', value: 'yes', enabled: true }, { id: 'feature-pta', label: 'PTA Approved', param: 'pta', value: 'approved', enabled: true },
+  ]},
+];
+
+function PriceCategorySidebar({ ranges = DEFAULT_HOME_PRICE_RANGES, limit = 6 }: { ranges?: HomepagePriceRange[]; limit?: number }) {
+  const categories = ranges.filter(category => category.enabled && category.label.trim()).slice(0, Math.max(3, Math.min(8, limit)));
   return (
     <aside className="card-premium h-fit p-3.5" aria-labelledby="home-price-categories-title">
       <div className="mb-2.5 flex items-center gap-2"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50"><CircleDollarSign className="h-5 w-5 text-blue-500" /></div><div><h2 id="home-price-categories-title" className="text-sm font-bold text-gray-900 dark:text-white">Phones by Price</h2><p className="text-[11px] text-muted-foreground">Choose your exact budget</p></div></div>
@@ -470,7 +483,7 @@ function ExploreSpecsDekhTools() {
 
 // ============ MAIN HOMEPAGE CONTENT ============
 interface HomepageSectionRule { mode?: 'automatic'|'manual'; brand?: string; year?: string; lifecycle?: string; priceMin?: string; priceMax?: string; cardCount?: number; manualPhoneSlugs?: string[]; showViewAll?: boolean; viewAllText?: string; viewAllUrl?: string; }
-type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroCampaigns?: HeroCampaign[]; heroCampaignSpeed?: number; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; brandColumns?: number; brandLimit?: number; showOnlyBrandsWithPhones?: boolean; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; hideEmptySections?: boolean; trendingMonths?: number; trendingMinRating?: number; trendingBalancePriceTiers?: boolean; yearMode?: 'data'|'manual'; yearStart?: number; yearEnd?: number; yearLimit?: number; priceRanges?: HomepagePriceRange[]; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[]; sectionRules?: Partial<Record<OrderedHomepageSection, HomepageSectionRule>> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
+type CmsSettings = { homepage?: { heroEnabled?: boolean; heroBadge?: string; heroTitle?: string; heroHighlight?: string; heroSubtitle?: string; searchPlaceholder?: string; cta1Text?: string; cta1Url?: string; cta2Text?: string; cta2Url?: string; heroAnimationEnabled?: boolean; heroAnimationSpeed?: number; heroShowPhoneInfo?: boolean; heroBackground?: string; heroBackgroundImage?: string; heroCampaigns?: HeroCampaign[]; heroCampaignSpeed?: number; heroImageFit?: 'contain'|'cover'; heroDesktopX?: number; heroDesktopY?: number; heroDesktopScale?: number; heroDesktopRotate?: number; heroMobileX?: number; heroMobileY?: number; heroMobileScale?: number; heroMobileRotate?: number; pageBackground?: string; contentWidth?: 'standard'|'wide'|'full'; sectionGap?: number; brandLogoSize?: number; brandColumns?: number; brandLimit?: number; showOnlyBrandsWithPhones?: boolean; showPriceCategories?: boolean; showYearCategories?: boolean; pricePanelSide?: 'left'|'right'; hideEmptySections?: boolean; trendingMonths?: number; trendingMinRating?: number; trendingBalancePriceTiers?: boolean; yearMode?: 'data'|'manual'; yearStart?: number; yearEnd?: number; yearLimit?: number; priceRanges?: HomepagePriceRange[]; homepagePriceLimit?: number; smartFiltersEnabled?: boolean; smartFilterGroups?: HomepageSmartFilterGroup[]; sections?: Record<string, boolean>; titles?: Record<string, string>; sectionOrder?: OrderedHomepageSection[]; sectionRules?: Partial<Record<OrderedHomepageSection, HomepageSectionRule>> }; announcement?: { enabled?: boolean; text?: string; buttonText?: string; buttonUrl?: string; background?: string } };
 
 export default function HomeContent({ homeData, heroPhones, siteSettings }: { homeData: HomeData; heroPhones: HeroPhone[]; siteSettings?: CmsSettings }) {
   const data = homeData;
@@ -523,6 +536,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const configuredYears = cms.yearMode === 'manual' ? Array.from({ length: Math.max(0, (cms.yearEnd || new Date().getFullYear()+1) - (cms.yearStart || 2015) + 1) }, (_, index) => (cms.yearEnd || new Date().getFullYear()+1) - index) : data.releaseYears || [];
   const displayYears = configuredYears.slice(0, cms.yearLimit || 12);
   const priceRanges = cms.priceRanges?.length ? cms.priceRanges : DEFAULT_HOME_PRICE_RANGES;
+  const smartFilterGroups = cms.smartFilterGroups?.length ? cms.smartFilterGroups : DEFAULT_SMART_FILTER_GROUPS;
   const showEmpty = cms.hideEmptySections === false;
   const defaultLinks: Partial<Record<OrderedHomepageSection, string>> = { latest: '/phones?collection=latest&sort=newest', trending: '/phones?collection=trending&sort=trending', camera: '/best-camera-phone', gaming: '/best-gaming-phone', battery: '/best-battery-phone', budget: '/best-budget-phone', flagship: '/best-value-phone', upcoming: '/upcoming' };
   const ruleLink = (key: OrderedHomepageSection) => sectionRule(key).viewAllUrl || defaultLinks[key];
@@ -643,8 +657,9 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                 {renderOrderedSection('latest')}
               </div>
               <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
-                {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} />}
-                {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears} />}
+                {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} limit={cms.homepagePriceLimit || 6} />}
+                {cms.smartFiltersEnabled !== false && <HomeSmartFilterSidebar groups={smartFilterGroups} />}
+                {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears.slice(0, 6)} />}
               </div>
             </div>
 

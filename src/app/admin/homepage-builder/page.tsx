@@ -16,7 +16,7 @@ import {
 } from '@/lib/homepage-builder';
 
 type Device = 'desktop' | 'tablet' | 'mobile';
-type Tab = 'overview' | 'hero' | 'sections' | 'design' | 'navigation' | 'media' | 'preview';
+type Tab = 'overview' | 'hero' | 'sections' | 'filters' | 'design' | 'navigation' | 'media' | 'preview';
 type SectionMode = 'automatic' | 'manual';
 
 interface HeroCampaign {
@@ -59,6 +59,8 @@ interface SectionRule {
 }
 
 interface HomepagePriceRange { id: string; label: string; min: number; max: number | null; enabled: boolean; }
+interface HomepageSmartFilterItem { id: string; label: string; param: string; value: string; enabled: boolean; }
+interface HomepageSmartFilterGroup { id: string; title: string; subtitle: string; enabled: boolean; items: HomepageSmartFilterItem[]; }
 
 interface HomepageSettings {
   heroEnabled: boolean;
@@ -111,6 +113,9 @@ interface HomepageSettings {
   yearEnd: number;
   yearLimit: number;
   priceRanges: HomepagePriceRange[];
+  homepagePriceLimit: number;
+  smartFiltersEnabled: boolean;
+  smartFilterGroups: HomepageSmartFilterGroup[];
   navigation: Array<{ label: string; url: string; enabled: boolean }>;
   media: {
     heroBackground: string;
@@ -219,15 +224,28 @@ const DEFAULT_HOMEPAGE: HomepageSettings = {
     { id: '5k-20k', label: 'Rs. 5,000 – 20,000', min: 5000, max: 20000, enabled: true },
     { id: '20k-40k', label: 'Rs. 20,001 – 40,000', min: 20001, max: 40000, enabled: true },
     { id: '40k-60k', label: 'Rs. 40,001 – 60,000', min: 40001, max: 60000, enabled: true },
-    { id: '60k-80k', label: 'Rs. 60,001 – 80,000', min: 60001, max: 80000, enabled: true },
-    { id: '80k-100k', label: 'Rs. 80,001 – 100,000', min: 80001, max: 100000, enabled: true },
-    { id: '100k-150k', label: 'Rs. 100,001 – 150,000', min: 100001, max: 150000, enabled: true },
-    { id: '150k-200k', label: 'Rs. 150,001 – 200,000', min: 150001, max: 200000, enabled: true },
-    { id: '200k-300k', label: 'Rs. 200,001 – 300,000', min: 200001, max: 300000, enabled: true },
-    { id: '300k-400k', label: 'Rs. 300,001 – 400,000', min: 300001, max: 400000, enabled: true },
-    { id: '400k-500k', label: 'Rs. 400,001 – 500,000', min: 400001, max: 500000, enabled: true },
-    { id: '500k-600k', label: 'Rs. 500,001 – 600,000', min: 500001, max: 600000, enabled: true },
-    { id: '600k-plus', label: 'Above Rs. 600,000', min: 600001, max: null, enabled: true },
+    { id: '60k-100k', label: 'Rs. 60,001 – 100,000', min: 60001, max: 100000, enabled: true },
+    { id: '100k-200k', label: 'Rs. 100,001 – 200,000', min: 100001, max: 200000, enabled: true },
+    { id: '200k-plus', label: 'Above Rs. 200,000', min: 200001, max: null, enabled: true },
+  ],
+  homepagePriceLimit: 6,
+  smartFiltersEnabled: true,
+  smartFilterGroups: [
+    { id: 'ram', title: 'Search by RAM', subtitle: 'Choose memory size', enabled: true, items: [
+      { id: 'ram-4', label: '4GB RAM', param: 'ram', value: '4', enabled: true }, { id: 'ram-6', label: '6GB RAM', param: 'ram', value: '6', enabled: true }, { id: 'ram-8', label: '8GB RAM', param: 'ram', value: '8', enabled: true }, { id: 'ram-12', label: '12GB RAM', param: 'ram', value: '12', enabled: true }, { id: 'ram-16', label: '16GB & above', param: 'ram', value: '16', enabled: true },
+    ]},
+    { id: 'storage', title: 'Search by Storage', subtitle: 'Choose internal storage', enabled: true, items: [
+      { id: 'storage-64', label: '64GB', param: 'storage', value: '64', enabled: true }, { id: 'storage-128', label: '128GB', param: 'storage', value: '128', enabled: true }, { id: 'storage-256', label: '256GB', param: 'storage', value: '256', enabled: true }, { id: 'storage-512', label: '512GB', param: 'storage', value: '512', enabled: true }, { id: 'storage-1tb', label: '1TB', param: 'storage', value: '1024', enabled: true },
+    ]},
+    { id: 'camera', title: 'Search by Camera', subtitle: 'Main camera resolution', enabled: true, items: [
+      { id: 'camera-13', label: '13MP+ Mobiles', param: 'camera', value: '13', enabled: true }, { id: 'camera-32', label: '32MP+ Mobiles', param: 'camera', value: '32', enabled: true }, { id: 'camera-50', label: '50MP+ Mobiles', param: 'camera', value: '50', enabled: true }, { id: 'camera-108', label: '108MP+ Mobiles', param: 'camera', value: '108', enabled: true }, { id: 'camera-200', label: '200MP+ Mobiles', param: 'camera', value: '200', enabled: true },
+    ]},
+    { id: 'screen', title: 'Search by Screen', subtitle: 'Display size', enabled: true, items: [
+      { id: 'screen-under6', label: 'Under 6.0 inch', param: 'screenMax', value: '5.99', enabled: true }, { id: 'screen-6-64', label: '6.0 – 6.4 inch', param: 'screenRange', value: '6|6.4', enabled: true }, { id: 'screen-65-67', label: '6.5 – 6.7 inch', param: 'screenRange', value: '6.5|6.7', enabled: true }, { id: 'screen-68', label: '6.8 inch & above', param: 'screenMin', value: '6.8', enabled: true },
+    ]},
+    { id: 'features', title: 'More Phone Filters', subtitle: 'Popular capabilities', enabled: true, items: [
+      { id: 'feature-5g', label: '5G Phones', param: '5g', value: 'yes', enabled: true }, { id: 'feature-battery', label: '5000mAh+ Battery', param: 'battery', value: '5000', enabled: true }, { id: 'feature-refresh', label: '120Hz+ Display', param: 'refresh', value: '120', enabled: true }, { id: 'feature-nfc', label: 'NFC Phones', param: 'nfc', value: 'yes', enabled: true }, { id: 'feature-pta', label: 'PTA Approved', param: 'pta', value: 'approved', enabled: true },
+    ]},
   ],
   navigation: [
     { label: 'Home', url: '/', enabled: true },
@@ -306,6 +324,9 @@ export default function HomepageBuilderPage() {
         sectionRules: current.sectionRules || {},
         navigation: Array.isArray(current.navigation) ? current.navigation : DEFAULT_HOMEPAGE.navigation,
         priceRanges: Array.isArray(current.priceRanges) && current.priceRanges.length ? current.priceRanges : DEFAULT_HOMEPAGE.priceRanges,
+        homepagePriceLimit: Number(current.homepagePriceLimit) || DEFAULT_HOMEPAGE.homepagePriceLimit,
+        smartFiltersEnabled: current.smartFiltersEnabled !== false,
+        smartFilterGroups: Array.isArray(current.smartFilterGroups) && current.smartFilterGroups.length ? current.smartFilterGroups : DEFAULT_HOMEPAGE.smartFilterGroups,
         media: {
           ...DEFAULT_HOMEPAGE.media,
           ...(current.media || {}),
@@ -460,6 +481,7 @@ export default function HomepageBuilderPage() {
           ['overview', LayoutDashboard, 'Overview'],
           ['hero', Image, 'Hero stage'],
           ['sections', GripVertical, 'Sections'],
+          ['filters', Settings2, 'Smart filters'],
           ['design', Palette, 'Design system'],
           ['navigation', Navigation, 'Header & links'],
           ['media', Upload, 'Media library'],
@@ -485,7 +507,8 @@ export default function HomepageBuilderPage() {
           </Panel>
           <Panel title="Quick actions" subtitle="Choose an area to start editing.">
             <button onClick={() => setTab('hero')} className="mb-2 flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Edit floating 3D hero</strong><small className="text-slate-500">Text, buttons, timing and phones</small></span><ChevronRight /></button>
-            <button onClick={() => setTab('sections')} className="flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Arrange homepage sections</strong><small className="text-slate-500">Drag, filter and configure cards</small></span><ChevronRight /></button>
+            <button onClick={() => setTab('sections')} className="mb-2 flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Arrange homepage sections</strong><small className="text-slate-500">Drag, filter and configure cards</small></span><ChevronRight /></button>
+            <button onClick={() => setTab('filters')} className="flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Manage smart filters</strong><small className="text-slate-500">Price, RAM, storage, camera, screen and features</small></span><ChevronRight /></button>
           </Panel>
         </div>}
 
@@ -617,6 +640,35 @@ export default function HomepageBuilderPage() {
           </Panel>
         </div>}
 
+        {tab === 'filters' && <div className="space-y-4">
+          <Panel title="Homepage smart filter manager" subtitle="These compact filter cards appear in the homepage sidebar. All labels, links and visibility are controlled here.">
+            <div className="space-y-4">
+              <Toggle label="Show smart filters on homepage" checked={homepage.smartFiltersEnabled} onChange={value => updateHomepage('smartFiltersEnabled', value)} />
+              <NumberRange label="Price ranges visible on homepage" value={homepage.homepagePriceLimit} min={3} max={8} onChange={value => updateHomepage('homepagePriceLimit', value)} />
+              {homepage.smartFilterGroups.map((group, groupIndex) => <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <Field label="Group title" value={group.title} onChange={title => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, title } : item))} />
+                  <Field label="Subtitle" value={group.subtitle} onChange={subtitle => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, subtitle } : item))} />
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, enabled: !item.enabled } : item))} className={`mt-5 rounded-xl px-3 py-2 text-xs font-bold ${group.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{group.enabled ? 'Visible' : 'Hidden'}</button>
+                </div>
+                <div className="mt-3 space-y-2">{group.items.map((filterItem, itemIndex) => <div key={filterItem.id} className="grid items-end gap-2 rounded-xl bg-white p-2 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
+                  <Field label="Label" value={filterItem.label} onChange={label => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, label } : entry) } : item))} />
+                  <Field label="URL parameter" value={filterItem.param} onChange={param => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, param } : entry) } : item))} />
+                  <Field label="Value" value={filterItem.value} onChange={value => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, value } : entry) } : item))} />
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, enabled: !entry.enabled } : entry) } : item))} className={`rounded-lg px-2.5 py-2 text-[11px] font-bold ${filterItem.enabled ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{filterItem.enabled ? 'On' : 'Off'}</button>
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.filter((_, entryIndex) => entryIndex !== itemIndex) } : item))} className="rounded-lg px-2.5 py-2 text-[11px] font-bold text-red-600">Remove</button>
+                </div>)}</div>
+                <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: [...item.items, { id: `filter-${Date.now()}`, label: 'New filter', param: 'ram', value: '8', enabled: true }] } : item))} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add filter</button>
+              </div>)}
+              <button type="button" onClick={() => updateHomepage('smartFilterGroups', [...homepage.smartFilterGroups, { id: `group-${Date.now()}`, title: 'New filter group', subtitle: 'Choose a filter', enabled: true, items: [] }])} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white">Add filter group</button>
+            </div>
+          </Panel>
+          <Panel title="Detailed price range manager" subtitle="The homepage shows only the first enabled ranges. The View all page can still show the complete list.">
+            <div className="space-y-2">{homepage.priceRanges.map((range, index) => <div key={range.id} className="grid grid-cols-1 items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(150px,1.5fr)_1fr_1fr_auto_auto]"><Field label="Label" value={range.label} onChange={label => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, label } : item))} /><Field label="Minimum" value={String(range.min)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, min: Math.max(0, Number(value)) } : item))} type="number" /><Field label="Maximum (blank = no limit)" value={range.max === null ? '' : String(range.max)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, max: value === '' ? null : Math.max(0, Number(value)) } : item))} type="number" /><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))} className={`mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold ${range.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{range.enabled ? 'On' : 'Off'}</button><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.filter((_, itemIndex) => itemIndex !== index))} className="mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold text-red-600">Remove</button></div>)}</div>
+            <button type="button" onClick={() => updateHomepage('priceRanges', [...homepage.priceRanges, { id: `range-${Date.now()}`, label: 'New price range', min: 0, max: null, enabled: true }])} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add price range</button>
+          </Panel>
+        </div>}
+
         {tab === 'design' && <div className="space-y-4">
           <Panel title="Global design system" subtitle="Control the overall visual language without editing code.">
             <div className="space-y-3">
@@ -649,12 +701,6 @@ export default function HomepageBuilderPage() {
             </div>
           </Panel>
         </div>}
-
-        {tab === 'design' && <div className="px-0">          <Panel title="Homepage price ranges" subtitle="These ranges power the public budget panel. Use exact PKR boundaries; disabled rows stay hidden.">
-            <div className="space-y-2">{homepage.priceRanges.map((range, index) => <div key={range.id} className="grid grid-cols-1 items-end sm:grid-cols-2 xl:grid-cols-[minmax(150px,1.5fr)_1fr_1fr_auto_auto] gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"><Field label="Label" value={range.label} onChange={label => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, label } : item))} /><Field label="Minimum" value={String(range.min)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, min: Math.max(0, Number(value)) } : item))} type="number" /><Field label="Maximum (blank = no limit)" value={range.max === null ? '' : String(range.max)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, max: value === '' ? null : Math.max(0, Number(value)) } : item))} type="number" /><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))} className={`mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold ${range.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{range.enabled ? 'On' : 'Off'}</button><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.filter((_, itemIndex) => itemIndex !== index))} className="mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold text-red-600">Remove</button></div>)}</div>
-            <button type="button" onClick={() => updateHomepage('priceRanges', [...homepage.priceRanges, { id: `range-${Date.now()}`, label: 'New price range', min: 0, max: null, enabled: true }])} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add price range</button>
-          </Panel>
-</div>}
 
         {tab === 'navigation' && <div className="space-y-4">
           <Panel title="Brand identity" subtitle="Logo and name are already consumed by the public header.">
