@@ -1,0 +1,24 @@
+{
+  "release": "25.0.0",
+  "modules": {
+    "specsIntelligence": "implemented-review-first",
+    "priceIntelligenceV2": "implemented-review-first",
+    "youtubeIntelligence": "implemented-review-first",
+    "finalProductionAudit": "static-passed-runtime-github-required"
+  },
+  "safety": {
+    "paidAiRequired": false,
+    "automaticPublishing": false,
+    "boundedScans": true,
+    "manualApprovalRequired": true
+  },
+  "verification": {
+    "secretScan": "passed-1043-files",
+    "productionStaticAudit": "passed-92-routes-0-broken-links",
+    "adminProductionAudit": "passed-50-pages-98-endpoints",
+    "cronAudit": "passed-5-jobs",
+    "intelligenceSuiteAudit": "passed",
+    "typescriptSyntaxTranspile": "passed",
+    "fullNpmBuild": "not-run-local-internal-registry-404; run by GitHub Release Gate"
+  }
+}
