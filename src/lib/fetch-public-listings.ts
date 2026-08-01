@@ -184,8 +184,8 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   const refreshMin = Number.parseFloat(params.refreshMin || '');
   const cameraMin = Number.parseFloat(params.cameraMin || '');
   const batteryMin = Number.parseFloat(params.batteryMin || '');
-  if (Number.isFinite(ram)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: ram }));
-  if (Number.isFinite(storage)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: storage }));
+  if (Number.isFinite(ram)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: ram, max: ram }));
+  if (Number.isFinite(storage)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: storage, max: storage }));
   if (Number.isFinite(screenMin) || Number.isFinite(screenMax)) numericClauses.push(numericSpecClause({ numericField: 'screenSizeInch', textField: 'display', kind: 'screen', min: Number.isFinite(screenMin) ? screenMin : undefined, max: Number.isFinite(screenMax) ? screenMax : undefined }));
   if (Number.isFinite(cameraMin)) numericClauses.push(numericSpecClause({ numericField: 'mainCameraMP', textField: 'mainCamera', kind: 'camera', min: cameraMin }));
   if (Number.isFinite(batteryMin)) numericClauses.push(numericSpecClause({ numericField: 'batteryMAh', textField: 'battery', kind: 'battery', min: batteryMin }));
@@ -251,8 +251,8 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     if (category.min !== undefined) apiParams.set('priceMin', String(category.min));
     if (category.max !== undefined) apiParams.set('priceMax', String(category.max));
   }
-  if (Number.isFinite(ram)) apiParams.set('ramMin', String(ram));
-  if (Number.isFinite(storage)) apiParams.set('storageMin', String(storage));
+  if (Number.isFinite(ram)) { apiParams.set('ramMin', String(ram)); apiParams.set('ramMax', String(ram)); }
+  if (Number.isFinite(storage)) { apiParams.set('storageMin', String(storage)); apiParams.set('storageMax', String(storage)); }
   if (Number.isFinite(screenMin)) apiParams.set('screenMin', String(screenMin));
   if (Number.isFinite(screenMax)) apiParams.set('screenMax', String(screenMax));
   if (Number.isFinite(refreshMin)) apiParams.set('refreshMin', String(refreshMin));
