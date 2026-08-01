@@ -139,8 +139,21 @@ export default async function RootLayout({
     `;
   }).join('');
   const themeStyle = `:root{${primaryColor ? `--primary:${primaryColor};--ring:${primaryColor};` : ''}${secondaryColor ? `--secondary:${secondaryColor};` : ''}${accentColor ? `--accent:${accentColor};` : ''}}
-    .phone-grid{display:grid;grid-template-columns:repeat(var(--phone-grid-mobile,2),minmax(0,1fr))}
-    .phone-grid .phone-card{container-type:inline-size}
+    html,body{max-width:100%;overflow-x:hidden}
+    .phone-grid{display:grid;min-width:0;grid-template-columns:repeat(var(--phone-grid-mobile,2),minmax(0,1fr))}
+    .phone-grid>*{min-width:0}
+    .phone-grid .phone-card{container-type:inline-size;max-width:100%}
+    @media(max-width:639px){
+      .phone-grid{gap:.5rem!important}
+      .phone-grid .phone-card{height:350px!important}
+      .phone-grid .phone-card>div{padding:.65rem!important}
+      .phone-grid .phone-card [data-testid="phone-card-specs"]{display:none}
+      .phone-grid .phone-card [data-testid="phone-card-actions"]{height:40px;min-height:40px}
+      .phone-grid .phone-card [data-testid="phone-card-image"]{margin-bottom:.5rem}
+      .phone-grid .phone-card [data-testid="phone-card-title"]{font-size:.75rem;line-height:1rem;height:2rem;min-height:2rem}
+      .phone-grid .phone-card [data-testid="wishlist-action"],.phone-grid .phone-card [data-testid="compare-action"],.phone-grid .phone-card [data-testid="quick-view-action"]{display:none}
+    }
+    @media(max-width:359px){.phone-grid{grid-template-columns:1fr}.phone-grid .phone-card{height:390px!important}}
     @media(min-width:768px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-tablet,3),minmax(0,1fr))}}
     @media(min-width:1280px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-desktop,4),minmax(0,1fr))}}
     @container(max-width:190px){

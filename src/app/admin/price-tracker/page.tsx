@@ -1174,7 +1174,7 @@ export default function AdminPriceTrackerPage() {
               <label className="text-xs text-gray-500 font-medium mb-1 block">Type *</label>
               <select
                 value={newSource.type}
-                onChange={e => setNewSource(s => ({ ...s, type: e.target.value as PriceSourceType }))}
+                onChange={e => setNewSource(s => ({ ...s, type: normalizePriceSourceType(e.currentTarget.value) }))}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               >
                 {SOURCE_TYPES.map(t => (
@@ -2207,7 +2207,7 @@ export default function AdminPriceTrackerPage() {
               <label className="mb-1 block text-xs font-semibold text-slate-600">Source type</label>
               <select
                 value={editSourceForm.type}
-                onChange={event => setEditSourceForm(current => ({ ...current, type: event.target.value as PriceSourceType }))}
+                onChange={event => setEditSourceForm(current => ({ ...current, type: normalizePriceSourceType(event.currentTarget.value) }))}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               >
                 {SOURCE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
