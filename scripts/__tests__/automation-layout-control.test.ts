@@ -8,6 +8,7 @@ const settings = read('src/lib/models/Settings.ts');
 const layout = read('src/app/admin/layout-control/page.tsx');
 const card = read('src/components/shared/PhoneCard.tsx');
 const adminLayout = read('src/app/admin/layout.tsx');
+const homepageBuilder = read('src/app/admin/homepage-builder/page.tsx');
 const vercel = read('vercel.json');
 
 assert.match(pipeline, /reconcileLifecycle/);
@@ -22,7 +23,10 @@ assert.match(settings, /catalogLayout/);
 assert.match(layout, /desktop: number; tablet: number; mobile: number/);
 assert.match(layout, /'Desktop', 'desktop', Monitor, 10/);
 assert.match(adminLayout, /Card Layout Control/);
-assert.match(adminLayout, /Links & Hrefs/);
+// Verify the navigation capability by stable route and section identifiers, not a UI label.
+// Labels may be improved without breaking functionality or CI.
+assert.match(adminLayout, /href:\s*['"]\/admin\/homepage-builder['"]/);
+assert.match(homepageBuilder, /['"]navigation['"],\s*Navigation,\s*['"]Header & links['"]/);
 assert.match(adminLayout, /Automation Pipeline/);
 
 assert.match(card, /Coming Soon/);
