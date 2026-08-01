@@ -2251,7 +2251,10 @@ export default function AdminPriceTrackerPage() {
               <label className="mb-1 block text-xs font-semibold text-slate-600">Status</label>
               <select
                 value={editSourceForm.status}
-                onChange={event => setEditSourceForm(current => ({ ...current, status: event.target.value }))}
+                onChange={event => {
+                  const status = event.currentTarget.value as 'active' | 'paused' | 'failed';
+                  setEditSourceForm(current => ({ ...current, status }));
+                }}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               >
                 <option value="active">Active</option>
