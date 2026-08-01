@@ -120,6 +120,33 @@ function getErrorMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Normalize RAM/storage text into a stable variant identity. */
+function normalizeVariantPart(value: unknown, unit: 'gb' | 'tb'): string {
+  const raw = String(value || '').toLowerCase().replace(/,/g, ' ');
+  const values: number[] = [];
+  const re = /(\d+(?:\.\d+)?)\s*(tb|gb)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(raw))) {
+    let amount = Number(match[1]);
+    const detectedUnit = match[2] || unit;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    if (detectedUnit === 'tb') amount *= 1024;
+    values.push(amount);
+  }
+  return [...new Set(values)].sort((a, b) => a - b).join('/');
+}
+
+function getVariantIdentity(specs: Record<string, unknown> | null | undefined): string {
+  if (!specs) return '';
+  const ram = normalizeVariantPart(specs.ram, 'gb');
+  const storage = normalizeVariantPart(specs.storage, 'gb');
+  return ram || storage ? `ram:${ram}|storage:${storage}` : '';
+}
+
+function slugifyVariant(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+}
+
 /** Escape user/import text before placing it inside an exact-match RegExp. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -503,12 +530,25 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         .lean()
     : [];
 
+  const existingPhoneIds = existingPhones.map(phone => phone._id);
+  const existingSpecDocs = existingPhoneIds.length
+    ? await PhoneSpecs.find({ phoneId: { $in: existingPhoneIds } }).select('phoneId ram storage').lean()
+    : [];
+  const existingSpecsByPhoneId = new Map(
+    existingSpecDocs.map(spec => [String(spec.phoneId), { ram: spec.ram, storage: spec.storage }]),
+  );
+
   const exactIdentityKey = (brandId: Types.ObjectId | string, modelName: string) =>
     `${String(brandId)}|${normalizePhoneIdentity(modelName)}`;
-  const phoneByIdentity = new Map(
-    existingPhones.map(phone => [exactIdentityKey(phone.brandId as Types.ObjectId, phone.modelName), phone]),
-  );
+  const phoneByIdentity = new Map<string, typeof existingPhones>();
+  for (const phone of existingPhones) {
+    const key = exactIdentityKey(phone.brandId as Types.ObjectId, phone.modelName);
+    const list = phoneByIdentity.get(key) || [];
+    list.push(phone);
+    phoneByIdentity.set(key, list);
+  }
   const phoneBySlug = new Map(existingPhones.map(phone => [phone.slug, phone]));
+  const reservedSlugs = new Set(existingPhones.map(phone => phone.slug));
 
   // Build batch write operations
   const phonesToCreate: Record<string, unknown>[] = [];
@@ -538,15 +578,30 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       continue;
     }
 
+    const incomingVariant = getVariantIdentity(d.specs as Record<string, unknown>);
     const slugCandidate = phoneBySlug.get(d.slug);
-    const identityCandidate = phoneByIdentity.get(exactIdentityKey(brand._id, d.model));
+    const identityCandidates = phoneByIdentity.get(exactIdentityKey(brand._id, d.model)) || [];
     const exactExisting = (() => {
+      // A slug is safe only when brand/model AND variant agree. This prevents a
+      // new RAM/storage variant from silently overwriting the first model record.
       if (slugCandidate) {
         const sameBrand = String(slugCandidate.brandId) === String(brand._id);
         const sameModel = normalizePhoneIdentity(slugCandidate.modelName) === normalizePhoneIdentity(d.model);
-        if (sameBrand && sameModel) return slugCandidate;
+        const existingVariant = getVariantIdentity(existingSpecsByPhoneId.get(String(slugCandidate._id)));
+        const sameVariant = !incomingVariant ? true : Boolean(existingVariant && incomingVariant === existingVariant);
+        if (sameBrand && sameModel && sameVariant) return slugCandidate;
       }
-      return identityCandidate;
+
+      if (incomingVariant) {
+        const variantMatches = identityCandidates.filter(candidate => {
+          const candidateVariant = getVariantIdentity(existingSpecsByPhoneId.get(String(candidate._id)));
+          return candidateVariant && candidateVariant === incomingVariant;
+        });
+        return variantMatches.length === 1 ? variantMatches[0] : undefined;
+      }
+
+      // Without variant data, update only an unambiguous exact brand/model match.
+      return identityCandidates.length === 1 ? identityCandidates[0] : undefined;
     })();
 
     const dup = exactExisting
@@ -808,11 +863,22 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       continue;
     }
 
+    // Create new phone. If the base slug already belongs to another variant,
+    // append the normalized RAM/storage identity instead of overwriting it.
+    let effectiveSlug = d.slug;
+    if (reservedSlugs.has(effectiveSlug)) {
+      const suffix = slugifyVariant(incomingVariant || `row-${rec.originalRowNumber}`);
+      effectiveSlug = `${d.slug}-${suffix || rec.originalRowNumber}`;
+      let counter = 2;
+      while (reservedSlugs.has(effectiveSlug)) effectiveSlug = `${d.slug}-${suffix || rec.originalRowNumber}-${counter++}`;
+    }
+    reservedSlugs.add(effectiveSlug);
+
     // Create new phone
     const publicationIssues = getPhonePublicationIssues({
       brandId: brand._id,
       modelName: d.model,
-      slug: d.slug,
+      slug: effectiveSlug,
       thumbnail: d.thumbnail,
       pricePKR: d.pricePKR,
       upcoming: d.upcoming,
@@ -834,7 +900,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       brand: d.brand,
       model: d.model,
       action: 'create',
-      matchedSlug: d.slug,
+      matchedSlug: effectiveSlug,
       matchType: 'none',
       reason: 'No exact brand + normalized model match found; creating a new phone',
     });
@@ -842,7 +908,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     const phoneData: Record<string, unknown> = {
       brandId: brand._id,
       modelName: d.model,
-      slug: d.slug,
+      slug: effectiveSlug,
       pricePKR: d.pricePKR || 0,
       originalPricePKR: 0,
       releaseDate: d.releaseDate || '',
@@ -866,7 +932,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     };
 
     phonesToCreate.push(phoneData);
-    touchedSlugs.add(d.slug);
+    touchedSlugs.add(effectiveSlug);
 
     const specFields: Record<string, string> = {};
     for (const [k, v] of Object.entries(d.specs)) {
