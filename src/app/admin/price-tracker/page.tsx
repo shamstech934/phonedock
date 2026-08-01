@@ -2199,7 +2199,10 @@ export default function AdminPriceTrackerPage() {
               <label className="mb-1 block text-xs font-semibold text-slate-600">Source name *</label>
               <input
                 value={editSourceForm.name}
-                onChange={event => setEditSourceForm(current => ({ ...current, name: event.target.value }))}
+                onChange={event => {
+                  const name = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, name }));
+                }}
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
@@ -2207,7 +2210,10 @@ export default function AdminPriceTrackerPage() {
               <label className="mb-1 block text-xs font-semibold text-slate-600">Source type</label>
               <select
                 value={editSourceForm.type}
-                onChange={event => setEditSourceForm(current => ({ ...current, type: normalizePriceSourceType(event.currentTarget.value) }))}
+                onChange={event => {
+                  const type = normalizePriceSourceType(event.currentTarget.value);
+                  setEditSourceForm(current => ({ ...current, type }));
+                }}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               >
                 {SOURCE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
@@ -2221,7 +2227,10 @@ export default function AdminPriceTrackerPage() {
               <input
                 type="url"
                 value={editSourceForm.baseUrl}
-                onChange={event => setEditSourceForm(current => ({ ...current, baseUrl: event.target.value }))}
+                onChange={event => {
+                  const baseUrl = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, baseUrl }));
+                }}
                 placeholder="https://www.example.com"
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               />
@@ -2230,7 +2239,10 @@ export default function AdminPriceTrackerPage() {
               <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>
               <input
                 value={editSourceForm.allowedDomains}
-                onChange={event => setEditSourceForm(current => ({ ...current, allowedDomains: event.target.value }))}
+                onChange={event => {
+                  const allowedDomains = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, allowedDomains }));
+                }}
                 placeholder="priceoye.pk, example.com (comma-separated)"
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               />
@@ -2243,7 +2255,10 @@ export default function AdminPriceTrackerPage() {
                 min={0}
                 max={100}
                 value={editSourceForm.priority}
-                onChange={event => setEditSourceForm(current => ({ ...current, priority: Number(event.target.value) }))}
+                onChange={event => {
+                  const priority = Number(event.currentTarget.value);
+                  setEditSourceForm(current => ({ ...current, priority }));
+                }}
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
@@ -2266,7 +2281,10 @@ export default function AdminPriceTrackerPage() {
               <input
                 type="checkbox"
                 checked={editSourceForm.trusted}
-                onChange={event => setEditSourceForm(current => ({ ...current, trusted: event.target.checked }))}
+                onChange={event => {
+                  const trusted = event.currentTarget.checked;
+                  setEditSourceForm(current => ({ ...current, trusted }));
+                }}
                 className="h-4 w-4 rounded border-slate-300"
               />
               <span>
@@ -2280,7 +2298,10 @@ export default function AdminPriceTrackerPage() {
                 rows={3}
                 maxLength={1000}
                 value={editSourceForm.notes}
-                onChange={event => setEditSourceForm(current => ({ ...current, notes: event.target.value }))}
+                onChange={event => {
+                  const notes = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, notes }));
+                }}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
                 placeholder="Access policy, contact, feed details or known limitations"
               />
