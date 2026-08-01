@@ -54,3 +54,15 @@ export function buildPageMetadata(input: {
     },
   };
 }
+
+export function applySeoTemplate(template: string, values: Record<string, string | number | undefined | null>) {
+  return Object.entries(values).reduce((result, [key, value]) =>
+    result.replaceAll(`{${key}}`, value === undefined || value === null ? '' : String(value)), template
+  ).replace(/\s+/g, ' ').replace(/\s+([|,)])/g, '$1').trim();
+}
+
+export function isIndexablePhone(input: { status?: string; active?: boolean; thumbnail?: string; pricePKR?: number; upcoming?: boolean }) {
+  if (input.active === false || input.status !== 'published') return false;
+  if (input.upcoming) return Boolean(input.thumbnail);
+  return Boolean(input.thumbnail) && Number(input.pricePKR || 0) > 0;
+}

@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import PhoneDetailClient from './PhoneDetailClient';
 import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone-detail';
 import { serializeJsonLd } from '@/lib/json-ld';
-import { buildPageMetadata } from '@/lib/seo';
+import { applySeoTemplate, buildPageMetadata, isIndexablePhone } from '@/lib/seo';
+import { getSettings } from '@/lib/models/Settings';
 
 // Render on demand and refresh cached phone pages hourly. This avoids a database
 // round-trip on every visit while still keeping prices and specifications fresh.
@@ -31,16 +32,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const description = phone.description || `Buy ${brand} ${model} in Pakistan. Latest price, specs, and reviews.`;
   const thumbnail = phone.thumbnail || '';
 
-  const title = price > 0
-    ? `${brand} ${model} Price in Pakistan - ${price.toLocaleString()} PKR`
-    : `${brand} ${model} - Specs, Reviews & Price`;
+  const settings = await getSettings().catch(() => null);
+  const releaseYear = phone.releaseDate ? new Date(phone.releaseDate).getFullYear() : new Date().getFullYear();
+  const rawPhone = phone as unknown as { seoTitle?: string; seoDescription?: string; status?: string; active?: boolean; upcoming?: boolean };
+  const template = settings?.phoneTitleTemplate || '{brand} {model} Price in Pakistan {year} | Specs, PTA & Review';
+  const generatedTitle = applySeoTemplate(template, { brand, model, year: releaseYear, price: price > 0 ? `PKR ${price.toLocaleString()}` : '' });
+  const title = rawPhone.seoTitle?.trim() || generatedTitle;
+  const metaDescription = rawPhone.seoDescription?.trim() || description;
+  const noIndex = !isIndexablePhone({ status: rawPhone.status || 'published', active: rawPhone.active ?? true, thumbnail, pricePKR: price, upcoming: rawPhone.upcoming });
 
   return buildPageMetadata({
     title,
-    description,
+    description: metaDescription,
     path: `/phones/${slug}`,
     image: thumbnail || undefined,
-    keywords: [brand, model, `${brand} ${model} price in Pakistan`, `${brand} ${model} specs`, 'PTA approved phone'].filter(Boolean),
+    noIndex,
+    keywords: [brand, model, `${brand} ${model} price in Pakistan`, `${brand} ${model} specs`, `${brand} ${model} PTA`, `${brand} phones Pakistan`].filter(Boolean),
   });
 }
 
@@ -60,8 +67,10 @@ export default async function PhoneDetailPage({ params }: Props) {
     '@type': 'Product',
     name: `${brand} ${model}`.trim(),
     description: phone.description || `${brand} ${model} specifications and price in Pakistan.`,
-    image: phone.thumbnail ? [phone.thumbnail] : undefined,
+    image: [phone.thumbnail, ...(((phone as unknown as { images?: Array<{ url?: string } | string> }).images || []).map((item) => typeof item === 'string' ? item : item?.url))].filter(Boolean),
     sku: phone.slug,
+    mpn: phone.slug,
+    url: canonicalUrl,
     brand: brand ? { '@type': 'Brand', name: brand } : undefined,
     releaseDate: phone.releaseDate || undefined,
     aggregateRating: Number((phone as unknown as { userReviewCount?: number }).userReviewCount || 0) > 0 ? {

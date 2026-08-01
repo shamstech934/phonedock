@@ -16,6 +16,12 @@ export interface ISettings extends Document {
   metaDescription: string;
   ogImage: string;
   googleAnalyticsId: string;
+  googleSiteVerification: string;
+  bingSiteVerification: string;
+  canonicalDomain: string;
+  phoneTitleTemplate: string;
+  brandTitleTemplate: string;
+  indexEmptyBrands: boolean;
   maintenanceMode: boolean;
   footerText: string;
   homepage: Record<string, unknown>;
@@ -41,6 +47,12 @@ const SettingsSchema = new Schema<ISettings>({
   metaDescription: { type: String, default: '' },
   ogImage: { type: String, default: '' },
   googleAnalyticsId: { type: String, default: '' },
+  googleSiteVerification: { type: String, default: '' },
+  bingSiteVerification: { type: String, default: '' },
+  canonicalDomain: { type: String, default: 'https://specsdekh.com' },
+  phoneTitleTemplate: { type: String, default: '{brand} {model} Price in Pakistan {year} | Specs, PTA & Review' },
+  brandTitleTemplate: { type: String, default: '{brand} Phones Price in Pakistan ({year})' },
+  indexEmptyBrands: { type: Boolean, default: false },
   maintenanceMode: { type: Boolean, default: false },
   footerText: { type: String, default: '' },
   homepage: { type: Schema.Types.Mixed, default: {

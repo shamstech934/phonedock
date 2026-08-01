@@ -19,9 +19,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const description = settings?.metaDescription || "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.";
   const ogImage = settings?.ogImage || "/og-image.png";
   const favicon = settings?.favicon || "/favicon.svg";
+  const canonicalBase = String(settings?.canonicalDomain || BASE_URL).replace(/\/$/, '');
 
   return {
-    metadataBase: new URL(BASE_URL),
+    metadataBase: new URL(canonicalBase),
     title: {
       default: `${siteName} - Pakistan's #1 Smartphone Database | Specs, Prices & Reviews`,
       template: `%s | ${titleSuffix}`,
@@ -51,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
       follow: true,
       googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
     },
-    alternates: { canonical: BASE_URL },
+    alternates: { canonical: canonicalBase },
     applicationName: siteName,
     category: "technology",
     manifest: "/manifest.webmanifest",
@@ -61,9 +62,9 @@ export async function generateMetadata(): Promise<Metadata> {
       apple: "/apple-touch-icon.png",
     },
     verification: {
-      google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
-      other: process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION
-        ? { "msvalidate.01": process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION }
+      google: settings?.googleSiteVerification || process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+      other: (settings?.bingSiteVerification || process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION)
+        ? { "msvalidate.01": settings?.bingSiteVerification || process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION || '' }
         : undefined,
     },
   };

@@ -2156,7 +2156,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     await connectDB();
     const body = await req.json();
     const { Settings } = await import('@/lib/models');
-    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout','mobileApp'];
+    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','googleSiteVerification','bingSiteVerification','canonicalDomain','phoneTitleTemplate','brandTitleTemplate','indexEmptyBrands','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout','mobileApp'];
     const update: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
