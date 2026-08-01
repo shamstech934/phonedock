@@ -6,7 +6,7 @@ import {
   XCircle, CheckCircle, RefreshCw, Plus, ChevronLeft,
   ChevronRight, X, BarChart3, Globe, ShieldCheck,
   Settings, DollarSign, Activity, AlertCircle,
-  History, Play, Pause, ToggleLeft, ToggleRight,
+  History, Play, Pause, ToggleLeft, ToggleRight, Pencil, Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -64,6 +64,8 @@ interface PriceSource {
   verifiedListings: number;
   pendingListings: number;
   health: 'healthy' | 'setup' | 'paused' | 'attention' | 'no-listings';
+  enabled: boolean;
+  notes?: string;
 }
 
 interface PriceChange {
@@ -211,6 +213,10 @@ export default function AdminPriceTrackerPage() {
   const [sources, setSources] = useState<PriceSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSource, setNewSource] = useState({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
+  const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
+  const [editSourceForm, setEditSourceForm] = useState({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
+  const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
 
   // ── Price Changes Tab ──
@@ -529,8 +535,11 @@ export default function AdminPriceTrackerPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          ...newSource,
+          name: newSource.name,
+          sourceType: newSource.type,
+          baseUrl: newSource.baseUrl,
           allowedDomains: newSource.allowedDomains.split(',').map(s => s.trim()).filter(Boolean),
+          priority: newSource.priority,
         }),
       });
       const d = await res.json();
@@ -551,6 +560,88 @@ export default function AdminPriceTrackerPage() {
       if (!res.ok) throw new Error(await responseError(res, 'Failed to update source'));
       fetchSources();
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update source'); }
+  };
+
+  const openEditSource = (source: PriceSource) => {
+    setEditingSource(source);
+    setEditSourceForm({
+      name: source.name,
+      type: source.type,
+      baseUrl: source.baseUrl || '',
+      allowedDomains: (source.allowedDomains || []).join(', '),
+      priority: source.priority || 1,
+      status: source.status,
+      trusted: source.trusted,
+      notes: source.notes || '',
+    });
+    setError('');
+    setActionMessage('');
+  };
+
+  const handleUpdateSource = async () => {
+    if (!editingSource) return;
+    setActionLoading(`edit-${editingSource.id}`);
+    setError('');
+    setActionMessage('');
+    try {
+      const response = await fetch(`/api/admin/price-tracker/sources/${editingSource.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editSourceForm.name.trim(),
+          sourceType: editSourceForm.type,
+          baseUrl: editSourceForm.baseUrl.trim(),
+          allowedDomains: editSourceForm.allowedDomains
+            .split(',')
+            .map(domain => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''))
+            .filter(Boolean),
+          priority: Number(editSourceForm.priority),
+          status: editSourceForm.status,
+          enabled: editSourceForm.status === 'active',
+          trusted: editSourceForm.trusted,
+          notes: editSourceForm.notes.trim(),
+        }),
+      });
+      if (!response.ok) throw new Error(await responseError(response, 'Failed to update source'));
+      setEditingSource(null);
+      setActionMessage(`${editSourceForm.name.trim()} updated successfully.`);
+      await fetchSources();
+      await fetchOverview();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to update source');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleDeleteSource = async () => {
+    if (!deletingSource) return;
+    const needsTypedConfirmation = deletingSource.listingCount > 0;
+    if (needsTypedConfirmation && deleteConfirmText.trim() !== deletingSource.name) {
+      setError(`Type "${deletingSource.name}" to confirm deletion.`);
+      return;
+    }
+    setActionLoading(`delete-${deletingSource.id}`);
+    setError('');
+    setActionMessage('');
+    try {
+      const response = await fetch(`/api/admin/price-tracker/sources/${deletingSource.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(await responseError(response, 'Failed to delete source'));
+      const deletedName = deletingSource.name;
+      setDeletingSource(null);
+      setDeleteConfirmText('');
+      setActionMessage(`${deletedName} deleted successfully.`);
+      await fetchSources();
+      await fetchOverview();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Failed to delete source');
+    } finally {
+      setActionLoading('');
+    }
   };
 
   const handleTestAndTrustSource = async (source: PriceSource) => {
@@ -1211,10 +1302,31 @@ export default function AdminPriceTrackerPage() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleToggleSource(src.id)}
-                          className={`p-1 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
-                          title={src.status === 'active' ? 'Pause' : 'Activate'}
+                          className={`p-1.5 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
+                          title={src.status === 'active' ? 'Pause source' : 'Activate source'}
+                          aria-label={src.status === 'active' ? `Pause ${src.name}` : `Activate ${src.name}`}
                         >
                           {src.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditSource(src)}
+                          disabled={Boolean(actionLoading)}
+                          className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Edit source"
+                          aria-label={`Edit ${src.name}`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setDeletingSource(src); setDeleteConfirmText(''); setError(''); }}
+                          disabled={Boolean(actionLoading)}
+                          className="p-1.5 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Delete source"
+                          aria-label={`Delete ${src.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -2027,6 +2139,189 @@ export default function AdminPriceTrackerPage() {
     );
   };
 
+  const renderEditSourceModal = () => {
+    if (!editingSource) return null;
+    return (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Edit price source</h2>
+              <p className="mt-1 text-xs text-slate-500">Update retailer identity, domains, trust and availability.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setEditingSource(null); setError(''); }}
+              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Close edit source"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Source name *</label>
+              <input
+                value={editSourceForm.name}
+                onChange={event => setEditSourceForm(current => ({ ...current, name: event.target.value }))}
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Source type</label>
+              <select
+                value={editSourceForm.type}
+                onChange={event => setEditSourceForm(current => ({ ...current, type: event.target.value }))}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              >
+                {SOURCE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">HTTPS base URL *</label>
+              <input
+                type="url"
+                value={editSourceForm.baseUrl}
+                onChange={event => setEditSourceForm(current => ({ ...current, baseUrl: event.target.value }))}
+                placeholder="https://www.example.com"
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>
+              <input
+                value={editSourceForm.allowedDomains}
+                onChange={event => setEditSourceForm(current => ({ ...current, allowedDomains: event.target.value }))}
+                placeholder="priceoye.pk, example.com (comma-separated)"
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">Use hostnames only. Protocol and www are cleaned automatically.</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Priority</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={editSourceForm.priority}
+                onChange={event => setEditSourceForm(current => ({ ...current, priority: Number(event.target.value) }))}
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Status</label>
+              <select
+                value={editSourceForm.status}
+                onChange={event => setEditSourceForm(current => ({ ...current, status: event.target.value }))}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={editSourceForm.trusted}
+                onChange={event => setEditSourceForm(current => ({ ...current, trusted: event.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-800">Trusted source</span>
+                <span className="block text-xs text-slate-500">Only enable after testing a real product page and confirming reliable PKR extraction.</span>
+              </span>
+            </label>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Internal notes</label>
+              <textarea
+                rows={3}
+                maxLength={1000}
+                value={editSourceForm.notes}
+                onChange={event => setEditSourceForm(current => ({ ...current, notes: event.target.value }))}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                placeholder="Access policy, contact, feed details or known limitations"
+              />
+            </div>
+          </div>
+
+          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => { setEditingSource(null); setError(''); }}
+              className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUpdateSource}
+              disabled={!editSourceForm.name.trim() || !editSourceForm.baseUrl.trim() || actionLoading === `edit-${editingSource.id}`}
+              className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actionLoading === `edit-${editingSource.id}` ? 'Saving...' : 'Save source'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDeleteSourceModal = () => {
+    if (!deletingSource) return null;
+    const hasListings = deletingSource.listingCount > 0;
+    return (
+      <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-red-100 p-2 text-red-600"><Trash2 className="h-5 w-5" /></div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Delete {deletingSource.name}?</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {hasListings
+                  ? `This will permanently delete the source and all ${deletingSource.listingCount} linked retailer listing${deletingSource.listingCount === 1 ? '' : 's'}.`
+                  : 'This source has no linked retailer listings and will be permanently removed.'}
+              </p>
+            </div>
+          </div>
+
+          {hasListings && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <label className="block text-xs font-semibold text-amber-900">Type <strong>{deletingSource.name}</strong> to confirm</label>
+              <input
+                value={deleteConfirmText}
+                onChange={event => setDeleteConfirmText(event.target.value)}
+                className="mt-2 h-10 w-full rounded-xl border border-amber-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-500/20"
+                autoFocus
+              />
+            </div>
+          )}
+          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => { setDeletingSource(null); setDeleteConfirmText(''); setError(''); }}
+              className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteSource}
+              disabled={actionLoading === `delete-${deletingSource.id}` || (hasListings && deleteConfirmText.trim() !== deletingSource.name)}
+              className="h-10 rounded-xl bg-red-600 px-5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actionLoading === `delete-${deletingSource.id}` ? 'Deleting...' : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   /* ═══════════════════════════════════════════════════════════
      MAIN RENDER
      ═══════════════════════════════════════════════════════════ */
@@ -2036,7 +2331,7 @@ export default function AdminPriceTrackerPage() {
       {renderHeader()}
       {renderTabs()}
 
-      {error && !editPriceModal && !addListingModal && (
+      {error && !editPriceModal && !addListingModal && !editingSource && !deletingSource && (
         <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
@@ -2051,6 +2346,8 @@ export default function AdminPriceTrackerPage() {
 
       {renderEditPriceModal()}
       {renderAddListingModal()}
+      {renderEditSourceModal()}
+      {renderDeleteSourceModal()}
     </div>
   );
 }

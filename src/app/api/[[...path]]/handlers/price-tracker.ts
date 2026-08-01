@@ -72,6 +72,31 @@ export const DEFAULT_PT_SETTINGS = {
   checkFrequency: 'daily',   // daily | twice-daily | hourly
 };
 
+const PRICE_SOURCE_TYPES = new Set(['retailer', 'marketplace', 'official']);
+
+function normalizeSourceBaseUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new URL(raw);
+  if (parsed.protocol !== 'https:') throw new Error('baseUrl must use HTTPS');
+  parsed.hash = '';
+  parsed.search = '';
+  parsed.pathname = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+  return parsed.toString().replace(/\/$/, '');
+}
+
+function normalizeAllowedDomains(value: unknown, baseUrl = ''): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const domains = values
+    .map(item => String(item || '').trim().toLowerCase())
+    .map(item => item.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].replace(/^\./, ''))
+    .filter(Boolean);
+  if (domains.length === 0 && baseUrl) {
+    try { domains.push(new URL(baseUrl).hostname.toLowerCase().replace(/^www\./, '')); } catch { /* validated elsewhere */ }
+  }
+  return [...new Set(domains)];
+}
+
 export async function getPriceTrackerSettings() {
   const doc = await SystemState.findOne({ key: PT_SETTINGS_KEY }).lean();
   if (!doc?.metadata) return { ...DEFAULT_PT_SETTINGS };
@@ -729,22 +754,29 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const { name, sourceType, baseUrl, allowedDomains, priority } = body;
 
     if (!name || !name.trim()) return NextResponse.json({ error: 'Source name is required' }, { status: 400 });
+    if (sourceType !== undefined && !PRICE_SOURCE_TYPES.has(sourceType)) {
+      return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
+    }
 
     // Check uniqueness
     const existing = await PriceSource.findOne({ name: name.trim() });
     if (existing) return NextResponse.json({ error: 'Source name already exists' }, { status: 409 });
 
-    // Validate baseUrl must be HTTPS
-    if (baseUrl && !baseUrl.startsWith('https://')) {
-      return NextResponse.json({ error: 'baseUrl must use HTTPS' }, { status: 400 });
+    let normalizedBaseUrl = '';
+    try { normalizedBaseUrl = normalizeSourceBaseUrl(baseUrl); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid base URL' }, { status: 400 }); }
+    const normalizedDomains = normalizeAllowedDomains(allowedDomains, normalizedBaseUrl);
+    const normalizedPriority = Number(priority ?? 0);
+    if (!Number.isFinite(normalizedPriority) || normalizedPriority < 0 || normalizedPriority > 100) {
+      return NextResponse.json({ error: 'Priority must be between 0 and 100' }, { status: 400 });
     }
 
     const source = await PriceSource.create({
       name: name.trim(),
       sourceType: sourceType || 'retailer',
-      baseUrl: baseUrl || '',
-      allowedDomains: allowedDomains || [],
-      priority: typeof priority === 'number' ? priority : 0,
+      baseUrl: normalizedBaseUrl,
+      allowedDomains: normalizedDomains,
+      priority: normalizedPriority,
     });
 
     try {
@@ -1269,15 +1301,26 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       }
       updates.name = name.trim();
     }
-    if (sourceType !== undefined) updates.sourceType = sourceType;
-    if (baseUrl !== undefined) {
-      if (baseUrl && !baseUrl.startsWith('https://')) {
-        return NextResponse.json({ error: 'baseUrl must use HTTPS' }, { status: 400 });
-      }
-      updates.baseUrl = baseUrl;
+    if (sourceType !== undefined) {
+      if (!PRICE_SOURCE_TYPES.has(sourceType)) return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
+      updates.sourceType = sourceType;
     }
-    if (allowedDomains !== undefined) updates.allowedDomains = allowedDomains;
-    if (typeof priority === 'number') updates.priority = priority;
+    let normalizedBaseUrl = source.baseUrl || '';
+    if (baseUrl !== undefined) {
+      try { normalizedBaseUrl = normalizeSourceBaseUrl(baseUrl); }
+      catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid base URL' }, { status: 400 }); }
+      updates.baseUrl = normalizedBaseUrl;
+    }
+    if (allowedDomains !== undefined || baseUrl !== undefined) {
+      updates.allowedDomains = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
+    }
+    if (priority !== undefined) {
+      const normalizedPriority = Number(priority);
+      if (!Number.isFinite(normalizedPriority) || normalizedPriority < 0 || normalizedPriority > 100) {
+        return NextResponse.json({ error: 'Priority must be between 0 and 100' }, { status: 400 });
+      }
+      updates.priority = normalizedPriority;
+    }
     if (typeof enabled === 'boolean') updates.enabled = enabled;
     if (typeof trusted === 'boolean') updates.trusted = trusted;
     if (status !== undefined && ['active', 'paused', 'failed'].includes(status)) updates.status = status;

@@ -1,6 +1,6 @@
 {
   "name": "specsdekh",
-  "version": "27.2.5",
+  "version": "27.3.0",
   "private": true,
   "packageManager": "npm@11.16.0",
   "scripts": {
