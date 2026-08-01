@@ -137,15 +137,19 @@ export async function getSettings(): Promise<ISettings> {
   if (homepage.brandLogoSize === undefined || homepage.brandLogoSize === 48) homepageUpdates['homepage.brandLogoSize'] = 56;
   if (Object.keys(homepageUpdates).length > 0) {
     await Settings.updateOne({ _id: settings._id }, { $set: homepageUpdates });
-    settings = {
-      ...settings,
-      homepage: {
-        ...homepage,
-        brandLimit: homepageUpdates['homepage.brandLimit'] ?? homepage.brandLimit,
-        brandColumns: homepageUpdates['homepage.brandColumns'] ?? homepage.brandColumns,
-        brandLogoSize: homepageUpdates['homepage.brandLogoSize'] ?? homepage.brandLogoSize,
-      },
-    } as ISettings;
+
+    // Keep the lean settings object type-safe. homepageUpdates is intentionally
+    // Record<string, unknown>, so only copy values after narrowing them.
+    const nextHomepage: Record<string, unknown> = { ...homepage };
+    const nextBrandLimit = homepageUpdates['homepage.brandLimit'];
+    const nextBrandColumns = homepageUpdates['homepage.brandColumns'];
+    const nextBrandLogoSize = homepageUpdates['homepage.brandLogoSize'];
+
+    if (typeof nextBrandLimit === 'number') nextHomepage.brandLimit = nextBrandLimit;
+    if (typeof nextBrandColumns === 'number') nextHomepage.brandColumns = nextBrandColumns;
+    if (typeof nextBrandLogoSize === 'number') nextHomepage.brandLogoSize = nextBrandLogoSize;
+
+    settings.homepage = nextHomepage;
   }
 
   return settings as ISettings;
