@@ -50,8 +50,27 @@ jobs:
       - name: Regression tests
         run: npm test
 
+      - name: Validate build environment
+        shell: bash
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+        run: |
+          if [ -z "${MONGODB_URI:-}" ] && [ -z "${MONGO_URL:-}" ]; then
+            echo "::error::Missing GitHub Actions secret MONGODB_URI (or legacy MONGO_URL). Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          if [ -z "${DB_NAME:-}" ]; then
+            echo "::error::Missing GitHub Actions secret DB_NAME. Set it to phonedock."
+            exit 1
+          fi
+
       - name: Production build
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
           NEXT_PUBLIC_BASE_URL: https://specsdekh.com
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URL: ${{ secrets.MONGO_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
