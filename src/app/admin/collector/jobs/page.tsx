@@ -49,7 +49,9 @@ export default function AdminCollectorJobsPage() {
       const response = await fetch(`/api/collector/jobs/${id}/${action}`, { method: 'POST', credentials: 'include' });
       const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || `Failed to ${action} job`);
-      fetchJobs();
+      // Refresh after the server has reset/restarted the job so stale historical
+      // errors disappear immediately from the UI.
+      await fetchJobs();
     } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }
     finally { setActionBusyId(null); }
   };

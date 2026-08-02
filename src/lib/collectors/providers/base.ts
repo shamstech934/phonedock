@@ -137,10 +137,15 @@ export abstract class BaseProvider {
         const headerStyle = this.config.apiKeyHeader || 'Authorization';
         safeHeaderRecord[headerStyle] = headerStyle.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
       }
-      const requestHeaders = new Headers();
+      // Keep headers as a plain Record<string, string>. Avoid constructing a
+      // Headers instance here: legacy Mongoose Map/document values can trigger
+      // undici's `Headers.append(... invalid header value)` before our request
+      // reaches the network. The record below has already been reduced to
+      // primitive, newline-free strings only.
+      const requestHeaders: Record<string, string> = {};
       for (const [key, value] of Object.entries(safeHeaderRecord)) {
         if (!key.trim() || !value.trim() || /[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
-        requestHeaders.set(key, value);
+        requestHeaders[key] = value;
       }
 
       let currentUrl = url;

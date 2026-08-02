@@ -184,7 +184,15 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []);
       if (!checked.safe) return NextResponse.json({ error: checked.reason || 'Invalid endpoint' }, { status: 400 });
     }
-    const safeHeaders = Object.fromEntries(Object.entries((headers || {}) as Record<string, string>).filter(([key]) => !/authorization|api-key|cookie/i.test(key)));
+    // Persist only primitive text headers. Normal HTML/feed sources do not
+    // need custom request headers at all; API sources may keep sanitized
+    // non-secret headers. This prevents legacy Maps/documents from ever being
+    // stored as HTTP header values.
+    const safeHeaders = normalizedType === 'api'
+      ? Object.fromEntries(
+          Object.entries(toStringRecord(headers)).filter(([key]) => !/authorization|api-key|cookie/i.test(key)),
+        )
+      : {};
     const normalizedBrands = Array.isArray(srcBrandFilter) ? srcBrandFilter : String(srcBrandFilter || '').split(',').map(value => value.trim()).filter(Boolean);
     const normalizedAllowedDomains = Array.isArray(allowedDomains) ? allowedDomains.map(value => String(value).trim().toLowerCase()).filter(Boolean) : String(allowedDomains || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (srcEndpoint && normalizedAllowedDomains.length === 0) normalizedAllowedDomains.push(new URL(srcEndpoint).hostname.toLowerCase());
@@ -406,9 +414,12 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       const source = await CollectorSource.findById(job.sourceId);
       if (!source) return NextResponse.json({ error: 'Collector source no longer exists' }, { status: 404 });
       const safeHeaders = source.type === 'api' ? toStringRecord(source.headers) : {};
-      await CollectorSource.updateOne({ _id: source._id }, {
-        $set: { headers: safeHeaders, lastError: '', lastTestMessage: '', lastTestStatus: 'never', lastSyncStatus: 'never' },
-      });
+      source.headers = new Map(Object.entries(safeHeaders));
+      source.lastError = '';
+      source.lastTestMessage = '';
+      source.lastTestStatus = 'never';
+      source.lastSyncStatus = 'never';
+      await source.save();
     }
     await CollectorJob.updateOne({ _id: job._id }, {
       $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, errorLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
