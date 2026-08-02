@@ -21,6 +21,8 @@ export interface ProviderConfig {
   mappingRules?: Record<string, string>; // provider field → our field
   defaultValues?: Record<string, unknown>;
   enabled: boolean;
+  parserId?: string;             // auto, generic, samsung, or future plugin id
+  maxProductPages?: number;      // bounded product-detail requests per run
 }
 
 // ---- Normalized Phone Spec (what every provider must return) ----

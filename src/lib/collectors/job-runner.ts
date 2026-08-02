@@ -447,5 +447,7 @@ function buildProviderConfig(source: Record<string, unknown>): ProviderConfig {
       pageParam: (source.paginationPageParam as string) || 'page',
     },
     enabled: source.enabled as boolean,
+    parserId: String(source.parserId || 'auto'),
+    maxProductPages: Number(source.maxProductPages || 20),
   };
 }

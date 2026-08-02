@@ -59,6 +59,7 @@ function sourceConfig(source: Record<string, unknown>): ProviderConfig {
     dataPath: String(source.dataPath || ''), mappingRules: toStringRecord(source.mappingRules),
     timeoutMs: Number(source.timeoutMs || 30000), maxResponseBytes: Number(source.maxResponseBytes || 5242880), enabled: source.enabled !== false,
     pagination: { pageSize: Number(source.paginationPageSize || 50), maxPages: Number(source.paginationMaxPages || 10), pageParam: String(source.paginationPageParam || 'page') },
+    parserId: String(source.parserId || 'auto'), maxProductPages: Number(source.maxProductPages || 20),
   };
 }
 

@@ -35,6 +35,8 @@ const CollectorSourceSchema = new Schema({
   totalCollected: { type: Number, default: 0 },
   totalFailed: { type: Number, default: 0 },
   reliabilityScore: { type: Number, default: 1.0, min: 0, max: 1 },
+  parserId: { type: String, default: 'auto' },
+  maxProductPages: { type: Number, default: 20, min: 1, max: 50 },
   notes: { type: String, default: '' },
 }, { timestamps: true });
 
