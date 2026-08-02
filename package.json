@@ -1,6 +1,6 @@
 {
   "name": "specsdekh",
-  "version": "28.5.0",
+  "version": "29.1.0",
   "private": true,
   "packageManager": "npm@11.16.0",
   "scripts": {
@@ -44,9 +44,9 @@
     "test:v8-rc7": "tsx scripts/__tests__/v8-rc7-smart-relaxation.test.ts",
     "test:legacy": "tsx scripts/__tests__/compare-engine-v5.2.test.ts && tsx scripts/__tests__/critical-fix-round2.test.ts && tsx scripts/__tests__/final-release-hardening.test.ts && tsx scripts/__tests__/personalization-feature.test.ts && tsx scripts/__tests__/sprint2-import-persistence.test.ts && tsx scripts/__tests__/sprint3-checkpoint2.test.ts && tsx scripts/__tests__/sprint3-checkpoint3.test.ts && tsx scripts/__tests__/sprint3-checkpoint4.test.ts && tsx scripts/__tests__/sprint3-security-routing.test.ts && tsx scripts/__tests__/sprint4-checkpoint6-batch3.test.ts && tsx scripts/__tests__/sprint6-intelligence-data-quality.test.ts && tsx scripts/__tests__/sprint8-search-filters.test.ts && tsx scripts/__tests__/ssrf-guard.test.ts && tsx scripts/__tests__/v4-rankings.test.ts && tsx scripts/__tests__/sanitize-security.test.ts && tsx scripts/__tests__/compare-six-phones.test.ts && tsx scripts/__tests__/phase1-launch-engineering.test.ts && tsx scripts/__tests__/phase0-launch-gate.test.ts && tsx scripts/__tests__/phone-card-standardization.test.ts && tsx scripts/__tests__/data-platform-v2.test.ts && tsx scripts/__tests__/ranking-card-interaction.test.ts && tsx scripts/__tests__/phase1-performance-reliability.test.ts && tsx scripts/__tests__/phase2-user-business-features.test.ts && tsx scripts/__tests__/phase3-intelligence.test.ts && tsx scripts/__tests__/phase4-commercial-launch.test.ts && tsx scripts/__tests__/phase5-enterprise-release.test.ts && tsx scripts/__tests__/collector-source-creation.test.ts && tsx scripts/__tests__/deep-qa-regressions.test.ts && tsx scripts/__tests__/price-category-filter.test.ts && tsx scripts/__tests__/hero-showcase-polish.test.ts && tsx scripts/__tests__/homepage-category-colors.test.ts",
     "audit:static": "node scripts/production-static-audit.mjs",
-    "release:gate": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:seo-enterprise && npm run audit:seo-growth && npm run audit:seo-final && npm run audit:monetization-runtime && npm run audit:smart-filters && npm run audit:price-sources && npm run audit:source-types && npm run audit:intelligence-suite && npm run audit:cron && npm run audit:admin && npm run audit:ai-research && npm run test:ai-research-lite && npm run audit:phone-date-order && npm run lint && npm run typecheck && npm test && npm run build",
+    "release:gate": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:seo-enterprise && npm run audit:seo-growth && npm run audit:seo-final && npm run audit:ga4 && npm run audit:monetization-runtime && npm run audit:smart-filters && npm run audit:price-sources && npm run audit:source-types && npm run audit:intelligence-suite && npm run audit:cron && npm run audit:admin && npm run audit:ai-research && npm run test:ai-research-lite && npm run audit:phone-date-order && npm run lint && npm run typecheck && npm test && npm run build",
     "smoke:production": "node scripts/production-smoke-test.mjs",
-    "ci:release": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:seo-enterprise && npm run audit:seo-growth && npm run audit:seo-final && npm run audit:monetization-runtime && npm run audit:smart-filters && npm run audit:price-sources && npm run audit:source-types && npm run audit:intelligence-suite && npm run audit:cron && npm run audit:phone-date-order && npm run lint && npm run typecheck && npm test && npm run build",
+    "ci:release": "npm run doctor:runtime && npm run security:scan && npm run audit:static && npm run audit:seo-enterprise && npm run audit:seo-growth && npm run audit:seo-final && npm run audit:ga4 && npm run audit:monetization-runtime && npm run audit:smart-filters && npm run audit:price-sources && npm run audit:source-types && npm run audit:intelligence-suite && npm run audit:cron && npm run audit:phone-date-order && npm run lint && npm run typecheck && npm test && npm run build",
     "audit:cron": "node scripts/cron-config-audit.mjs",
     "test:price-listing-validation": "tsx scripts/__tests__/retailer-listing-validation.test.ts",
     "audit:admin": "node scripts/admin-production-audit.mjs",
@@ -63,7 +63,8 @@
     "audit:monetization-runtime": "node scripts/monetization-runtime-audit.mjs",
     "lint:strict": "eslint .",
     "audit:seo-final": "node scripts/seo-final-phase-audit.mjs",
-    "audit:import-v2-recovery": "node scripts/import-v2-recovery-audit.mjs"
+    "audit:import-v2-recovery": "node scripts/import-v2-recovery-audit.mjs",
+    "audit:ga4": "node scripts/ga4-runtime-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
