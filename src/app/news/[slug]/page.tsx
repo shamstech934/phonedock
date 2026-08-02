@@ -100,19 +100,6 @@ async function getRelatedNews(currentSlug: string, category: string, limit = 4):
   }
 }
 
-/* ── generateStaticParams ──────────────────────────────────────────── */
-export async function generateStaticParams(): Promise<{ slug: string }[]> {
-  try {
-    await connectDB();
-    const articles = await News.find({ published: true, status: 'published' })
-      .select('slug')
-      .lean();
-    return articles.map((a) => ({ slug: a.slug as string }));
-  } catch {
-    return [];
-  }
-}
-
 /* ── generateMetadata ──────────────────────────────────────────────── */
 export async function generateMetadata({
   params,
@@ -155,7 +142,8 @@ export async function generateMetadata({
 }
 
 /* ── Page Component ────────────────────────────────────────────────── */
-export const revalidate = 900;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function NewsArticlePage({
   params,

@@ -1,1 +1,1 @@
-SpecsDekh v31.6 - Collector + Price Tracker Consolidated Runtime Fix
+SpecsDekh v31.6.5 - Database-backed prerender safety fix
