@@ -39,6 +39,8 @@ type Payload = {
   summary: { phonesWithoutPrice: number; unknownPta: number; verifiedListings: number; trustedSources: number; openSignals: number };
 };
 
+type ActionPayload = { error?: string; scannedPhones?: number; signalsSeen?: number; message?: string };
+
 const TYPE_LABELS: Record<string, string> = {
   missing_pta_status: 'Missing PTA', pta_status_available: 'PTA evidence', missing_pakistan_price: 'Missing price',
   price_available: 'Price evidence', no_verified_retailer: 'No retailer', retailer_price_conflict: 'Price conflict',
@@ -61,8 +63,7 @@ export default function PakistanIntelligencePage() {
     setLoading(true); setError('');
     try {
       const response = await fetch(`/api/admin/pakistan-intelligence?status=${encodeURIComponent(status)}&type=${encodeURIComponent(type)}&page=${page}`, { credentials: 'include', cache: 'no-store' });
-      const payload = await readApiResponse(response);
-      if (!response.ok) throw new Error(payload.error || 'Unable to load Pakistan Intelligence');
+      const payload = await readApiResponse<Payload>(response);
       setData(payload);
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load Pakistan Intelligence'); }
     finally { setLoading(false); }
@@ -77,9 +78,8 @@ export default function PakistanIntelligencePage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(action === 'scan' ? { action, limit: 150 } : { action, id }),
       });
-      const payload = await readApiResponse(response);
-      if (!response.ok) throw new Error(payload.error || 'Action failed');
-      setMessage(action === 'scan' ? `Scan complete: ${payload.scannedPhones} phones checked, ${payload.signalsSeen} signals reviewed.` : action === 'apply' ? 'Recommendation applied.' : 'Signal dismissed.');
+      const payload = await readApiResponse<ActionPayload>(response);
+      setMessage(action === 'scan' ? `Scan complete: ${payload.scannedPhones ?? 0} phones checked, ${payload.signalsSeen ?? 0} signals reviewed.` : action === 'apply' ? 'Recommendation applied.' : 'Signal dismissed.');
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
     finally { setRunning(false); }

@@ -43,6 +43,14 @@ interface Draft {
   createdAt: string;
 }
 
+interface DraftsResponse { drafts: Draft[]; error?: string }
+interface PhoneLookupResponse { id?: string; _id?: string; error?: string }
+interface ResearchJobResponse {
+  jobId: string; total: number; status: string; processed?: number; generated?: number; skipped?: number; failed?: number;
+  providerCalls?: number; maxProviderCalls?: number; nextRunAfter?: string; throttled?: boolean; error?: string;
+}
+interface ReviewResponse { success?: boolean; error?: string }
+
 export default function AiResearchPage() {
   useAdmin();
   const [status, setStatus] = useState<AIStatus | null>(null);
@@ -60,8 +68,8 @@ export default function AiResearchPage() {
     setLoading(true);
     setError(null);
     Promise.all([
-      fetch('/api/admin/ai-research/status', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Status fetch failed'); return r.json(); }),
-      fetch('/api/admin/ai-research/drafts?status=pending_review&limit=30', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Drafts fetch failed'); return r.json(); }),
+      fetch('/api/admin/ai-research/status', { credentials: 'include' }).then(r => readApiResponse<AIStatus>(r)),
+      fetch('/api/admin/ai-research/drafts?status=pending_review&limit=30', { credentials: 'include' }).then(r => readApiResponse<DraftsResponse>(r)),
     ]).then(([s, d]) => {
       setStatus(s);
       setDrafts(d.drafts || []);
@@ -84,7 +92,7 @@ export default function AiResearchPage() {
     try {
       // Resolve slugs to phone IDs via the public lookup endpoint used elsewhere in admin.
       const lookups = await Promise.all(slugs.map(slug =>
-        fetch(`/api/phones/${encodeURIComponent(slug)}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null)
+        fetch(`/api/phones/${encodeURIComponent(slug)}`, { credentials: 'include' }).then(r => readApiResponse<PhoneLookupResponse>(r)).catch(() => null)
       ));
       const phoneIds = lookups.map(p => p?.id || p?._id).filter(Boolean);
       if (phoneIds.length === 0) { setJobMessage('None of those slugs matched an existing phone.'); setRunning(false); return; }
@@ -93,8 +101,7 @@ export default function AiResearchPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ type, phoneIds, batchSize: status?.policy?.batchSize || 1 }),
       });
-      const queued = await res.json();
-      if (!res.ok) { setJobMessage(queued.error || 'Job failed to queue.'); setRunning(false); return; }
+      const queued = await readApiResponse<ResearchJobResponse>(res);
 
       let current = queued;
       setJobMessage(`Queued ${queued.total} phone(s). Processing bounded batches…`);
@@ -102,7 +109,7 @@ export default function AiResearchPage() {
         const batchRes = await fetch(`/api/admin/ai-research/jobs/${queued.jobId}/run`, {
           method: 'POST', credentials: 'include',
         });
-        current = await batchRes.json();
+        current = await readApiResponse<ResearchJobResponse>(batchRes);
         if (batchRes.status === 429 && current.throttled) {
           const waitMs = current.nextRunAfter
             ? Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()))
@@ -111,7 +118,6 @@ export default function AiResearchPage() {
           await new Promise(resolve => setTimeout(resolve, waitMs));
           continue;
         }
-        if (!batchRes.ok) throw new Error(current.error || 'Research batch failed.');
         setJobMessage(`Processed ${current.processed}/${current.total} · drafts ${current.generated} · skipped ${current.skipped || 0} · failed ${current.failed} · AI calls ${current.providerCalls || 0}/${current.maxProviderCalls || 0}`);
         if (current.nextRunAfter && ['queued', 'running'].includes(current.status)) {
           const waitMs = Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()));
@@ -130,7 +136,7 @@ export default function AiResearchPage() {
     setReviewingId(id);
     try {
       const res = await fetch(`/api/admin/ai-research/drafts/${id}/${action}`, { method: 'POST', credentials: 'include' });
-      if (!res.ok) { const r = await res.json().catch(() => ({})); setError(r.error || `Failed to ${action} draft.`); return; }
+      await readApiResponse<ReviewResponse>(res);
       setDrafts(prev => prev.filter(d => d._id !== id));
     } catch {
       setError(`Failed to ${action} draft — check your network and try again.`);

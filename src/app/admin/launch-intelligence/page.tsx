@@ -19,6 +19,9 @@ interface Candidate {
   linkedPhoneId?: { modelName: string; slug: string; status: string };
 }
 
+interface LaunchListResponse { items: Candidate[]; counts: Record<string, number>; error?: string }
+interface LaunchActionResponse { success?: boolean; error?: string; message?: string }
+
 export default function LaunchIntelligencePage() {
   const [items, setItems] = useState<Candidate[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -31,8 +34,7 @@ export default function LaunchIntelligencePage() {
     setLoading(true);
     try {
       const response = await fetch(`/api/admin/launch-intelligence?status=${status}&limit=100`, { credentials: 'include', cache: 'no-store' });
-      const data = await readApiResponse(response);
-      if (!response.ok) throw new Error(data.error || 'Failed to load launch candidates');
+      const data = await readApiResponse<LaunchListResponse>(response);
       setItems(data.items || []);
       setCounts(data.counts || {});
     } catch (error) {
@@ -50,8 +52,7 @@ export default function LaunchIntelligencePage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action }),
       });
-      const data = await readApiResponse(response);
-      if (!response.ok) throw new Error(data.error || `${action} failed`);
+      await readApiResponse<LaunchActionResponse>(response);
       setMessage(action === 'approve' ? 'Draft phone created successfully.' : 'Candidate rejected.');
       await load();
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Action failed'); }

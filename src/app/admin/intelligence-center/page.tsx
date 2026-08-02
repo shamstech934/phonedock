@@ -24,8 +24,7 @@ export default function IntelligenceCenterPage() {
     setLoading(true); setError('');
     try {
       const response = await fetch('/api/admin/intelligence-center', { credentials: 'include', cache: 'no-store' });
-      const payload = await readApiResponse(response);
-      if (!response.ok) throw new Error(payload.error || 'Unable to load intelligence dashboard');
+      const payload = await readApiResponse<DashboardData>(response);
       setData(payload);
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load intelligence dashboard'); }
     finally { setLoading(false); }

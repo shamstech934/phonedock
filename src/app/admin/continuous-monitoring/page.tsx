@@ -15,6 +15,9 @@ interface MonitoringRun {
   alerts?: AlertItem[];
 }
 
+interface MonitoringListResponse { runs: MonitoringRun[]; error?: string }
+interface MonitoringActionResponse { success?: boolean; error?: string; run?: MonitoringRun }
+
 export default function ContinuousMonitoringPage() {
   const [runs, setRuns] = useState<MonitoringRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,8 +28,7 @@ export default function ContinuousMonitoringPage() {
     setError('');
     try {
       const response = await fetch('/api/admin/continuous-monitoring?limit=20', { credentials: 'include', cache: 'no-store' });
-      const data = await readApiResponse(response);
-      if (!response.ok) throw new Error(data.error || 'Failed to load monitoring history');
+      const data = await readApiResponse<MonitoringListResponse>(response);
       setRuns(data.runs || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load monitoring history');
@@ -44,8 +46,7 @@ export default function ContinuousMonitoringPage() {
       const response = await fetch('/api/admin/continuous-monitoring', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ syncFeeds: true }),
       });
-      const data = await readApiResponse(response);
-      if (!response.ok) throw new Error(data.error || 'Monitoring run failed');
+      await readApiResponse<MonitoringActionResponse>(response);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Monitoring run failed');
