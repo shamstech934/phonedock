@@ -8,6 +8,7 @@ import { parseBoundedInt } from '@/lib/http';
 import { PRICE_SOURCE_TYPES as PRICE_SOURCE_TYPE_VALUES } from '@/lib/price-source-types';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -904,6 +905,69 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       );
     }
 
+    let verificationStatus: 'pending' | 'verified' = 'pending';
+    let detectedPrice = 0;
+    let sourceTitle = '';
+    let availability: 'available' | 'unavailable' | 'unknown' = 'unknown';
+    let extractionMethod = '';
+    let extractionConfidence = 0;
+    let verificationMessage = source.trusted
+      ? 'The product page could not be verified automatically. Review it before enabling automatic checks.'
+      : 'Source is not trusted yet. Test and trust the source before automatic checks.';
+
+    if (source.trusted && source.enabled && source.status === 'active') {
+      const safety = await validateUrlForFetch(productUrl, source.allowedDomains || []);
+      if (safety.safe) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12_000);
+          const response = await fetch(productUrl, {
+            signal: controller.signal,
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          });
+          clearTimeout(timeout);
+          if (response.ok) {
+            const html = await response.text();
+            const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; ptaStatus?: string };
+            const validation = validateRetailListingPage({
+              html,
+              phoneModel: phoneIdentity.modelName || '',
+              brandName: phoneIdentity.brandName || '',
+              expectedRam: ram || '',
+              expectedStorage: storage || '',
+              expectedPtaStatus: ptaStatus || phoneIdentity.ptaStatus || '',
+            });
+            const extracted = extractRetailPrice(html);
+            sourceTitle = validation.title;
+            detectedPrice = extracted?.price || 0;
+            extractionMethod = extracted?.method || '';
+            extractionConfidence = extracted?.confidence || 0;
+            availability = /out\s*of\s*stock|unavailable|sold\s*out/i.test(html)
+              ? 'unavailable'
+              : /add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(html)
+                ? 'available'
+                : 'unknown';
+            if (validation.valid && detectedPrice > 0) {
+              verificationStatus = 'verified';
+              verificationMessage = 'Product page verified and ready for automatic price checks.';
+            } else {
+              verificationMessage = validation.reasons.join('; ') || 'No reliable PKR price was detected.';
+            }
+          } else {
+            verificationMessage = `Retailer returned HTTP ${response.status}.`;
+          }
+        } catch (error) {
+          verificationMessage = error instanceof Error ? error.message : 'Product page verification failed.';
+        }
+      } else {
+        verificationMessage = safety.reason || 'Product URL failed safety validation.';
+      }
+    }
+
     const listing = await PhoneRetailListing.create({
       phoneId,
       sourceId,
@@ -912,7 +976,15 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       storage: storage || '',
       ptaStatus: ptaStatus || '',
       warrantyType: warrantyType || '',
-      verificationStatus: 'pending',
+      sourceTitle,
+      currentSourcePrice: detectedPrice,
+      availability,
+      verificationStatus,
+      lastCheckedAt: source.trusted ? new Date() : null,
+      lastSuccessAt: verificationStatus === 'verified' ? new Date() : null,
+      extractionMethod,
+      extractionConfidence,
+      lastError: verificationStatus === 'verified' ? '' : verificationMessage,
     });
 
     try {
@@ -929,6 +1001,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       success: true,
       id: listing._id?.toString(),
       verificationStatus: listing.verificationStatus,
+      detectedPrice,
+      availability,
+      message: verificationMessage,
     });
   }
 
@@ -960,6 +1035,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     let availability = 'unknown' as string;
     let matched = false;
     let safeToEnable = false;
+    let extractionMethod: string | null = null;
+    let extractionConfidence = 0;
+    let testError = '';
 
     try {
       const controller = new AbortController();
@@ -987,6 +1065,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         // visible PKR price markup. The same parser is used by scheduled sync.
         const extracted = extractRetailPrice(html);
         detectedPrice = extracted?.price ?? null;
+        extractionMethod = extracted?.method ?? null;
+        extractionConfidence = extracted?.confidence ?? 0;
 
         // Check availability
         if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
@@ -995,8 +1075,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
           availability = 'available';
         }
       }
-    } catch {
+    } catch (error) {
       reachable = false;
+      testError = error instanceof Error ? error.message : 'Product page could not be fetched';
     }
 
     // Determine if the source is matched and safe to enable
@@ -1020,6 +1101,20 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       }
     }
 
+    if (sourceId) {
+      const healthUpdate = safeToEnable
+        ? {
+            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), failureCount: 0, status: 'active' },
+          }
+        : {
+            $set: { lastCheckedAt: new Date() },
+            $inc: { failureCount: 1 },
+          };
+      await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
+        console.error('[price-tracker:test-source:health]', error);
+      });
+    }
+
     return NextResponse.json({
       reachable,
       title: title || null,
@@ -1027,6 +1122,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       availability,
       matched,
       safeToEnable,
+      extractionMethod,
+      extractionConfidence,
+      error: safeToEnable ? null : (testError || (!reachable ? 'Product page is not reachable' : 'No reliable PKR price was detected')),
     });
   }
 

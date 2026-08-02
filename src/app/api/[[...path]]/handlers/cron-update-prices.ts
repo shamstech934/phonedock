@@ -65,7 +65,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   }
 
   // ── Process listings ──
-  const summary = { processed: 0, updated: 0, failed: 0, pending: 0 };
+  const summary = { processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0 };
+  const runStartedAt = new Date();
   const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
 
   // Load configurable settings
@@ -119,6 +120,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         if (!phone || !source) {
           summary.failed++;
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $inc: { failureCount: 1 },
+            $set: { lastError: 'Phone or source reference is missing', lastCheckedAt: new Date() },
+          });
           continue;
         }
 
@@ -137,6 +142,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         if (!ssrfCheck.safe) {
           console.warn(`[cron:prices] SSRF blocked: ${listing.productUrl} — ${ssrfCheck.reason}`);
           summary.failed++;
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $inc: { failureCount: 1 },
+            $set: { lastError: ssrfCheck.reason || 'Product URL failed safety validation', lastCheckedAt: new Date() },
+          });
           continue;
         }
 
@@ -188,6 +197,14 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
             const extracted = extractRetailPrice(html);
             detectedPrice = extracted?.price ?? null;
+            if (extracted) {
+              await PhoneRetailListing.findByIdAndUpdate(listingId, {
+                $set: {
+                  extractionMethod: extracted.method,
+                  extractionConfidence: extracted.confidence,
+                },
+              });
+            }
 
             // Check availability
             if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
@@ -203,6 +220,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle failed extraction ──
         if (fetchError) {
           summary.failed++;
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $inc: { failureCount: 1 },
+            $set: { lastError: 'Product page could not be fetched', lastCheckedAt: new Date() },
+          });
           const failedSource = await PriceSource.findByIdAndUpdate(
             source._id,
             { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
@@ -218,8 +239,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         if (availability === 'unavailable') {
           // Keep old price, just update listing availability
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { availability: 'unavailable' },
+            $set: { availability: 'unavailable', lastError: '', lastSuccessAt: new Date(), failureCount: 0 },
           });
+          summary.unavailable++;
           continue;
         }
 
@@ -238,6 +260,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
                 previousSourcePrice: 0,
                 availability: availability === 'unknown' ? 'available' : availability,
                 lastChangedAt: new Date(),
+                lastSuccessAt: new Date(),
+                failureCount: 0,
+                lastError: '',
               },
             });
             if (phone.manualLock !== true) {
@@ -275,6 +300,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               currentSourcePrice: detectedPrice,
               availability: availability === 'unknown' ? 'available' : availability,
               lastChangedAt: difference !== 0 ? new Date() : (listing as unknown as { lastChangedAt?: Date | null }).lastChangedAt,
+              lastSuccessAt: new Date(),
+              failureCount: 0,
+              lastError: '',
             },
           });
 
@@ -284,6 +312,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             await PriceSource.findByIdAndUpdate(source._id, {
               $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
             });
+            summary.unchanged++;
             continue;
           }
 
@@ -358,6 +387,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         } else {
           // Price extraction failed (but page loaded) — keep old price, increment failure
           summary.failed++;
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $inc: { failureCount: 1 },
+            $set: { lastError: 'No reliable PKR price was detected on the product page', lastCheckedAt: new Date() },
+          });
           const failedSource = await PriceSource.findByIdAndUpdate(
             source._id,
             { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
@@ -395,6 +428,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     batchLimit: Math.max(1, Math.min(BATCH_SIZE, 50)),
     eligibleTotal: eligibleRemaining,
     hasMore: eligibleRemaining > summary.processed,
+    startedAt: runStartedAt.toISOString(),
+    completedAt: new Date().toISOString(),
   });
 }
 

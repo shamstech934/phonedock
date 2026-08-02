@@ -41,6 +41,11 @@ const PhoneRetailListingSchema = new Schema({
   availability: { type: String, enum: ['available', 'unavailable', 'unknown'], default: 'unknown' },
   lastCheckedAt: { type: Date, default: null },
   lastChangedAt: { type: Date, default: null },
+  lastSuccessAt: { type: Date, default: null },
+  failureCount: { type: Number, default: 0 },
+  lastError: { type: String, default: '' },
+  extractionMethod: { type: String, enum: ['json-ld', 'meta', 'data-attribute', 'visible-text', ''], default: '' },
+  extractionConfidence: { type: Number, default: 0 },
   enabled: { type: Boolean, default: true },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected', 'failed'], default: 'pending' },
 }, { timestamps: true });
@@ -49,6 +54,8 @@ PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ verificationStatus: 1 });
+PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, lastCheckedAt: 1 });
+PhoneRetailListingSchema.index({ failureCount: -1, lastCheckedAt: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
   unique: true,
