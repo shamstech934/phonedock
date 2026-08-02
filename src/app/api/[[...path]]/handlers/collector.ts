@@ -5,7 +5,6 @@ import { createProvider } from '@/lib/collectors/providers';
 import { startJob, approveAndImport } from '@/lib/collectors/job-runner';
 import type { ProviderConfig, ProviderType } from '@/lib/collectors/types';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
-import { discoverPhoneModels } from '@/lib/ai-enrichment';
 import { generateSlug } from '@/lib/import/validators';
 import { randomUUID } from 'node:crypto';
 
@@ -58,7 +57,8 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
         pagesPerInvocation: pagesPerInvocationEnv > 0 ? pagesPerInvocationEnv : 'unlimited',
         maxCollectPerJob: 2000,
         schedulerEnabled: true,
-        aiDiscoverConfigured: Boolean(process.env.TAVILY_API_KEY) && Boolean(process.env.AI_PROVIDER ? (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY) : process.env.OPENROUTER_API_KEY),
+        deterministicOnly: true,
+        aiDiscoverConfigured: false,
       },
     });
   }
@@ -156,8 +156,10 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     await connectDB();
-    const sources = await CollectorSource.find({ enabled: true }).lean();
-    if (!sources.length) return NextResponse.json({ error: 'No enabled sources to run' }, { status: 400 });
+    const enabledSources = await CollectorSource.find({ enabled: true }).lean();
+    const sources = enabledSources.filter(source => source.type === 'file_upload' || Boolean(String(source.endpoint || '').trim()));
+    const unconfigured = enabledSources.filter(source => !sources.some(candidate => String(candidate._id) === String(source._id))).map(source => source.name);
+    if (!sources.length) return NextResponse.json({ error: 'No configured enabled sources to run', unconfigured }, { status: 400 });
     const started: string[] = []; const skipped: string[] = [];
     for (const source of sources) {
       const active = await CollectorJob.exists({ sourceId: source._id, status: { $in: ['queued', 'running', 'paused'] } });
@@ -167,7 +169,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       started.push(source.name);
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_run_all', details: `Started ${started.length} job(s), skipped ${skipped.length} (already active)`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, started, skipped });
+    return NextResponse.json({ success: true, started, skipped, unconfigured });
   }
 
   // ---- /api/collector/jobs ----
@@ -187,23 +189,16 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     return NextResponse.json({ success: true, id: job._id });
   }
 
-  // ---- /api/collector/discover — find real phone models for a brand/year/series via web search ----
+  // ---- /api/collector/discover ----
+  // AI/web-search discovery is intentionally disabled. Production collection
+  // runs only from admin-approved JSON/CSV/XML/RSS/API/manual sources.
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'discover') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    const body = await req.json().catch(() => ({}));
-    const brand = String(body.brand || '').trim();
-    const year = String(body.year || '').trim();
-    const series = String(body.series || '').trim();
-    if (!brand) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
-    let models;
-    try {
-      models = await discoverPhoneModels(brand, year, series);
-    } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : 'Discovery failed' }, { status: 400 });
-    }
-    if (!models.length) return NextResponse.json({ models: [], message: 'No models found in web search results for this brand/year/series.' });
-    return NextResponse.json({ models });
+    return NextResponse.json({
+      error: 'AI discovery is disabled. Configure an approved Collector Source and run a deterministic collector job.',
+      deterministicOnly: true,
+    }, { status: 410 });
   }
 
   // ---- /api/collector/discover/stage — save selected discovered models as pending CollectedPhone entries for review ----
@@ -224,9 +219,9 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       if (exists) continue;
       await CollectedPhone.create({
         status: 'pending', brandName: brand, model: modelName, slug,
-        sourceName: 'AI Discover', sourceUrl: m.sourceUrl || '',
+        sourceName: 'Manual Discovery', sourceUrl: m.sourceUrl || '',
         collectedAt: new Date(), qualityScore: 0, completenessScore: 0, confidenceScore: 30,
-        validationIssues: ['Discovered via AI search — specs not yet collected. Run AI Research or a source import to fill in details before approving.'],
+        validationIssues: ['Manually staged without verified specifications. Run an approved collector source or import a verified dataset before approving.'],
         isValid: false,
       });
       staged++;

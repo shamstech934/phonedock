@@ -6,6 +6,8 @@ import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { parseBoundedInt } from '@/lib/http';
 import { PRICE_SOURCE_TYPES as PRICE_SOURCE_TYPE_VALUES } from '@/lib/price-source-types';
+import { extractRetailPrice } from '@/lib/price-extraction';
+import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -97,6 +99,23 @@ function normalizeAllowedDomains(value: unknown, baseUrl = ''): string[] {
   }
   return [...new Set(domains)];
 }
+
+function isLikelyProductPageUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    // A domain homepage or a single generic catalogue segment is not a stable
+    // product record and must never be marked verified automatically.
+    if (!path || path === '/') return false;
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length < 2) return false;
+    if (/^(mobiles?|phones?|products?|shop|store|category|collections?)$/i.test(segments.at(-1) || '')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 export async function getPriceTrackerSettings() {
   const doc = await SystemState.findOne({ key: PT_SETTINGS_KEY }).lean();
@@ -541,18 +560,30 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phones = await Phone.find({
       active: true,
       status: 'published',
-      sourceUrl: { $regex: '^https://' },
     }).select('_id modelName sourceUrl').lean();
 
     let linked = 0;
     let alreadyLinked = 0;
     let unmatched = 0;
+    let rejectedHomepageUrls = 0;
+    let missingProductUrls = 0;
     const examples: string[] = [];
 
     for (const phone of phones) {
+      const sourceUrl = String(phone.sourceUrl || '').trim();
+      if (!sourceUrl) {
+        missingProductUrls++;
+        continue;
+      }
+      if (!isLikelyProductPageUrl(sourceUrl)) {
+        rejectedHomepageUrls++;
+        if (examples.length < 5) examples.push(`${phone.modelName}: URL is not a product page`);
+        continue;
+      }
+
       let hostname = '';
       try {
-        hostname = new URL(phone.sourceUrl).hostname.toLowerCase();
+        hostname = new URL(sourceUrl).hostname.toLowerCase();
       } catch {
         unmatched++;
         continue;
@@ -566,7 +597,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         unmatched++;
         if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
         await PriceMatchCandidate.findOneAndUpdate(
-          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+          { phoneId: phone._id, sourceUrl: sourceUrl },
           {
             $set: {
               hostname,
@@ -584,12 +615,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const existing = await PhoneRetailListing.findOne({
         phoneId: phone._id,
         sourceId: source._id,
-        productUrl: phone.sourceUrl,
+        productUrl: sourceUrl,
       }).select('_id').lean();
       if (existing) {
         alreadyLinked++;
         await PriceMatchCandidate.updateOne(
-          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+          { phoneId: phone._id, sourceUrl: sourceUrl },
           { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
         );
         continue;
@@ -598,13 +629,13 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       await PhoneRetailListing.create({
         phoneId: phone._id,
         sourceId: source._id,
-        productUrl: phone.sourceUrl,
+        productUrl: sourceUrl,
         sourceTitle: phone.modelName,
         enabled: true,
         verificationStatus: 'verified',
       });
       await PriceMatchCandidate.updateOne(
-        { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+        { phoneId: phone._id, sourceUrl: sourceUrl },
         { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
       );
       linked++;
@@ -623,6 +654,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       linked,
       alreadyLinked,
       unmatched,
+      missingProductUrls,
+      rejectedHomepageUrls,
+      eligibleProductUrls: Math.max(0, phones.length - missingProductUrls - rejectedHomepageUrls),
       unmatchedExamples: examples,
     });
   }
@@ -949,24 +983,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (titleMatch) title = titleMatch[1].trim().slice(0, 200);
 
-        // Try to extract price in PKR — look for common patterns
-        const pricePatterns = [
-          /(?:PKR|Rs\.?|₨)\s*([\d,]+(?:\.\d{1,2})?)/i,
-          /price[^>]*>\s*(?:PKR|Rs\.?|₨)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-          /"price"\s*:\s*"?([\d,]+(?:\.\d{1,2})?)"?/i,
-          /data-price="([\d,]+(?:\.\d{1,2})?)"/i,
-        ];
-
-        for (const pattern of pricePatterns) {
-          const m = html.match(pattern);
-          if (m) {
-            const parsed = parseFloat(m[1].replace(/,/g, ''));
-            if (parsed > 0) {
-              detectedPrice = parsed;
-              break;
-            }
-          }
-        }
+        // Shared deterministic extraction supports JSON-LD, meta tags and
+        // visible PKR price markup. The same parser is used by scheduled sync.
+        const extracted = extractRetailPrice(html);
+        detectedPrice = extracted?.price ?? null;
 
         // Check availability
         if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
