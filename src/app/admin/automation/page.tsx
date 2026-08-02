@@ -9,6 +9,12 @@ interface AutomationStatus {
   lastRun: { at: string; details: string } | null;
 }
 
+interface AutomationRunResult {
+  durationMs?: number;
+  prices?: { updated?: number };
+  lifecycle?: { launched?: number };
+}
+
 export default function AutomationControlPage() {
   const [status, setStatus] = useState<AutomationStatus | null>(null);
   const [running, setRunning] = useState(false);
@@ -17,8 +23,7 @@ export default function AutomationControlPage() {
 
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/automation', { credentials: 'include', cache: 'no-store' });
-    const payload = await readApiResponse(response).catch(() => null);
-    if (!response.ok) throw new Error(payload?.error || 'Automation status could not load');
+    const payload = await readApiResponse<AutomationStatus>(response);
     setStatus(payload);
   }, []);
 
@@ -28,8 +33,7 @@ export default function AutomationControlPage() {
     setRunning(true); setError(''); setMessage('');
     try {
       const response = await fetch('/api/admin/automation/run', { method: 'POST', credentials: 'include' });
-      const payload = await readApiResponse(response).catch(() => null);
-      if (!response.ok) throw new Error(payload?.error || 'Pipeline failed');
+      const payload = await readApiResponse<AutomationRunResult>(response);
       setMessage(`Pipeline complete in ${Math.round((payload.durationMs || 0) / 1000)}s · ${payload.prices?.updated || 0} prices updated · ${payload.lifecycle?.launched || 0} launches activated`);
       await load();
     } catch (reason) {
