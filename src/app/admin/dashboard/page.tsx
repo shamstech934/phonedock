@@ -42,6 +42,16 @@ interface DashboardStats {
     total: number;
     succeeded: number;
     failed: number;
+    created?: number;
+    updated?: number;
+    replaced?: number;
+    skipped?: number;
+    currentBatch?: number;
+    totalBatches?: number;
+    metricLabels?: [string, string, string] | string[];
+    reason?: string;
+    actionLabel?: string;
+    actionHref?: string;
     lastRunAt?: string | null;
   } | null>;
   recentActivity: Array<{
@@ -121,6 +131,7 @@ export default function AdminDashboardPage() {
     if (['completed', 'configured', 'ready', 'healthy'].includes(normalized)) return 'text-emerald-700 bg-emerald-50 border-emerald-100';
     if (['running', 'processing', 'queued', 'pending', 'uploaded', 'validating'].includes(normalized)) return 'text-blue-700 bg-blue-50 border-blue-100';
     if (['failed', 'cancelled', 'completed_with_errors', 'completed_with_warnings', 'not_configured'].includes(normalized)) return 'text-amber-700 bg-amber-50 border-amber-100';
+    if (['not_run'].includes(normalized)) return 'text-slate-600 bg-slate-50 border-slate-200';
     return 'text-slate-700 bg-slate-50 border-slate-100';
   };
   const humanStatus = (status?: string) => (status || 'Not run').replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
@@ -157,6 +168,11 @@ export default function AdminDashboardPage() {
       return raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
     }
   };
+
+  const dedupedRecentActivity = (stats.recentActivity || []).filter((log, index, all) => {
+    const key = `${log.action || ''}|${humanizeActivity(log)}`;
+    return all.findIndex(candidate => `${candidate.action || ''}|${humanizeActivity(candidate)}` === key) === index;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -221,15 +237,16 @@ export default function AdminDashboardPage() {
             <p className="text-xs font-medium text-emerald-800 mt-1">Overall completeness</p>
           </div>
           {[
-            { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices' },
-            { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
-            { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs' },
-            { label: 'No gallery records', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
+            { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices', action: 'Open queue' },
+            { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images', action: 'Open queue' },
+            { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs', action: 'Open queue' },
+            { label: 'No gallery records', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images', action: 'Review gallery queue' },
           ].map(item => (
             <Link key={item.label} href={item.href} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
               <div className="flex items-center justify-between gap-2"><item.icon className="w-4 h-4 text-gray-500" /><span className={`text-xs font-semibold ${(item.value || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{(item.value || 0) > 0 ? 'Needs work' : 'Clear'}</span></div>
               <p className="text-xl font-extrabold text-gray-900 mt-3">{item.value}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{item.label}</p>
+              {(item.value || 0) > 0 && <p className="text-[10px] font-semibold text-blue-600 mt-2">{item.action}</p>}
             </Link>
           ))}
         </div>
@@ -257,7 +274,7 @@ export default function AdminDashboardPage() {
             const item = stats.automationHealth?.[key];
             const label = item?.label || fallbackLabel;
             return (
-              <Link key={key} href={href} className="rounded-2xl border border-gray-100 bg-white p-4 hover:border-blue-200 transition-colors">
+              <Link key={key} href={item?.actionHref || href} className="rounded-2xl border border-gray-100 bg-white p-4 hover:border-blue-200 transition-colors">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-gray-900 truncate">{fallbackLabel}</p>
@@ -266,11 +283,18 @@ export default function AdminDashboardPage() {
                   <span className={`text-[10px] font-semibold rounded-full border px-2 py-1 whitespace-nowrap ${statusTone(item?.status)}`}>{humanStatus(item?.status)}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                  <div><p className="text-sm font-extrabold text-gray-900">{item?.processed ?? 0}</p><p className="text-[9px] text-muted-foreground">Processed</p></div>
-                  <div><p className="text-sm font-extrabold text-emerald-600">{item?.succeeded ?? 0}</p><p className="text-[9px] text-muted-foreground">Success</p></div>
-                  <div><p className="text-sm font-extrabold text-red-500">{item?.failed ?? 0}</p><p className="text-[9px] text-muted-foreground">Failed</p></div>
+                  <div><p className="text-sm font-extrabold text-gray-900">{item?.processed ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[0] || 'Processed'}</p></div>
+                  <div><p className="text-sm font-extrabold text-emerald-600">{item?.succeeded ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[1] || 'Success'}</p></div>
+                  <div><p className="text-sm font-extrabold text-red-500">{item?.failed ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[2] || 'Failed'}</p></div>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-3">Last run: {formatLastRun(item?.lastRunAt)}</p>
+                {key === 'import' && item && (
+                  <p className="text-[10px] text-muted-foreground mt-3">Created {item.created ?? 0} · Updated {item.updated ?? 0} · Skipped {item.skipped ?? 0}</p>
+                )}
+                {item?.reason && <p className="text-[10px] text-muted-foreground mt-2 leading-4">{item.reason}</p>}
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <p className="text-[10px] text-muted-foreground">Last run: {formatLastRun(item?.lastRunAt)}</p>
+                  {item?.actionHref && <span className="text-[10px] font-semibold text-blue-600">{item.actionLabel || 'Open'}</span>}
+                </div>
               </Link>
             );
           })}
@@ -298,7 +322,7 @@ export default function AdminDashboardPage() {
             <Link href="/admin/activity" className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 shrink-0">View All <ArrowRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-3">
-            {(stats.recentActivity || []).slice(0, 6).map((log, i: number) => (
+            {dedupedRecentActivity.slice(0, 6).map((log, i: number) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
                 {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
@@ -309,7 +333,7 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             ))}
-            {(!stats.recentActivity || stats.recentActivity.length === 0) && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
+            {dedupedRecentActivity.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
           </div>
         </div>
       </div>
