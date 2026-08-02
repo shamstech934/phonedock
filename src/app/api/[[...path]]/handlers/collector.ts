@@ -119,6 +119,26 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
+    // Recover serverless invocations that were terminated before the runner
+    // could write a final status. A running job with no heartbeat for two
+    // minutes is safe to pause and can be resumed from its last batch.
+    const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
+    await CollectorJob.updateMany(
+      {
+        status: 'running',
+        $or: [
+          { lastProcessedAt: { $lt: staleBefore } },
+          { lastProcessedAt: { $exists: false }, startedAt: { $lt: staleBefore } },
+        ],
+      },
+      {
+        $set: {
+          status: 'paused',
+          lastError: 'Collector run exceeded the serverless execution window. Resume to continue from the saved batch.',
+          lastProcessedAt: new Date(),
+        },
+      },
+    );
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
     return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({
       ...j,

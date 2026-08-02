@@ -20,7 +20,7 @@ const manual = fs.readFileSync(path.join(root, 'src/lib/collectors/providers/man
 const registry = fs.readFileSync(path.join(root, 'src/lib/collectors/parsers/registry.ts'), 'utf8');
 const checks = {
   registry: /getManufacturerParser/.test(manual) && /GenericManufacturerParser/.test(registry),
-  boundedProductCrawl: /maxProductPages/.test(manual) && /slice\(0, productPageLimit\)/.test(manual),
+  boundedProductCrawl: /maxProductPages/.test(manual) && /sliceStart/.test(manual) && /hasNextPage/.test(manual) && /COLLECTOR_PROVIDER_BUDGET_MS/.test(manual),
   provenance: /sourceUrl/.test(manual),
   genericFallback: /plugins\[plugins\.length - 1\]/.test(registry),
   noAiDependency: !/openai|anthropic|gemini|tavily/i.test(manual + registry),

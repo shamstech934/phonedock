@@ -11,7 +11,7 @@ const MAX_COLLECT_PER_JOB = 2000;
 // Vercel serverless: limit pages per invocation to stay within timeout.
 // Set via env var (default 3 pages ~ safe for 60s Pro tier).
 // For self-hosted or long-running functions, set to 0 for unlimited.
-const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '3') || 0;
+const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '1') || 0;
 
 
 function sanitizeCollectorError(error: unknown): string {
@@ -141,6 +141,7 @@ export async function startJob(jobId: string): Promise<void> {
           return;
         }
 
+        await CollectorJob.updateOne({ _id: jobId }, { $set: { lastProcessedAt: new Date(), currentBatch: Math.max(0, page - 1) } });
         const result: ProviderFetchResult = await provider.fetch(page);
         pagesProcessedThisInvocation += 1;
 

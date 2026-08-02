@@ -36,6 +36,13 @@ export default function AdminCollectorJobsPage() {
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
+  useEffect(() => {
+    const hasActiveJob = jobs.some(job => job.status === 'queued' || job.status === 'running');
+    if (!hasActiveJob) return;
+    const timer = window.setInterval(() => fetchJobs(), 5000);
+    return () => window.clearInterval(timer);
+  }, [jobs, fetchJobs]);
+
   const deleteJob = async (id: string) => {
     try {
       const response = await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ jobId: id }) });

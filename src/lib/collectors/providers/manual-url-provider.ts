@@ -19,7 +19,7 @@ function normalizePhone(phone: NormalizedPhone | null, generateSlug: (brand: str
 }
 
 export class ManualUrlProvider extends BaseProvider {
-  async fetch(): Promise<ProviderFetchResult> {
+  async fetch(page: number = 1): Promise<ProviderFetchResult> {
     const url = this.config.endpoint;
     if (!url) return { phones: [], hasNextPage: false, providerErrors: ['No URL configured'] };
 
@@ -29,7 +29,12 @@ export class ManualUrlProvider extends BaseProvider {
       sourceName: this.sourceName,
     };
 
-    const response = await this.fetchWithTimeout(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8' } });
+    const catalogTimeoutMs = Math.max(5000, Math.min(12000, Number(this.config.timeoutMs || 30000)));
+    const response = await this.fetchWithTimeout(
+      url,
+      { headers: { Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8' } },
+      catalogTimeoutMs,
+    );
     if (!response.ok) return { phones: [], hasNextPage: false, providerErrors: [`Catalog page returned HTTP ${response.status}`] };
 
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
@@ -45,13 +50,32 @@ export class ManualUrlProvider extends BaseProvider {
     const catalogPhone = normalizePhone(parser.parseProduct(html, url, context), this.generateSlug.bind(this));
     if (catalogPhone && discovered.length === 0) phones.push(catalogPhone);
 
-    const productPageLimit = Math.max(1, Math.min(50, Number(this.config.maxProductPages || process.env.COLLECTOR_PRODUCT_PAGE_LIMIT || 20)));
-    for (const candidate of discovered.slice(0, productPageLimit)) {
+    // Process a bounded slice per invocation. This keeps Vercel/GitHub serverless
+    // requests under their execution limits and lets the job runner resume on
+    // the next page instead of leaving jobs stuck in `running` forever.
+    const pageSize = Math.max(1, Math.min(8, Number(this.config.maxProductPages || process.env.COLLECTOR_PRODUCT_PAGE_LIMIT || 6)));
+    const pageNumber = Math.max(1, Number(page || 1));
+    const sliceStart = (pageNumber - 1) * pageSize;
+    const candidates = discovered.slice(sliceStart, sliceStart + pageSize);
+    const hasNextPage = sliceStart + pageSize < discovered.length;
+    const productTimeoutMs = Math.max(4000, Math.min(8000, Number(this.config.timeoutMs || 30000)));
+    const concurrency = Math.max(1, Math.min(4, Number(process.env.COLLECTOR_PRODUCT_CONCURRENCY || 3)));
+    const deadline = Date.now() + Math.max(12000, Math.min(35000, Number(process.env.COLLECTOR_PROVIDER_BUDGET_MS || 30000)));
+
+    const processCandidate = async (candidate: (typeof candidates)[number]): Promise<NormalizedPhone | null> => {
+      if (Date.now() >= deadline) {
+        warnings.push('Collector time budget reached; remaining product pages will continue on the next run.');
+        return null;
+      }
       try {
-        const productResponse = await this.fetchWithTimeout(candidate.url, { headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' } });
+        const productResponse = await this.fetchWithTimeout(
+          candidate.url,
+          { headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' } },
+          productTimeoutMs,
+        );
         if (!productResponse.ok) {
           warnings.push(`${candidate.url}: HTTP ${productResponse.status}`);
-          continue;
+          return null;
         }
         const productHtml = await this.readTextLimited(productResponse);
         let parsed = parser.parseProduct(productHtml, candidate.url, context);
@@ -66,11 +90,18 @@ export class ManualUrlProvider extends BaseProvider {
           };
         }
         const phone = parsed ? normalizePhone(parsed, this.generateSlug.bind(this)) : null;
-        if (phone) phones.push(phone);
-        else warnings.push(`${candidate.url}: product identity could not be confirmed`);
+        if (!phone) warnings.push(`${candidate.url}: product identity could not be confirmed`);
+        return phone;
       } catch (error: unknown) {
         warnings.push(`${candidate.url}: ${error instanceof Error ? error.message : 'request failed'}`);
+        return null;
       }
+    };
+
+    for (let index = 0; index < candidates.length; index += concurrency) {
+      if (Date.now() >= deadline) break;
+      const batch = await Promise.all(candidates.slice(index, index + concurrency).map(processCandidate));
+      for (const phone of batch) if (phone) phones.push(phone);
     }
 
     const unique = new Map<string, NormalizedPhone>();
@@ -79,17 +110,23 @@ export class ManualUrlProvider extends BaseProvider {
 
     if (!filtered.length) {
       const detail = discovered.length
-        ? `Discovered ${discovered.length} possible product links, but none produced a confirmed phone record.`
+        ? `Discovered ${discovered.length} possible product links, but page ${pageNumber} produced no confirmed phone record.`
         : `No product links or Product JSON-LD were exposed by this page.`;
       return {
         phones: [],
-        hasNextPage: false,
-        providerErrors: [`${detail} Parser: ${parser.id}. Use a JSON/CSV/RSS feed or configure a brand-specific parser if the site renders products only in JavaScript.`],
+        totalAvailable: discovered.length || undefined,
+        hasNextPage,
+        providerErrors: [`${detail} Parser: ${parser.id}. Use a JSON/CSV/RSS feed or configure a brand-specific parser if the site renders products only in JavaScript.`, ...warnings].slice(0, 20),
       };
     }
 
-    // Warnings are useful diagnostics but should not turn a productive job into failure.
-    return { phones: filtered, hasNextPage: false, providerErrors: warnings.slice(0, 20) };
+    // Warnings are diagnostics; productive records still proceed to review.
+    return {
+      phones: filtered,
+      totalAvailable: discovered.length || filtered.length,
+      hasNextPage,
+      providerErrors: warnings.slice(0, 20),
+    };
   }
 
   private async fetchJsonResponse(response: Response): Promise<ProviderFetchResult> {
