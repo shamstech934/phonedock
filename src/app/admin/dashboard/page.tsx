@@ -122,7 +122,7 @@ export default function AdminDashboardPage() {
   const automationEntries = [
     ['import', 'Import Engine', '/admin/import-v2'],
     ['sync', 'Sync', '/admin/sync'],
-    ['collector', 'Collector', '/admin/collector-jobs'],
+    ['collector', 'Collector', '/admin/collector/jobs'],
     ['monitoring', 'Monitoring', '/admin/continuous-monitoring'],
     ['priceTracker', 'Price Tracker', '/admin/price-tracker'],
   ] as const;

@@ -240,7 +240,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
           metricLabels: ['Scanned', 'Candidates', 'Failed'],
           reason: latestCollectorJob.lastError || '',
           actionLabel: latestCollectorJob.status === 'failed' ? 'Review collector job' : 'Open collector jobs',
-          actionHref: '/admin/collector-jobs',
+          actionHref: '/admin/collector/jobs',
           lastRunAt: latestCollectorJob.completedAt || latestCollectorJob.updatedAt || latestCollectorJob.startedAt || null,
         } : {
           status: 'not_run',
@@ -252,7 +252,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
           metricLabels: ['Scanned', 'Candidates', 'Failed'],
           reason: 'No collector job exists yet. Configure a source, then run the collector.',
           actionLabel: 'Configure collector',
-          actionHref: '/admin/collector-sources',
+          actionHref: '/admin/collector/sources',
           lastRunAt: null,
         },
         monitoring: latestMonitoringRun ? (() => {
@@ -286,7 +286,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
             ? `${publishedPhones - monitoredPhoneIds.length} published phones still need an exact verified retailer product URL.`
             : 'Add exact retailer product-page URLs and verify them before automatic price checks can run.',
           actionLabel: monitoredPhoneIds.length > 0 ? 'Open Price Tracker' : 'Configure sources',
-          actionHref: monitoredPhoneIds.length > 0 ? '/admin/price-tracker' : '/admin/collector-sources',
+          actionHref: monitoredPhoneIds.length > 0 ? '/admin/price-tracker' : '/admin/collector/sources',
           lastRunAt: latestPriceCheck?.checkedAt || latestPriceCheck?.createdAt || null,
         },
       },

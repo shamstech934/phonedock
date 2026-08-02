@@ -1,1 +1,1 @@
-SpecsDekh v31.1
+SpecsDekh v31.2 - Collector Route Compatibility Fix
