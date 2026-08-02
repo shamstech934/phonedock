@@ -150,6 +150,9 @@ export interface NormalizedPhone {
   images?: string[];
   thumbnail?: string;
 
+  // Source traceability for collector review/import provenance
+  sourceUrl?: string;
+
   // Pakistan-specific (never auto-populated from global sources)
   pakistanPrice?: number;
   pakistanMarketPrice?: number;
