@@ -21,6 +21,11 @@ for (const file of adminSources) {
 }
 const uniqueEndpoints = [...new Map(endpointRows.map(x => [x.endpoint,x])).values()].sort((a,b)=>a.endpoint.localeCompare(b.endpoint));
 const missingEndpointEvidence = uniqueEndpoints.filter(x => {
+  const routePath = path.join(root, 'src/app', x.endpoint, 'route.ts');
+  const routePathJs = path.join(root, 'src/app', x.endpoint, 'route.js');
+  if (fs.existsSync(routePath) || fs.existsSync(routePathJs)) return false;
+
+  // Catch-all APIs may implement endpoints without a dedicated route folder.
   const pieces = x.endpoint.replace(/^\/api\//,'').split('/').filter(Boolean);
   return !pieces.every(piece => apiCorpus.includes(`'${piece}'`) || apiCorpus.includes(`\"${piece}\"`) || apiCorpus.includes(piece));
 });

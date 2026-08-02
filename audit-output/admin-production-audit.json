@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-08-01T13:16:20.861Z",
-  "adminPages": 50,
-  "adminSourceFiles": 85,
-  "apiSourceFiles": 34,
-  "literalAdminApiEndpoints": 98,
+  "generatedAt": "2026-08-02T11:45:02.916Z",
+  "adminPages": 53,
+  "adminSourceFiles": 88,
+  "apiSourceFiles": 37,
+  "literalAdminApiEndpoints": 100,
   "endpointEvidenceMissing": [],
   "findings": [],
   "buildCertification": {

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Link2, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 type PhoneOption = { _id: string; modelName: string; slug: string; brandName?: string };
+type AffiliateLinksPayload = { ok?: boolean; links?: LinkRow[]; phones?: PhoneOption[]; error?: string; message?: string };
+type AffiliateActionPayload = { ok?: boolean; id?: string; error?: string; message?: string };
 type LinkRow = {
   _id: string; storeKey: 'daraz' | 'priceoye' | 'mega'; storeName: string; destinationUrl: string; trackingId?: string;
   phoneId?: PhoneOption | null; priority: number; availability: 'in_stock' | 'out_of_stock' | 'preorder' | 'unknown';
@@ -31,9 +33,15 @@ export default function AffiliateLinksPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch('/api/admin/affiliate-links', { credentials: 'include', cache: 'no-store' });
-    const data = await res.json();
-    if (!res.ok) setMessage(data.error || 'Unable to load affiliate links');
-    else { setLinks(data.links || []); setPhones(data.phones || []); }
+    const data = await readApiResponse<AffiliateLinksPayload>(res).catch(() => null);
+    if (!res.ok || !data) {
+      setMessage(data?.error || data?.message || `Unable to load affiliate links (HTTP ${res.status})`);
+      setLinks([]);
+      setPhones([]);
+    } else {
+      setLinks(Array.isArray(data.links) ? data.links : []);
+      setPhones(Array.isArray(data.phones) ? data.phones : []);
+    }
     setLoading(false);
   }, []);
 
@@ -61,17 +69,17 @@ export default function AffiliateLinksPage() {
       method, credentials: 'include', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, priority: Number(form.priority), expiresAt: form.expiresAt || null }),
     });
-    const data = await res.json();
+    const data = await readApiResponse<AffiliateActionPayload>(res).catch(() => null);
     setSaving(false);
-    if (!res.ok) return setMessage(data.error || 'Save failed');
+    if (!res.ok || !data) return setMessage(data?.error || data?.message || `Save failed (HTTP ${res.status})`);
     setOpen(false); setForm(blankForm); setMessage('Affiliate link saved.'); await load();
   };
 
   const remove = async (row: LinkRow) => {
     if (!window.confirm(`Delete ${row.storeName}${row.phoneId ? ` link for ${row.phoneId.modelName}` : ' default link'}?`)) return;
     const res = await fetch(`/api/admin/affiliate-links?id=${encodeURIComponent(row._id)}`, { method: 'DELETE', credentials: 'include' });
-    const data = await res.json();
-    if (!res.ok) return setMessage(data.error || 'Delete failed');
+    const data = await readApiResponse<AffiliateActionPayload>(res).catch(() => null);
+    if (!res.ok || !data) return setMessage(data?.error || data?.message || `Delete failed (HTTP ${res.status})`);
     setMessage('Affiliate link deleted.'); await load();
   };
 
