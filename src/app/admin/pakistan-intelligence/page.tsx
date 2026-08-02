@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -60,7 +61,7 @@ export default function PakistanIntelligencePage() {
     setLoading(true); setError('');
     try {
       const response = await fetch(`/api/admin/pakistan-intelligence?status=${encodeURIComponent(status)}&type=${encodeURIComponent(type)}&page=${page}`, { credentials: 'include', cache: 'no-store' });
-      const payload = await response.json();
+      const payload = await readApiResponse(response);
       if (!response.ok) throw new Error(payload.error || 'Unable to load Pakistan Intelligence');
       setData(payload);
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load Pakistan Intelligence'); }
@@ -76,7 +77,7 @@ export default function PakistanIntelligencePage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(action === 'scan' ? { action, limit: 150 } : { action, id }),
       });
-      const payload = await response.json();
+      const payload = await readApiResponse(response);
       if (!response.ok) throw new Error(payload.error || 'Action failed');
       setMessage(action === 'scan' ? `Scan complete: ${payload.scannedPhones} phones checked, ${payload.signalsSeen} signals reviewed.` : action === 'apply' ? 'Recommendation applied.' : 'Signal dismissed.');
       await load();

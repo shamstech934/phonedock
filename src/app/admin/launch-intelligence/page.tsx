@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Check, ExternalLink, Loader2, RefreshCw, Rocket, X } from 'lucide-react';
@@ -30,7 +31,7 @@ export default function LaunchIntelligencePage() {
     setLoading(true);
     try {
       const response = await fetch(`/api/admin/launch-intelligence?status=${status}&limit=100`, { credentials: 'include', cache: 'no-store' });
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || 'Failed to load launch candidates');
       setItems(data.items || []);
       setCounts(data.counts || {});
@@ -49,7 +50,7 @@ export default function LaunchIntelligencePage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, action }),
       });
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || `${action} failed`);
       setMessage(action === 'approve' ? 'Draft phone created successfully.' : 'Candidate rejected.');
       await load();

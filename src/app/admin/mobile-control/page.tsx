@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { AppWindow, BellRing, ExternalLink, Loader2, Save, ShieldAlert, Smartphone } from 'lucide-react';
@@ -56,7 +57,7 @@ export default function MobileControlPage() {
 
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/settings', { credentials: 'include', cache: 'no-store' });
-    const payload = await response.json().catch(() => null);
+    const payload = await readApiResponse(response).catch(() => null);
     if (!response.ok) throw new Error(payload?.error || 'Mobile settings could not load');
     const value = payload?.settings?.mobileApp || {};
     setForm({
@@ -81,7 +82,7 @@ export default function MobileControlPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobileApp: form }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await readApiResponse(response).catch(() => null);
       if (!response.ok) throw new Error(payload?.error || 'Mobile settings could not be saved');
       setMessage('Mobile configuration published. App will receive it on its next refresh.');
       await load();

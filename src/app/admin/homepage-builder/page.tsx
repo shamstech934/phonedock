@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -421,7 +422,7 @@ export default function HomepageBuilderPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...settings, homepage }),
       });
-      const payload = await response.json();
+      const payload = await readApiResponse(response);
       if (!response.ok) throw new Error(payload.error || 'Changes could not be saved');
       setSettings(current => ({ ...current, homepage }));
       setSaved(true);

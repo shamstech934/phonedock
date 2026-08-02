@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
@@ -179,7 +180,7 @@ export default function AdminPhonesPage() {
         responses
           .filter(response => !response.ok)
           .map(async response => {
-            const payload = await response.json().catch(() => ({}));
+            const payload = await readApiResponse(response).catch(() => ({}));
             const issues = Array.isArray(payload.issues) ? payload.issues.join(', ') : '';
             return issues || payload.error || `Update failed (HTTP ${response.status})`;
           }),

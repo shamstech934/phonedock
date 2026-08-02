@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clock, Play, Radio, RefreshCw, ShieldAlert } from 'lucide-react';
@@ -24,7 +25,7 @@ export default function ContinuousMonitoringPage() {
     setError('');
     try {
       const response = await fetch('/api/admin/continuous-monitoring?limit=20', { credentials: 'include', cache: 'no-store' });
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || 'Failed to load monitoring history');
       setRuns(data.runs || []);
     } catch (err) {
@@ -43,7 +44,7 @@ export default function ContinuousMonitoringPage() {
       const response = await fetch('/api/admin/continuous-monitoring', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ syncFeeds: true }),
       });
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || 'Monitoring run failed');
       await load();
     } catch (err) {

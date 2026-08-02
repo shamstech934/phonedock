@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, BarChart3, ExternalLink, MousePointerClick, RefreshCw, Star, Users, BadgePercent, DatabaseZap, ShieldAlert } from 'lucide-react';

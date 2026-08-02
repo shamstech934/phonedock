@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clipboard, ExternalLink, Info, RefreshCw, Search, XCircle } from 'lucide-react';
@@ -40,7 +41,7 @@ export default function SeoMonitoringPage() {
     setLoading(true); setError('');
     try {
       const response = await fetch('/api/admin/seo-monitoring', { credentials: 'include', cache: 'no-store' });
-      const json = await response.json();
+      const json = await readApiResponse(response);
       if (!response.ok) throw new Error(json.error || 'SEO monitoring failed');
       setData(json);
     } catch (err) {

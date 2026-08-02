@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play } from 'lucide-react';
@@ -55,7 +56,7 @@ export default function AdminCollectorSourcesPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ ...form, name, endpoint, enabled: true }),
       });
-      const result = await response.json().catch(() => ({})) as { error?: string; source?: CollectorSource };
+      const result = await readApiResponse(response) as { error?: string; source?: CollectorSource };
       if (!response.ok) {
         const fallback = response.status === 401 ? 'Authentication expired. Please sign in again.' : 'Failed to save source';
         throw new Error(result.error || fallback);
@@ -70,7 +71,7 @@ export default function AdminCollectorSourcesPage() {
   const testSource = async (source: CollectorSource) => {
     setError(null);
     const response = await fetch(`/api/collector/sources/${source.id}/test`, { method: 'POST', credentials: 'include' });
-    const result = await response.json();
+    const result = await readApiResponse(response);
     if (!response.ok) setError(result.error || result.message || 'Connection test failed');
     else toast({ title: 'Connection successful', description: `Connected: ${result.sampleCount || 0} sample records in ${result.latencyMs || 0}ms` });
     fetchSources();
@@ -78,7 +79,7 @@ export default function AdminCollectorSourcesPage() {
 
   const runSource = async (source: CollectorSource, mode: 'incremental' | 'full') => {
     const response = await fetch('/api/collector/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ sourceId: source.id, mode }) });
-    const result = await response.json();
+    const result = await readApiResponse(response);
     if (!response.ok) setError(result.error || 'Collector job failed');
     else fetchSources();
   };

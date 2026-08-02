@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState } from 'react';
 import { Sparkles, ShieldCheck, RefreshCw } from 'lucide-react';
@@ -17,7 +18,7 @@ export default function ReviewEngineAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit, overwrite }),
       });
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || 'Review generation failed');
       setResult(data);
     } catch (error) {

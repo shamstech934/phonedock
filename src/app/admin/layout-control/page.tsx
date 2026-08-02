@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useEffect, useState } from 'react';
 import { Grid3X3, Monitor, Save, Smartphone, Tablet } from 'lucide-react';
@@ -33,7 +34,7 @@ export default function LayoutControlPage() {
   useEffect(() => {
     fetch('/api/admin/settings', { credentials: 'include', cache: 'no-store' })
       .then(async response => {
-        const payload = await response.json();
+        const payload = await readApiResponse(response);
         if (!response.ok) throw new Error(payload?.error || 'Settings failed');
         setLayout({ ...DEFAULT_LAYOUT, ...(payload.settings?.catalogLayout || payload.catalogLayout || {}) });
       })
@@ -54,7 +55,7 @@ export default function LayoutControlPage() {
         credentials: 'include',
         body: JSON.stringify({ catalogLayout: layout }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await readApiResponse(response).catch(() => null);
       if (!response.ok) throw new Error(payload?.error || 'Layout could not be saved');
       setMessage('Layout saved. Public pages will use the new responsive card grid.');
     } catch (reason) {

@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter } from 'lucide-react';
@@ -46,7 +47,7 @@ export default function AdminCollectorJobsPage() {
     setActionBusyId(id);
     try {
       const response = await fetch(`/api/collector/jobs/${id}/${action}`, { method: 'POST', credentials: 'include' });
-      const data = await response.json().catch(() => ({}));
+      const data = await readApiResponse(response);
       if (!response.ok) throw new Error(data.error || `Failed to ${action} job`);
       fetchJobs();
     } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }

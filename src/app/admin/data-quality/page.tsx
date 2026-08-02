@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/lib/useAdmin';
@@ -930,7 +931,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
           total?: number;
           hasMore?: boolean;
           nextCursor?: string | null;
-        } = await response.json().catch(() => ({}));
+        } = await readApiResponse(response).catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Fix all failed');
         succeeded += result.succeeded || 0;
         failed += result.failed || 0;

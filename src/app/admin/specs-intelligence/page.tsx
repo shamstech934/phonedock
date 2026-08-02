@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Check, X, ExternalLink, Database, BadgeDollarSign, Youtube } from 'lucide-react';
 
@@ -7,9 +8,9 @@ type Data={items:Item[];total:number;page:number;pages:number;summary:Record<str
 const EMPTY:Data={items:[],total:0,page:1,pages:1,summary:{}};
 export default function SpecsIntelligencePage(){
  const [data,setData]=useState<Data>(EMPTY); const [loading,setLoading]=useState(true); const [running,setRunning]=useState(''); const [error,setError]=useState(''); const [status,setStatus]=useState('open'); const [page,setPage]=useState(1);
- const load=useCallback(async()=>{setLoading(true);setError('');try{const r=await fetch(`/api/admin/specs-intelligence?status=${status}&page=${page}`,{credentials:'include',cache:'no-store'});const p=await r.json();if(!r.ok)throw new Error(p.error||'Unable to load');setData(p);}catch(e){setError(e instanceof Error?e.message:'Unable to load');}finally{setLoading(false);}},[status,page]);
+ const load=useCallback(async()=>{setLoading(true);setError('');try{const r=await fetch(`/api/admin/specs-intelligence?status=${status}&page=${page}`,{credentials:'include',cache:'no-store'});const p=await readApiResponse(r);if(!r.ok)throw new Error(p.error||'Unable to load');setData(p);}catch(e){setError(e instanceof Error?e.message:'Unable to load');}finally{setLoading(false);}},[status,page]);
  useEffect(()=>{void load();},[load]);
- const run=async(action:string,id?:string)=>{setRunning(id||action);setError('');try{const r=await fetch('/api/admin/specs-intelligence',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({action,id})});const p=await r.json();if(!r.ok)throw new Error(p.error||'Action failed');await load();}catch(e){setError(e instanceof Error?e.message:'Action failed');}finally{setRunning('');}};
+ const run=async(action:string,id?:string)=>{setRunning(id||action);setError('');try{const r=await fetch('/api/admin/specs-intelligence',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({action,id})});const p=await readApiResponse(r);if(!r.ok)throw new Error(p.error||'Action failed');await load();}catch(e){setError(e instanceof Error?e.message:'Action failed');}finally{setRunning('');}};
  return <div className="space-y-5">
   <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Database className="h-7 w-7 text-violet-600"/> Specs Intelligence</h1><p className="mt-1 max-w-3xl text-sm text-slate-500">Missing specifications are detected in bounded batches. Recommendations only come from the local verified dataset and always require admin approval.</p></div><div className="flex gap-2"><button onClick={()=>void run('scan')} disabled={!!running} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"><RefreshCw className={`h-4 w-4 ${running==='scan'?'animate-spin':''}`}/>{running==='scan'?'Scanning…':'Scan now'}</button></div></div>
   <div className="grid gap-3 sm:grid-cols-3">{Object.entries(data.summary||{}).map(([k,v])=><div key={k} className="rounded-xl border bg-white p-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{k.replaceAll('_',' ')}</div><div className="mt-1 text-2xl font-bold">{v}</div></div>)}</div>

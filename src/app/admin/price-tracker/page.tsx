@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -270,7 +271,7 @@ export default function AdminPriceTrackerPage() {
   const [cronSchedule, setCronSchedule] = useState('0 1 * * *');
 
   const responseError = async (response: Response, fallback: string) => {
-    const body = await response.json().catch(() => ({})) as { error?: string };
+    const body = await readApiResponse(response).catch(() => ({})) as { error?: string };
     return body.error || (response.status === 401 ? 'Authentication expired. Please sign in again.' : fallback);
   };
 
@@ -297,11 +298,11 @@ export default function AdminPriceTrackerPage() {
       if (!statsRes.ok) throw new Error(await responseError(statsRes, 'Failed to load price overview'));
       if (!changesRes.ok) throw new Error(await responseError(changesRes, 'Failed to load recent price changes'));
       if (statsRes.ok) {
-        const d = await statsRes.json();
+        const d = await readApiResponse(statsRes);
         setOverviewStats(d.stats || d);
       }
       if (changesRes.ok) {
-        const d = await changesRes.json();
+        const d = await readApiResponse(changesRes);
         setRecentChanges(d.changes || d.data || []);
       }
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price overview'); }
@@ -316,7 +317,7 @@ export default function AdminPriceTrackerPage() {
       if (phonesDebouncedSearch.length >= 2) params.set('search', phonesDebouncedSearch);
       if (phonesModeFilter !== 'all') params.set('mode', phonesModeFilter);
       const res = await fetch(`/api/admin/price-tracker/phones?${params}`, { credentials: 'include' });
-      const d = await res.json();
+      const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
       setPhones(d.phones || d.data || []);
       setPhonesTotal(d.total || 0);
@@ -329,7 +330,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/sources', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price sources'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       const rows = d.sources || d.data || [];
       setSources(rows.map((source: Record<string, unknown>) => ({
         ...source,
@@ -344,7 +345,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/match-queue?status=pending', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load source gaps'));
-      const data = await res.json();
+      const data = await readApiResponse(res);
       setMatchCandidates(data.candidates || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load source gaps');
@@ -358,7 +359,7 @@ export default function AdminPriceTrackerPage() {
       if (changesSourceType !== 'all') params.set('sourceType', changesSourceType);
       const res = await fetch(`/api/admin/price-tracker/changes?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price changes'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       setChanges(d.changes || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price changes'); }
   }, [changesFilter, changesSourceType]);
@@ -367,7 +368,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/pending', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load pending price reviews'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       setPending(d.pending || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load pending price reviews'); }
   }, []);
@@ -376,7 +377,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/phones?limit=200&fields=name,brand', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load phone options'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       setPhoneOptions(d.phones || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load phone options'); }
   }, []);
@@ -386,7 +387,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch(`/api/admin/price-tracker/history/${phoneId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price history'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       setPriceHistory(d.history || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price history'); }
   }, []);
@@ -396,7 +397,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/settings', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price tracker settings'));
-      const d = await res.json();
+      const d = await readApiResponse(res);
       setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
       setCronConfigured(Boolean(d.cronConfigured));
       setCronSchedule(typeof d.cronSchedule === 'string' && d.cronSchedule ? d.cronSchedule : '0 1 * * *');
@@ -420,7 +421,7 @@ export default function AdminPriceTrackerPage() {
       const response = await fetch('/api/admin/price-tracker/run-sync', {
         method: 'POST', credentials: 'include',
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Price sync failed');
       setActionMessage(`Sync batch complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
       await fetchOverview();
@@ -437,7 +438,7 @@ export default function AdminPriceTrackerPage() {
       const response = await fetch('/api/admin/price-tracker/auto-link', {
         method: 'POST', credentials: 'include',
       });
-      const result = await response.json();
+      const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Automatic linking failed');
       setActionMessage(`Catalog linked: ${result.linked} new, ${result.alreadyLinked} already ready, ${result.unmatched} need a supported retailer URL.`);
       await fetchOverview();
@@ -497,7 +498,7 @@ export default function AdminPriceTrackerPage() {
           warrantyType: editForm.warrantyType,
         }),
       });
-      const d = await res.json();
+      const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
       setEditPriceModal(false);
       setEditForm({ price: '', reason: '', ptaStatus: '', warrantyType: '' });
@@ -532,7 +533,7 @@ export default function AdminPriceTrackerPage() {
           warrantyType: listingForm.warrantyType,
         }),
       });
-      const d = await res.json();
+      const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to add listing');
       setAddListingModal(false);
       setListingForm({ source: '', url: '', ram: '', storage: '', ptaStatus: '', warrantyType: '' });
@@ -558,7 +559,7 @@ export default function AdminPriceTrackerPage() {
           priority: newSource.priority,
         }),
       });
-      const d = await res.json();
+      const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to add source');
       setShowAddSource(false);
       setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
@@ -673,7 +674,7 @@ export default function AdminPriceTrackerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: productUrl.trim(), sourceId: source.id }),
       });
-      const test = await testResponse.json();
+      const test = await readApiResponse(testResponse);
       if (!testResponse.ok) throw new Error(test.error || 'Source test failed');
       if (!test.safeToEnable) {
         throw new Error(test.reachable
@@ -692,7 +693,7 @@ export default function AdminPriceTrackerPage() {
             : [new URL(productUrl.trim()).hostname.replace(/^www\./, '')],
         }),
       });
-      const update = await updateResponse.json();
+      const update = await readApiResponse(updateResponse);
       if (!updateResponse.ok) throw new Error(update.error || 'Could not trust source');
       setActionMessage(`${source.name} verified at PKR ${Number(test.detectedPrice).toLocaleString('en-PK')} and marked trusted.`);
       await fetchSources();
