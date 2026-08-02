@@ -15,10 +15,11 @@ const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION
 
 // ============ JOB RUNNER ============
 export async function startJob(jobId: string): Promise<void> {
+  await connectDB();
   const job = await CollectorJob.findById(jobId);
   if (!job) return;
 
-  const resumingFromPage = job.status === 'paused' && job.currentBatch > 0 ? job.currentBatch + 1 : 1;
+  const resumingFromPage = job.currentBatch > 0 ? job.currentBatch + 1 : 1;
   await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date() } });
 
   try {
@@ -33,6 +34,7 @@ export async function startJob(jobId: string): Promise<void> {
       let page = resumingFromPage;
       let hasNext = true;
       let totalFetched = 0;
+      let pagesProcessedThisInvocation = 0;
 
       const existingPhones = await Phone.find({ active: true }, { modelName: 1, slug: 1, brandId: 1 }).populate({ path: 'brand', select: 'name' }).lean();
       const existingWithBrand: Array<{ _id: string; modelName: string; slug: string; brandId?: string; brand?: { name: string } }> = existingPhones.map((p) => ({
@@ -43,7 +45,7 @@ export async function startJob(jobId: string): Promise<void> {
 
       while (hasNext && totalFetched < MAX_COLLECT_PER_JOB) {
         // Serverless page-limit: stop early if configured
-        if (PAGES_PER_INVOCATION > 0 && page > PAGES_PER_INVOCATION) {
+        if (PAGES_PER_INVOCATION > 0 && pagesProcessedThisInvocation >= PAGES_PER_INVOCATION) {
           // Save progress for next invocation
           await CollectorJob.updateOne({ _id: jobId }, {
             $set: { status: 'paused', lastProcessedAt: new Date() },
@@ -68,24 +70,31 @@ export async function startJob(jobId: string): Promise<void> {
         }
 
         const result: ProviderFetchResult = await provider.fetch(page);
+        pagesProcessedThisInvocation += 1;
 
+        let actualNewCount = 0;
+        let possibleUpdateCount = 0;
+        let duplicateCount = 0;
+        let conflictCount = 0;
         for (const phone of result.phones) {
-          await processCollectedPhone(phone, config, source._id.toString(), source.name, source.endpoint || '', existingWithBrand, job._id.toString(), source.reliabilityScore);
+          const outcome = await processCollectedPhone(phone, config, source._id.toString(), source.name, phone.sourceUrl || source.endpoint || '', existingWithBrand, job._id.toString(), source.reliabilityScore);
+          if (outcome.isNew) actualNewCount += 1;
+          if (outcome.isPossibleUpdate) possibleUpdateCount += 1;
+          if (outcome.isDuplicate) duplicateCount += 1;
+          conflictCount += outcome.conflicts;
         }
 
         totalFetched += result.phones.length;
         const fetchedCount = result.phones.length;
-        let actualNewCount = 0;
-        for (const phone of result.phones) {
-          const isDuplicate = existingWithBrand.some((ep) => ep.slug === phone.slug);
-          if (!isDuplicate) actualNewCount++;
-        }
 
         await CollectorJob.updateOne({ _id: jobId }, {
           $inc: {
             fetched: fetchedCount,
             normalized: fetchedCount,
             newPhones: actualNewCount,
+            possibleUpdates: possibleUpdateCount,
+            duplicates: duplicateCount,
+            conflictCount,
             failureCount: result.providerErrors.length,
           },
           $set: {
@@ -98,7 +107,7 @@ export async function startJob(jobId: string): Promise<void> {
         // Update source stats
         await CollectorSource.updateOne({ _id: source._id }, {
           $inc: { totalCollected: fetchedCount, totalFailed: result.providerErrors.length },
-          $set: { lastSyncAt: new Date(), lastSyncStatus: result.providerErrors.length > 0 ? 'partial' : 'success' },
+          $set: { lastSyncAt: new Date(), lastSuccessfulSyncAt: result.providerErrors.length > 0 ? source.lastSuccessfulSyncAt : new Date(), lastSyncStatus: result.providerErrors.length > 0 ? 'partial' : 'success', lastError: result.providerErrors.join('; ').slice(0, 1000) },
         });
 
         hasNext = result.hasNextPage;
@@ -147,92 +156,50 @@ async function processCollectedPhone(
   existingPhones: Array<{ _id: string; modelName: string; slug: string; brandId?: string; brand?: { name: string } }>,
   jobId: string,
   reliability: number,
-): Promise<void> {
-  // Validate
+): Promise<{ isNew: boolean; isPossibleUpdate: boolean; isDuplicate: boolean; conflicts: number }> {
   const issues = validateCollectedPhone(phone);
-  const isValid = !issues.some(i => i.severity === 'error');
+  const isValid = !issues.some(issue => issue.severity === 'error');
   const scores = scoreCollectedPhone(phone, issues, reliability);
-
-  // Detect duplicates
   const dupResult = detectDuplicates(phone, existingPhones);
-
-  // Detect conflicts with best match
   const conflicts: ConflictInfo[] = [];
   if (dupResult.matches.length > 0) {
     const bestMatch = dupResult.matches[0];
-    const existingPhone = existingPhones.find((p) => p._id?.toString() === bestMatch.phoneId);
-    if (existingPhone) {
-      const conflictList = detectConflicts(phone, existingPhone as unknown as { modelName: string; slug: string; pricePKR: number; [key: string]: unknown }, sourceName);
-      conflicts.push(...conflictList);
-    }
+    const existingPhone = existingPhones.find(candidate => candidate._id?.toString() === bestMatch.phoneId);
+    if (existingPhone) conflicts.push(...detectConflicts(phone, existingPhone as unknown as { modelName: string; slug: string; pricePKR: number; [key: string]: unknown }, sourceName));
   }
-
-  // Suggest category and SEO
   const categories = suggestCategory(phone);
   const seo = suggestSEO(phone);
+  const recordSourceUrl = phone.sourceUrl || sourceUrl;
+  const fieldProvenance = buildFieldProvenance(phone, sourceId, sourceName, recordSourceUrl, reliability);
+  const status = !isValid || dupResult.isDuplicate ? 'needs_review' : 'pending';
+  const providerRecordId = phone.slug || generateSlug(`${phone.brandName} ${phone.model}`);
+  const checksum = createHash('sha256').update(JSON.stringify(phone)).digest('hex');
+  const data = {
+    status, brandName: phone.brandName, model: phone.model, slug: phone.slug,
+    releaseDate: phone.releaseDate || '', announcedDate: phone.announcedDate || '', availability: phone.availability || '',
+    deviceStatus: phone.deviceStatus || '', deviceType: phone.deviceType || '', display: phone.display || {},
+    processor: phone.processor || {}, memory: phone.memory || {}, camera: phone.camera || {}, battery: phone.battery || {},
+    body: phone.body || {}, connectivity: phone.connectivity || {}, software: phone.software || {}, audio: phone.audio || {},
+    sensors: phone.sensors || {}, benchmarks: phone.benchmarks || {}, images: phone.images || [], thumbnail: phone.thumbnail || '',
+    pakistanPrice: phone.pakistanPrice ?? null, ptaApproved: phone.ptaApproved ?? null, ptaStatus: phone.ptaStatus || '',
+    suggestedCategory: categories.join(', '), suggestedSeoTitle: seo.title, suggestedSeoDescription: seo.description,
+    suggestedKeywords: seo.keywords, sourceId: new Types.ObjectId(sourceId), sourceName, sourceUrl: recordSourceUrl,
+    providerRecordId, checksum, lastVerifiedAt: new Date(), collectedAt: new Date(), fieldProvenance,
+    duplicateMatches: dupResult.matches.map(match => ({ type: match.type, phoneId: match.phoneId || '', modelName: match.modelName || '', brandName: match.brandName || '', slug: match.slug || '', confidence: match.confidence })),
+    hasExactDuplicate: dupResult.matches.some(match => match.type === 'exact_slug'), duplicatePhoneId: dupResult.matches[0]?.phoneId || '',
+    conflicts, conflictCount: conflicts.length, validationIssues: issues.map(issue => `${issue.severity}: ${issue.field} - ${issue.message}`),
+    validationErrors: issues.filter(issue => issue.severity === 'error').map(issue => `${issue.field}: ${issue.message}`),
+    validationWarnings: issues.filter(issue => issue.severity === 'warning').map(issue => `${issue.field}: ${issue.message}`),
+    isValid, ...scores, jobId: new Types.ObjectId(jobId), sourceReliability: reliability,
+  };
 
-  // Build provenance
-  const fieldProvenance = buildFieldProvenance(phone, sourceId, sourceName, sourceUrl, reliability);
-
-  // Determine status
-  let status: 'pending' | 'needs_review' | 'approved' | 'rejected' | 'imported' | 'failed' = 'pending';
-  if (!isValid) status = 'needs_review';
-  else if (dupResult.isDuplicate && conflicts.length > 0) status = 'needs_review';
-  else if (dupResult.isDuplicate) status = 'needs_review';
-
-  await CollectedPhone.create({
-    status,
-    brandName: phone.brandName,
-    model: phone.model,
-    slug: phone.slug,
-    releaseDate: phone.releaseDate || '',
-    announcedDate: phone.announcedDate || '',
-    availability: phone.availability || '',
-    deviceStatus: phone.deviceStatus || '',
-    deviceType: phone.deviceType || '',
-    display: phone.display || {},
-    processor: phone.processor || {},
-    memory: phone.memory || {},
-    camera: phone.camera || {},
-    battery: phone.battery || {},
-    body: phone.body || {},
-    connectivity: phone.connectivity || {},
-    software: phone.software || {},
-    audio: phone.audio || {},
-    sensors: phone.sensors || {},
-    benchmarks: phone.benchmarks || {},
-    images: phone.images || [],
-    thumbnail: phone.thumbnail || '',
-    pakistanPrice: phone.pakistanPrice ?? null,
-    ptaApproved: phone.ptaApproved ?? null,
-    ptaStatus: phone.ptaStatus || '',
-    suggestedCategory: categories.join(', '),
-    suggestedSeoTitle: seo.title,
-    suggestedSeoDescription: seo.description,
-    suggestedKeywords: seo.keywords,
-    sourceId: new Types.ObjectId(sourceId),
-    sourceName,
-    sourceUrl,
-    providerRecordId: phone.slug || '',
-    checksum: createHash('sha256').update(JSON.stringify(phone)).digest('hex'),
-    lastVerifiedAt: new Date(),
-    fieldProvenance,
-    duplicateMatches: dupResult.matches.map(m => ({
-      type: m.type, phoneId: m.phoneId || '', modelName: m.modelName || '',
-      brandName: m.brandName || '', slug: m.slug || '', confidence: m.confidence,
-    })),
-    hasExactDuplicate: dupResult.matches.some(m => m.type === 'exact_slug'),
-    duplicatePhoneId: dupResult.matches[0]?.phoneId || '',
-    conflicts,
-    conflictCount: conflicts.length,
-    validationIssues: issues.map(i => `${i.severity}: ${i.field} - ${i.message}`),
-    validationErrors: issues.filter(i => i.severity === 'error').map(i => `${i.field}: ${i.message}`),
-    validationWarnings: issues.filter(i => i.severity === 'warning').map(i => `${i.field}: ${i.message}`),
-    isValid,
-    ...scores,
-    jobId: new Types.ObjectId(jobId),
-    sourceReliability: reliability,
-  });
+  const existingDraft = await CollectedPhone.findOne({ sourceId: new Types.ObjectId(sourceId), providerRecordId, status: { $in: ['pending', 'needs_review', 'failed'] } }, { _id: 1, checksum: 1 }).lean();
+  if (existingDraft) {
+    await CollectedPhone.updateOne({ _id: existingDraft._id }, { $set: data });
+  } else {
+    await CollectedPhone.create(data);
+  }
+  return { isNew: !dupResult.isDuplicate, isPossibleUpdate: dupResult.isDuplicate, isDuplicate: dupResult.isDuplicate, conflicts: conflicts.length };
 }
 
 // ============ APPROVE AND IMPORT ============

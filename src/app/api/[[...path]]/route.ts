@@ -199,11 +199,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     // Cron: /api/cron/collector-sync — triggers due collector source syncs (Scheduler)
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'collector-sync') {
-      const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '') || req.headers.get('x-cron-secret');
       if (!isValidCronSecret(secret)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       await connectDB();
+      const resumableJobs = await CollectorJob.find({ status: { $in: ['queued', 'paused'] } }).sort({ updatedAt: 1 }).limit(3).lean();
+      const resumed: string[] = [];
+      for (const pendingJob of resumableJobs) {
+        await startJob(String(pendingJob._id));
+        resumed.push(String(pendingJob._id));
+      }
       // Only sources with scheduling enabled (syncFrequencyHours > 0) and enabled=true.
       const dueSources = await CollectorSource.find({ enabled: true, syncFrequencyHours: { $gt: 0 } }).lean();
       const now = Date.now();
@@ -219,7 +225,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         await startJob(job._id.toString());
         triggered.push(source.name);
       }
-      return NextResponse.json({ success: true, triggered, skipped, checkedSources: dueSources.length });
+      return NextResponse.json({ success: true, triggered, skipped, resumed, checkedSources: dueSources.length });
     }
 
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting

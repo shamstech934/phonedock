@@ -40,13 +40,13 @@ export class ManualUrlProvider extends BaseProvider {
     const url = this.config.endpoint;
     if (!url) return { phones: [], hasNextPage: false, providerErrors: ['No URL configured'] };
 
-    const response = await this.fetchWithTimeout(url);
+    const response = await this.fetchWithTimeout(url, { headers: { Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8' } });
     if (!response.ok) return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
 
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
     if (contentType.includes('json')) {
       let data: unknown;
-      try { data = await response.json(); }
+      try { data = JSON.parse(await this.readTextLimited(response)); }
       catch { return { phones: [], hasNextPage: false, providerErrors: ['Invalid JSON response from source'] }; }
       const phones: Record<string, unknown>[] = [];
       const tryExtract = (obj: unknown, depth = 0): void => {
@@ -65,7 +65,7 @@ export class ManualUrlProvider extends BaseProvider {
         : { phones: [], hasNextPage: false, providerErrors: ['No phone-like records found in JSON response'] };
     }
 
-    const html = await response.text();
+    const html = await this.readTextLimited(response);
     const rows: Record<string, unknown>[] = [];
     const scriptPattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
     for (const match of html.matchAll(scriptPattern)) {

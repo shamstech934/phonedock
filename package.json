@@ -67,7 +67,8 @@
     "audit:ga4": "node scripts/ga4-runtime-audit.mjs",
     "audit:api-payload-types": "node scripts/api-payload-type-audit.mjs",
     "audit:consolidated-production": "node scripts/consolidated-production-audit.mjs",
-    "audit:automation-runtime": "node scripts/automation-runtime-readiness-audit.mjs"
+    "audit:automation-runtime": "node scripts/automation-runtime-readiness-audit.mjs",
+    "audit:collector-phase2": "node scripts/collector-phase2-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

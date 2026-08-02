@@ -74,31 +74,39 @@ export abstract class BaseProvider {
   }
 
   protected async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 30000): Promise<Response> {
-    const validation = await validateUrlForFetch(url, this.config.allowedDomains || []);
-    if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = {
-        'User-Agent': 'SpecsDekh-Collector/1.0',
-        'Accept': 'application/json',
+        'User-Agent': 'SpecsDekh-Collector/2.0 (+https://specsdekh.com)',
+        Accept: 'application/json',
         ...this.config.headers,
-        ...(options.headers as Record<string, string> || {}),
+        ...((options.headers as Record<string, string>) || {}),
       };
-      // Inject API key from env if configured
-      if (this.config.apiKeyEnvVar && process.env[this.config.apiKeyEnvVar]) {
-        const key = process.env[this.config.apiKeyEnvVar]!;
+      if (this.config.apiKeyEnvVar) {
+        const key = process.env[this.config.apiKeyEnvVar];
+        if (!key) throw new Error(`Required secret ${this.config.apiKeyEnvVar} is not configured`);
         const headerStyle = this.config.apiKeyHeader || 'Authorization';
-        if (headerStyle === 'x-api-key') {
-          headers['x-api-key'] = key;
-        } else {
-          headers['Authorization'] = `Bearer ${key}`;
-        }
+        headers[headerStyle] = headerStyle.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
       }
-      const response = await fetch(url, { ...options, headers, signal: controller.signal, redirect: 'error' });
-      const declaredLength = Number(response.headers.get('content-length') || 0);
-      if (declaredLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
-      return response;
+
+      let currentUrl = url;
+      for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+        const validation = await validateUrlForFetch(currentUrl, this.config.allowedDomains || []);
+        if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
+        const response = await fetch(currentUrl, { ...options, headers, signal: controller.signal, redirect: 'manual' });
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          const location = response.headers.get('location');
+          if (!location) throw new Error(`Source returned HTTP ${response.status} without a redirect location`);
+          if (redirectCount >= 3) throw new Error('Source redirected too many times');
+          currentUrl = new URL(location, currentUrl).toString();
+          continue;
+        }
+        const declaredLength = Number(response.headers.get('content-length') || 0);
+        if (declaredLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
+        return response;
+      }
+      throw new Error('Source redirected too many times');
     } finally {
       clearTimeout(timer);
     }

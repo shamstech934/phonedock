@@ -10,6 +10,8 @@ const fieldProvenanceSchema = new Schema({
   providerRecordId: { type: String, default: '' },
   checksum: { type: String, default: '', index: true },
   lastVerifiedAt: { type: Date },
+  checksum: { type: String, default: '', index: true },
+  lastVerifiedAt: { type: Date },
   confidence: { type: Number, default: 0.5, min: 0, max: 1 },
   rawHash: { type: String, default: '' },
 }, { _id: false });
@@ -167,6 +169,7 @@ CollectedPhoneSchema.index({ status: 1 });
 CollectedPhoneSchema.index({ slug: 1 });
 CollectedPhoneSchema.index({ brandName: 1, model: 1 });
 CollectedPhoneSchema.index({ sourceId: 1 });
+CollectedPhoneSchema.index({ sourceId: 1, providerRecordId: 1, status: 1 });
 CollectedPhoneSchema.index({ jobId: 1 });
 CollectedPhoneSchema.index({ createdAt: -1 });
 CollectedPhoneSchema.index({ 'duplicateMatches.confidence': -1 });
