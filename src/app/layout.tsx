@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { getBaseUrl } from "@/lib/urls";
@@ -180,7 +181,9 @@ export default async function RootLayout({
       </head>
       <body className="font-sans antialiased">
         <WebVitalsReporter />
-        <GrowthScripts />
+        <Suspense fallback={null}>
+          <GrowthScripts />
+        </Suspense>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">Skip to content</a>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <UserProvider>
