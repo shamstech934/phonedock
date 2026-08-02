@@ -1,3 +1,1 @@
-SpecsDekh v29.2.5
-Release Readiness + SEO Monitoring API typing fix
-Generated: 2026-08-02
+SpecsDekh 30.0 Consolidated Production Stabilization

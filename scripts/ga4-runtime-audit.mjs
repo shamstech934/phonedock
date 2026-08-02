@@ -11,12 +11,12 @@ const layout = fs.readFileSync(layoutPath, 'utf8');
 const settings = fs.readFileSync(settingsPath, 'utf8');
 
 const checks = [
-  ['GA loader', growth.includes('googletagmanager.com/gtag/js')],
+  ['GA loader', growth.includes('googletagmanager.com/gtag/js') || layout.includes('googletagmanager.com/gtag/js')],
   ['CMS or env fallback', growth.includes('NEXT_PUBLIC_GA_MEASUREMENT_ID') && growth.includes('googleAnalyticsId')],
   ['Consent gate', growth.includes("phonedock_cookie_consent_v1") && growth.includes("=== 'accepted'")],
   ['Admin exclusion', growth.includes("pathname.startsWith('/admin')")],
   ['SPA page views', growth.includes("'page_view'") && growth.includes('useSearchParams')],
-  ['Duplicate page-view prevention', growth.includes('send_page_view:false')],
+  ['Duplicate page-view prevention', growth.includes('send_page_view:false') || layout.includes('send_page_view:false')],
   ['Measurement ID validation', growth.includes('GA_ID_PATTERN')],
   ['Root layout integration', layout.includes('<GrowthScripts />')],
   ['Admin setting field', settings.includes('Google Analytics ID')],

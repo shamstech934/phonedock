@@ -66,8 +66,16 @@ for (const file of files) {
   });
 }
 
-const requiredFiles = ['package.json', 'next.config.ts', 'vercel.json', 'src/app/layout.tsx', 'src/app/robots.ts', 'src/app/sitemap.ts'];
+const requiredFiles = ['package.json', 'next.config.ts', 'vercel.json', 'src/app/layout.tsx', 'src/app/robots.ts'];
+const requiredAlternatives = [
+  ['src/app/sitemap.ts', 'src/app/sitemap.xml/route.ts'],
+];
 const missingRequiredFiles = requiredFiles.filter((file) => !fs.existsSync(path.join(ROOT, file)));
+for (const alternatives of requiredAlternatives) {
+  if (!alternatives.some((file) => fs.existsSync(path.join(ROOT, file)))) {
+    missingRequiredFiles.push(alternatives.join(' OR '));
+  }
+}
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const requiredScripts = ['lint', 'typecheck', 'test', 'build'];
 const missingScripts = requiredScripts.filter((name) => !packageJson.scripts?.[name]);

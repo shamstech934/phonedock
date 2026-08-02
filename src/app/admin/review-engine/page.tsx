@@ -4,11 +4,13 @@ import { readApiResponse } from '@/lib/client/api-response';
 import { useState } from 'react';
 import { Sparkles, ShieldCheck, RefreshCw } from 'lucide-react';
 
+type ReviewEngineResult = { updated?: number; skipped?: number; error?: string };
+
 export default function ReviewEngineAdminPage() {
   const [limit, setLimit] = useState(25);
   const [overwrite, setOverwrite] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ updated?: number; skipped?: number; error?: string } | null>(null);
+  const [result, setResult] = useState<ReviewEngineResult | null>(null);
 
   async function run() {
     setLoading(true); setResult(null);
@@ -18,7 +20,7 @@ export default function ReviewEngineAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit, overwrite }),
       });
-      const data = await readApiResponse(response);
+      const data = await readApiResponse<ReviewEngineResult>(response);
       if (!response.ok) throw new Error(data.error || 'Review generation failed');
       setResult(data);
     } catch (error) {
