@@ -10,8 +10,6 @@ const fieldProvenanceSchema = new Schema({
   providerRecordId: { type: String, default: '' },
   checksum: { type: String, default: '', index: true },
   lastVerifiedAt: { type: Date },
-  checksum: { type: String, default: '', index: true },
-  lastVerifiedAt: { type: Date },
   confidence: { type: Number, default: 0.5, min: 0, max: 1 },
   rawHash: { type: String, default: '' },
 }, { _id: false });

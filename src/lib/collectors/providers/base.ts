@@ -1,6 +1,45 @@
 import { NormalizedPhone, ProviderConfig, FieldProvenance } from '../types';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
+function normalizeHeaderRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value) return result;
+
+  const append = (key: unknown, rawValue: unknown): void => {
+    if (typeof key !== 'string' || !key.trim()) return;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') return;
+    const normalized = String(rawValue).trim();
+    if (!normalized || /[\r\n]/.test(normalized)) return;
+    result[key] = normalized;
+  };
+
+  if (value instanceof Headers) {
+    value.forEach((headerValue, key) => append(key, headerValue));
+    return result;
+  }
+
+  if (value instanceof Map) {
+    value.forEach((headerValue, key) => append(key, headerValue));
+    return result;
+  }
+
+  const candidate = value as { entries?: () => IterableIterator<[unknown, unknown]>; toObject?: () => unknown };
+  if (typeof candidate.entries === 'function') {
+    try {
+      for (const [key, headerValue] of candidate.entries()) append(key, headerValue);
+      return result;
+    } catch { /* fall through */ }
+  }
+  if (typeof candidate.toObject === 'function') {
+    try { return normalizeHeaderRecord(candidate.toObject()); } catch { /* fall through */ }
+  }
+
+  if (typeof value === 'object') {
+    for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) append(key, headerValue);
+  }
+  return result;
+}
+
 export interface ProviderFetchResult {
   phones: NormalizedPhone[];
   totalAvailable?: number;
@@ -80,8 +119,8 @@ export abstract class BaseProvider {
       const headers: Record<string, string> = {
         'User-Agent': 'SpecsDekh-Collector/2.0 (+https://specsdekh.com)',
         Accept: 'application/json',
-        ...this.config.headers,
-        ...((options.headers as Record<string, string>) || {}),
+        ...normalizeHeaderRecord(this.config.headers),
+        ...normalizeHeaderRecord(options.headers),
       };
       if (this.config.apiKeyEnvVar) {
         const key = process.env[this.config.apiKeyEnvVar];

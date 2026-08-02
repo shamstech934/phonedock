@@ -14,6 +14,37 @@ const MAX_COLLECT_PER_JOB = 2000;
 const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '3') || 0;
 
 // ============ JOB RUNNER ============
+
+function toStringRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value) return result;
+  const add = (key: unknown, rawValue: unknown): void => {
+    if (typeof key !== 'string' || !key.trim()) return;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') return;
+    const normalized = String(rawValue).trim();
+    if (!normalized || /[\r\n]/.test(normalized)) return;
+    result[key] = normalized;
+  };
+  if (value instanceof Map) {
+    value.forEach((entryValue, key) => add(key, entryValue));
+    return result;
+  }
+  const candidate = value as { entries?: () => IterableIterator<[unknown, unknown]>; toObject?: () => unknown };
+  if (typeof candidate.entries === 'function') {
+    try {
+      for (const [key, entryValue] of candidate.entries()) add(key, entryValue);
+      return result;
+    } catch { /* continue */ }
+  }
+  if (typeof candidate.toObject === 'function') {
+    try { return toStringRecord(candidate.toObject()); } catch { /* continue */ }
+  }
+  if (typeof value === 'object') {
+    for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) add(key, entryValue);
+  }
+  return result;
+}
+
 export async function startJob(jobId: string): Promise<void> {
   await connectDB();
   const job = await CollectorJob.findById(jobId);
@@ -351,14 +382,8 @@ export async function approveAndImport(draftId: string, adminEdits?: Record<stri
 
 // ============ HELPER ============
 function buildProviderConfig(source: Record<string, unknown>): ProviderConfig {
-  const headers: Record<string, string> = {};
-  if (source.headers) {
-    for (const [k, v] of Object.entries(source.headers as Record<string, unknown>)) headers[k] = v as string;
-  }
-  const mappingRules: Record<string, string> = {};
-  if (source.mappingRules) {
-    for (const [k, v] of Object.entries(source.mappingRules as Record<string, unknown>)) mappingRules[k] = v as string;
-  }
+  const headers = toStringRecord(source.headers);
+  const mappingRules = toStringRecord(source.mappingRules);
   return {
     type: source.type as ProviderType,
     endpoint: (source.endpoint as string) || '',

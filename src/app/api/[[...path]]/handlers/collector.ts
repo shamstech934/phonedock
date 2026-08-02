@@ -9,14 +9,45 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { generateSlug } from '@/lib/import/validators';
 import { randomUUID } from 'node:crypto';
 
+
+function toStringRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value) return result;
+  const add = (key: unknown, rawValue: unknown): void => {
+    if (typeof key !== 'string' || !key.trim()) return;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') return;
+    const normalized = String(rawValue).trim();
+    if (!normalized || /[\r\n]/.test(normalized)) return;
+    result[key] = normalized;
+  };
+  if (value instanceof Map) {
+    value.forEach((entryValue, key) => add(key, entryValue));
+    return result;
+  }
+  const candidate = value as { entries?: () => IterableIterator<[unknown, unknown]>; toObject?: () => unknown };
+  if (typeof candidate.entries === 'function') {
+    try {
+      for (const [key, entryValue] of candidate.entries()) add(key, entryValue);
+      return result;
+    } catch { /* continue */ }
+  }
+  if (typeof candidate.toObject === 'function') {
+    try { return toStringRecord(candidate.toObject()); } catch { /* continue */ }
+  }
+  if (typeof value === 'object') {
+    for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) add(key, entryValue);
+  }
+  return result;
+}
+
 const PROVIDER_TYPES: ProviderType[] = ['json_url', 'csv_url', 'api', 'xml_feed', 'rss_feed', 'manufacturer', 'manual_url', 'file_upload'];
 
 function sourceConfig(source: Record<string, unknown>): ProviderConfig {
   return {
     type: source.type as ProviderType, endpoint: String(source.endpoint || ''), apiKeyEnvVar: String(source.apiKeyEnvVar || ''),
-    headers: Object.fromEntries(Object.entries((source.headers as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    headers: toStringRecord(source.headers),
     brandFilter: (source.brandFilter as string[]) || [], allowedDomains: (source.allowedDomains as string[]) || [],
-    dataPath: String(source.dataPath || ''), mappingRules: Object.fromEntries(Object.entries((source.mappingRules as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    dataPath: String(source.dataPath || ''), mappingRules: toStringRecord(source.mappingRules),
     timeoutMs: Number(source.timeoutMs || 30000), maxResponseBytes: Number(source.maxResponseBytes || 5242880), enabled: source.enabled !== false,
     pagination: { pageSize: Number(source.paginationPageSize || 50), maxPages: Number(source.paginationMaxPages || 10), pageParam: String(source.paginationPageParam || 'page') },
   };

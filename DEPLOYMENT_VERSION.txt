@@ -1,1 +1,2 @@
-31.3.2
+SpecsDekh v31.5.1
+Collector schema + request-header safety fix
