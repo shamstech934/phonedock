@@ -124,6 +124,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
       id: (j._id as { toString(): string } | undefined)?.toString(),
       sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
       lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
+      errorLog: Array.isArray(j.errorLog) ? j.errorLog.map(entry => sanitizeCollectorMessage(String(entry))).filter(Boolean) : [],
     })) });
   }
 
@@ -409,7 +410,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     await connectDB();
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (job.status !== 'failed') return NextResponse.json({ error: `Only failed jobs can be retried (job is ${job.status})` }, { status: 409 });
+    if (!['failed', 'partially_completed'].includes(job.status)) return NextResponse.json({ error: `Only failed or partially completed jobs can be retried (job is ${job.status})` }, { status: 409 });
     if (job.sourceId) {
       const source = await CollectorSource.findById(job.sourceId);
       if (!source) return NextResponse.json({ error: 'Collector source no longer exists' }, { status: 404 });

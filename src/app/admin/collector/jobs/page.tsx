@@ -2,7 +2,7 @@
 import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -11,6 +11,8 @@ interface CollectorJob {
   lastError?: string; startedAt?: string; completedAt?: string; createdAt: string;
   fetched?: number; newPhones?: number; possibleUpdates?: number; duplicates?: number; failureCount?: number;
   currentBatch?: number; totalBatches?: number; totalExpected?: number; retryCount?: number;
+  normalized?: number; conflictCount?: number; duration?: number; trigger?: string; mode?: string;
+  errorLog?: string[]; requestId?: string; updatedAt?: string;
 }
 
 export default function AdminCollectorJobsPage() {
@@ -21,6 +23,7 @@ export default function AdminCollectorJobsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [deleteModal, setDeleteModal] = useState<CollectorJob | null>(null);
+  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
 
   const fetchJobs = useCallback(() => {
     setLoading(true);
@@ -54,6 +57,43 @@ export default function AdminCollectorJobsPage() {
       await fetchJobs();
     } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }
     finally { setActionBusyId(null); }
+  };
+
+
+  const toggleJob = (id: string) => {
+    setExpandedJobs(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const downloadJobLog = (job: CollectorJob) => {
+    const lines = [
+      `Collector Job ${job.id}`,
+      `Source: ${job.sourceName || 'Unknown'}`,
+      `Status: ${job.status}`,
+      `Created: ${job.createdAt || ''}`,
+      `Started: ${job.startedAt || ''}`,
+      `Completed: ${job.completedAt || ''}`,
+      `Fetched: ${job.fetched || 0}`,
+      `New phones: ${job.newPhones || 0}`,
+      `Possible updates: ${job.possibleUpdates || 0}`,
+      `Duplicates: ${job.duplicates || 0}`,
+      `Failures: ${job.failureCount || 0}`,
+      '',
+      'Errors / warnings:',
+      ...(job.errorLog?.length ? job.errorLog : [job.lastError || 'No error log recorded.']),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `collector-job-${job.id.slice(-6)}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
@@ -151,6 +191,7 @@ export default function AdminCollectorJobsPage() {
       {/* Jobs List */}
       <div className="space-y-2">
         {filteredJobs.map(job => {
+          const expanded = expandedJobs.has(job.id);
           const config = statusConfig[job.status] || statusConfig.pending;
           const Icon = config.icon;
           return (
@@ -199,12 +240,15 @@ export default function AdminCollectorJobsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 mt-1 sm:mt-0">
+                  <button onClick={() => toggleJob(job.id)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title={expanded ? 'Hide details' : 'View details'} aria-label={expanded ? 'Hide job details' : 'View job details'}>
+                    {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
                   {job.status === 'paused' && (
                     <button onClick={() => runJobAction(job.id, 'resume')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50" title="Resume from where it left off" aria-label="Resume job">
                       <Zap className="w-4 h-4" />
                     </button>
                   )}
-                  {job.status === 'failed' && (
+                  {['failed', 'partially_completed'].includes(job.status) && (
                     <button onClick={() => runJobAction(job.id, 'retry')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-emerald-100 text-gray-400 hover:text-emerald-600 transition-colors disabled:opacity-50" title="Retry from the start" aria-label="Retry job">
                       <RotateCcw className="w-4 h-4" />
                     </button>
@@ -219,6 +263,44 @@ export default function AdminCollectorJobsPage() {
                   </button>
                 </div>
               </div>
+
+              {expanded && (
+                <div className="mt-4 border-t border-gray-100 pt-4 grid gap-4 lg:grid-cols-[1fr_1.25fr]">
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <div className="flex items-center gap-2 mb-3"><FileText className="w-4 h-4 text-blue-500" /><h4 className="text-sm font-semibold text-gray-900">Job details</h4></div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                      <dt className="text-gray-500">Source</dt><dd className="font-medium text-gray-900 text-right break-words">{job.sourceName || 'Unknown'}</dd>
+                      <dt className="text-gray-500">Status</dt><dd className="font-medium text-gray-900 text-right">{config.label}</dd>
+                      <dt className="text-gray-500">Trigger</dt><dd className="font-medium text-gray-900 text-right">{job.trigger || 'manual'}</dd>
+                      <dt className="text-gray-500">Mode</dt><dd className="font-medium text-gray-900 text-right">{job.mode || 'incremental'}</dd>
+                      <dt className="text-gray-500">Fetched</dt><dd className="font-medium text-gray-900 text-right">{job.fetched || 0}</dd>
+                      <dt className="text-gray-500">Normalized</dt><dd className="font-medium text-gray-900 text-right">{job.normalized || 0}</dd>
+                      <dt className="text-gray-500">New phones</dt><dd className="font-medium text-emerald-700 text-right">{job.newPhones || 0}</dd>
+                      <dt className="text-gray-500">Possible updates</dt><dd className="font-medium text-blue-700 text-right">{job.possibleUpdates || 0}</dd>
+                      <dt className="text-gray-500">Duplicates</dt><dd className="font-medium text-gray-900 text-right">{job.duplicates || 0}</dd>
+                      <dt className="text-gray-500">Conflicts</dt><dd className="font-medium text-amber-700 text-right">{job.conflictCount || 0}</dd>
+                      <dt className="text-gray-500">Failures</dt><dd className="font-medium text-red-700 text-right">{job.failureCount || 0}</dd>
+                      <dt className="text-gray-500">Retry count</dt><dd className="font-medium text-gray-900 text-right">{job.retryCount || 0}</dd>
+                    </dl>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" /><h4 className="text-sm font-semibold text-gray-900">Errors and warnings</h4></div>
+                      <button onClick={() => downloadJobLog(job)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700"><Download className="w-3.5 h-3.5" /> Download log</button>
+                    </div>
+                    {job.errorLog?.length ? (
+                      <ol className="space-y-2 max-h-56 overflow-auto pr-1">
+                        {job.errorLog.map((entry, index) => <li key={`${job.id}-error-${index}`} className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5"><span className="font-semibold mr-1">#{index + 1}</span>{entry}</li>)}
+                      </ol>
+                    ) : job.lastError ? (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5">{job.lastError}</p>
+                    ) : (
+                      <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">No detailed error log was recorded for this job.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
