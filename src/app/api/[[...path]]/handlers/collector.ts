@@ -575,13 +575,47 @@ export async function handleCollectorDelete(req: NextRequest, segments: string[]
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     await connectDB();
-    const body = await req.json().catch(() => null);
-    if (!body?.jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
-    const job = await CollectorJob.findById(body.jobId);
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const requestUrl = new URL(req.url);
+    const jobId = String(body?.jobId || requestUrl.searchParams.get('jobId') || '').trim();
+    const force = body?.force !== false;
+    if (!jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+
+    const job = await CollectorJob.findById(jobId);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (['queued', 'running'].includes(job.status)) return NextResponse.json({ error: 'Cancel the running job before deleting it.' }, { status: 409 });
-    await CollectorJob.findByIdAndDelete(body.jobId);
-    return NextResponse.json({ success: true });
+
+    // Admin delete is intentionally force-capable. The jobs screen can be stale
+    // for a few seconds while a serverless batch changes queued/running/paused
+    // state, so a completed-looking card must not fail with an unexplained 409.
+    // When force=true, active work is atomically cancelled before removal.
+    if (['queued', 'running'].includes(job.status)) {
+      if (!force) {
+        return NextResponse.json(
+          { error: 'This job is still active. Cancel it first or confirm force delete.', code: 'JOB_ACTIVE' },
+          { status: 409 },
+        );
+      }
+      await CollectorJob.updateOne(
+        { _id: job._id },
+        { $set: { status: 'cancelled', completedAt: new Date(), lastProcessedAt: new Date() } },
+      );
+    }
+
+    // Review candidates are valuable collected data. Preserve them, but remove
+    // the dangling job reference so deleting job history never deletes phones.
+    await CollectedPhone.updateMany({ jobId: job._id }, { $unset: { jobId: 1 } });
+    const deleted = await CollectorJob.findOneAndDelete({ _id: job._id });
+    if (!deleted) return NextResponse.json({ error: 'Job was already removed. Refresh the list.' }, { status: 404 });
+
+    await ActivityLog.create({
+      adminId: admin._id,
+      action: 'collector_job_deleted',
+      entityType: 'collector_job',
+      entityId: job._id,
+      details: JSON.stringify({ sourceName: job.sourceName || '', previousStatus: job.status, force }),
+    }).catch(() => undefined);
+
+    return NextResponse.json({ success: true, deletedJobId: jobId, previousStatus: job.status });
   }
 
   if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {

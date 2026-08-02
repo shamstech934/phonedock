@@ -60,10 +60,15 @@ export default function AdminCollectorJobsPage() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ jobId: id }),
+        body: JSON.stringify({ jobId: id, force: true, preserveReviewCandidates: true }),
       });
-      const payload = await readApiResponse<{ success?: boolean; error?: string }>(response).catch(() => null);
-      if (!response.ok) throw new Error(payload?.error || `Failed to delete collector job (HTTP ${response.status})`);
+      const payload = await readApiResponse<{ success?: boolean; error?: string; code?: string; deletedJobId?: string }>(response).catch(() => null);
+      if (!response.ok) {
+        const fallback = response.status === 409
+          ? 'The job changed state while deleting. Refresh and try again.'
+          : `Failed to delete collector job (HTTP ${response.status})`;
+        throw new Error(payload?.error || fallback);
+      }
       setDeleteModal(null);
       setJobs(previous => previous.filter(job => job.id !== id));
     } catch (reason) {
