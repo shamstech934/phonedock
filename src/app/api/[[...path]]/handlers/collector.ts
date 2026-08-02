@@ -119,19 +119,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({
-      jobs: jobs.map((j: Record<string, unknown>) => ({
-        ...j,
-        id: (j._id as { toString(): string } | undefined)?.toString(),
-        sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
-        // Historical jobs may contain raw undici/Mongoose error dumps from an
-        // older collector build. Never expose those documents in the admin UI.
-        lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
-        errorLog: Array.isArray(j.errorLog)
-          ? j.errorLog.map((entry) => sanitizeCollectorMessage(entry)).slice(-20)
-          : [],
-      })),
-    });
+    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({ ...j, id: (j._id as { toString(): string } | undefined)?.toString(), sourceId: (j.sourceId as { toString(): string } | undefined)?.toString() })) });
   }
 
   // ---- /api/collector/review — list the review queue ----
@@ -209,6 +197,48 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     const created = source.toObject();
     return NextResponse.json({ success: true, source: { ...created, id: source._id.toString() } }, { status: 201 });
+  }
+
+  // ---- /api/collector/sources/repair — sanitize legacy source headers and stale jobs ----
+  if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources' && segments[2] === 'repair') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const sources = await CollectorSource.find({});
+    let repairedSources = 0;
+    let clearedSourceErrors = 0;
+    for (const source of sources) {
+      const safeHeaders = toStringRecord(source.headers);
+      const hadHeaderError = /invalid header|Headers\.(?:append|set)/i.test(String(source.lastError || source.lastTestMessage || ''));
+      const before = toStringRecord((source.toObject({ flattenMaps: true }) as Record<string, unknown>).headers);
+      const changed = JSON.stringify(before) !== JSON.stringify(safeHeaders);
+      if (changed || hadHeaderError) {
+        await CollectorSource.updateOne({ _id: source._id }, {
+          $set: {
+            headers: safeHeaders,
+            lastError: hadHeaderError ? '' : source.lastError,
+            lastTestMessage: hadHeaderError ? '' : source.lastTestMessage,
+            lastTestStatus: hadHeaderError ? 'never' : source.lastTestStatus,
+            lastSyncStatus: hadHeaderError ? 'never' : source.lastSyncStatus,
+          },
+        });
+        repairedSources += 1;
+        if (hadHeaderError) clearedSourceErrors += 1;
+      }
+    }
+
+    const staleJobFilter = { status: 'failed', lastError: { $regex: 'invalid header|Headers\.(append|set)', $options: 'i' } };
+    const staleJobs = await CollectorJob.find(staleJobFilter, { _id: 1 }).lean();
+    if (staleJobs.length) {
+      await CollectorJob.updateMany(staleJobFilter, {
+        $set: { lastError: 'Legacy header configuration was repaired. Retry this job.', errorLog: [] },
+        $unset: { completedAt: 1 },
+      });
+    }
+
+    try { await ActivityLog.create({ adminId: admin._id, action: 'repair_collector_sources', details: `Repaired ${repairedSources} source(s) and ${staleJobs.length} stale job(s)`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, repairedSources, clearedSourceErrors, repairedJobs: staleJobs.length });
   }
 
   // ---- /api/collector/jobs/run-all — start a job for every enabled source without an active job ----
@@ -353,10 +383,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     if (!['paused', 'failed'].includes(job.status)) return NextResponse.json({ error: `Job is ${job.status}, not paused or failed` }, { status: 409 });
-    await CollectorJob.updateOne(
-      { _id: job._id },
-      { $set: { status: 'queued', lastError: '', errorLog: [], failureCount: 0 } },
-    );
+    await CollectorJob.updateOne({ _id: job._id }, { $set: { status: 'queued' } });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_resume', details: `Resumed job ${job._id} from page ${job.currentBatch}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
     return NextResponse.json({ success: true });

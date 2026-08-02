@@ -77,6 +77,23 @@ export async function startJob(jobId: string): Promise<void> {
       if (!source) throw new Error('Source not found');
       if (!source.enabled) throw new Error('Source is disabled');
 
+      // Repair legacy/custom header values before every run. Older source records
+      // may contain Mongoose Maps or non-string values. Only primitive text
+      // headers are valid for fetch/undici, so persist the sanitized record and
+      // clear stale header-related errors automatically.
+      const repairedHeaders = toStringRecord(source.headers);
+      const sourceHeadersObject = toStringRecord(plainSourceRecord(source).headers);
+      const headerRecord = { ...sourceHeadersObject, ...repairedHeaders };
+      const shouldRepairHeaders = JSON.stringify(headerRecord) !== JSON.stringify(sourceHeadersObject);
+      if (shouldRepairHeaders || /invalid header|Headers\.(?:append|set)/i.test(String(source.lastError || ''))) {
+        await CollectorSource.updateOne(
+          { _id: source._id },
+          { $set: { headers: headerRecord, lastError: '', lastTestMessage: '', lastSyncStatus: 'never' } },
+        );
+        source.headers = new Map(Object.entries(headerRecord));
+        source.lastError = '';
+      }
+
       const config = buildProviderConfig(plainSourceRecord(source));
       const provider = createProvider(config, source._id.toString(), source.name);
 

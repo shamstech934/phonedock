@@ -2,7 +2,7 @@
 import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
-import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play } from 'lucide-react';
+import { Database, Plus, X, Check, Power, PowerOff, Trash2, AlertTriangle, Clock, Zap, Search, RotateCcw, ArrowUpDown, Radio, XCircle, PlugZap, Play, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 import { toast } from '@/hooks/use-toast';
@@ -26,6 +26,7 @@ export default function AdminCollectorSourcesPage() {
   const [saving, setSaving] = useState(false);
   const [detectionReason, setDetectionReason] = useState('Paste a source URL and the correct type will be selected automatically.');
   const [deleteModal, setDeleteModal] = useState<CollectorSource | null>(null);
+  const [repairing, setRepairing] = useState(false);
 
   const fetchSources = useCallback(() => {
     setLoading(true);
@@ -91,6 +92,23 @@ export default function AdminCollectorSourcesPage() {
     try { const response = await fetch(`/api/collector/sources/${s.id}`, { method: 'PUT', credentials: 'include' }); if (!response.ok) throw new Error('Failed to update collector source'); fetchSources(); } catch (error) { setError(error instanceof Error ? error.message : 'Failed to update collector source'); }
   };
 
+  const repairSources = async () => {
+    if (repairing) return;
+    setRepairing(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/collector/sources/repair', { method: 'POST', credentials: 'include' });
+      const result = await readApiResponse<{ success?: boolean; repairedSources?: number; repairedJobs?: number; error?: string }>(response);
+      if (!response.ok) throw new Error(result.error || 'Collector sources could not be repaired');
+      toast({ title: 'Collector sources repaired', description: `${result.repairedSources || 0} source(s) and ${result.repairedJobs || 0} stale job(s) repaired.` });
+      fetchSources();
+    } catch (repairError) {
+      setError(repairError instanceof Error ? repairError.message : 'Collector sources could not be repaired');
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteModal) return;
     try {
@@ -151,9 +169,14 @@ export default function AdminCollectorSourcesPage() {
           <h1 className="text-xl font-extrabold text-gray-900">Collector Sources</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{sources.length} sources configured. Official manufacturer feeds require a vendor-approved adapter.</p>
         </div>
-        <button type="button" onClick={() => { setShowForm(current => !current); setError(null); }} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
-          <Plus className="w-3.5 h-3.5" /> Add Source
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={repairSources} disabled={repairing} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors disabled:opacity-60">
+            <Wrench className="w-3.5 h-3.5" /> {repairing ? 'Repairing…' : 'Repair Sources'}
+          </button>
+          <button type="button" onClick={() => { setShowForm(current => !current); setError(null); }} className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm shadow-blue-500/25 shrink-0">
+            <Plus className="w-3.5 h-3.5" /> Add Source
+          </button>
+        </div>
       </div>
 
       {error && !showForm && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</div>}
