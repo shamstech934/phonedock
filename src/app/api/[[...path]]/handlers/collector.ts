@@ -4,6 +4,7 @@ import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { createProvider } from '@/lib/collectors/providers';
 import { startJob, approveAndImport } from '@/lib/collectors/job-runner';
 import type { ProviderConfig, ProviderType } from '@/lib/collectors/types';
+import { detectCollectorSourceType } from '@/lib/collectors/source-detection';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { generateSlug } from '@/lib/import/validators';
 import { randomUUID } from 'node:crypto';
@@ -129,8 +130,10 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     if (!normalizedName) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     if (!srcType) return NextResponse.json({ error: 'Source type is required' }, { status: 400 });
     if (!PROVIDER_TYPES.includes(srcType)) return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
-    if (srcType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
-    if (srcType !== 'file_upload') {
+    const detectedType = srcEndpoint ? detectCollectorSourceType(srcEndpoint).type : srcType;
+    const normalizedType: ProviderType = srcType === 'manufacturer' || srcType === 'file_upload' ? srcType : detectedType;
+    if (normalizedType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
+    if (normalizedType !== 'file_upload') {
       if (!srcEndpoint) return NextResponse.json({ error: 'URL / Endpoint is required for this source type' }, { status: 400 });
       const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []);
       if (!checked.safe) return NextResponse.json({ error: checked.reason || 'Invalid endpoint' }, { status: 400 });
@@ -141,7 +144,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     if (duplicate) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
     let source;
     try {
-      source = await CollectorSource.create({ name: normalizedName, type: srcType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
+      source = await CollectorSource.create({ name: normalizedName, type: normalizedType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
       throw error;
