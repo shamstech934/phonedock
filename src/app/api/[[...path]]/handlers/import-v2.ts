@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { connectDB, getAdminFromRequest, requirePermission, MAX_UPLOAD_RECORDS, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES } from './helpers';
 import { parseBoundedInt } from '@/lib/http';
 import { ImportJob, ImportBatch, ImportRecord } from '@/lib/models';
-import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters } from '@/lib/import/import-v2-engine';
+import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters, reconcileImportSystem } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
 
 // ============ POST /api/admin/import-v2/upload ============
@@ -616,6 +616,27 @@ export async function handleImportV2ErrorsCsv(req: NextRequest, segments: string
   return new NextResponse(csv, {
     headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="import-${importId}-errors.csv"` },
   });
+}
+
+
+
+// ============ POST /api/admin/import-v2/reconcile ============
+// Repairs stale job state, recalculates counters, reconciles hidden imported
+// phones, and removes orphan/duplicate specs documents without deleting phones.
+export async function handleImportV2Reconcile(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  if (segments.length !== 3 || segments[2] !== 'reconcile') return undefined;
+  const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+  const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
+
+  try {
+    const report = await reconcileImportSystem();
+    return NextResponse.json({ success: true, data: report });
+  } catch (error: unknown) {
+    return NextResponse.json({
+      success: false,
+      error: { code: 'RECONCILE_FAILED', message: error instanceof Error ? error.message : String(error) },
+    }, { status: 500 });
+  }
 }
 
 // ============ GET /api/admin/import-v2/history ============

@@ -62,7 +62,8 @@
     "audit:seo-growth": "node scripts/seo-growth-audit.mjs",
     "audit:monetization-runtime": "node scripts/monetization-runtime-audit.mjs",
     "lint:strict": "eslint .",
-    "audit:seo-final": "node scripts/seo-final-phase-audit.mjs"
+    "audit:seo-final": "node scripts/seo-final-phase-audit.mjs",
+    "audit:import-v2-recovery": "node scripts/import-v2-recovery-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

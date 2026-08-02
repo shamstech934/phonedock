@@ -37,7 +37,7 @@ import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdmi
 import { handleAiResearchGet, handleAiResearchPost } from './handlers/ai-research';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
-import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv } from './handlers/import-v2';
+import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv, handleImportV2Reconcile } from './handlers/import-v2';
 import { handleDownloadSample } from './handlers/download';
 import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
 import { handleAdminRunPriceSync, handleCronUpdatePrices } from './handlers/cron-update-prices';
@@ -669,7 +669,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       || await handleImportV2Retry(req, segments)
       || await handleImportV2Cancel(req, segments)
       || await handleImportV2Rollback(req, segments)
-      || await handleImportV2QualityScan(req, segments);
+      || await handleImportV2QualityScan(req, segments)
+      || await handleImportV2Reconcile(req, segments);
     if (importV2Result) return importV2Result;
 
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)

@@ -1599,3 +1599,149 @@ export async function reconcileJobCounters(importId: string): Promise<void> {
     },
   );
 }
+
+
+export interface ImportSystemReconciliationReport {
+  jobsChecked: number;
+  jobsReconciled: number;
+  staleJobsFailed: number;
+  orphanBatchesRemoved: number;
+  rawPhones: number;
+  activePhones: number;
+  publishedPhones: number;
+  importedPhones: number;
+  hiddenImportedPhones: number;
+  publishableImportedPhonesRepaired: number;
+  uniquePhonesWithSpecs: number;
+  rawSpecsDocuments: number;
+  orphanSpecs: number;
+  duplicateSpecsRemoved: number;
+}
+
+/**
+ * Reconcile persistent import state with the real database.
+ * Safe by default: never deletes phones and never publishes incomplete records.
+ * It only repairs counters/statuses, removes truly orphaned tracking rows/specs,
+ * reactivates imported phones, and publishes imported drafts that satisfy the
+ * same publication rules used by the editor/importer.
+ */
+export async function reconcileImportSystem(): Promise<ImportSystemReconciliationReport> {
+  await connectDB();
+
+  const report: ImportSystemReconciliationReport = {
+    jobsChecked: 0,
+    jobsReconciled: 0,
+    staleJobsFailed: 0,
+    orphanBatchesRemoved: 0,
+    rawPhones: 0,
+    activePhones: 0,
+    publishedPhones: 0,
+    importedPhones: 0,
+    hiddenImportedPhones: 0,
+    publishableImportedPhonesRepaired: 0,
+    uniquePhonesWithSpecs: 0,
+    rawSpecsDocuments: 0,
+    orphanSpecs: 0,
+    duplicateSpecsRemoved: 0,
+  };
+
+  const jobs = await ImportJob.find().select('importId status totalBatches updatedAt').lean();
+  report.jobsChecked = jobs.length;
+  const validImportIds = new Set(jobs.map(job => job.importId));
+
+  // Remove tracking batches whose parent job no longer exists. These are not
+  // phone records and are safe to remove.
+  const orphanBatchDocs = await ImportBatch.find({ importId: { $nin: [...validImportIds] } }).select('_id').lean();
+  if (orphanBatchDocs.length > 0) {
+    const result = await ImportBatch.deleteMany({ _id: { $in: orphanBatchDocs.map(row => row._id) } });
+    report.orphanBatchesRemoved = result.deletedCount;
+  }
+
+  const staleCutoff = new Date(Date.now() - 60 * 60 * 1000);
+  for (const job of jobs) {
+    await reconcileJobCounters(job.importId);
+    const batches = await ImportBatch.find({ importId: job.importId, executionMode: 'real' })
+      .select('status recordCount created updated replaced skipped failed completedAt')
+      .lean();
+    const completed = batches.filter(batch => batch.status === 'completed').length;
+    const failed = batches.filter(batch => batch.status === 'failed').length;
+    const inFlight = batches.filter(batch => ['pending', 'processing', 'retrying'].includes(batch.status)).length;
+
+    let nextStatus = job.status;
+    if (job.status !== 'rolled_back' && job.status !== 'cancelled') {
+      if (batches.length > 0 && inFlight === 0) {
+        nextStatus = failed > 0 ? 'completed_with_errors' : 'completed';
+      } else if (
+        ['uploaded', 'parsing', 'validating', 'ready', 'queued', 'processing', 'paused'].includes(job.status) &&
+        new Date(job.updatedAt) < staleCutoff
+      ) {
+        nextStatus = 'failed';
+        report.staleJobsFailed++;
+      }
+    }
+
+    if (nextStatus !== job.status) {
+      await ImportJob.updateOne(
+        { importId: job.importId },
+        { $set: {
+          status: nextStatus,
+          completedAt: ['completed', 'completed_with_errors', 'failed'].includes(nextStatus) ? new Date() : null,
+          errorSummary: nextStatus === 'failed' ? 'Import became stale before completion. Retry the failed batch or upload again.' : '',
+          currentBatch: completed,
+        } },
+      );
+      report.jobsReconciled++;
+    }
+  }
+
+  report.rawPhones = await Phone.countDocuments({});
+  report.activePhones = await Phone.countDocuments({ active: { $ne: false }, deletedAt: null });
+  report.publishedPhones = await Phone.countDocuments({ status: 'published', active: { $ne: false }, deletedAt: null });
+  report.importedPhones = await Phone.countDocuments({ lastImportId: { $exists: true, $ne: '' } });
+  report.hiddenImportedPhones = await Phone.countDocuments({
+    lastImportId: { $exists: true, $ne: '' },
+    $or: [{ active: false }, { deletedAt: { $ne: null } }, { status: { $ne: 'published' } }],
+  });
+
+  const hiddenImported = await Phone.find({
+    lastImportId: { $exists: true, $ne: '' },
+    $or: [{ active: false }, { deletedAt: { $ne: null } }, { status: { $ne: 'published' } }],
+  })
+    .select('_id brandId modelName slug thumbnail pricePKR upcoming status active deletedAt')
+    .limit(5000)
+    .lean();
+
+  for (const phone of hiddenImported) {
+    const issues = getPhonePublicationIssues(phone);
+    const update: Record<string, unknown> = { active: true, deletedAt: null };
+    if (issues.length === 0) update.status = 'published';
+    const result = await Phone.updateOne({ _id: phone._id }, { $set: update });
+    if (result.modifiedCount > 0 && issues.length === 0) report.publishableImportedPhonesRepaired++;
+  }
+
+  const phoneIds = new Set((await Phone.find().select('_id').lean()).map(phone => String(phone._id)));
+  const specs = await PhoneSpecs.find().select('_id phoneId updatedAt').sort({ updatedAt: -1, _id: -1 }).lean();
+  report.rawSpecsDocuments = specs.length;
+  const keptByPhone = new Set<string>();
+  const orphanIds: Types.ObjectId[] = [];
+  const duplicateIds: Types.ObjectId[] = [];
+  for (const spec of specs) {
+    const phoneId = String(spec.phoneId || '');
+    if (!phoneId || !phoneIds.has(phoneId)) {
+      orphanIds.push(spec._id);
+      continue;
+    }
+    if (keptByPhone.has(phoneId)) duplicateIds.push(spec._id);
+    else keptByPhone.add(phoneId);
+  }
+  report.uniquePhonesWithSpecs = keptByPhone.size;
+  report.orphanSpecs = orphanIds.length;
+  if (orphanIds.length > 0) await PhoneSpecs.deleteMany({ _id: { $in: orphanIds } });
+  if (duplicateIds.length > 0) {
+    const result = await PhoneSpecs.deleteMany({ _id: { $in: duplicateIds } });
+    report.duplicateSpecsRemoved = result.deletedCount;
+  }
+
+  await revalidatePublicContent({ phones: true, brands: true, homepage: true });
+  return report;
+}

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Upload, FileText, CheckCircle, XCircle, AlertTriangle, Download,
-  ArrowLeft, RefreshCw, Pause, Play, Eye, Trash2, AlertCircle,
+  ArrowLeft, RefreshCw, Pause, Play, Eye, Trash2, AlertCircle, Wrench,
   Database, Clock, Loader2, ChevronRight, Zap, ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -1586,10 +1586,33 @@ export default function ImportV2Page() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">Import History</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => { safeFetch<{ jobs?: unknown[] }>('/api/admin/import-v2/history').then((res) => { if (res.ok) setHistory(normalizeHistory(res.data?.jobs || [])); }); }}>
-                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                    Refresh
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={actionLoading}
+                      onClick={async () => {
+                        setActionLoading(true);
+                        const result = await safeFetch<Record<string, number>>('/api/admin/import-v2/reconcile', { method: 'POST' });
+                        setActionLoading(false);
+                        if (!result.ok) {
+                          setStartError(result.error || 'Import reconciliation failed');
+                          return;
+                        }
+                        const report = result.data || {};
+                        setStartError(`Reconciliation complete: ${report.jobsReconciled || 0} jobs repaired, ${report.publishableImportedPhonesRepaired || 0} imported phones published, ${report.orphanSpecs || 0} orphan specs removed.`);
+                        const historyResult = await safeFetch<{ jobs?: unknown[] }>('/api/admin/import-v2/history');
+                        if (historyResult.ok) setHistory(normalizeHistory(historyResult.data?.jobs || []));
+                      }}
+                    >
+                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5 mr-1.5" />}
+                      Repair & Reconcile
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { safeFetch<{ jobs?: unknown[] }>('/api/admin/import-v2/history').then((res) => { if (res.ok) setHistory(normalizeHistory(res.data?.jobs || [])); }); }}>
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                      Refresh
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
