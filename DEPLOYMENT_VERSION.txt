@@ -1,3 +1,3 @@
-SpecsDekh v29.2.4
-Built: 2026-08-02
-Fix: admin phones API payload issues typing
+SpecsDekh v29.2.5
+Release Readiness + SEO Monitoring API typing fix
+Generated: 2026-08-02

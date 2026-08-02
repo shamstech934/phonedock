@@ -41,8 +41,8 @@ export default function SeoMonitoringPage() {
     setLoading(true); setError('');
     try {
       const response = await fetch('/api/admin/seo-monitoring', { credentials: 'include', cache: 'no-store' });
-      const json = await readApiResponse(response);
-      if (!response.ok) throw new Error(json.error || 'SEO monitoring failed');
+      const json = await readApiResponse<SeoData & { error?: string }>(response).catch(() => null);
+      if (!response.ok || !json) throw new Error(json?.error || 'SEO monitoring failed');
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load SEO monitoring');

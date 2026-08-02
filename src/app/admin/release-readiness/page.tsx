@@ -31,8 +31,8 @@ export default function ReleaseReadinessPage() {
     setLoading(true); setError('');
     try {
       const response = await fetch('/api/admin/release-readiness', { credentials: 'include', cache: 'no-store' });
-      const json = await readApiResponse(response);
-      if (!response.ok) throw new Error(json.error || 'Release readiness check failed');
+      const json = await readApiResponse<ReleaseData & { error?: string }>(response).catch(() => null);
+      if (!response.ok || !json) throw new Error(json?.error || 'Release readiness check failed');
       setData(json);
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load checks'); }
     finally { setLoading(false); }
