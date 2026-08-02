@@ -119,7 +119,19 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({ ...j, id: (j._id as { toString(): string } | undefined)?.toString(), sourceId: (j.sourceId as { toString(): string } | undefined)?.toString() })) });
+    return NextResponse.json({
+      jobs: jobs.map((j: Record<string, unknown>) => ({
+        ...j,
+        id: (j._id as { toString(): string } | undefined)?.toString(),
+        sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
+        // Historical jobs may contain raw undici/Mongoose error dumps from an
+        // older collector build. Never expose those documents in the admin UI.
+        lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
+        errorLog: Array.isArray(j.errorLog)
+          ? j.errorLog.map((entry) => sanitizeCollectorMessage(entry)).slice(-20)
+          : [],
+      })),
+    });
   }
 
   // ---- /api/collector/review — list the review queue ----
@@ -341,7 +353,10 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     if (!['paused', 'failed'].includes(job.status)) return NextResponse.json({ error: `Job is ${job.status}, not paused or failed` }, { status: 409 });
-    await CollectorJob.updateOne({ _id: job._id }, { $set: { status: 'queued' } });
+    await CollectorJob.updateOne(
+      { _id: job._id },
+      { $set: { status: 'queued', lastError: '', errorLog: [], failureCount: 0 } },
+    );
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_resume', details: `Resumed job ${job._id} from page ${job.currentBatch}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
     return NextResponse.json({ success: true });

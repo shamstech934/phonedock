@@ -54,7 +54,17 @@ export default function AdminCollectorJobsPage() {
     finally { setActionBusyId(null); }
   };
 
-  const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
+  function cleanCollectorError(value?: string): string {
+  if (!value) return '';
+  if (/Headers\.(?:append|set)|invalid header value/i.test(value)) {
+    return 'Invalid HTTP header configuration. Retry this job after deploying the latest collector fix.';
+  }
+  // Defensive UI guard: do not render serialized database documents or huge
+  // upstream HTML/error bodies in the jobs list.
+  return value.replace(/\s+/g, ' ').slice(0, 500);
+}
+
+const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
     queued: { icon: Clock, color: 'text-gray-600', bg: 'bg-gray-50', label: 'Queued' },
     running: { icon: Loader, color: 'text-blue-500', bg: 'bg-blue-50', label: 'Running' },
     paused: { icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Paused' },
@@ -180,7 +190,7 @@ export default function AdminCollectorJobsPage() {
                   {job.lastError && (
                     <div className="mt-2 p-2.5 bg-red-50/50 rounded-lg border border-red-100/50 text-[11px] text-red-600 flex items-start gap-1.5">
                       <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                      <span>{job.lastError}</span>
+                      <span>{cleanCollectorError(job.lastError)}</span>
                     </div>
                   )}
                   {/* Progress */}
