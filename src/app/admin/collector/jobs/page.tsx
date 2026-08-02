@@ -1,7 +1,7 @@
 'use client';
 import { readApiResponse } from '@/lib/client/api-response';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -24,14 +24,23 @@ export default function AdminCollectorJobsPage() {
   const [search, setSearch] = useState('');
   const [deleteModal, setDeleteModal] = useState<CollectorJob | null>(null);
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const autoResumeKeys = useRef<Set<string>>(new Set());
 
-  const fetchJobs = useCallback(() => {
+  const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
-    fetch('/api/collector/jobs', { credentials: 'include' })
-      .then(async r => { const payload = await readApiResponse<{ jobs?: CollectorJob[]; error?: string }>(r); if (!r.ok) throw new Error(payload.error || 'Failed to fetch jobs'); return payload; })
-      .then(d => { setJobs(d.jobs || []); setLoading(false); })
-      .catch((e) => { setError(e?.message || 'Failed to load jobs. Please try again.'); setLoading(false); });
+    try {
+      const response = await fetch('/api/collector/jobs', { credentials: 'include' });
+      const payload = await readApiResponse<{ jobs?: CollectorJob[]; error?: string }>(response);
+      if (!response.ok) throw new Error(payload.error || 'Failed to fetch jobs');
+      setJobs(payload.jobs || []);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load jobs. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
@@ -44,27 +53,57 @@ export default function AdminCollectorJobsPage() {
   }, [jobs, fetchJobs]);
 
   const deleteJob = async (id: string) => {
+    setDeleteBusy(true);
+    setActionError(null);
     try {
-      const response = await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ jobId: id }) });
-      if (!response.ok) throw new Error('Failed to delete collector job');
+      const response = await fetch('/api/collector/jobs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ jobId: id }),
+      });
+      const payload = await readApiResponse<{ success?: boolean; error?: string }>(response).catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || `Failed to delete collector job (HTTP ${response.status})`);
       setDeleteModal(null);
-      setJobs(prev => prev.filter(j => j.id !== id));
-    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to delete collector job'); }
+      setJobs(previous => previous.filter(job => job.id !== id));
+    } catch (reason) {
+      // A failed action must not replace the whole jobs screen with a load error.
+      setActionError(reason instanceof Error ? reason.message : 'Failed to delete collector job');
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
-  const runJobAction = async (id: string, action: 'resume' | 'retry' | 'cancel') => {
+  const runJobAction = useCallback(async (id: string, action: 'resume' | 'retry' | 'cancel') => {
     setActionBusyId(id);
+    setActionError(null);
     try {
       const response = await fetch(`/api/collector/jobs/${id}/${action}`, { method: 'POST', credentials: 'include' });
-      const data = await readApiResponse(response);
+      const data = await readApiResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(data.error || `Failed to ${action} job`);
-      // Refresh after the server has reset/restarted the job so stale historical
-      // errors disappear immediately from the UI.
       await fetchJobs();
-    } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }
-    finally { setActionBusyId(null); }
-  };
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : `Failed to ${action} job`);
+    } finally {
+      setActionBusyId(null);
+    }
+  }, [fetchJobs]);
+
+  // Manual collector runs are split into bounded serverless batches. Continue
+  // paused batches automatically while this page is open instead of making the
+  // admin press Resume after every batch. Scheduled cron remains the fallback
+  // when the page is closed.
+  useEffect(() => {
+    if (actionBusyId) return;
+    const pausedJob = jobs.find(job => job.status === 'paused');
+    if (!pausedJob) return;
+    const continuationKey = `${pausedJob.id}:${pausedJob.currentBatch || 0}`;
+    if (autoResumeKeys.current.has(continuationKey)) return;
+    autoResumeKeys.current.add(continuationKey);
+    const timer = window.setTimeout(() => { void runJobAction(pausedJob.id, 'resume'); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [jobs, actionBusyId, runJobAction]);
 
 
   const toggleJob = (id: string) => {
@@ -169,6 +208,13 @@ export default function AdminCollectorJobsPage() {
           </button>
         </div>
       </div>
+
+      {actionError && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -358,9 +404,9 @@ export default function AdminCollectorJobsPage() {
               <p className="text-[10px] text-muted-foreground mt-0.5">Status: {deleteModal.status} &middot; Created: {new Date(deleteModal.createdAt).toLocaleDateString()}</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setDeleteModal(null)} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => deleteJob(deleteModal.id)} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1.5">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+              <button onClick={() => setDeleteModal(null)} disabled={deleteBusy} className="flex-1 h-10 disabled:opacity-50 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => deleteJob(deleteModal.id)} disabled={deleteBusy} className="flex-1 h-10 disabled:opacity-60 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1.5">
+                {deleteBusy ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} {deleteBusy ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>

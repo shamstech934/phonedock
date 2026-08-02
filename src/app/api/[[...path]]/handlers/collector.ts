@@ -579,7 +579,7 @@ export async function handleCollectorDelete(req: NextRequest, segments: string[]
     if (!body?.jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
     const job = await CollectorJob.findById(body.jobId);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (['queued', 'running', 'paused'].includes(job.status)) return NextResponse.json({ error: 'Cancel the job before deleting it.' }, { status: 409 });
+    if (['queued', 'running'].includes(job.status)) return NextResponse.json({ error: 'Cancel the running job before deleting it.' }, { status: 409 });
     await CollectorJob.findByIdAndDelete(body.jobId);
     return NextResponse.json({ success: true });
   }
