@@ -22,6 +22,10 @@ interface DashboardStats {
   totalReviews: number;
   totalSponsors: number;
   totalAdmins: number;
+  publishedPhones: number;
+  draftPhones: number;
+  upcomingPhones: number;
+  ptaApprovedPhones: number;
   priceDistribution: Array<{ range: string; count: number }>;
   dataHealth?: {
     publishedPhones: number;
@@ -45,15 +49,30 @@ export default function AdminDashboardPage() {
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadStats = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/stats', { credentials: 'include', cache: 'no-store' });
+      const payload = await readApiResponse<DashboardStats>(response);
+      setStats(payload);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load dashboard stats');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/admin/stats', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(`Request failed (${r.status})`); return r.json(); })
-      .then(d => { setStats(d); setLoading(false); })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); });
+    void loadStats();
   }, []);
 
   const statCards = [
     { label: 'Total Phones', value: stats.totalPhones ?? 0, icon: Smartphone, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
+    { label: 'Published', value: stats.publishedPhones ?? 0, icon: CheckCircle2, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
+    { label: 'Draft / Review', value: stats.draftPhones ?? 0, icon: FileWarning, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
+    { label: 'Upcoming', value: stats.upcomingPhones ?? 0, icon: TrendingUp, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
+    { label: 'PTA Approved', value: stats.ptaApprovedPhones ?? 0, icon: ShieldCheck, bg: 'bg-teal-50', iconColor: 'text-teal-500' },
     { label: 'Brands', value: stats.totalBrands ?? 0, icon: Layers, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
     { label: 'Trending', value: stats.trendingCount ?? 0, icon: TrendingUp, bg: 'bg-red-50', iconColor: 'text-red-500' },
     { label: 'Featured', value: stats.featuredCount ?? 0, icon: Star, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
@@ -62,7 +81,7 @@ export default function AdminDashboardPage() {
     { label: 'Videos', value: stats.totalVideos ?? 0, icon: Video, bg: 'bg-rose-50', iconColor: 'text-rose-500' },
     { label: 'Reviews', value: stats.totalReviews ?? 0, icon: MessageSquare, bg: 'bg-sky-50', iconColor: 'text-sky-500' },
     { label: 'Sponsors', value: stats.totalSponsors ?? 0, icon: HandCoins, bg: 'bg-orange-50', iconColor: 'text-orange-500' },
-    { label: 'Admin Users', value: stats.totalAdmins ?? 0, icon: ShieldCheck, bg: 'bg-teal-50', iconColor: 'text-teal-500' },
+    { label: 'Admin Users', value: stats.totalAdmins ?? 0, icon: ShieldCheck, bg: 'bg-slate-50', iconColor: 'text-slate-500' },
   ];
 
   const quickActions = [
@@ -81,6 +100,28 @@ export default function AdminDashboardPage() {
     { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
   ];
   const maxPriceCount = Math.max(...priceDist.map(d => d.count || 0), 1);
+  const humanizeActivity = (log: DashboardStats['recentActivity'][number]) => {
+    const fallback = log.action || 'Activity recorded';
+    const raw = log.details?.trim();
+    if (!raw) return fallback;
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const message = typeof parsed.message === 'string' ? parsed.message : '';
+      const prices = parsed.prices && typeof parsed.prices === 'object' ? parsed.prices as Record<string, unknown> : null;
+      const rumours = parsed.rumours && typeof parsed.rumours === 'object' ? parsed.rumours as Record<string, unknown> : null;
+      const parts = [
+        message,
+        prices && typeof prices.updated === 'number' ? `${prices.updated} prices updated` : '',
+        prices && typeof prices.processed === 'number' ? `${prices.processed} listings processed` : '',
+        rumours && typeof rumours.scanned === 'number' ? `${rumours.scanned} launch records scanned` : '',
+        rumours && typeof rumours.imported === 'number' ? `${rumours.imported} launches imported` : '',
+      ].filter(Boolean);
+      return parts.length ? parts.join(' · ') : fallback;
+    } catch {
+      return raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -102,12 +143,12 @@ export default function AdminDashboardPage() {
               <p className="text-sm font-semibold text-red-800">Failed to load dashboard</p>
               <p className="text-xs text-red-600 mt-0.5">{error}</p>
             </div>
-            <button onClick={() => { setError(null); setLoading(true); fetch('/api/admin/stats', { credentials: 'include' }).then(r => r.json()).then(d => { setStats(d); setLoading(false); }).catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); }); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline shrink-0">Retry</button>
+            <button onClick={() => { void loadStats(); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline shrink-0">Retry</button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7 gap-3">
         {statCards.map(s => (
           <div key={s.label} className="card-premium p-4">
             <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor} shrink-0`} /></div>
@@ -195,7 +236,7 @@ export default function AdminDashboardPage() {
                 {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>
+                  <p className="text-xs font-medium text-gray-900 leading-5">{humanizeActivity(log)}</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">{log.admin?.name || 'Admin'} · {log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
                 </div>
               </div>

@@ -114,57 +114,83 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'dashboard:read'); if (permCheck) return permCheck;
     await connectDB();
+    const publishedFilter = { active: true, status: 'published', deletedAt: null } as const;
     const [
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity,
       totalVideos, totalReviews, totalAdmins, totalSponsors, publishedPhones,
-      phonesMissingPrice, phonesMissingThumbnail, phonesWithSpecs, phonesWithImages,
+      draftPhones, upcomingPhones, ptaApprovedPhones,
+      phonesMissingPrice, phonesMissingThumbnail, publishedPhoneIds,
     ] = await Promise.all([
-      Phone.countDocuments({ active: true }),
+      Phone.countDocuments({ active: true, deletedAt: null }),
       Brand.countDocuments({ active: true }),
-      Phone.countDocuments({ active: true, trending: true }),
-      Phone.countDocuments({ active: true, featured: true }),
+      Phone.countDocuments({ ...publishedFilter, trending: true }),
+      Phone.countDocuments({ ...publishedFilter, featured: true }),
       News.countDocuments({ published: true }),
       ActivityLog.find().sort({ createdAt: -1 }).limit(20).populate('adminId', 'name email').lean(),
       Video.countDocuments({ active: true }),
       UserReview.estimatedDocumentCount(),
       Admin.countDocuments({ active: true }),
       Sponsor.estimatedDocumentCount(),
-      Phone.countDocuments({ active: true, status: 'published' }),
-      Phone.countDocuments({ active: true, status: 'published', $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] }),
-      Phone.countDocuments({ active: true, status: 'published', $or: [{ thumbnail: { $exists: false } }, { thumbnail: '' }, { thumbnail: null }] }),
-      PhoneSpecs.distinct('phoneId'),
-      PhoneImage.distinct('phoneId'),
+      Phone.countDocuments(publishedFilter),
+      Phone.countDocuments({ active: true, status: { $in: ['draft', 'pending'] }, deletedAt: null }),
+      Phone.countDocuments({ active: true, deletedAt: null, $or: [{ upcoming: true }, { availabilityStatus: { $in: ['rumored', 'announced', 'coming_soon'] } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ ptaApproved: true }, { ptaStatus: { $in: ['Approved', 'PTA Approved', 'approved'] } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ thumbnail: { $exists: false } }, { thumbnail: '' }, { thumbnail: null }] }),
+      Phone.find(publishedFilter).distinct('_id'),
     ]);
-    const priceResult = await Phone.aggregate([
-      { $match: { active: true, pricePKR: { $gt: 0 } } },
-      { $group: { _id: null, avg: { $avg: '$pricePKR' } } },
-    ]);
-    const priceDistribution = await Phone.aggregate([
-      { $match: { active: true, pricePKR: { $gt: 0 } } },
-      {
-        $bucket: {
-          groupBy: '$pricePKR',
-          boundaries: [0, 20000, 40000, 60000, 100000, Infinity],
-          default: 'Above 100K',
-          output: { count: { $sum: 1 } },
+
+    const [phonesWithSpecs, phonesWithImages, priceResult, priceDistributionRows] = await Promise.all([
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      Phone.aggregate([
+        { $match: { ...publishedFilter, pricePKR: { $gt: 0 } } },
+        { $group: { _id: null, avg: { $avg: '$pricePKR' } } },
+      ]),
+      Phone.aggregate([
+        { $match: { ...publishedFilter, pricePKR: { $gt: 0 } } },
+        {
+          $group: {
+            _id: {
+              $switch: {
+                branches: [
+                  { case: { $lt: ['$pricePKR', 20000] }, then: 'Under 20K' },
+                  { case: { $lt: ['$pricePKR', 40000] }, then: '20K - 40K' },
+                  { case: { $lt: ['$pricePKR', 60000] }, then: '40K - 60K' },
+                  { case: { $lt: ['$pricePKR', 100000] }, then: '60K - 100K' },
+                ],
+                default: 'Above 100K',
+              },
+            },
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
     ]);
-    const distLabels = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
+
+    const phonesMissingSpecs = Math.max(publishedPhones - phonesWithSpecs.length, 0);
+    const phonesMissingImages = Math.max(publishedPhones - phonesWithImages.length, 0);
+    const totalHealthChecks = publishedPhones * 4;
+    const failedHealthChecks = phonesMissingPrice + phonesMissingThumbnail + phonesMissingSpecs + phonesMissingImages;
+    const completenessPercent = totalHealthChecks > 0
+      ? Math.max(0, Math.min(100, Math.round(((totalHealthChecks - failedHealthChecks) / totalHealthChecks) * 100)))
+      : 100;
+    const distributionOrder = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
+    const distributionMap = new Map(priceDistributionRows.map((row: { _id: string; count: number }) => [row._id, row.count]));
+
     return NextResponse.json({
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount, totalVideos, totalReviews, totalAdmins, totalSponsors,
-      avgPrice: priceResult[0]?.avg || 0,
+      publishedPhones, draftPhones, upcomingPhones, ptaApprovedPhones,
+      avgPrice: Math.round(priceResult[0]?.avg || 0),
       dataHealth: {
         publishedPhones,
         phonesMissingPrice,
         phonesMissingThumbnail,
-        phonesMissingSpecs: Math.max(publishedPhones - phonesWithSpecs.length, 0),
-        phonesMissingImages: Math.max(publishedPhones - phonesWithImages.length, 0),
-        completenessPercent: publishedPhones > 0
-          ? Math.max(0, Math.round((1 - ((phonesMissingPrice + phonesMissingThumbnail + Math.max(publishedPhones - phonesWithSpecs.length, 0)) / (publishedPhones * 3))) * 100))
-          : 100,
+        phonesMissingSpecs,
+        phonesMissingImages,
+        completenessPercent,
       },
-      priceDistribution: priceDistribution.map((d: AggBucketResult, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
+      priceDistribution: distributionOrder.map(range => ({ range, count: distributionMap.get(range) || 0 })),
       recentActivity: recentActivity.map((l: Record<string, unknown>) => ({
         ...l,
         id: (l._id as { toString(): string } | undefined)?.toString(),
