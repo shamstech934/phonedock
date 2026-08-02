@@ -22,8 +22,8 @@ export function detectCollectorSourceType(endpoint: string): SourceDetection {
   if (/\.json(?:$|\?)/.test(path)) {
     return { type: 'json_url', confidence: 'high', reason: 'The URL points to a JSON document.' };
   }
-  if (/\.(?:xml|rss|atom)(?:$|\?)/.test(path) || /(?:rss|atom|feed)(?:\/|$)/.test(path)) {
-    return { type: /rss|atom|feed/.test(path) ? 'rss_feed' : 'xml_feed', confidence: 'high', reason: 'The URL looks like an XML/RSS feed.' };
+  if (/\.(?:xml|rss|atom)(?:$|\?)/.test(path) || /(?:rss|atom|feed)/.test(combined) || /rss-news-reviews\.php3$/i.test(path)) {
+    return { type: /rss|atom|feed/.test(combined) ? 'rss_feed' : 'xml_feed', confidence: 'high', reason: 'The URL looks like an XML/RSS feed.' };
   }
   if (/\bapi\b/.test(url.hostname) || /\/api\//.test(path) || /\/v\d+\//.test(path)) {
     return { type: 'api', confidence: 'medium', reason: 'The URL looks like a JSON API endpoint.' };

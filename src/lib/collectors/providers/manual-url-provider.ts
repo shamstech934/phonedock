@@ -3,6 +3,14 @@ import type { NormalizedPhone } from '../types';
 import { getManufacturerParser } from '../parsers/registry';
 import type { ParserContext } from '../parsers/types';
 
+
+const NON_PRODUCT_ASSET_RE = /\.(?:pdf|zip|rar|7z|docx?|xlsx?|pptx?|jpe?g|png|gif|webp|svg|ico|mp4|webm|mp3|wav)(?:$|[?#])/i;
+
+function isNonProductAsset(url: string): boolean {
+  try { return NON_PRODUCT_ASSET_RE.test(new URL(url).pathname); }
+  catch { return NON_PRODUCT_ASSET_RE.test(url); }
+}
+
 function normalizePhone(phone: NormalizedPhone | null, generateSlug: (brand: string, model: string) => string): NormalizedPhone | null {
   if (!phone) return null;
   const brandName = String(phone.brandName || '').replace(/\s+/g, ' ').trim();
@@ -42,9 +50,17 @@ export class ManualUrlProvider extends BaseProvider {
 
     const html = await this.readTextLimited(response);
     const parser = getManufacturerParser(url);
-    const discovered = parser.discover(html, context);
     const phones: NormalizedPhone[] = [];
     const warnings: string[] = [];
+    const errors: string[] = [];
+    let skippedCount = 0;
+    const discoveredAll = parser.discover(html, context);
+    const discovered = discoveredAll.filter(candidate => {
+      if (!isNonProductAsset(candidate.url)) return true;
+      skippedCount += 1;
+      warnings.push(`Skipped non-product asset: ${candidate.url}`);
+      return false;
+    });
 
     // Some catalog pages expose complete Product JSON-LD. Parse the catalog itself first.
     const catalogPhone = normalizePhone(parser.parseProduct(html, url, context), this.generateSlug.bind(this));
@@ -74,7 +90,7 @@ export class ManualUrlProvider extends BaseProvider {
           productTimeoutMs,
         );
         if (!productResponse.ok) {
-          warnings.push(`${candidate.url}: HTTP ${productResponse.status}`);
+          errors.push(`${candidate.url}: HTTP ${productResponse.status}`);
           return null;
         }
         const productHtml = await this.readTextLimited(productResponse);
@@ -93,7 +109,13 @@ export class ManualUrlProvider extends BaseProvider {
         if (!phone) warnings.push(`${candidate.url}: product identity could not be confirmed`);
         return phone;
       } catch (error: unknown) {
-        warnings.push(`${candidate.url}: ${error instanceof Error ? error.message : 'request failed'}`);
+        const message = error instanceof Error ? error.message : 'request failed';
+        if (/Source URL blocked: Domain not in allowed list/i.test(message) && isNonProductAsset(candidate.url)) {
+          skippedCount += 1;
+          warnings.push(`Skipped external asset outside allowed domains: ${candidate.url}`);
+        } else {
+          errors.push(`${candidate.url}: ${message}`);
+        }
         return null;
       }
     };
@@ -116,7 +138,9 @@ export class ManualUrlProvider extends BaseProvider {
         phones: [],
         totalAvailable: discovered.length || undefined,
         hasNextPage,
-        providerErrors: [`${detail} Parser: ${parser.id}. Use a JSON/CSV/RSS feed or configure a brand-specific parser if the site renders products only in JavaScript.`, ...warnings].slice(0, 20),
+        providerErrors: [`${detail} Parser: ${parser.id}. Use a JSON/CSV feed or configure a brand-specific parser if the site renders products only in JavaScript.`, ...errors].slice(0, 20),
+        providerWarnings: warnings.slice(0, 20),
+        skippedCount,
       };
     }
 
@@ -125,7 +149,9 @@ export class ManualUrlProvider extends BaseProvider {
       phones: filtered,
       totalAvailable: discovered.length || filtered.length,
       hasNextPage,
-      providerErrors: warnings.slice(0, 20),
+      providerErrors: errors.slice(0, 20),
+      providerWarnings: warnings.slice(0, 20),
+      skippedCount,
     };
   }
 

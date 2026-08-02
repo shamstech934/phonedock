@@ -12,7 +12,7 @@ interface CollectorJob {
   fetched?: number; newPhones?: number; possibleUpdates?: number; duplicates?: number; failureCount?: number;
   currentBatch?: number; totalBatches?: number; totalExpected?: number; retryCount?: number;
   normalized?: number; conflictCount?: number; duration?: number; trigger?: string; mode?: string;
-  errorLog?: string[]; requestId?: string; updatedAt?: string;
+  errorLog?: string[]; warningLog?: string[]; warningCount?: number; skippedCount?: number; requestId?: string; updatedAt?: string;
 }
 
 export default function AdminCollectorJobsPage() {
@@ -88,6 +88,11 @@ export default function AdminCollectorJobsPage() {
       `Possible updates: ${job.possibleUpdates || 0}`,
       `Duplicates: ${job.duplicates || 0}`,
       `Failures: ${job.failureCount || 0}`,
+      `Warnings: ${job.warningCount || 0}`,
+      `Skipped assets: ${job.skippedCount || 0}`,
+      '',
+      'Warnings:',
+      ...(job.warningLog?.length ? job.warningLog : ['No warnings recorded.']),
       '',
       'Errors / warnings:',
       ...(job.errorLog?.length ? job.errorLog : [job.lastError || 'No error log recorded.']),
@@ -223,6 +228,8 @@ export default function AdminCollectorJobsPage() {
                       {job.possibleUpdates !== undefined && job.possibleUpdates > 0 && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">~{job.possibleUpdates} possible updates</span>}
                       {job.duplicates !== undefined && job.duplicates > 0 && <span className="text-[10px] font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full">{job.duplicates} duplicates</span>}
                       {job.failureCount !== undefined && job.failureCount > 0 && <span className="text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">{job.failureCount} failed</span>}
+                      {(job.warningCount || 0) > 0 && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">{job.warningCount} warnings</span>}
+                      {(job.skippedCount || 0) > 0 && <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">{job.skippedCount} skipped assets</span>}
                       {job.fetched !== undefined && <span className="text-[10px] text-gray-400">{job.fetched} fetched total</span>}
                     </div>
                   )}
@@ -287,6 +294,8 @@ export default function AdminCollectorJobsPage() {
                       <dt className="text-gray-500">Duplicates</dt><dd className="font-medium text-gray-900 text-right">{job.duplicates || 0}</dd>
                       <dt className="text-gray-500">Conflicts</dt><dd className="font-medium text-amber-700 text-right">{job.conflictCount || 0}</dd>
                       <dt className="text-gray-500">Failures</dt><dd className="font-medium text-red-700 text-right">{job.failureCount || 0}</dd>
+                      <dt className="text-gray-500">Warnings</dt><dd className="font-medium text-amber-700 text-right">{job.warningCount || 0}</dd>
+                      <dt className="text-gray-500">Skipped assets</dt><dd className="font-medium text-slate-700 text-right">{job.skippedCount || 0}</dd>
                       <dt className="text-gray-500">Retry count</dt><dd className="font-medium text-gray-900 text-right">{job.retryCount || 0}</dd>
                     </dl>
                   </div>
@@ -296,15 +305,23 @@ export default function AdminCollectorJobsPage() {
                       <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" /><h4 className="text-sm font-semibold text-gray-900">Errors and warnings</h4></div>
                       <button onClick={() => downloadJobLog(job)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700"><Download className="w-3.5 h-3.5" /> Download log</button>
                     </div>
+                    {job.warningLog?.length ? (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-amber-800 mb-2">Warnings</p>
+                        <ol className="space-y-2 max-h-40 overflow-auto pr-1">
+                          {job.warningLog.map((entry, index) => <li key={`${job.id}-warning-${index}`} className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-2.5"><span className="font-semibold mr-1">#{index + 1}</span>{entry}</li>)}
+                        </ol>
+                      </div>
+                    ) : null}
                     {job.errorLog?.length ? (
                       <ol className="space-y-2 max-h-56 overflow-auto pr-1">
                         {job.errorLog.map((entry, index) => <li key={`${job.id}-error-${index}`} className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5"><span className="font-semibold mr-1">#{index + 1}</span>{entry}</li>)}
                       </ol>
                     ) : job.lastError ? (
                       <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5">{job.lastError}</p>
-                    ) : (
-                      <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">No detailed error log was recorded for this job.</p>
-                    )}
+                    ) : !job.warningLog?.length ? (
+                      <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">No errors or warnings were recorded for this job.</p>
+                    ) : null}
                   </div>
                 </div>
               )}

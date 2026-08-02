@@ -46,6 +46,8 @@ export interface ProviderFetchResult {
   hasNextPage: boolean;
   nextPageToken?: string;
   providerErrors: string[];
+  providerWarnings?: string[];
+  skippedCount?: number;
 }
 
 export interface ProviderTestResult {
@@ -75,8 +77,10 @@ export abstract class BaseProvider {
       return {
         success: result.providerErrors.length === 0,
         message: result.providerErrors.length > 0
-          ? `Warnings: ${result.providerErrors.join('; ')}`
-          : `Connected. Found ${result.phones.length} records.`,
+          ? `Errors: ${result.providerErrors.join('; ')}`
+          : result.providerWarnings?.length
+            ? `Connected with warnings. Found ${result.phones.length} records. ${result.providerWarnings.join('; ')}`
+            : `Connected. Found ${result.phones.length} records.`,
         sampleCount: result.phones.length,
         latencyMs: Date.now() - start,
       };

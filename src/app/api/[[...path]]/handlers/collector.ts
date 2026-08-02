@@ -146,6 +146,7 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
       sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
       lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
       errorLog: Array.isArray(j.errorLog) ? j.errorLog.map(entry => sanitizeCollectorMessage(String(entry))).filter(Boolean) : [],
+      warningLog: Array.isArray(j.warningLog) ? j.warningLog.map(entry => sanitizeCollectorMessage(String(entry))).filter(Boolean) : [],
     })) });
   }
 
@@ -444,7 +445,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       await source.save();
     }
     await CollectorJob.updateOne({ _id: job._id }, {
-      $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, errorLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
+      $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, warningCount: 0, skippedCount: 0, errorLog: [], warningLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
       $unset: { completedAt: 1 },
     });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_retry', details: `Retrying job ${job._id} from the start (attempt ${(job.retryCount || 0) + 1})`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
@@ -522,9 +523,13 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       const startedAt = Date.now();
       const fetchResult = await provider.fetch(1);
       const success = fetchResult.providerErrors.length === 0;
-      const message = success ? `Connected. Found ${fetchResult.phones.length} record(s).` : fetchResult.providerErrors.join('; ');
+      const message = success
+        ? fetchResult.providerWarnings?.length
+          ? `Connected with warnings. Found ${fetchResult.phones.length} record(s). ${fetchResult.providerWarnings.join('; ')}`
+          : `Connected. Found ${fetchResult.phones.length} record(s).`
+        : fetchResult.providerErrors.join('; ');
       await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: success ? 'success' : 'failed', lastTestMessage: message, lastError: success ? '' : message } });
-      return NextResponse.json({ success, message, sampleCount: fetchResult.phones.length, latencyMs: Date.now() - startedAt, sample: fetchResult.phones.slice(0, 5), errors: fetchResult.providerErrors }, { status: success ? 200 : 422 });
+      return NextResponse.json({ success, message, sampleCount: fetchResult.phones.length, latencyMs: Date.now() - startedAt, sample: fetchResult.phones.slice(0, 5), errors: fetchResult.providerErrors, warnings: fetchResult.providerWarnings || [], skippedCount: fetchResult.skippedCount || 0 }, { status: success ? 200 : 422 });
     } catch (error) {
       const message = sanitizeCollectorMessage(error);
       await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: 'failed', lastTestMessage: message, lastError: message } });

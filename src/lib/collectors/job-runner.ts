@@ -69,7 +69,7 @@ export async function startJob(jobId: string): Promise<void> {
   if (!job) return;
 
   const resumingFromPage = job.currentBatch > 0 ? job.currentBatch + 1 : 1;
-  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date(), lastError: '', errorLog: [] } });
+  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date(), lastError: '', errorLog: [], warningLog: [] } });
 
   try {
     if (job.sourceId) {
@@ -169,11 +169,14 @@ export async function startJob(jobId: string): Promise<void> {
             duplicates: duplicateCount,
             conflictCount,
             failureCount: result.providerErrors.length,
+            warningCount: result.providerWarnings?.length || 0,
+            skippedCount: result.skippedCount || 0,
           },
           $set: {
             lastProcessedAt: new Date(),
             currentBatch: page,
             errorLog: result.providerErrors.slice(0, 20),
+            warningLog: (result.providerWarnings || []).slice(0, 20),
           },
         });
 

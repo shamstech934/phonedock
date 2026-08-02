@@ -23,6 +23,8 @@ const CollectorJobSchema = new Schema({
   duplicates: { type: Number, default: 0 },
   conflictCount: { type: Number, default: 0 },
   failureCount: { type: Number, default: 0 },
+  warningCount: { type: Number, default: 0 },
+  skippedCount: { type: Number, default: 0 },
   totalExpected: { type: Number, default: 0 },
   currentBatch: { type: Number, default: 0 },
   totalBatches: { type: Number, default: 0 },
@@ -35,6 +37,7 @@ const CollectorJobSchema = new Schema({
 
   // Error tracking
   errorLog: [{ type: String }],
+  warningLog: [{ type: String }],
   lastError: { type: String, default: '' },
 
   // Resume support
