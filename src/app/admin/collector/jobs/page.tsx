@@ -26,7 +26,7 @@ export default function AdminCollectorJobsPage() {
     setLoading(true);
     setError(null);
     fetch('/api/collector/jobs', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error('Failed to fetch jobs'); return r.json(); })
+      .then(async r => { const payload = await readApiResponse<{ jobs?: CollectorJob[]; error?: string }>(r); if (!r.ok) throw new Error(payload.error || 'Failed to fetch jobs'); return payload; })
       .then(d => { setJobs(d.jobs || []); setLoading(false); })
       .catch((e) => { setError(e?.message || 'Failed to load jobs. Please try again.'); setLoading(false); });
   }, []);
@@ -197,7 +197,7 @@ export default function AdminCollectorJobsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 mt-1 sm:mt-0">
-                  {(job.status === 'paused' || job.status === 'failed') && (
+                  {job.status === 'paused' && (
                     <button onClick={() => runJobAction(job.id, 'resume')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50" title="Resume from where it left off" aria-label="Resume job">
                       <Zap className="w-4 h-4" />
                     </button>

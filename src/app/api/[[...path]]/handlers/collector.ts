@@ -119,7 +119,12 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({ ...j, id: (j._id as { toString(): string } | undefined)?.toString(), sourceId: (j.sourceId as { toString(): string } | undefined)?.toString() })) });
+    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({
+      ...j,
+      id: (j._id as { toString(): string } | undefined)?.toString(),
+      sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
+      lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
+    })) });
   }
 
   // ---- /api/collector/review — list the review queue ----
@@ -382,7 +387,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     await connectDB();
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (!['paused', 'failed'].includes(job.status)) return NextResponse.json({ error: `Job is ${job.status}, not paused or failed` }, { status: 409 });
+    if (job.status !== 'paused') return NextResponse.json({ error: `Only paused jobs can be resumed (job is ${job.status})` }, { status: 409 });
     await CollectorJob.updateOne({ _id: job._id }, { $set: { status: 'queued' } });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_resume', details: `Resumed job ${job._id} from page ${job.currentBatch}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
@@ -397,8 +402,17 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     if (job.status !== 'failed') return NextResponse.json({ error: `Only failed jobs can be retried (job is ${job.status})` }, { status: 409 });
+    if (job.sourceId) {
+      const source = await CollectorSource.findById(job.sourceId);
+      if (!source) return NextResponse.json({ error: 'Collector source no longer exists' }, { status: 404 });
+      const safeHeaders = toStringRecord(source.headers);
+      await CollectorSource.updateOne({ _id: source._id }, {
+        $set: { headers: safeHeaders, lastError: '', lastTestMessage: '', lastSyncStatus: 'never' },
+      });
+    }
     await CollectorJob.updateOne({ _id: job._id }, {
       $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, errorLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
+      $unset: { completedAt: 1 },
     });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_retry', details: `Retrying job ${job._id} from the start (attempt ${(job.retryCount || 0) + 1})`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
