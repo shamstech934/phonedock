@@ -405,9 +405,9 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     if (job.sourceId) {
       const source = await CollectorSource.findById(job.sourceId);
       if (!source) return NextResponse.json({ error: 'Collector source no longer exists' }, { status: 404 });
-      const safeHeaders = toStringRecord(source.headers);
+      const safeHeaders = source.type === 'api' ? toStringRecord(source.headers) : {};
       await CollectorSource.updateOne({ _id: source._id }, {
-        $set: { headers: safeHeaders, lastError: '', lastTestMessage: '', lastSyncStatus: 'never' },
+        $set: { headers: safeHeaders, lastError: '', lastTestMessage: '', lastTestStatus: 'never', lastSyncStatus: 'never' },
       });
     }
     await CollectorJob.updateOne({ _id: job._id }, {
@@ -483,7 +483,9 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const source = await CollectorSource.findById(segments[2]).lean();
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
     try {
-      const provider = createProvider(sourceConfig(source as unknown as Record<string, unknown>), String(source._id), String(source.name));
+      const config = sourceConfig(source as unknown as Record<string, unknown>);
+      if (config.type !== 'api') config.headers = {};
+      const provider = createProvider(config, String(source._id), String(source.name || 'Collector source'));
       const startedAt = Date.now();
       const fetchResult = await provider.fetch(1);
       const success = fetchResult.providerErrors.length === 0;

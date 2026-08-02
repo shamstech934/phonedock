@@ -95,7 +95,13 @@ export async function startJob(jobId: string): Promise<void> {
       }
 
       const config = buildProviderConfig(plainSourceRecord(source));
-      const provider = createProvider(config, source._id.toString(), source.name);
+      // Public/manual/feed sources do not need arbitrary custom headers. Legacy
+      // source records sometimes stored a whole Mongoose document in the header
+      // map, which caused undici to throw `Headers.append ... invalid header`.
+      // Only API providers may use configured headers; all other providers use
+      // the provider's safe built-in request headers.
+      if (config.type !== 'api') config.headers = {};
+      const provider = createProvider(config, source._id.toString(), String(source.name || 'Collector source'));
 
       let page = resumingFromPage;
       let hasNext = true;

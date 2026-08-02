@@ -120,10 +120,15 @@ export abstract class BaseProvider {
       // intentionally stricter than passing a Mongoose Map/plain object directly
       // to fetch, because Node's undici otherwise stringifies entire documents as
       // a header value and throws `Headers.append ... is an invalid header value`.
+      const configuredHeaders = this.config.type === 'api'
+        ? normalizeHeaderRecord(this.config.headers)
+        : {};
       const safeHeaderRecord: Record<string, string> = {
-        'User-Agent': 'SpecsDekh-Collector/2.0 (+https://specsdekh.com)',
-        Accept: 'application/json',
-        ...normalizeHeaderRecord(this.config.headers),
+        'User-Agent': 'Mozilla/5.0 (compatible; SpecsDekhBot/2.0; +https://specsdekh.com)',
+        Accept: this.config.type === 'manual_url'
+          ? 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+          : 'application/json,text/plain,*/*',
+        ...configuredHeaders,
         ...normalizeHeaderRecord(options.headers),
       };
       if (this.config.apiKeyEnvVar) {
