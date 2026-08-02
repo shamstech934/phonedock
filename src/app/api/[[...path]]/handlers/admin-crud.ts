@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone, ImportJob, SyncJob, CollectorJob, MonitoringRun } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
@@ -140,7 +140,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       Phone.find(publishedFilter).distinct('_id'),
     ]);
 
-    const [phonesWithSpecs, phonesWithImages, priceResult, priceDistributionRows] = await Promise.all([
+    const [phonesWithSpecs, phonesWithImages, priceResult, priceDistributionRows, latestImportJob, latestSyncJob, latestCollectorJob, latestMonitoringRun, monitoredPhoneIds, latestPriceCheck] = await Promise.all([
       PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
       PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
       Phone.aggregate([
@@ -166,6 +166,12 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
           },
         },
       ]),
+      ImportJob.findOne().sort({ createdAt: -1 }).select('status fileName processedRecords totalRecords createdRecords updatedRecords failedRecords startedAt completedAt updatedAt').lean(),
+      SyncJob.findOne().sort({ createdAt: -1 }).select('status source processed totalPhones inserted updated errorCount startedAt completedAt updatedAt').lean(),
+      CollectorJob.findOne().sort({ createdAt: -1 }).select('status sourceName fetched normalized newPhones possibleUpdates failureCount startedAt completedAt updatedAt').lean(),
+      MonitoringRun.findOne().sort({ createdAt: -1 }).select('status trigger summary errors durationMs startedAt completedAt updatedAt').lean(),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified' }),
+      PriceTrackerHistory.findOne().sort({ checkedAt: -1, createdAt: -1 }).select('status oldPrice newPrice checkedAt createdAt verificationStatus').lean(),
     ]);
 
     const phonesMissingSpecs = Math.max(publishedPhones - phonesWithSpecs.length, 0);
@@ -189,6 +195,53 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
         phonesMissingSpecs,
         phonesMissingImages,
         completenessPercent,
+      },
+      automationHealth: {
+        import: latestImportJob ? {
+          status: latestImportJob.status,
+          label: latestImportJob.fileName || 'Import',
+          processed: latestImportJob.processedRecords || 0,
+          total: latestImportJob.totalRecords || 0,
+          succeeded: (latestImportJob.createdRecords || 0) + (latestImportJob.updatedRecords || 0),
+          failed: latestImportJob.failedRecords || 0,
+          lastRunAt: latestImportJob.completedAt || latestImportJob.updatedAt || latestImportJob.startedAt || null,
+        } : null,
+        sync: latestSyncJob ? {
+          status: latestSyncJob.status,
+          label: latestSyncJob.source || 'Sync',
+          processed: latestSyncJob.processed || 0,
+          total: latestSyncJob.totalPhones || 0,
+          succeeded: (latestSyncJob.inserted || 0) + (latestSyncJob.updated || 0),
+          failed: latestSyncJob.errorCount || 0,
+          lastRunAt: latestSyncJob.completedAt || latestSyncJob.updatedAt || latestSyncJob.startedAt || null,
+        } : null,
+        collector: latestCollectorJob ? {
+          status: latestCollectorJob.status,
+          label: latestCollectorJob.sourceName || 'Collector',
+          processed: latestCollectorJob.normalized || latestCollectorJob.fetched || 0,
+          total: latestCollectorJob.fetched || 0,
+          succeeded: (latestCollectorJob.newPhones || 0) + (latestCollectorJob.possibleUpdates || 0),
+          failed: latestCollectorJob.failureCount || 0,
+          lastRunAt: latestCollectorJob.completedAt || latestCollectorJob.updatedAt || latestCollectorJob.startedAt || null,
+        } : null,
+        monitoring: latestMonitoringRun ? {
+          status: latestMonitoringRun.status,
+          label: latestMonitoringRun.trigger === 'cron' ? 'Scheduled monitoring' : 'Manual monitoring',
+          processed: latestMonitoringRun.summary?.feedsScanned || 0,
+          total: latestMonitoringRun.summary?.feedsConfigured || 0,
+          succeeded: (latestMonitoringRun.summary?.newsImported || 0) + (latestMonitoringRun.summary?.launchCandidatesCreated || 0),
+          failed: Array.isArray(latestMonitoringRun.errors) ? latestMonitoringRun.errors.length : 0,
+          lastRunAt: latestMonitoringRun.completedAt || latestMonitoringRun.updatedAt || latestMonitoringRun.startedAt || null,
+        } : null,
+        priceTracker: {
+          status: monitoredPhoneIds.length > 0 ? 'configured' : 'not_configured',
+          label: 'Price Tracker',
+          processed: monitoredPhoneIds.length,
+          total: publishedPhones,
+          succeeded: monitoredPhoneIds.length,
+          failed: 0,
+          lastRunAt: latestPriceCheck?.checkedAt || latestPriceCheck?.createdAt || null,
+        },
       },
       priceDistribution: distributionOrder.map(range => ({ range, count: distributionMap.get(range) || 0 })),
       recentActivity: recentActivity.map((l: Record<string, unknown>) => ({

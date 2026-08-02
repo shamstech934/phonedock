@@ -35,6 +35,15 @@ interface DashboardStats {
     phonesMissingImages: number;
     completenessPercent: number;
   };
+  automationHealth?: Record<string, {
+    status: string;
+    label: string;
+    processed: number;
+    total: number;
+    succeeded: number;
+    failed: number;
+    lastRunAt?: string | null;
+  } | null>;
   recentActivity: Array<{
     action?: string;
     details?: string;
@@ -100,6 +109,25 @@ export default function AdminDashboardPage() {
     { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
   ];
   const maxPriceCount = Math.max(...priceDist.map(d => d.count || 0), 1);
+  const automationEntries = [
+    ['import', 'Import Engine', '/admin/import-v2'],
+    ['sync', 'Sync', '/admin/sync'],
+    ['collector', 'Collector', '/admin/collector-jobs'],
+    ['monitoring', 'Monitoring', '/admin/continuous-monitoring'],
+    ['priceTracker', 'Price Tracker', '/admin/price-tracker'],
+  ] as const;
+  const statusTone = (status?: string) => {
+    const normalized = (status || '').toLowerCase();
+    if (['completed', 'configured', 'ready', 'healthy'].includes(normalized)) return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+    if (['running', 'processing', 'queued', 'pending', 'uploaded', 'validating'].includes(normalized)) return 'text-blue-700 bg-blue-50 border-blue-100';
+    if (['failed', 'cancelled', 'completed_with_errors', 'completed_with_warnings', 'not_configured'].includes(normalized)) return 'text-amber-700 bg-amber-50 border-amber-100';
+    return 'text-slate-700 bg-slate-50 border-slate-100';
+  };
+  const humanStatus = (status?: string) => (status || 'Not run').replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
+  const formatLastRun = (value?: string | null) => value
+    ? new Date(value).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'Never';
+
   const humanizeActivity = (log: DashboardStats['recentActivity'][number]) => {
     const fallback = log.action || 'Activity recorded';
     const raw = log.details?.trim();
@@ -110,13 +138,20 @@ export default function AdminDashboardPage() {
       const message = typeof parsed.message === 'string' ? parsed.message : '';
       const prices = parsed.prices && typeof parsed.prices === 'object' ? parsed.prices as Record<string, unknown> : null;
       const rumours = parsed.rumours && typeof parsed.rumours === 'object' ? parsed.rumours as Record<string, unknown> : null;
-      const parts = [
-        message,
-        prices && typeof prices.updated === 'number' ? `${prices.updated} prices updated` : '',
-        prices && typeof prices.processed === 'number' ? `${prices.processed} listings processed` : '',
-        rumours && typeof rumours.scanned === 'number' ? `${rumours.scanned} launch records scanned` : '',
-        rumours && typeof rumours.imported === 'number' ? `${rumours.imported} launches imported` : '',
-      ].filter(Boolean);
+      const parts: string[] = [];
+      if (message && message !== 'No eligible listings to process') parts.push(message);
+      if (prices && typeof prices.processed === 'number') {
+        const processed = prices.processed;
+        const updated = typeof prices.updated === 'number' ? prices.updated : 0;
+        parts.push(processed > 0
+          ? `Price Tracker checked ${processed} listing${processed === 1 ? '' : 's'} and updated ${updated}`
+          : 'Price Tracker skipped: no verified phone listings are linked');
+      }
+      if (rumours && typeof rumours.scanned === 'number') {
+        const scanned = rumours.scanned;
+        const imported = typeof rumours.imported === 'number' ? rumours.imported : 0;
+        parts.push(`Launch Tracker scanned ${scanned} record${scanned === 1 ? '' : 's'}${imported > 0 ? ` and imported ${imported}` : '; no new launches found'}`);
+      }
       return parts.length ? parts.join(' · ') : fallback;
     } catch {
       return raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
@@ -189,7 +224,7 @@ export default function AdminDashboardPage() {
             { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices' },
             { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
             { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs' },
-            { label: 'Missing gallery', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
+            { label: 'No gallery records', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
           ].map(item => (
             <Link key={item.label} href={item.href} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
               <div className="flex items-center justify-between gap-2"><item.icon className="w-4 h-4 text-gray-500" /><span className={`text-xs font-semibold ${(item.value || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{(item.value || 0) > 0 ? 'Needs work' : 'Clear'}</span></div>
@@ -207,6 +242,39 @@ export default function AdminDashboardPage() {
             <p className="text-xs font-semibold text-gray-700">{a.label}</p>
           </Link>
         ))}
+      </div>
+
+      <div className="card-premium p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Automation Health</h3>
+            <p className="text-xs text-muted-foreground mt-1">Live status from real import, sync, collector, monitoring and price-tracking jobs.</p>
+          </div>
+          <Link href="/admin/automation" className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">Open Automation <ArrowRight className="w-3 h-3" /></Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+          {automationEntries.map(([key, fallbackLabel, href]) => {
+            const item = stats.automationHealth?.[key];
+            const label = item?.label || fallbackLabel;
+            return (
+              <Link key={key} href={href} className="rounded-2xl border border-gray-100 bg-white p-4 hover:border-blue-200 transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900 truncate">{fallbackLabel}</p>
+                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</p>
+                  </div>
+                  <span className={`text-[10px] font-semibold rounded-full border px-2 py-1 whitespace-nowrap ${statusTone(item?.status)}`}>{humanStatus(item?.status)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                  <div><p className="text-sm font-extrabold text-gray-900">{item?.processed ?? 0}</p><p className="text-[9px] text-muted-foreground">Processed</p></div>
+                  <div><p className="text-sm font-extrabold text-emerald-600">{item?.succeeded ?? 0}</p><p className="text-[9px] text-muted-foreground">Success</p></div>
+                  <div><p className="text-sm font-extrabold text-red-500">{item?.failed ?? 0}</p><p className="text-[9px] text-muted-foreground">Failed</p></div>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-3">Last run: {formatLastRun(item?.lastRunAt)}</p>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
