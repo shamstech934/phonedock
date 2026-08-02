@@ -122,6 +122,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     const { name: srcName, type: srcType, endpoint: bodyEndpoint, url, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, brandFilter: srcBrandFilter, allowedDomains, dataPath, pollingSchedule } = body;
@@ -147,7 +148,9 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       source = await CollectorSource.create({ name: normalizedName, type: normalizedType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
-      throw error;
+      const message = error instanceof Error ? error.message : 'Collector source could not be saved';
+      console.error('[collector.sources.create]', error);
+      return NextResponse.json({ error: message }, { status: 500 });
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     const created = source.toObject();

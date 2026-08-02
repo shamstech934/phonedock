@@ -27,7 +27,7 @@ const CollectorSourceSchema = new Schema({
   paginationMaxPages: { type: Number, default: 50 },
   paginationPageParam: { type: String, default: 'page' },
   lastSyncAt: { type: Date },
-  lastSyncStatus: { type: String, enum: ['success', 'partial', 'failed'], default: '' },
+  lastSyncStatus: { type: String, enum: ['never', 'success', 'partial', 'failed'], default: 'never' },
   lastError: { type: String, default: '' },
   totalCollected: { type: Number, default: 0 },
   totalFailed: { type: Number, default: 0 },
