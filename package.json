@@ -1,6 +1,6 @@
 {
   "name": "specsdekh",
-  "version": "29.2.3",
+  "version": "29.2.2",
   "private": true,
   "packageManager": "npm@11.16.0",
   "scripts": {
@@ -64,7 +64,8 @@
     "lint:strict": "eslint .",
     "audit:seo-final": "node scripts/seo-final-phase-audit.mjs",
     "audit:import-v2-recovery": "node scripts/import-v2-recovery-audit.mjs",
-    "audit:ga4": "node scripts/ga4-runtime-audit.mjs"
+    "audit:ga4": "node scripts/ga4-runtime-audit.mjs",
+    "audit:api-payload-types": "node scripts/api-payload-type-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

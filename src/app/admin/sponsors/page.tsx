@@ -67,8 +67,8 @@ export default function AdminSponsorsPage() {
         body: JSON.stringify(form),
       });
       if (!r.ok) {
-        const d = await readApiResponse(r).catch(() => ({}));
-        throw new Error(d.error || `Save failed (${r.status})`);
+        const d = await readApiResponse<{ error?: string; message?: string }>(r).catch(() => null);
+        throw new Error(d?.error || d?.message || `Save failed (${r.status})`);
       }
       setShowForm(false);
       fetchSponsors();

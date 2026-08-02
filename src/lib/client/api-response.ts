@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type ApiPayload = Record<string, any>;
 
-export async function readApiResponse<T extends ApiPayload = ApiPayload>(response: Response): Promise<T> {
+export async function readApiResponse<T = ApiPayload>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
   const raw = await response.text();
 

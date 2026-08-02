@@ -40,6 +40,12 @@ interface PhoneStats {
   trending: number; featured: number; ptaApproved: number; avgPrice: number;
 }
 
+interface PhoneUpdateErrorPayload {
+  error?: string;
+  message?: string;
+  issues?: string[];
+}
+
 /* ─── Main Component ─── */
 export default function AdminPhonesPage() {
   useAdmin();
@@ -180,9 +186,9 @@ export default function AdminPhonesPage() {
         responses
           .filter(response => !response.ok)
           .map(async response => {
-            const payload = await readApiResponse(response).catch(() => ({}));
-            const issues = Array.isArray(payload.issues) ? payload.issues.join(', ') : '';
-            return issues || payload.error || `Update failed (HTTP ${response.status})`;
+            const payload = await readApiResponse<PhoneUpdateErrorPayload>(response).catch(() => null);
+            const issues = Array.isArray(payload?.issues) ? payload.issues.join(', ') : '';
+            return issues || payload?.error || payload?.message || `Update failed (HTTP ${response.status})`;
           }),
       );
       if (failures.length > 0) throw new Error([...new Set(failures)].join(' | '));

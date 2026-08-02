@@ -924,15 +924,15 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
             cursor,
           }),
         });
-        const result: {
+        const result = await readApiResponse<{
           error?: string;
           succeeded?: number;
           failed?: number;
           total?: number;
           hasMore?: boolean;
           nextCursor?: string | null;
-        } = await readApiResponse(response).catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Fix all failed');
+        }>(response).catch(() => null);
+        if (!response.ok || !result) throw new Error(result?.error || 'Fix all failed');
         succeeded += result.succeeded || 0;
         failed += result.failed || 0;
         processed += result.total || 0;
