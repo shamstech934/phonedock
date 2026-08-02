@@ -19,7 +19,16 @@ export function GrowthScripts() {
   const [cmsGaId, setCmsGaId] = useState('');
 
   useEffect(() => {
-    const sync = () => setConsented(localStorage.getItem(CONSENT_KEY) === 'accepted');
+    const sync = () => {
+      const accepted = localStorage.getItem(CONSENT_KEY) === 'accepted';
+      setConsented(accepted);
+      window.gtag?.('consent', 'update', {
+        analytics_storage: accepted ? 'granted' : 'denied',
+        ad_storage: accepted ? 'granted' : 'denied',
+        ad_user_data: accepted ? 'granted' : 'denied',
+        ad_personalization: accepted ? 'granted' : 'denied',
+      });
+    };
     sync();
     window.addEventListener('phonedock:consent', sync);
     return () => window.removeEventListener('phonedock:consent', sync);
@@ -69,19 +78,6 @@ export function GrowthScripts() {
           crossOrigin="anonymous"
           src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(adsenseClient)}`}
         />
-      ) : null}
-
-      {gaId ? (
-        <>
-          <Script
-            id="phonedock-ga-loader"
-            strategy="afterInteractive"
-            src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaId)}`}
-          />
-          <Script id="phonedock-ga-config" strategy="afterInteractive">
-            {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('js',new Date());gtag('config','${gaId}',{anonymize_ip:true,send_page_view:false,transport_type:'beacon'});`}
-          </Script>
-        </>
       ) : null}
 
       {clarityId ? (

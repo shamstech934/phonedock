@@ -12,6 +12,12 @@ import { serializeJsonLd } from "@/lib/json-ld";
 import { Toaster } from "@/components/ui/toaster";
 
 const BASE_URL = getBaseUrl();
+const GA_ID_PATTERN = /^G-[A-Z0-9]+$/i;
+
+function normaliseGaId(value: unknown): string {
+  const candidate = String(value || '').trim().toUpperCase();
+  return GA_ID_PATTERN.test(candidate) ? candidate : '';
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSettings().catch(() => null);
@@ -119,6 +125,9 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const settings = await getSettings().catch(() => null);
+  const gaMeasurementId = normaliseGaId(
+    settings?.googleAnalyticsId || process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+  );
   const theme = settings?.theme;
   const primaryColor = theme?.primaryColor ? String(theme.primaryColor) : '';
   const secondaryColor = theme?.secondaryColor ? String(theme.secondaryColor) : '';
@@ -171,6 +180,20 @@ export default async function RootLayout({
     <html lang="en-PK" suppressHydrationWarning>
       <head>
         <style dangerouslySetInnerHTML={{ __html: themeStyle }} />
+        {gaMeasurementId ? (
+          <>
+            <script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaMeasurementId)}`}
+            />
+            <script
+              id="specsdekh-google-tag"
+              dangerouslySetInnerHTML={{
+                __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('consent','default',{analytics_storage:'denied',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});gtag('js',new Date());gtag('config','${gaMeasurementId}',{anonymize_ip:true,send_page_view:false,transport_type:'beacon'});`,
+              }}
+            />
+          </>
+        ) : null}
         {jsonLdAll.map((item, i) => (
           <script
             key={i}
