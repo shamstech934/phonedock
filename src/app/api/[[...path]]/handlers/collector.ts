@@ -42,6 +42,15 @@ function toStringRecord(value: unknown): Record<string, string> {
 
 const PROVIDER_TYPES: ProviderType[] = ['json_url', 'csv_url', 'api', 'xml_feed', 'rss_feed', 'manufacturer', 'manual_url', 'file_upload'];
 
+
+function sanitizeCollectorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || 'Collector request failed');
+  if (/Headers\.(?:append|set)|invalid header value/i.test(raw)) {
+    return 'Invalid HTTP header configuration. Remove non-text custom headers from this source and retry.';
+  }
+  return raw.replace(/\s+/g, ' ').slice(0, 500);
+}
+
 function sourceConfig(source: Record<string, unknown>): ProviderConfig {
   return {
     type: source.type as ProviderType, endpoint: String(source.endpoint || ''), apiKeyEnvVar: String(source.apiKeyEnvVar || ''),
@@ -426,7 +435,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: success ? 'success' : 'failed', lastTestMessage: message, lastError: success ? '' : message } });
       return NextResponse.json({ success, message, sampleCount: fetchResult.phones.length, latencyMs: Date.now() - startedAt, sample: fetchResult.phones.slice(0, 5), errors: fetchResult.providerErrors }, { status: success ? 200 : 422 });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Collector source test failed';
+      const message = sanitizeCollectorMessage(error);
       await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: 'failed', lastTestMessage: message, lastError: message } });
       return NextResponse.json({ success: false, error: message, message, sample: [] }, { status: 422 });
     }

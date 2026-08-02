@@ -1,2 +1,1 @@
-SpecsDekh v31.5.1
-Collector schema + request-header safety fix
+SpecsDekh v31.6 - Collector + Price Tracker Consolidated Runtime Fix

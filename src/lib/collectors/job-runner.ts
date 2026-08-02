@@ -13,6 +13,24 @@ const MAX_COLLECT_PER_JOB = 2000;
 // For self-hosted or long-running functions, set to 0 for unlimited.
 const PAGES_PER_INVOCATION = parseInt(process.env.COLLECTOR_PAGES_PER_INVOCATION || '3') || 0;
 
+
+function sanitizeCollectorError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || 'Collector job failed');
+  if (/Headers\.(?:append|set)|invalid header value/i.test(raw)) {
+    return 'Invalid HTTP header configuration. Remove non-text custom headers from the collector source and retry.';
+  }
+  // Prevent raw Mongo/Mongoose documents, secrets, or huge HTML responses from
+  // leaking into dashboard cards and activity logs.
+  return raw.replace(/\s+/g, ' ').slice(0, 500);
+}
+
+function plainSourceRecord(source: unknown): Record<string, unknown> {
+  if (source && typeof source === 'object' && 'toObject' in source && typeof (source as { toObject?: unknown }).toObject === 'function') {
+    return (source as { toObject: (options?: Record<string, unknown>) => Record<string, unknown> }).toObject({ flattenMaps: true });
+  }
+  return (source || {}) as Record<string, unknown>;
+}
+
 // ============ JOB RUNNER ============
 
 function toStringRecord(value: unknown): Record<string, string> {
@@ -51,7 +69,7 @@ export async function startJob(jobId: string): Promise<void> {
   if (!job) return;
 
   const resumingFromPage = job.currentBatch > 0 ? job.currentBatch + 1 : 1;
-  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date() } });
+  await CollectorJob.updateOne({ _id: jobId }, { $set: { status: 'running', startedAt: job.startedAt || new Date(), lastError: '', errorLog: [] } });
 
   try {
     if (job.sourceId) {
@@ -59,7 +77,7 @@ export async function startJob(jobId: string): Promise<void> {
       if (!source) throw new Error('Source not found');
       if (!source.enabled) throw new Error('Source is disabled');
 
-      const config = buildProviderConfig(source);
+      const config = buildProviderConfig(plainSourceRecord(source));
       const provider = createProvider(config, source._id.toString(), source.name);
 
       let page = resumingFromPage;
@@ -164,9 +182,10 @@ export async function startJob(jobId: string): Promise<void> {
       entityId: jobId,
     });
   } catch (e: unknown) {
-    const errMsg = e instanceof Error ? e.message : String(e);
+    const errMsg = sanitizeCollectorError(e);
     await CollectorJob.updateOne({ _id: jobId }, {
       $set: { status: 'failed', lastError: errMsg, completedAt: new Date() },
+      $inc: { failureCount: 1 },
     });
     await ActivityLog.create({
       action: 'collector_sync_failed',

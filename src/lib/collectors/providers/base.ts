@@ -116,7 +116,11 @@ export abstract class BaseProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const headers: Record<string, string> = {
+      // Build a real Headers instance from primitive string values only. This is
+      // intentionally stricter than passing a Mongoose Map/plain object directly
+      // to fetch, because Node's undici otherwise stringifies entire documents as
+      // a header value and throws `Headers.append ... is an invalid header value`.
+      const safeHeaderRecord: Record<string, string> = {
         'User-Agent': 'SpecsDekh-Collector/2.0 (+https://specsdekh.com)',
         Accept: 'application/json',
         ...normalizeHeaderRecord(this.config.headers),
@@ -126,14 +130,20 @@ export abstract class BaseProvider {
         const key = process.env[this.config.apiKeyEnvVar];
         if (!key) throw new Error(`Required secret ${this.config.apiKeyEnvVar} is not configured`);
         const headerStyle = this.config.apiKeyHeader || 'Authorization';
-        headers[headerStyle] = headerStyle.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
+        safeHeaderRecord[headerStyle] = headerStyle.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
+      }
+      const requestHeaders = new Headers();
+      for (const [key, value] of Object.entries(safeHeaderRecord)) {
+        if (!key.trim() || !value.trim() || /[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
+        requestHeaders.set(key, value);
       }
 
       let currentUrl = url;
       for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
         const validation = await validateUrlForFetch(currentUrl, this.config.allowedDomains || []);
         if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
-        const response = await fetch(currentUrl, { ...options, headers, signal: controller.signal, redirect: 'manual' });
+        const { headers: _ignoredHeaders, signal: _ignoredSignal, redirect: _ignoredRedirect, ...safeOptions } = options;
+        const response = await fetch(currentUrl, { ...safeOptions, headers: requestHeaders, signal: controller.signal, redirect: 'manual' });
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.get('location');
           if (!location) throw new Error(`Source returned HTTP ${response.status} without a redirect location`);

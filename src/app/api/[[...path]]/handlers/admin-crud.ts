@@ -41,6 +41,18 @@ interface PhoneUpdateBody {
 
 // ============ ADMIN CRUD GET ============
 
+function humanizeAutomationError(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/Headers\.(?:append|set)|invalid header value/i.test(raw)) {
+    return 'Invalid HTTP header configuration. Review the collector source headers, then retry the job.';
+  }
+  if (raw.length > 500 || /ObjectId\(|Map\(|__v|createdAt|updatedAt/.test(raw)) {
+    return 'Collector failed because its saved request configuration was invalid. Open the collector job for details and retry after reviewing the source.';
+  }
+  return raw.replace(/\s+/g, ' ').slice(0, 300);
+}
+
 export async function handleAdminCrudGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
   // ---- /api/admin/analytics ----
   if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'analytics') {
@@ -238,7 +250,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
           updated: latestCollectorJob.possibleUpdates || 0,
           skipped: (latestCollectorJob.duplicates || 0) + (latestCollectorJob.conflictCount || 0),
           metricLabels: ['Scanned', 'Candidates', 'Failed'],
-          reason: latestCollectorJob.lastError || '',
+          reason: humanizeAutomationError(latestCollectorJob.lastError),
           actionLabel: latestCollectorJob.status === 'failed' ? 'Review collector job' : 'Open collector jobs',
           actionHref: '/admin/collector/jobs',
           lastRunAt: latestCollectorJob.completedAt || latestCollectorJob.updatedAt || latestCollectorJob.startedAt || null,
