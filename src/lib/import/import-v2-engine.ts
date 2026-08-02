@@ -1742,6 +1742,6 @@ export async function reconcileImportSystem(): Promise<ImportSystemReconciliatio
     report.duplicateSpecsRemoved = result.deletedCount;
   }
 
-  await revalidatePublicContent({ phones: true, brands: true, homepage: true });
+  revalidatePublicContent({ includeBrands: true });
   return report;
 }
