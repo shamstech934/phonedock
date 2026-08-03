@@ -354,16 +354,17 @@ export function Header() {
             </div>
             {/* More links in mobile */}
             <p className="mb-2 mt-5 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Tools & resources</p>
-            <div className="grid grid-cols-2 gap-1"><div className="grid grid-cols-2 gap-1">
-                  {moreLinks.map(item => (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-                <item.icon className="w-4 h-4 text-gray-400" />
-                {item.label}
+            <div className="grid grid-cols-2 gap-1">
+              {moreLinks.map(item => (
+                <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+                  <item.icon className="w-4 h-4 text-gray-400" />
+                  {item.label}
+                </Link>
+              ))}
+              <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+                <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
               </Link>
-            ))}</div>
-            <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-              <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
-            </Link>
+            </div>
           </nav>
         </div>
       )}
