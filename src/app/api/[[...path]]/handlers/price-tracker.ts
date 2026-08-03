@@ -1103,39 +1103,56 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       testError = error instanceof Error ? error.message : 'Product page could not be fetched';
     }
 
-    // Determine if the source is matched and safe to enable
-    matched = detectedPrice !== null;
+    // A deterministic parser returns confidence on a 0..1 scale. A real PKR
+    // price is reliable when it is in range and comes from a supported parser.
+    const MIN_TRUST_CONFIDENCE = 0.70;
+    matched = detectedPrice !== null && extractionConfidence >= MIN_TRUST_CONFIDENCE;
     safeToEnable = reachable && matched && availability !== 'unavailable';
 
-    // If sourceId provided, verify domain match
+    let domainAllowed = true;
+    let expectedDomains: string[] = [];
+
+    // A source may only be trusted with a product page hosted by that source.
     if (sourceId) {
       const source = await PriceSource.findById(sourceId).lean();
       if (source) {
+        expectedDomains = Array.isArray(source.allowedDomains)
+          ? source.allowedDomains.map((domain: string) => domain.replace(/^\./, '').toLowerCase()).filter(Boolean)
+          : [];
         try {
-          const urlDomain = new URL(url).hostname;
-          if (source.allowedDomains && source.allowedDomains.length > 0) {
-            const domainAllowed = source.allowedDomains.some((d: string) => {
-              const clean = d.replace(/^\./, '');
+          const urlDomain = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+          if (expectedDomains.length > 0) {
+            domainAllowed = expectedDomains.some((domain: string) => {
+              const clean = domain.replace(/^www\./, '');
               return urlDomain === clean || urlDomain.endsWith('.' + clean);
             });
             if (!domainAllowed) safeToEnable = false;
           }
-        } catch { /* ignore URL parse error */ }
+        } catch {
+          domainAllowed = false;
+          safeToEnable = false;
+        }
       }
     }
+
+    const validationError = testError || (!reachable
+      ? 'Product page is not reachable'
+      : !domainAllowed
+        ? `Wrong domain. Use a real product page from ${expectedDomains.join(' or ') || 'this source domain'}.`
+        : detectedPrice === null
+          ? 'No PKR price was detected on this product page.'
+          : extractionConfidence < MIN_TRUST_CONFIDENCE
+            ? `Price confidence is too low (${Math.round(extractionConfidence * 100)}%).`
+            : availability === 'unavailable'
+              ? 'Product is currently unavailable.'
+              : 'Source validation failed.');
 
     if (sourceId) {
       const sourceHealth = await PriceSource.findById(sourceId).select('failureCount').lean();
       const nextFailureCount = Number(sourceHealth?.failureCount || 0) + 1;
       const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
       const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60_000);
-      const failureReason = testError || (!reachable
-        ? 'Product page is not reachable'
-        : !matched
-          ? 'No reliable PKR price was detected'
-          : availability === 'unavailable'
-            ? 'Product is unavailable'
-            : 'Source validation failed');
+      const failureReason = validationError;
       const healthUpdate = safeToEnable
         ? {
             $set: {
@@ -1175,7 +1192,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       safeToEnable,
       extractionMethod,
       extractionConfidence,
-      error: safeToEnable ? null : (testError || (!reachable ? 'Product page is not reachable' : 'No reliable PKR price was detected')),
+      error: safeToEnable ? null : validationError,
     });
   }
 
