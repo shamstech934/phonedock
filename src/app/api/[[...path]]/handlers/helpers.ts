@@ -51,8 +51,12 @@ interface LeanAdminSession {
 export interface PhoneJson {
   id?: string;
   modelName?: string;
+  /** Legacy/API compatibility alias used by admin exports and older clients. */
+  model?: string;
   slug?: string;
   brandId?: string;
+  /** Flattened populated brand name returned by phoneToJSON. */
+  brandName?: string;
   brand?: { id?: string; name?: string; slug?: string; logo?: string };
   thumbnail?: string;
   pricePKR?: number;
