@@ -110,7 +110,7 @@ please run both before deploying.
 
 ## §7. Node version
 
-`package.json` already correctly pins `"engines": { "node": ">=22.12.0 <23" }` — no Node 24
+`package.json` supports Node.js 22.x and 24.x LTS; `.nvmrc`, `.node-version`, GitHub Actions, and deployment remain on Node.js 22 by default
 compatibility issue found. Added `.nvmrc` (`22`) for local dev tooling consistency.
 
 ## File cleanup
