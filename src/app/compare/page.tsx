@@ -6,7 +6,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus,
+  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2, Copy, Printer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -34,7 +34,21 @@ function CompareContent() {
   const [autocompleteResults, setAutocompleteResults] = useState<Phone[]>([]);
   const [acLoading, setAcLoading] = useState(false);
   const [acError, setAcError] = useState(false);
+  const [activeResultIndex, setActiveResultIndex] = useState(-1);
+  const [copied, setCopied] = useState(false);
   const acAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    try {
+      setOnlyDifferences(localStorage.getItem('compare-only-differences') === '1');
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('compare-only-differences', onlyDifferences ? '1' : '0');
+    } catch {}
+  }, [onlyDifferences]);
 
   // Hydrate every URL selection with the full comparison payload. Autocomplete
   // results are intentionally lightweight and must never drive the comparison UI.
@@ -103,12 +117,14 @@ function CompareContent() {
             (p: Phone) => !selected.some(s => s.id === p.id)
           );
           setAutocompleteResults(results);
+          setActiveResultIndex(results.length ? 0 : -1);
           setAcLoading(false);
         })
         .catch(err => {
           if (err.name !== 'AbortError') {
             setAcError(true);
             setAutocompleteResults([]);
+            setActiveResultIndex(-1);
             setAcLoading(false);
           }
         });
@@ -123,6 +139,31 @@ function CompareContent() {
     } else {
       router.replace('/compare', { scroll: false });
     }
+  };
+
+  const copyComparisonLink = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      window.prompt('Copy comparison link', url);
+    }
+  };
+
+  const shareComparison = async () => {
+    const url = window.location.href;
+    const title = comparePhones.length >= 2
+      ? `${comparePhones.map(phone => phone.modelName).join(' vs ')} | SpecsDekh`
+      : 'Compare Phones | SpecsDekh';
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch {}
+    }
+    await copyComparisonLink();
   };
 
   const togglePhone = (phone: Phone) => {
@@ -292,9 +333,20 @@ function CompareContent() {
             </span>
           )}
           {compared && (
-            <button onClick={openPicker} className="text-sm font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg">
-              Change Phones
-            </button>
+            <>
+              <button onClick={shareComparison} className="text-sm font-semibold text-gray-700 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Share this comparison">
+                <Share2 className="h-4 w-4" /> Share
+              </button>
+              <button onClick={copyComparisonLink} className="text-sm font-semibold text-gray-700 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Copy comparison link">
+                <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy link'}
+              </button>
+              <button onClick={() => window.print()} className="hidden sm:flex text-sm font-semibold text-gray-700 hover:text-blue-600 items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Print comparison">
+                <Printer className="h-4 w-4" /> Print
+              </button>
+              <button onClick={openPicker} className="text-sm font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg">
+                Change Phones
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -338,8 +390,25 @@ function CompareContent() {
                 placeholder="Type phone name or brand..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={event => {
+                  if (!autocompleteResults.length) return;
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    setActiveResultIndex(index => Math.min(index + 1, autocompleteResults.length - 1));
+                  } else if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    setActiveResultIndex(index => Math.max(index - 1, 0));
+                  } else if (event.key === 'Enter' && activeResultIndex >= 0) {
+                    event.preventDefault();
+                    const phone = autocompleteResults[activeResultIndex];
+                    if (phone) togglePhone(phone);
+                  } else if (event.key === 'Escape') {
+                    closePicker();
+                  }
+                }}
                 className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400"
                 aria-label="Search phones to compare"
+                aria-activedescendant={activeResultIndex >= 0 ? `compare-result-${activeResultIndex}` : undefined}
               />
             </div>
           </div>
@@ -388,12 +457,14 @@ function CompareContent() {
               <div className="text-center py-8 text-sm text-muted-foreground">Type at least 2 characters to search</div>
             )}
             <div className="divide-y divide-gray-50 rounded-xl border border-gray-100 overflow-hidden">
-              {autocompleteResults.slice(0, 20).map(p => {
+              {autocompleteResults.slice(0, 20).map((p, resultIndex) => {
                 const isSelected = selected.some(s => s.id === p.id);
                 const isDisabled = isSelected || !canAddComparePhone(selected.length);
                 return (
                   <button
                     key={p.id}
+                    id={`compare-result-${resultIndex}`}
+                    onMouseEnter={() => setActiveResultIndex(resultIndex)}
                     onClick={() => {
                       if (isDisabled) return;
                       togglePhone(p);
@@ -404,7 +475,7 @@ function CompareContent() {
                       }
                     }}
                     disabled={isDisabled}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#F8FAFC] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${activeResultIndex === resultIndex ? 'bg-blue-50' : 'hover:bg-[#F8FAFC]'}`}
                   >
                     <SafePhoneImage src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 rounded-lg bg-[#F8FAFC] p-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -569,7 +640,7 @@ function CompareContent() {
               </div>
               <div className="overflow-x-auto relative after:absolute after:top-0 after:right-0 after:bottom-0 after:w-8 after:bg-gradient-to-l after:from-white after:to-transparent after:pointer-events-none">
                 <table className="w-full text-sm" style={{ minWidth: `${Math.max(500, (comparePhones.length + 1) * 170)}px` }}>
-                  <thead>
+                  <thead className="sticky top-0 z-20 shadow-sm">
                     <tr className="bg-[#F8FAFC]">
                       <th className="sticky left-0 bg-[#F8FAFC] z-10 text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-36">Spec</th>
                       {comparePhones.map(p => (
@@ -594,9 +665,9 @@ function CompareContent() {
                           {comparePhones.map(p => {
                             const val = values.find((_, idx) => comparePhones[idx].id === p.id) || '';
                             const displayVal = val || <span className="text-muted-foreground italic text-xs">Not available</span>;
-                            const isBest = !allSame && val && val === nonEmptyValues[0];
+                            const isDifferent = !allSame && Boolean(val);
                             return (
-                              <td key={p.id} className={`px-4 py-3 text-gray-900 ${isBest ? 'font-semibold bg-sky-50' : ''}`}>
+                              <td key={p.id} className={`px-4 py-3 text-gray-900 ${isDifferent ? 'bg-sky-50/60' : ''}`}>
                                 {displayVal}
                               </td>
                             );
@@ -608,7 +679,8 @@ function CompareContent() {
                       <td className="sticky left-0 z-10 px-4 py-3 font-medium text-muted-foreground bg-white">Price</td>
                       {(() => {
                         const prices = comparePhones.map(p => p.pricePKR);
-                        const minPrice = Math.min(...prices.filter(p => p > 0));
+                        const validPrices = prices.filter(p => p > 0);
+                        const minPrice = validPrices.length ? Math.min(...validPrices) : 0;
                         return comparePhones.map(p => (
                           <td key={p.id} className={`px-4 py-3 font-bold text-blue-600 ${p.pricePKR === minPrice && comparePhones.length > 1 ? 'bg-emerald-50' : ''}`}>
                             {formatPrice(p.pricePKR)}
