@@ -55,12 +55,13 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const { searchParams } = new URL(req.url);
     const includeHealth = searchParams.get('health') !== 'false';
 
-    const inventoryFilter = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } } as const;
     const [totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands] = await Promise.all([
-      Phone.countDocuments({ deletedAt: null }),
-      Phone.countDocuments({ deletedAt: null, status: 'published' }),
-      Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
-      Phone.countDocuments({ deletedAt: null, status: 'archived' }),
+      // Inventory totals include every Phone document so imported records cannot
+      // disappear merely because a legacy flag marked them inactive/deleted.
+      Phone.countDocuments({}),
+      Phone.countDocuments({ status: 'published' }),
+      Phone.countDocuments({ status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments({ status: 'archived' }),
       Brand.countDocuments({}),
     ]);
 
@@ -78,49 +79,39 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
-    const [inventoryPhoneIds, publishedPhoneIds] = await Promise.all([
-      Phone.find(inventoryFilter).distinct('_id'),
-      Phone.find({ deletedAt: null, status: 'published' }).distinct('_id'),
-    ]);
-    const [phonesWithSpecs, phonesWithImages, publishedWithSpecs, publishedWithImages] = await Promise.all([
+    const inventoryQuery = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
+    const inventoryPhoneIds = await Phone.find(inventoryQuery).distinct('_id');
+    const [phonesWithSpecs, phonesWithImages] = await Promise.all([
       PhoneSpecs.distinct('phoneId', { phoneId: { $in: inventoryPhoneIds } }),
       PhoneImage.distinct('phoneId', { phoneId: { $in: inventoryPhoneIds } }),
-      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
-      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
     ]);
 
     const specPhoneIdSet = new Set(phonesWithSpecs.map(id => id.toString()));
     const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
-    const publishedSpecIdSet = new Set(publishedWithSpecs.map(id => id.toString()));
-    const publishedImageIdSet = new Set(publishedWithImages.map(id => id.toString()));
 
-    const [inventoryPhoneRows, publishedPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
-      Phone.find({ _id: { $in: inventoryPhoneIds } }).select('_id thumbnail pricePKR').lean(),
-      Phone.find({ _id: { $in: publishedPhoneIds } }).select('_id thumbnail pricePKR').lean(),
+    const [inventoryPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+      Phone.find({ _id: { $in: inventoryPhoneIds } })
+        .select('_id thumbnail pricePKR')
+        .lean(),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
     ]);
 
-    const countMissing = (rows: typeof inventoryPhoneRows, specIds: Set<string>, imageIds: Set<string>) => ({
-      missingSpecs: rows.filter(phone => !specIds.has(phone._id.toString())).length,
-      missingImages: rows.filter(phone => {
-        const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
-        return !thumbnail && !imageIds.has(phone._id.toString());
-      }).length,
-      missingPrices: rows.filter(phone => {
-        const price = Number(phone.pricePKR || 0);
-        return !Number.isFinite(price) || price <= 0;
-      }).length,
-    });
-    const inventoryMissing = countMissing(inventoryPhoneRows, specPhoneIdSet, imagePhoneIdSet);
-    const publishedMissing = countMissing(publishedPhoneRows, publishedSpecIdSet, publishedImageIdSet);
-    const { missingSpecs, missingImages, missingPrices } = inventoryMissing;
+    const missingSpecs = inventoryPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
+    const missingImages = inventoryPhoneRows.filter(phone => {
+      const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
+      return !thumbnail && !imagePhoneIdSet.has(phone._id.toString());
+    }).length;
+    const missingPrices = inventoryPhoneRows.filter(phone => {
+      const price = Number(phone.pricePKR || 0);
+      return !Number.isFinite(price) || price <= 0;
+    }).length;
 
-    // Specs completeness across the full working inventory, including Draft / Review.
-    const specsComplete = specPhoneIdSet.size;
+    // Specs completeness
+    const specsComplete = phonesWithSpecs.length;
 
-    // Phones with complete key specs across the full working inventory.
+    // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
       phoneId: { $in: inventoryPhoneIds },
       chipset: { $nin: ['', null] },
@@ -164,13 +155,32 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       }
     }
 
+
+    if (includeHealth) {
+      const denominator = Math.max(totalPhones - archivedPhones, 1);
+      const corePenalty = Math.min(20, Math.round((draftPhones / denominator) * 20));
+      const specsPenalty = Math.min(30, Math.round((missingSpecs / denominator) * 30));
+      const imagePenalty = Math.min(25, Math.round((missingImages / denominator) * 25));
+      const pricePenalty = Math.min(15, Math.round((missingPrices / denominator) * 15));
+      const verificationPenalty = Math.min(10, Math.round(((critical + high + medium) / denominator) * 10));
+      health = {
+        score: Math.max(0, 100 - corePenalty - specsPenalty - imagePenalty - pricePenalty - verificationPenalty),
+        categories: [
+          { name: 'Core Identity / Publication', score: 20 - corePenalty, deduction: corePenalty, maxDeduction: 20, details: `${draftPhones} draft or review records` },
+          { name: 'Specifications', score: 30 - specsPenalty, deduction: specsPenalty, maxDeduction: 30, details: `${missingSpecs} phones missing specs` },
+          { name: 'Images', score: 25 - imagePenalty, deduction: imagePenalty, maxDeduction: 25, details: `${missingImages} phones missing images` },
+          { name: 'Prices', score: 15 - pricePenalty, deduction: pricePenalty, maxDeduction: 15, details: `${missingPrices} phones missing prices` },
+          { name: 'Verification', score: 10 - verificationPenalty, deduction: verificationPenalty, maxDeduction: 10, details: `${critical + high + medium} open important issues` },
+        ],
+        totals: { totalPhones, publishedPhones, draftPhones },
+      };
+    }
+
     return NextResponse.json({
       health,
       totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
-      scope: 'working-inventory',
-      specs: { withSpecs: specsComplete, completeSpecs, inventoryPhones: inventoryPhoneIds.length, publishedPhones },
+      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones },
       queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
-      publishedQueues: { ...publishedMissing },
       severity: { critical, high, medium, low, info, total: totalOpen },
       trends: { discoveredToday, fixedToday, newLast7Days },
       database: {

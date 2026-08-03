@@ -5,10 +5,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  Search, Star, Smartphone, Plus, Trash2, Edit, Eye, Download,
+  Search, Star, Smartphone, Plus, Trash2, Edit, Eye,
   ChevronLeft, ChevronRight, Filter, ChevronDown, ChevronUp,
   CheckSquare, Square, AlertCircle, X, Smartphone as PhoneIcon,
-  TrendingUp, Sparkles, Shield, DollarSign, FileText
+  TrendingUp, Sparkles, Shield, DollarSign, FileText, Download
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -25,7 +25,7 @@ const SORT_OPTIONS = [
 
 const STATUS_FILTERS = [
   { value: '', label: 'All Status' }, { value: 'published', label: 'Published' },
-  { value: 'draft-review', label: 'Draft / Review' }, { value: 'pending', label: 'Pending only' },
+  { value: 'draft', label: 'Draft' }, { value: 'pending', label: 'Pending' },
   { value: 'archived', label: 'Archived' }, { value: 'upcoming', label: 'Upcoming' },
   { value: 'trending', label: 'Trending' }, { value: 'featured', label: 'Featured' },
 ];
@@ -146,64 +146,6 @@ export default function AdminPhonesPage() {
 
   useEffect(() => { fetchPhones(); fetchStats(); fetchBrands(); }, [fetchPhones, fetchStats, fetchBrands]);
 
-
-  const applyStatFilter = (kind: string) => {
-    setSearchQuery('');
-    setDebouncedSearch('');
-    setBrandFilter('');
-    setPtaFilter('');
-    setFeaturedToggle(false);
-    setTrendingToggle(false);
-    if (kind === 'all') setStatusFilter('');
-    else if (kind === 'published') setStatusFilter('published');
-    else if (kind === 'draft-review') setStatusFilter('draft-review');
-    else if (kind === 'upcoming') setStatusFilter('upcoming');
-    else if (kind === 'trending') setStatusFilter('trending');
-    else if (kind === 'featured') setStatusFilter('featured');
-    else if (kind === 'pta') { setStatusFilter(''); setPtaFilter('approved'); }
-    setPage(1);
-    setShowFilters(true);
-  };
-
-  const exportFilteredPhones = async () => {
-    setError('');
-    try {
-      const base = new URLSearchParams(buildParams());
-      base.set('page', '1');
-      base.set('limit', '500');
-      const first = await fetch(`/api/admin/phones?${base}`, { credentials: 'include' });
-      const firstPayload = await readApiResponse<{ phones?: Phone[]; totalPages?: number; error?: string }>(first);
-      if (!first.ok) throw new Error(firstPayload?.error || 'Unable to export phones');
-      const all: Phone[] = [...(firstPayload?.phones || [])];
-      const pages = Math.max(1, Number(firstPayload?.totalPages || 1));
-      for (let nextPage = 2; nextPage <= pages; nextPage += 1) {
-        base.set('page', String(nextPage));
-        const response = await fetch(`/api/admin/phones?${base}`, { credentials: 'include' });
-        const payload = await readApiResponse<{ phones?: Phone[]; error?: string }>(response);
-        if (!response.ok) throw new Error(payload?.error || `Export failed on page ${nextPage}`);
-        all.push(...(payload?.phones || []));
-      }
-      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-      const rows = all.map(phone => [
-        phone.id, phone.brandName || '', phone.modelName || '', phone.slug || '',
-        phone.pricePKR || 0, phone.ptaStatus || 'Unknown', phone.overallRating || '',
-        phone.status || (phone.published ? 'published' : 'draft'), phone.featured ? 'true' : 'false',
-        phone.trending ? 'true' : 'false', phone.upcoming ? 'true' : 'false', phone.thumbnail || '',
-      ]);
-      const header = ['ID','Brand','Model','Slug','Price PKR','PTA Status','Rating','Status','Featured','Trending','Upcoming','Thumbnail'];
-      const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `specsdekh-phones-${new Date().toISOString().slice(0, 10)}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to export phones');
-    }
-  };
-
   // Single delete
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -307,6 +249,66 @@ export default function AdminPhonesPage() {
     else setSelected(new Set(phones.map(p => p.id)));
   };
 
+
+  const applyStatsFilter = (filter: 'all' | 'published' | 'draft' | 'upcoming' | 'trending' | 'featured' | 'pta-approved') => {
+    setSearchQuery('');
+    setBrandFilter('');
+    setFeaturedToggle(false);
+    setTrendingToggle(false);
+    setPtaFilter('');
+    if (filter === 'all') setStatusFilter('');
+    else if (filter === 'published') setStatusFilter('published');
+    else if (filter === 'draft') setStatusFilter('draft');
+    else if (filter === 'upcoming') setStatusFilter('upcoming');
+    else if (filter === 'trending') { setStatusFilter(''); setTrendingToggle(true); }
+    else if (filter === 'featured') { setStatusFilter(''); setFeaturedToggle(true); }
+    else if (filter === 'pta-approved') { setStatusFilter(''); setPtaFilter('approved'); }
+    setPage(1);
+    setShowFilters(true);
+  };
+
+  const exportPhonesCsv = async () => {
+    setError('');
+    try {
+      const params = new URLSearchParams(buildParams());
+      params.set('page', '1');
+      params.set('limit', '500');
+      const all: Phone[] = [];
+      let current = 1;
+      let pages = 1;
+      do {
+        params.set('page', String(current));
+        const response = await fetch(`/api/admin/phones?${params.toString()}`, { credentials: 'include' });
+        const payload = await readApiResponse<{ phones?: Phone[]; totalPages?: number; error?: string }>(response);
+        if (!response.ok) throw new Error(payload?.error || `Export failed (HTTP ${response.status})`);
+        all.push(...(payload?.phones || []));
+        pages = Math.max(1, Number(payload?.totalPages || 1));
+        current += 1;
+      } while (current <= pages);
+      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = all.map(phone => [
+        phone.id, phone.brand?.name || '', phone.modelName || '', phone.slug || '',
+        phone.pricePKR || 0, phone.ptaApproved ? 'approved' : (phone.ptaStatus || 'unknown'),
+        phone.status || (phone.published === false ? 'draft' : 'published'),
+        phone.featured ? 'true' : 'false', phone.trending ? 'true' : 'false',
+        phone.upcoming ? 'true' : 'false', phone.overallRating || '', phone.thumbnail || '',
+      ]);
+      const csv = '\uFEFF' + [
+        ['ID','Brand','Model','Slug','Price PKR','PTA','Status','Featured','Trending','Upcoming','Rating','Thumbnail'],
+        ...rows,
+      ].map(row => row.map(quote).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `specsdekh-phones-${new Date().toISOString().slice(0,10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Phone export failed');
+    }
+  };
+
   const clearFilters = () => {
     setSearchQuery(''); setStatusFilter(''); setBrandFilter('');
     setPtaFilter(''); setFeaturedToggle(false); setTrendingToggle(false);
@@ -352,6 +354,9 @@ export default function AdminPhonesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={exportPhonesCsv} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors">
+            <Download className="w-4 h-4" /> <span className="hidden sm:inline">Download CSV</span><span className="sm:hidden">CSV</span>
+          </button>
           <button
             onClick={checkCleanupCount}
             disabled={cleanupLoading}
@@ -379,16 +384,16 @@ export default function AdminPhonesPage() {
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {[
-            { label: 'Total Phones', value: stats.total, icon: PhoneIcon, bg: 'bg-blue-50', color: 'text-blue-600', filter: 'all' },
-            { label: 'Published', value: stats.published, icon: FileText, bg: 'bg-emerald-50', color: 'text-emerald-600', filter: 'published' },
-            { label: 'Draft / Review', value: stats.draft, icon: Edit, bg: 'bg-gray-100', color: 'text-gray-500', filter: 'draft-review' },
-            { label: 'Upcoming', value: stats.upcoming, icon: Smartphone, bg: 'bg-purple-50', color: 'text-purple-600', filter: 'upcoming' },
-            { label: 'Trending', value: stats.trending, icon: TrendingUp, bg: 'bg-cyan-50', color: 'text-cyan-600', filter: 'trending' },
-            { label: 'Featured', value: stats.featured, icon: Sparkles, bg: 'bg-amber-50', color: 'text-amber-600', filter: 'featured' },
-            { label: 'PTA Approved', value: stats.ptaApproved, icon: Shield, bg: 'bg-green-50', color: 'text-green-600', filter: 'pta' },
-            { label: 'Avg Price', value: formatPrice(stats.avgPrice), icon: DollarSign, bg: 'bg-rose-50', color: 'text-rose-600', filter: '' },
+            { label: 'Total Phones', value: stats.total, icon: PhoneIcon, bg: 'bg-blue-50', color: 'text-blue-600', filter: 'all' as const },
+            { label: 'Published', value: stats.published, icon: FileText, bg: 'bg-emerald-50', color: 'text-emerald-600', filter: 'published' as const },
+            { label: 'Draft / Review', value: stats.draft, icon: Edit, bg: 'bg-gray-100', color: 'text-gray-500', filter: 'draft' as const },
+            { label: 'Upcoming', value: stats.upcoming, icon: Smartphone, bg: 'bg-purple-50', color: 'text-purple-600', filter: 'upcoming' as const },
+            { label: 'Trending', value: stats.trending, icon: TrendingUp, bg: 'bg-cyan-50', color: 'text-cyan-600', filter: 'trending' as const },
+            { label: 'Featured', value: stats.featured, icon: Sparkles, bg: 'bg-amber-50', color: 'text-amber-600', filter: 'featured' as const },
+            { label: 'PTA Approved', value: stats.ptaApproved, icon: Shield, bg: 'bg-green-50', color: 'text-green-600', filter: 'pta-approved' as const },
+            { label: 'Avg Price', value: formatPrice(stats.avgPrice), icon: DollarSign, bg: 'bg-rose-50', color: 'text-rose-600', filter: undefined },
           ].map(s => (
-            <button type="button" key={s.label} onClick={() => s.filter && applyStatFilter(s.filter)} disabled={!s.filter} className={`card-premium p-3.5 text-left w-full transition-all ${s.filter ? 'hover:-translate-y-0.5 hover:border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/30' : 'cursor-default'}`}>
+            <button type="button" key={s.label} onClick={() => s.filter && applyStatsFilter(s.filter)} disabled={!s.filter} className={`card-premium p-3.5 text-left ${s.filter ? 'cursor-pointer hover:ring-2 hover:ring-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-400' : 'cursor-default'}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className={`w-7 h-7 ${s.bg} rounded-lg flex items-center justify-center`}>
                   <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
@@ -422,9 +427,6 @@ export default function AdminPhonesPage() {
           <select value={rowsPerPage} onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1); }} className="h-9 px-2.5 rounded-xl border border-gray-200 text-xs bg-white outline-none focus:ring-2 focus:ring-blue-500/20" aria-label="Rows per page">
             {[10, 20, 40, 100, 250, 500].map(n => <option key={n} value={n}>{n} per page</option>)}
           </select>
-          <button onClick={() => void exportFilteredPhones()} className="h-9 px-3 rounded-xl border border-gray-200 text-xs font-medium flex items-center gap-1.5 text-gray-600 hover:bg-gray-50" title="Download all phones matching current filters">
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </button>
           {/* Filter toggle */}
           <button onClick={() => setShowFilters(!showFilters)} className={`h-9 px-3 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors ${showFilters ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
             <Filter className="w-3.5 h-3.5" /> Filters {showFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
