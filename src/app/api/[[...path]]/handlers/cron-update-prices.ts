@@ -11,6 +11,7 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 
 const LOCK_KEY = 'cron_update_prices_lock';
+const LAST_RUN_KEY = 'price_tracker_last_run';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const MAX_RETRY_DELAY_MINUTES = 24 * 60;
@@ -83,6 +84,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   const summary = { processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0 };
   const runStartedAt = new Date();
   const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
+  let runError = '';
+  let runMessage = ''; 
 
   // Load configurable settings
   const ptSettings = await getPriceTrackerSettings();
@@ -98,7 +101,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       .then((docs) => docs.map((d) => d._id));
 
     if (trustedSourceIds.length === 0) {
-      return NextResponse.json({ ...summary, message: 'No trusted sources enabled' });
+      runMessage = 'No trusted sources enabled';
+      return NextResponse.json({ ...summary, message: runMessage });
     }
 
     // Fetch eligible listings: enabled, verified, with a trusted source
@@ -122,7 +126,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       .lean();
 
     if (listings.length === 0) {
-      return NextResponse.json({ ...summary, message: 'No eligible listings to process' });
+      runMessage = 'No eligible listings to process';
+      return NextResponse.json({ ...summary, message: runMessage });
     }
 
     const batches: (typeof listings)[number][][] = [];
@@ -426,12 +431,34 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         revalidatePricePages(slug);
       }
     }
+  } catch (error) {
+    runError = error instanceof Error ? error.message : 'Unknown price sync failure';
+    throw error;
   } finally {
-    // Always release the lock
-    await SystemState.findOneAndUpdate(
-      { key: LOCK_KEY },
-      { $set: { completed: false, completedAt: new Date() } },
-    );
+    const finishedAt = new Date();
+    await Promise.all([
+      SystemState.findOneAndUpdate(
+        { key: LOCK_KEY },
+        { $set: { completed: false, completedAt: finishedAt } },
+      ),
+      SystemState.findOneAndUpdate(
+        { key: LAST_RUN_KEY },
+        {
+          $set: {
+            completed: !runError,
+            completedAt: finishedAt,
+            metadata: {
+              lastAttemptAt: finishedAt.toISOString(),
+              lastSuccessAt: runError ? null : finishedAt.toISOString(),
+              status: runError ? 'failed' : 'completed',
+              message: runError || runMessage || 'Price sync batch completed',
+              ...summary,
+            },
+          },
+        },
+        { upsert: true },
+      ),
+    ]);
   }
 
   const eligibleRemaining = await PhoneRetailListing.countDocuments({

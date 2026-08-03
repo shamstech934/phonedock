@@ -432,6 +432,21 @@ export default function AdminPriceTrackerPage() {
     }
   }, [fetchOverview]);
 
+  const bootstrapPakistanSources = useCallback(async () => {
+    setActionLoading('bootstrap'); setError(''); setActionMessage('');
+    try {
+      const response = await fetch('/api/admin/price-tracker/bootstrap', { method: 'POST', credentials: 'include' });
+      const result = await readApiResponse(response);
+      if (!response.ok) throw new Error(result.error || 'Pakistan source setup failed');
+      setActionMessage(`Pakistan source setup complete: ${result.created || 0} created, ${result.refreshed || 0} refreshed. Test a real product URL before trusting each source.`);
+      await Promise.all([fetchOverview(), fetchSources()]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Pakistan source setup failed');
+    } finally {
+      setActionLoading('');
+    }
+  }, [fetchOverview, fetchSources]);
+
   const autoLinkListings = useCallback(async () => {
     setActionLoading('auto-link'); setError(''); setActionMessage('');
     try {
@@ -766,6 +781,15 @@ export default function AdminPriceTrackerPage() {
         <p className="text-sm text-gray-500 mt-0.5">Automatic multi-brand price checks, discounts and review safety</p>
       </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={bootstrapPakistanSources}
+            disabled={Boolean(actionLoading)}
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {actionLoading === 'bootstrap' ? 'Setting up...' : 'Setup Pakistan sources'}
+          </button>
           <button
             type="button"
             onClick={autoLinkListings}

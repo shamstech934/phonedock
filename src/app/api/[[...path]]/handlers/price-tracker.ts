@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Types } from 'mongoose';
-import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/models';
+import { Phone, Brand, ActivityLog, PriceHistory, PhonePrice, SystemState } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
@@ -9,6 +9,7 @@ import { PRICE_SOURCE_TYPES as PRICE_SOURCE_TYPE_VALUES } from '@/lib/price-sour
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -68,6 +69,7 @@ interface LeanMatchCandidate {
 
 // ── Price Tracker Settings (stored in SystemState) ──
 const PT_SETTINGS_KEY = 'price_tracker_settings';
+const PT_LAST_RUN_KEY = 'price_tracker_last_run';
 
 export const DEFAULT_PT_SETTINGS = {
   autoApproveThreshold: 2,   // % — changes below this are auto-approved silently
@@ -137,14 +139,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     todayStart.setHours(0, 0, 0, 0);
 
     const [
-      totalPhonesWithPrices,
+      phonesWithPrices,
       manualCount,
       automaticCount,
       priceDropsToday,
       priceIncreasesToday,
       pendingReview,
-      failedChecks,
-      lastSuccessfulUpdate,
+      failedListings,
+      failedSources,
+      lastRunState,
       totalSources,
       enabledSources,
       readySources,
@@ -152,14 +155,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       trackedPhoneIds,
       pendingSourceGaps,
     ] = await Promise.all([
-      Phone.countDocuments({ currentPrice: { $gt: 0 } }),
-      Phone.countDocuments({ priceMode: 'manual', currentPrice: { $gt: 0 } }),
-      Phone.countDocuments({ priceMode: 'automatic', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', priceMode: 'manual', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', priceMode: 'automatic', currentPrice: { $gt: 0 } }),
       PriceTrackerHistory.countDocuments({ changeType: 'decrease', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ changeType: 'increase', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ verificationStatus: 'pending' }),
+      PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'failed' }),
       PriceSource.countDocuments({ status: 'failed' }),
-      PriceTrackerHistory.findOne({ verificationStatus: { $ne: 'pending' } }).sort({ capturedAt: -1 }).lean(),
+      SystemState.findOne({ key: PT_LAST_RUN_KEY }).lean(),
       PriceSource.countDocuments({}),
       PriceSource.countDocuments({ enabled: true, status: 'active' }),
       PriceSource.countDocuments({
@@ -169,22 +173,21 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         allowedDomains: { $exists: true, $ne: [] },
       }),
       Phone.countDocuments({ active: true, status: 'published' }),
-      PhoneRetailListing.distinct('phoneId', {
-        enabled: true,
-        verificationStatus: 'verified',
-      }),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: { $in: ['verified', 'pending'] } }),
       PriceMatchCandidate.countDocuments({ status: 'pending' }),
     ]);
 
     return NextResponse.json({
-      monitoredPhones: totalPhonesWithPrices,
+      monitoredPhones: trackedPhoneIds.length,
+      phonesWithPrices,
       manualPrices: manualCount,
       automaticPrices: automaticCount,
       dropsToday: priceDropsToday,
       increasesToday: priceIncreasesToday,
       pendingReview,
-      failedChecks,
-      lastSuccessfulUpdate: lastSuccessfulUpdate?.capturedAt || null,
+      failedChecks: failedListings + failedSources,
+      lastSuccessfulUpdate: (lastRunState?.metadata as { lastSuccessAt?: string } | undefined)?.lastSuccessAt || null,
+      lastRunSummary: (lastRunState?.metadata as Record<string, unknown> | undefined) || null,
       totalSources,
       enabledSources,
       readySources,
@@ -537,6 +540,32 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 // ============ PRICE TRACKER POST ============
 
 export async function handlePriceTrackerPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/price-tracker/bootstrap ----
+  // Idempotently creates/refreshes Pakistan official source definitions so a
+  // production deployment does not depend on running a one-off CLI command.
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'bootstrap') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    let created = 0;
+    let refreshed = 0;
+    for (const source of PAKISTAN_OFFICIAL_PRICE_SOURCES) {
+      const result = await PriceSource.updateOne(
+        { name: source.name },
+        {
+          $set: { baseUrl: source.baseUrl, allowedDomains: source.allowedDomains, priority: source.priority, sourceType: source.sourceType, notes: source.notes },
+          $setOnInsert: { enabled: source.enabled, trusted: source.trusted, status: source.status },
+        },
+        { upsert: true },
+      );
+      if (result.upsertedCount) created++; else refreshed++;
+    }
+
+    await ActivityLog.create({ adminId: admin._id, action: 'bootstrap_price_sources', details: `Created ${created} and refreshed ${refreshed} Pakistan official price sources.`, entityType: 'price_source' }).catch(() => undefined);
+    return NextResponse.json({ success: true, created, refreshed, total: PAKISTAN_OFFICIAL_PRICE_SOURCES.length });
+  }
+
   // ---- /api/admin/price-tracker/auto-link ----
   // Converts already imported, source-backed phone records into verified
   // tracker listings in one operation. A URL is linked only when its hostname
@@ -560,10 +589,22 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       );
     }
 
-    const phones = await Phone.find({
-      active: true,
-      status: 'published',
-    }).select('_id modelName sourceUrl').lean();
+    const phones = await Phone.find({ active: true, status: 'published' })
+      .select('_id modelName sourceUrl')
+      .lean();
+    const legacyPriceRows = await PhonePrice.find({
+      phoneId: { $in: phones.map(phone => phone._id) },
+      $or: [{ url: { $type: 'string', $ne: '' } }, { sourceUrl: { $type: 'string', $ne: '' } }],
+    }).select('phoneId url sourceUrl storeName price ptaStatus warrantyType').lean();
+    const legacyUrlsByPhone = new Map<string, Array<{ url: string; storeName: string; price: number; ptaStatus: string; warrantyType: string }>>();
+    for (const row of legacyPriceRows) {
+      const url = String(row.url || row.sourceUrl || '').trim();
+      if (!url) continue;
+      const key = row.phoneId.toString();
+      const values = legacyUrlsByPhone.get(key) || [];
+      values.push({ url, storeName: String(row.storeName || ''), price: Number(row.price || 0), ptaStatus: String(row.ptaStatus || ''), warrantyType: String(row.warrantyType || '') });
+      legacyUrlsByPhone.set(key, values);
+    }
 
     let linked = 0;
     let alreadyLinked = 0;
@@ -573,75 +614,53 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const examples: string[] = [];
 
     for (const phone of phones) {
-      const sourceUrl = String(phone.sourceUrl || '').trim();
-      if (!sourceUrl) {
+      const candidates = [
+        ...(String(phone.sourceUrl || '').trim() ? [{ url: String(phone.sourceUrl).trim(), storeName: '', price: 0, ptaStatus: '', warrantyType: '' }] : []),
+        ...(legacyUrlsByPhone.get(phone._id.toString()) || []),
+      ].filter((candidate, index, all) => all.findIndex(other => other.url === candidate.url) === index);
+
+      if (candidates.length === 0) {
         missingProductUrls++;
         continue;
       }
-      if (!isLikelyProductPageUrl(sourceUrl)) {
-        rejectedHomepageUrls++;
-        if (examples.length < 5) examples.push(`${phone.modelName}: URL is not a product page`);
-        continue;
-      }
 
-      let hostname = '';
-      try {
-        hostname = new URL(sourceUrl).hostname.toLowerCase();
-      } catch {
-        unmatched++;
-        continue;
-      }
-
-      const source = sources.find(candidate => (candidate.allowedDomains || []).some((domain: string) => {
-        const clean = domain.trim().toLowerCase().replace(/^\./, '');
-        return clean && (hostname === clean || hostname.endsWith(`.${clean}`));
-      }));
-      if (!source) {
-        unmatched++;
-        if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
-        await PriceMatchCandidate.findOneAndUpdate(
-          { phoneId: phone._id, sourceUrl: sourceUrl },
-          {
-            $set: {
-              hostname,
-              status: 'pending',
-              reason: `No enabled trusted source covers ${hostname}.`,
-              resolvedSourceId: null,
-              resolvedAt: null,
-            },
-          },
-          { upsert: true, setDefaultsOnInsert: true },
-        );
-        continue;
-      }
-
-      const existing = await PhoneRetailListing.findOne({
-        phoneId: phone._id,
-        sourceId: source._id,
-        productUrl: sourceUrl,
-      }).select('_id').lean();
-      if (existing) {
-        alreadyLinked++;
+      let phoneLinked = false;
+      for (const candidate of candidates) {
+        const sourceUrl = candidate.url;
+        if (!isLikelyProductPageUrl(sourceUrl)) { rejectedHomepageUrls++; continue; }
+        let hostname = '';
+        try { hostname = new URL(sourceUrl).hostname.toLowerCase(); } catch { unmatched++; continue; }
+        const source = sources.find(item => (item.allowedDomains || []).some((domain: string) => {
+          const clean = domain.trim().toLowerCase().replace(/^\./, '');
+          return clean && (hostname === clean || hostname.endsWith(`.${clean}`));
+        }));
+        if (!source) {
+          unmatched++;
+          if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
+          await PriceMatchCandidate.findOneAndUpdate(
+            { phoneId: phone._id, sourceUrl },
+            { $set: { hostname, status: 'pending', reason: `No enabled trusted source covers ${hostname}.`, resolvedSourceId: null, resolvedAt: null } },
+            { upsert: true, setDefaultsOnInsert: true },
+          );
+          continue;
+        }
+        const existing = await PhoneRetailListing.findOne({ phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl }).select('_id').lean();
+        if (existing) {
+          alreadyLinked++; phoneLinked = true;
+        } else {
+          await PhoneRetailListing.create({
+            phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl, sourceTitle: candidate.storeName || phone.modelName,
+            currentSourcePrice: candidate.price > 0 ? candidate.price : 0, ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType,
+            enabled: true, verificationStatus: 'verified',
+          });
+          linked++; phoneLinked = true;
+        }
         await PriceMatchCandidate.updateOne(
-          { phoneId: phone._id, sourceUrl: sourceUrl },
+          { phoneId: phone._id, sourceUrl },
           { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
         );
-        continue;
       }
-
-      await PhoneRetailListing.create({
-        phoneId: phone._id,
-        sourceId: source._id,
-        productUrl: sourceUrl,
-        sourceTitle: phone.modelName,
-        enabled: true,
-        verificationStatus: 'verified',
-      });
-      await PriceMatchCandidate.updateOne(
-        { phoneId: phone._id, sourceUrl: sourceUrl },
-        { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
-      );
-      linked++;
+      if (!phoneLinked && candidates.length > 0 && examples.length < 5) examples.push(`${phone.modelName}: no trusted product URL matched`);
     }
 
     await ActivityLog.create({
