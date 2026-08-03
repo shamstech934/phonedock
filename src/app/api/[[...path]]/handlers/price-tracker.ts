@@ -26,6 +26,8 @@ interface LeanPhoneDoc {
 interface LeanSourceDoc {
   _id: Types.ObjectId; name: string; sourceType: string;
   enabled: boolean; trusted: boolean; baseUrl: string; verificationUrl: string; allowedDomains: string[];
+  discoveryEnabled?: boolean; discoveryMode?: string; catalogUrls?: string[]; sitemapUrls?: string[]; feedUrl?: string; syncFrequency?: string;
+  lastDiscoveryAt?: Date | null; productsFound?: number; productsAdded?: number; productsUpdated?: number; productsRemoved?: number;
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
   failureCount: number; nextRetryAt: Date | null; lastError: string; status: string; notes: string;
 }
@@ -342,6 +344,17 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         trusted: s.trusted,
         baseUrl: s.baseUrl || '',
         verificationUrl: s.verificationUrl || '',
+        discoveryEnabled: Boolean(s.discoveryEnabled),
+        discoveryMode: s.discoveryMode || 'manual',
+        catalogUrls: s.catalogUrls || [],
+        sitemapUrls: s.sitemapUrls || [],
+        feedUrl: s.feedUrl || '',
+        syncFrequency: s.syncFrequency || 'daily',
+        lastDiscoveryAt: s.lastDiscoveryAt || null,
+        productsFound: s.productsFound || 0,
+        productsAdded: s.productsAdded || 0,
+        productsUpdated: s.productsUpdated || 0,
+        productsRemoved: s.productsRemoved || 0,
         allowedDomains: s.allowedDomains || [],
         priority: s.priority || 0,
         lastCheckedAt: s.lastCheckedAt || null,
@@ -834,7 +847,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
 
     if (!name || !name.trim()) return NextResponse.json({ error: 'Source name is required' }, { status: 400 });
     if (sourceType !== undefined && !PRICE_SOURCE_TYPES.has(sourceType)) {
@@ -859,6 +872,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       sourceType: sourceType || 'retailer',
       baseUrl: normalizedBaseUrl,
       verificationUrl: typeof verificationUrl === 'string' ? verificationUrl.trim() : '',
+      discoveryEnabled: Boolean(discoveryEnabled),
+      discoveryMode: ['manual', 'sitemap', 'catalog', 'feed', 'api'].includes(String(discoveryMode)) ? discoveryMode : 'manual',
+      catalogUrls: Array.isArray(catalogUrls) ? catalogUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [],
+      sitemapUrls: Array.isArray(sitemapUrls) ? sitemapUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [],
+      feedUrl: typeof feedUrl === 'string' ? feedUrl.trim() : '',
+      syncFrequency: ['manual', 'hourly', 'daily', 'weekly'].includes(String(syncFrequency)) ? syncFrequency : 'daily',
       allowedDomains: normalizedDomains,
       priority: normalizedPriority,
     });
@@ -1500,7 +1519,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
 
     const updates: Record<string, unknown> = {};
 
@@ -1566,6 +1585,12 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       updates.status = status;
       updates.enabled = status === 'active';
     }
+    if (typeof discoveryEnabled === 'boolean') updates.discoveryEnabled = discoveryEnabled;
+    if (discoveryMode !== undefined && ['manual', 'sitemap', 'catalog', 'feed', 'api'].includes(String(discoveryMode))) updates.discoveryMode = discoveryMode;
+    if (catalogUrls !== undefined) updates.catalogUrls = Array.isArray(catalogUrls) ? catalogUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [];
+    if (sitemapUrls !== undefined) updates.sitemapUrls = Array.isArray(sitemapUrls) ? sitemapUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [];
+    if (feedUrl !== undefined) updates.feedUrl = String(feedUrl || '').trim().slice(0, 2000);
+    if (syncFrequency !== undefined && ['manual', 'hourly', 'daily', 'weekly'].includes(String(syncFrequency))) updates.syncFrequency = syncFrequency;
     if (notes !== undefined) updates.notes = (notes || '').trim().slice(0, 1000);
 
     if (Object.keys(updates).length === 0) {

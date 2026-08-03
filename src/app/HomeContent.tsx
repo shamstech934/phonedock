@@ -662,7 +662,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   .filter(key => ['latest', 'trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
                   .map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
               </div>
-              <aside className="isolate flex min-h-0 flex-col gap-5 self-start lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
+              <aside className="isolate flex flex-col gap-5 min-h-0 self-start lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} limit={cms.homepagePriceLimit || 6} />}
                 {cms.smartFiltersEnabled !== false && <HomeSmartFilterSidebar groups={smartFilterGroups} />}
                 {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears.slice(0, 6)} />}

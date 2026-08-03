@@ -109,6 +109,16 @@ export interface Phone {
   thumbnail: string;
   pricePKR: number;
   originalPricePKR: number;
+  currentPrice?: number;
+  previousPrice?: number;
+  lowestPrice?: number;
+  highestPrice?: number;
+  priceChange?: number;
+  percentageChange?: number;
+  lastPriceCheckedAt?: string;
+  lastVerifiedAt?: string;
+  priceVerified?: boolean;
+  inStock?: boolean;
   description: string;
   overallRating: number;
   cameraScore: number;

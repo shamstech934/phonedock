@@ -62,6 +62,16 @@ interface PriceSource {
   failures: number;
   baseUrl: string;
   verificationUrl: string;
+  discoveryEnabled: boolean;
+  discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api';
+  catalogUrls: string[];
+  sitemapUrls: string[];
+  feedUrl: string;
+  syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly';
+  productsFound: number;
+  productsAdded: number;
+  productsUpdated: number;
+  productsRemoved: number;
   allowedDomains: string[];
   listingCount: number;
   enabledListings: number;
@@ -229,7 +239,7 @@ export default function AdminPriceTrackerPage() {
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
   const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
-  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
+  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; discoveryEnabled: boolean; discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api'; catalogUrls: string; sitemapUrls: string; feedUrl: string; syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly'; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', discoveryEnabled: false, discoveryMode: 'manual', catalogUrls: '', sitemapUrls: '', feedUrl: '', syncFrequency: 'daily', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
   const [editSourceFieldErrors, setEditSourceFieldErrors] = useState<Record<string, string>>({});
   const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -607,6 +617,12 @@ export default function AdminPriceTrackerPage() {
       type: source.type,
       baseUrl: source.baseUrl || '',
       verificationUrl: source.verificationUrl || '',
+      discoveryEnabled: Boolean(source.discoveryEnabled),
+      discoveryMode: source.discoveryMode || 'manual',
+      catalogUrls: (source.catalogUrls || []).join('\n'),
+      sitemapUrls: (source.sitemapUrls || []).join('\n'),
+      feedUrl: source.feedUrl || '',
+      syncFrequency: source.syncFrequency || 'daily',
       allowedDomains: (source.allowedDomains || []).join(', '),
       priority: source.priority || 1,
       status: source.status,
@@ -656,6 +672,12 @@ export default function AdminPriceTrackerPage() {
           sourceType: editSourceForm.type,
           baseUrl: editSourceForm.baseUrl.trim(),
           verificationUrl,
+          discoveryEnabled: editSourceForm.discoveryEnabled,
+          discoveryMode: editSourceForm.discoveryMode,
+          catalogUrls: editSourceForm.catalogUrls.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
+          sitemapUrls: editSourceForm.sitemapUrls.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
+          feedUrl: editSourceForm.feedUrl.trim(),
+          syncFrequency: editSourceForm.syncFrequency,
           allowedDomains,
           priority: Number(editSourceForm.priority),
           status: editSourceForm.status,
@@ -2298,7 +2320,7 @@ export default function AdminPriceTrackerPage() {
               {editSourceFieldErrors.baseUrl && <p className="mt-1 text-[11px] text-red-600">{editSourceFieldErrors.baseUrl}</p>}
             </div>
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Verification product URL</label>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Verification product URL <span className="font-normal text-slate-400">(optional test only)</span></label>
               <input
                 type="url"
                 value={editSourceForm.verificationUrl}
@@ -2309,7 +2331,20 @@ export default function AdminPriceTrackerPage() {
                 placeholder="https://retailer.example/phones/real-phone-product-page"
                 className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.verificationUrl ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
               />
-              {editSourceFieldErrors.verificationUrl ? <p className="mt-1 text-[11px] font-medium text-red-600">{editSourceFieldErrors.verificationUrl}</p> : <p className="mt-1 text-[11px] text-slate-400">Use a real phone product page, not a homepage or category URL. Test & trust will reuse this URL.</p>}
+              {editSourceFieldErrors.verificationUrl ? <p className="mt-1 text-[11px] font-medium text-red-600">{editSourceFieldErrors.verificationUrl}</p> : <p className="mt-1 text-[11px] text-slate-400">Optional: use one real product page only to test extraction. Catalog discovery below handles multiple phones automatically.</p>}
+            </div>
+            <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div><p className="text-sm font-bold text-slate-900">Automatic catalog discovery</p><p className="mt-1 text-xs leading-5 text-slate-600">Configure the provider once. Product URLs can then be discovered from catalog, sitemap, feed or API sources instead of entering every phone manually.</p></div>
+                <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={editSourceForm.discoveryEnabled} onChange={event => setEditSourceForm(current => ({ ...current, discoveryEnabled: event.currentTarget.checked }))} className="h-4 w-4 rounded border-slate-300"/>Enabled</label>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Discovery mode</span><select value={editSourceForm.discoveryMode} onChange={event => setEditSourceForm(current => ({ ...current, discoveryMode: event.currentTarget.value as 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual links</option><option value="catalog">Catalog pages</option><option value="sitemap">XML sitemap</option><option value="feed">Product feed</option><option value="api">Provider API</option></select></label>
+                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Sync frequency</span><select value={editSourceForm.syncFrequency} onChange={event => setEditSourceForm(current => ({ ...current, syncFrequency: event.currentTarget.value as 'manual' | 'hourly' | 'daily' | 'weekly' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Catalog URLs</span><textarea rows={2} value={editSourceForm.catalogUrls} onChange={event => setEditSourceForm(current => ({ ...current, catalogUrls: event.currentTarget.value }))} placeholder="One catalog/category URL per line" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Sitemap URLs</span><textarea rows={2} value={editSourceForm.sitemapUrls} onChange={event => setEditSourceForm(current => ({ ...current, sitemapUrls: event.currentTarget.value }))} placeholder="https://example.com/product-sitemap.xml" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Feed or API URL</span><input type="url" value={editSourceForm.feedUrl} onChange={event => setEditSourceForm(current => ({ ...current, feedUrl: event.currentTarget.value }))} placeholder="https://example.com/products.json" className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/></label>
+              </div>
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>
