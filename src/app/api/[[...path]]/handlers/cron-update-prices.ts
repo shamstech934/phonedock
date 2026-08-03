@@ -13,6 +13,21 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 const LOCK_KEY = 'cron_update_prices_lock';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+const MAX_RETRY_DELAY_MINUTES = 24 * 60;
+
+function getRetryState(currentFailureCount: number, message: string) {
+  const failureCount = Math.max(0, Number(currentFailureCount || 0)) + 1;
+  const retryDelayMinutes = Math.min(
+    MAX_RETRY_DELAY_MINUTES,
+    15 * (2 ** Math.min(failureCount - 1, 6)),
+  );
+  return {
+    failureCount,
+    nextRetryAt: new Date(Date.now() + retryDelayMinutes * 60_000),
+    lastError: message,
+  };
+}
+
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   try {
@@ -94,6 +109,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       enabled: true,
       verificationStatus: 'verified',
       sourceId: { $in: trustedSourceIds },
+      $or: [
+        { nextRetryAt: null },
+        { nextRetryAt: { $exists: false } },
+        { nextRetryAt: { $lte: now } },
+      ],
     })
       .sort({ lastCheckedAt: 1, _id: 1 })
       .limit(Math.max(1, Math.min(BATCH_SIZE, 50)))
@@ -120,9 +140,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         if (!phone || !source) {
           summary.failed++;
+          const retry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'Phone or source reference is missing');
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $inc: { failureCount: 1 },
-            $set: { lastError: 'Phone or source reference is missing', lastCheckedAt: new Date() },
+            $set: { ...retry, lastCheckedAt: new Date(), verificationStatus: retry.failureCount >= 3 ? 'failed' : 'verified' },
           });
           continue;
         }
@@ -142,9 +162,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         if (!ssrfCheck.safe) {
           console.warn(`[cron:prices] SSRF blocked: ${listing.productUrl} — ${ssrfCheck.reason}`);
           summary.failed++;
+          const retry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), ssrfCheck.reason || 'Product URL failed safety validation');
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $inc: { failureCount: 1 },
-            $set: { lastError: ssrfCheck.reason || 'Product URL failed safety validation', lastCheckedAt: new Date() },
+            $set: { ...retry, lastCheckedAt: new Date(), verificationStatus: retry.failureCount >= 3 ? 'failed' : 'verified' },
           });
           continue;
         }
@@ -220,18 +240,15 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle failed extraction ──
         if (fetchError) {
           summary.failed++;
+          const listingRetry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'Product page could not be fetched');
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $inc: { failureCount: 1 },
-            $set: { lastError: 'Product page could not be fetched', lastCheckedAt: new Date() },
+            $set: { ...listingRetry, lastCheckedAt: new Date(), verificationStatus: listingRetry.failureCount >= 3 ? 'failed' : 'verified' },
           });
-          const failedSource = await PriceSource.findByIdAndUpdate(
-            source._id,
-            { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
-            { new: true },
-          );
-          if ((failedSource?.failureCount || 0) >= 5) {
-            await PriceSource.findByIdAndUpdate(source._id, { $set: { status: 'failed' } });
-          }
+          const sourceDoc = await PriceSource.findById(source._id).select('failureCount').lean();
+          const sourceRetry = getRetryState(Number(sourceDoc?.failureCount || 0), 'Product page could not be fetched');
+          await PriceSource.findByIdAndUpdate(source._id, {
+            $set: { ...sourceRetry, lastCheckedAt: new Date(), status: sourceRetry.failureCount >= 3 ? 'failed' : 'active' },
+          });
           continue;
         }
 
@@ -262,6 +279,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
                 lastChangedAt: new Date(),
                 lastSuccessAt: new Date(),
                 failureCount: 0,
+                nextRetryAt: null,
                 lastError: '',
               },
             });
@@ -284,7 +302,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             });
             summary.updated++;
             await PriceSource.findByIdAndUpdate(source._id, {
-              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
+              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
             });
             continue;
           }
@@ -302,6 +320,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               lastChangedAt: difference !== 0 ? new Date() : (listing as unknown as { lastChangedAt?: Date | null }).lastChangedAt,
               lastSuccessAt: new Date(),
               failureCount: 0,
+              nextRetryAt: null,
               lastError: '',
             },
           });
@@ -310,7 +329,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           if (difference === 0) {
             // Update source health
             await PriceSource.findByIdAndUpdate(source._id, {
-              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
+              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
             });
             summary.unchanged++;
             continue;
@@ -382,23 +401,20 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
           // Update source health
           await PriceSource.findByIdAndUpdate(source._id, {
-            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
+            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
           });
         } else {
           // Price extraction failed (but page loaded) — keep old price, increment failure
           summary.failed++;
+          const listingRetry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'No reliable PKR price was detected on the product page');
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $inc: { failureCount: 1 },
-            $set: { lastError: 'No reliable PKR price was detected on the product page', lastCheckedAt: new Date() },
+            $set: { ...listingRetry, lastCheckedAt: new Date(), verificationStatus: listingRetry.failureCount >= 3 ? 'failed' : 'verified' },
           });
-          const failedSource = await PriceSource.findByIdAndUpdate(
-            source._id,
-            { $inc: { failureCount: 1 }, $set: { lastCheckedAt: new Date() } },
-            { new: true },
-          );
-          if ((failedSource?.failureCount || 0) >= 5) {
-            await PriceSource.findByIdAndUpdate(source._id, { $set: { status: 'failed' } });
-          }
+          const sourceDoc = await PriceSource.findById(source._id).select('failureCount').lean();
+          const sourceRetry = getRetryState(Number(sourceDoc?.failureCount || 0), 'No reliable PKR price was detected on the product page');
+          await PriceSource.findByIdAndUpdate(source._id, {
+            $set: { ...sourceRetry, lastCheckedAt: new Date(), status: sourceRetry.failureCount >= 3 ? 'failed' : 'active' },
+          });
         }
       }
     }
@@ -422,6 +438,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     enabled: true,
     verificationStatus: 'verified',
     sourceId: { $in: await PriceSource.find({ enabled: true, trusted: true, status: 'active' }).distinct('_id') },
+    $or: [
+      { nextRetryAt: null },
+      { nextRetryAt: { $exists: false } },
+      { nextRetryAt: { $lte: new Date() } },
+    ],
   });
   return NextResponse.json({
     ...summary,
