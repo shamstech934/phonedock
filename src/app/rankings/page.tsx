@@ -6,6 +6,7 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { PhoneGrid } from '@/components/shared/PhoneGrid';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+const CURRENT_YEAR = new Date().getFullYear();
 
 // Rankings depend on live MongoDB data. Render this route only at request time so
 // a temporary Atlas/TLS outage can never fail the production build.
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: 'Best Phones in Pakistan 2026 – Smart Rankings',
+  title: `Best Phones in Pakistan ${CURRENT_YEAR} – Smart Rankings`,
   description: 'SpecsDekh smart rankings for the best overall, gaming, camera, battery, value and budget phones in Pakistan.',
   alternates: { canonical: `${BASE_URL}/rankings` },
 };
@@ -31,7 +32,7 @@ export default async function RankingsPage() {
   // Keep each category isolated: one transient database/TLS failure should show an
   // empty state for that category, not crash the entire page or deployment.
   const results = await Promise.allSettled(
-    categories.map(category => getTopPhones(category.sort, 40)),
+    categories.map(category => getTopPhones(category.sort, 120)),
   );
 
   const sections = categories.map((category, index) => {
@@ -48,8 +49,21 @@ export default async function RankingsPage() {
     };
   });
 
+  const itemListJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: `Best phones in Pakistan ${CURRENT_YEAR}`,
+    itemListElement: sections.flatMap(section => section.phones.map(item => ({
+      '@type': 'ListItem',
+      position: item.rank,
+      name: `${section.title}: ${item.phone.brand?.name || ''} ${item.phone.modelName}`.trim(),
+      url: `${BASE_URL}/phones/${item.phone.slug}`,
+    }))),
+  };
+
   return (
     <main className="min-h-screen bg-slate-50">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
       <section className="border-b bg-white">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:py-16">
           <div className="max-w-3xl">
@@ -74,10 +88,11 @@ export default async function RankingsPage() {
               </div>
 
               {section.phones.length ? (
-                <PhoneGrid page="rankings">
+                <PhoneGrid page="rankings" className="ranking-top-five">
                   {section.phones.map(item => (
                     <div key={item.phone.id} className="relative">
-                      <span className="absolute left-2 top-2 z-10 rounded-full bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-white">#{item.rank}</span>
+                      <span className="absolute left-2 top-2 z-20 rounded-full bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-white shadow">#{item.rank}</span>
+                      <span className="absolute right-2 top-2 z-20 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow-sm" title={`${item.confidence}% verified data confidence`}>{item.score}/100</span>
                       <PhoneCard phone={item.phone} />
                     </div>
                   ))}
