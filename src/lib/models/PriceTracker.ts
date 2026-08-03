@@ -13,6 +13,8 @@ const PriceSourceSchema = new Schema({
   lastCheckedAt: { type: Date, default: null },
   lastSuccessAt: { type: Date, default: null },
   failureCount: { type: Number, default: 0 },
+  nextRetryAt: { type: Date, default: null },
+  lastError: { type: String, default: '' },
   status: { type: String, enum: ['active', 'paused', 'failed'], default: 'active' },
   notes: { type: String, default: '' },
 }, { timestamps: true });
@@ -20,6 +22,7 @@ const PriceSourceSchema = new Schema({
 PriceSourceSchema.index({ name: 1 }, { unique: true });
 PriceSourceSchema.index({ sourceType: 1 });
 PriceSourceSchema.index({ enabled: 1, status: 1 });
+PriceSourceSchema.index({ enabled: 1, status: 1, nextRetryAt: 1 });
 PriceSourceSchema.index({ priority: -1 });
 
 export const PriceSource = mongoose.models.PriceSource || mongoose.model('PriceSource', PriceSourceSchema);
@@ -43,6 +46,7 @@ const PhoneRetailListingSchema = new Schema({
   lastChangedAt: { type: Date, default: null },
   lastSuccessAt: { type: Date, default: null },
   failureCount: { type: Number, default: 0 },
+  nextRetryAt: { type: Date, default: null },
   lastError: { type: String, default: '' },
   extractionMethod: { type: String, enum: ['json-ld', 'meta', 'data-attribute', 'visible-text', ''], default: '' },
   extractionConfidence: { type: Number, default: 0 },
@@ -56,6 +60,7 @@ PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ verificationStatus: 1 });
 PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, lastCheckedAt: 1 });
 PhoneRetailListingSchema.index({ failureCount: -1, lastCheckedAt: 1 });
+PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, nextRetryAt: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
   unique: true,

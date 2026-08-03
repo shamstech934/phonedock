@@ -26,7 +26,7 @@ interface LeanSourceDoc {
   _id: Types.ObjectId; name: string; sourceType: string;
   enabled: boolean; trusted: boolean; baseUrl: string; allowedDomains: string[];
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
-  failureCount: number; status: string; notes: string;
+  failureCount: number; nextRetryAt: Date | null; lastError: string; status: string; notes: string;
 }
 
 interface LeanPopulatedPhone {
@@ -322,6 +322,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         lastCheckedAt: s.lastCheckedAt || null,
         lastSuccessAt: s.lastSuccessAt || null,
         failureCount: s.failureCount || 0,
+        nextRetryAt: s.nextRetryAt || null,
+        lastError: s.lastError || '',
         status: s.status || 'active',
         notes: s.notes || '',
         listingCount: coverage?.total || 0,
@@ -1102,12 +1104,35 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     }
 
     if (sourceId) {
+      const sourceHealth = await PriceSource.findById(sourceId).select('failureCount').lean();
+      const nextFailureCount = Number(sourceHealth?.failureCount || 0) + 1;
+      const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
+      const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60_000);
+      const failureReason = testError || (!reachable
+        ? 'Product page is not reachable'
+        : !matched
+          ? 'No reliable PKR price was detected'
+          : availability === 'unavailable'
+            ? 'Product is unavailable'
+            : 'Source validation failed');
       const healthUpdate = safeToEnable
         ? {
-            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), failureCount: 0, status: 'active' },
+            $set: {
+              lastCheckedAt: new Date(),
+              lastSuccessAt: new Date(),
+              failureCount: 0,
+              nextRetryAt: null,
+              lastError: '',
+              status: 'active',
+            },
           }
         : {
-            $set: { lastCheckedAt: new Date() },
+            $set: {
+              lastCheckedAt: new Date(),
+              nextRetryAt,
+              lastError: failureReason,
+              status: nextFailureCount >= 3 ? 'failed' : 'active',
+            },
             $inc: { failureCount: 1 },
           };
       await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
