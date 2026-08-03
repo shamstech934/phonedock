@@ -33,6 +33,7 @@ interface OverviewStats {
   enabledSources: number;
   readySources: number;
   pendingSourceGaps: number;
+  unlinkedPhones?: number;
 }
 
 interface PhonePrice {
@@ -429,7 +430,7 @@ export default function AdminPriceTrackerPage() {
       const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Price sync failed');
       setActionMessage(`Sync batch complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
-      await fetchOverview();
+      await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchChanges(), fetchPending()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Price sync failed');
     } finally {
@@ -461,7 +462,7 @@ export default function AdminPriceTrackerPage() {
       const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Automatic linking failed');
       setActionMessage(`Catalog linked: ${result.linked} new, ${result.alreadyLinked} already ready, ${result.unmatched} need a supported retailer URL.`);
-      await fetchOverview();
+      await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchMatchCandidates()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Automatic linking failed');
     } finally {
@@ -909,7 +910,7 @@ export default function AdminPriceTrackerPage() {
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.readySources ?? 0}</p><p className="text-[10px] text-slate-300">Ready sources</p></div>
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.pendingReview}</p><p className="text-[10px] text-slate-300">Need approval</p></div>
                 <button onClick={() => setActiveTab('matches')} className="col-span-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">
-                  Review {s.pendingSourceGaps || 0} source gaps
+                  Review {s.unlinkedPhones ?? s.pendingSourceGaps ?? 0} unlinked phones
                 </button>
                 <button onClick={() => setActiveTab('sources')} className="col-span-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50">Configure sources</button>
               </div>
@@ -1057,7 +1058,7 @@ export default function AdminPriceTrackerPage() {
         {/* Table */}
         {phones.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-sm text-gray-400">
-            No phones found. Start monitoring by adding phone listings.
+            No published phones matched the current filters.
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

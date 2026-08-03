@@ -193,7 +193,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       readySources,
       totalPublishedPhones,
       trackingReadyPhones: trackedPhoneIds.length,
-      pendingSourceGaps,
+      pendingSourceGaps: Math.max(pendingSourceGaps, Math.max(0, totalPublishedPhones - trackedPhoneIds.length)),
+      unlinkedPhones: Math.max(0, totalPublishedPhones - trackedPhoneIds.length),
       trackingCoveragePct: totalPublishedPhones > 0
         ? Math.round((trackedPhoneIds.length / totalPublishedPhones) * 100)
         : 0,
@@ -201,6 +202,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
   }
 
   // ---- /api/admin/price-tracker/phones ----
+  // The catalog view must include every published phone, not only phones that
+  // already have a price. Listing state is joined separately so unlinked phones
+  // remain visible and actionable instead of disappearing from the tracker.
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
@@ -208,68 +212,85 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 
     const url = new URL(req.url);
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
-    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 200 });
     const skip = (page - 1) * limit;
     const search = (url.searchParams.get('search') || '').trim();
     const mode = url.searchParams.get('mode') || 'all';
-    const status = url.searchParams.get('status');
-    const sort = url.searchParams.get('sort') || 'lastPriceChangedAt';
+    const sort = url.searchParams.get('sort') || 'name-az';
 
-    const filter: Record<string, unknown> = { active: true, currentPrice: { $gt: 0 } };
-
-    // Mode filter
-    if (mode === 'manual') filter.priceMode = 'manual';
+    const filter: Record<string, unknown> = { active: true, status: 'published' };
+    if (mode === 'manual') filter.priceMode = { $ne: 'automatic' };
     else if (mode === 'automatic') filter.priceMode = 'automatic';
 
-    // Status filter
-    if (status === 'locked') filter.manualLock = true;
-    else if (status === 'unlocked') filter.manualLock = false;
-    else if (status === 'price-drop') filter.priceChange = { $lt: 0 };
-    else if (status === 'price-increase') filter.priceChange = { $gt: 0 };
-
-    // Search
     if (search.length >= 2) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const brandMatches = await Brand.find({ name: { $regex: safe, $options: 'i' } }).select('_id').lean();
       const brandIds = brandMatches.map((b: { _id: Types.ObjectId }) => b._id);
-      const searchOr: Record<string, unknown>[] = [{ modelName: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }];
+      const searchOr: Record<string, unknown>[] = [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+      ];
       if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
       filter.$or = searchOr;
     }
 
-    // Sort
-    let sortObj: Record<string, 1 | -1> = { lastPriceChangedAt: -1 };
-    if (sort === 'currentPrice') sortObj = { currentPrice: 1 };
-    else if (sort === 'currentPrice-desc') sortObj = { currentPrice: -1 };
-    else if (sort === 'lastPriceChangedAt') sortObj = { lastPriceChangedAt: -1 };
-    else if (sort === 'priceChange') sortObj = { priceChange: -1 };
-    else if (sort === 'percentageChange') sortObj = { percentageChange: -1 };
+    let sortObj: Record<string, 1 | -1> = { modelName: 1 };
+    if (sort === 'name-za') sortObj = { modelName: -1 };
+    else if (sort === 'price-low') sortObj = { currentPrice: 1, modelName: 1 };
+    else if (sort === 'price-high') sortObj = { currentPrice: -1, modelName: 1 };
+    else if (sort === 'change-desc') sortObj = { percentageChange: 1 };
+    else if (sort === 'change-asc') sortObj = { percentageChange: -1 };
+    else if (sort === 'updated') sortObj = { lastPriceCheckedAt: -1, modelName: 1 };
 
     const [phones, total] = await Promise.all([
       Phone.find(filter).sort(sortObj).skip(skip).limit(limit).populate('brand').lean(),
       Phone.countDocuments(filter),
     ]);
 
+    const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
+    const listingRows = await PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
+      .sort({ verificationStatus: 1, lastSuccessAt: -1, createdAt: 1 })
+      .populate('sourceId', 'name sourceType')
+      .lean();
+    const listingByPhone = new Map<string, typeof listingRows[number]>();
+    for (const listing of listingRows) {
+      const key = String(listing.phoneId);
+      if (!listingByPhone.has(key)) listingByPhone.set(key, listing);
+    }
+
     return NextResponse.json({
-      phones: phones.map((p: LeanPhoneDoc) => ({
-        id: p._id?.toString(),
-        modelName: p.modelName,
-        slug: p.slug,
-        brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name } : undefined,
-        thumbnail: p.thumbnail || '',
-        currentPrice: p.currentPrice || 0,
-        previousPrice: p.previousPrice || 0,
-        lowestPrice: p.lowestPrice || 0,
-        highestPrice: p.highestPrice || 0,
-        priceChange: p.priceChange || 0,
-        percentageChange: p.percentageChange || 0,
-        lastPriceCheckedAt: p.lastPriceCheckedAt || null,
-        lastPriceChangedAt: p.lastPriceChangedAt || null,
-        priceMode: p.priceMode || 'manual',
-        manualLock: p.manualLock || false,
-        manualLockReason: p.manualLockReason || '',
-      })),
-      total, page, limit, totalPages: Math.ceil(total / limit),
+      phones: phones.map((p: LeanPhoneDoc) => {
+        const listing = listingByPhone.get(p._id.toString()) as unknown as {
+          sourceId?: LeanPopulatedSource | null; verificationStatus?: string; availability?: string;
+          lastCheckedAt?: Date | null; lastSuccessAt?: Date | null; enabled?: boolean;
+        } | undefined;
+        const automatic = Boolean(listing) && p.manualLock !== true;
+        return {
+          id: p._id.toString(),
+          phoneId: p._id.toString(),
+          phoneName: p.modelName,
+          name: p.modelName,
+          slug: p.slug,
+          brand: p.brand?.name || '',
+          currentPrice: Number(p.currentPrice || 0),
+          previousPrice: Number(p.previousPrice || 0),
+          difference: Number(p.priceChange || 0),
+          percentChange: Number(p.percentageChange || 0),
+          mode: automatic ? 'automatic' : 'manual',
+          source: listing?.sourceId?.name || '',
+          sourceType: listing?.sourceId?.sourceType || '',
+          linked: Boolean(listing),
+          verificationStatus: listing?.verificationStatus || 'unlinked',
+          availability: listing?.availability || 'unknown',
+          lastUpdated: (listing?.lastSuccessAt || listing?.lastCheckedAt || p.lastPriceCheckedAt || p.lastPriceChangedAt || '').toString(),
+          status: listing?.enabled === false ? 'inactive' : 'active',
+          manualLock: Boolean(p.manualLock),
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     });
   }
 

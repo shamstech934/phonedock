@@ -73,7 +73,8 @@
     "audit:collector-layers": "node scripts/collector-layer-architecture-audit.mjs",
     "audit:collector-runtime": "node scripts/collector-runtime-stability-audit.mjs",
     "seed:price-sources-pk": "tsx scripts/seed-pakistan-official-price-sources.ts",
-    "audit:price-tracker-v2.2": "node scripts/price-tracker-v2-2-audit.mjs"
+    "audit:price-tracker-v2.2": "node scripts/price-tracker-v2-2-audit.mjs",
+    "audit:price-tracker-2.4": "node scripts/price-tracker-phase2-4-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",
