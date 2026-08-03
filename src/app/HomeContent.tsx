@@ -654,22 +654,26 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
 
-            {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
+            {/* ===== 4. POPULAR BRANDS + PHONE DISCOVERY FLOW ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0 space-y-7 sm:space-y-9">
                 {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 56} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 11} columns={cms.brandColumns || 6} />}
-                {renderOrderedSection('latest')}
+                {sectionOrder
+                  .filter(key => ['latest', 'trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
+                  .map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
               </div>
-              <div className="isolate flex flex-col gap-5 lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
+              <aside className="isolate flex min-h-0 flex-col gap-5 self-start lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} limit={cms.homepagePriceLimit || 6} />}
                 {cms.smartFiltersEnabled !== false && <HomeSmartFilterSidebar groups={smartFilterGroups} />}
                 {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears.slice(0, 6)} />}
-              </div>
+              </aside>
             </div>
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
             <div style={{ display: 'grid', gap: `${Math.min(cms.sectionGap || 36, 44)}px` }}>
-              {sectionOrder.filter(key => key !== 'latest').map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
+              {sectionOrder
+                .filter(key => ['reviews', 'videos', 'news'].includes(key))
+                .map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
             </div>
 
             {/* ===== 16-18. COMING SOON TEASERS ===== */}
