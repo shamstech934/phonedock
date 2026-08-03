@@ -100,6 +100,9 @@ export interface PhonePrice {
 
 export interface Phone {
   id: string;
+  /** API compatibility aliases used by older admin/export payloads. */
+  brandName?: string;
+  model?: string;
   modelName: string;
   slug: string;
   brandId: string;

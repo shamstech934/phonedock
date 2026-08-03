@@ -287,7 +287,7 @@ export default function AdminPhonesPage() {
       } while (current <= pages);
       const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
       const rows = all.map(phone => [
-        phone.id, phone.brand?.name || '', phone.modelName || '', phone.slug || '',
+        phone.id, phone.brand?.name || phone.brandName || '', phone.modelName || phone.model || '', phone.slug || '',
         phone.pricePKR || 0, phone.ptaApproved ? 'approved' : (phone.ptaStatus || 'unknown'),
         phone.status || (phone.published === false ? 'draft' : 'published'),
         phone.featured ? 'true' : 'false', phone.trending ? 'true' : 'false',
