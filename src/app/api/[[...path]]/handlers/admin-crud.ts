@@ -417,7 +417,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     // Status filter
     const status = url.searchParams.get('status');
     if (status === 'published') filter.status = 'published';
-    else if (status === 'draft') filter.status = { $in: ['draft', 'pending'] };
+    else if (status === 'draft' || status === 'review') filter.status = { $in: ['draft', 'pending'] };
     else if (status === 'pending') filter.status = 'pending';
     else if (status === 'archived') filter.status = 'archived';
     else if (status === 'upcoming') filter.upcoming = true;
@@ -436,7 +436,6 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     if (ptaFilter === 'approved') filter.ptaApproved = true;
     else if (ptaFilter === 'non-pta') filter.ptaApproved = false;
     else if (ptaFilter === 'unknown') {
-      filter.ptaApproved = { $ne: true };
       filter.$and = [
         ...((filter.$and as Record<string, unknown>[] | undefined) || []),
         { $or: [

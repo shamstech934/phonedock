@@ -20,7 +20,6 @@ interface RepairQueueRow {
   pricePKR?: number;
   ptaStatus?: string;
   dataConfidence?: string;
-  status?: string;
   updatedAt?: Date;
 }
 interface IdOnlyRow { _id: { toString(): string } }
@@ -79,18 +78,17 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
-    const inventoryQuery = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
-    const inventoryPhoneIds = await Phone.find(inventoryQuery).distinct('_id');
+    const publishedPhoneIds = await Phone.find({ status: 'published' }).distinct('_id');
     const [phonesWithSpecs, phonesWithImages] = await Promise.all([
-      PhoneSpecs.distinct('phoneId', { phoneId: { $in: inventoryPhoneIds } }),
-      PhoneImage.distinct('phoneId', { phoneId: { $in: inventoryPhoneIds } }),
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
     ]);
 
     const specPhoneIdSet = new Set(phonesWithSpecs.map(id => id.toString()));
     const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
 
-    const [inventoryPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
-      Phone.find({ _id: { $in: inventoryPhoneIds } })
+    const [publishedPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+      Phone.find({ _id: { $in: publishedPhoneIds } })
         .select('_id thumbnail pricePKR')
         .lean(),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
@@ -98,12 +96,12 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
     ]);
 
-    const missingSpecs = inventoryPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
-    const missingImages = inventoryPhoneRows.filter(phone => {
+    const missingSpecs = publishedPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
+    const missingImages = publishedPhoneRows.filter(phone => {
       const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
       return !thumbnail && !imagePhoneIdSet.has(phone._id.toString());
     }).length;
-    const missingPrices = inventoryPhoneRows.filter(phone => {
+    const missingPrices = publishedPhoneRows.filter(phone => {
       const price = Number(phone.pricePKR || 0);
       return !Number.isFinite(price) || price <= 0;
     }).length;
@@ -113,7 +111,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
-      phoneId: { $in: inventoryPhoneIds },
+      phoneId: { $in: publishedPhoneIds },
       chipset: { $nin: ['', null] },
       ram: { $nin: ['', null] },
       storage: { $nin: ['', null] },
@@ -155,27 +153,6 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       }
     }
 
-
-    if (includeHealth) {
-      const denominator = Math.max(totalPhones - archivedPhones, 1);
-      const corePenalty = Math.min(20, Math.round((draftPhones / denominator) * 20));
-      const specsPenalty = Math.min(30, Math.round((missingSpecs / denominator) * 30));
-      const imagePenalty = Math.min(25, Math.round((missingImages / denominator) * 25));
-      const pricePenalty = Math.min(15, Math.round((missingPrices / denominator) * 15));
-      const verificationPenalty = Math.min(10, Math.round(((critical + high + medium) / denominator) * 10));
-      health = {
-        score: Math.max(0, 100 - corePenalty - specsPenalty - imagePenalty - pricePenalty - verificationPenalty),
-        categories: [
-          { name: 'Core Identity / Publication', score: 20 - corePenalty, deduction: corePenalty, maxDeduction: 20, details: `${draftPhones} draft or review records` },
-          { name: 'Specifications', score: 30 - specsPenalty, deduction: specsPenalty, maxDeduction: 30, details: `${missingSpecs} phones missing specs` },
-          { name: 'Images', score: 25 - imagePenalty, deduction: imagePenalty, maxDeduction: 25, details: `${missingImages} phones missing images` },
-          { name: 'Prices', score: 15 - pricePenalty, deduction: pricePenalty, maxDeduction: 15, details: `${missingPrices} phones missing prices` },
-          { name: 'Verification', score: 10 - verificationPenalty, deduction: verificationPenalty, maxDeduction: 10, details: `${critical + high + medium} open important issues` },
-        ],
-        totals: { totalPhones, publishedPhones, draftPhones },
-      };
-    }
-
     return NextResponse.json({
       health,
       totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
@@ -214,7 +191,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
     }
     const q = (searchParams.get('q') || '').trim();
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     if (type === 'specs') {
@@ -235,7 +212,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     }
 
     const rows = await Phone.find(baseQuery)
-      .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence status updatedAt')
+      .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence updatedAt')
       .populate('brandId', 'name slug')
       .sort({ brandId: 1, modelName: 1 })
       .lean() as unknown as RepairQueueRow[];
@@ -291,7 +268,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const limit = parseBoundedInt(searchParams.get('limit'), 50, { min: 1, max: 100 });
     const q = (searchParams.get('q') || '').trim();
 
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     let missingIds: Types.ObjectId[] | null = null;
@@ -316,7 +293,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const [rows, total] = await Promise.all([
       Phone.find(baseQuery)
-        .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence status updatedAt')
+        .select('_id modelName slug brandId thumbnail pricePKR ptaStatus dataConfidence updatedAt')
         .populate('brandId', 'name slug')
         .sort({ updatedAt: -1, modelName: 1 })
         .skip((page - 1) * limit)
@@ -334,7 +311,6 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       pricePKR: Number(row.pricePKR || 0),
       ptaStatus: row.ptaStatus || 'Unknown',
       dataConfidence: row.dataConfidence || 'unverified',
-      status: row.status || 'draft',
       updatedAt: row.updatedAt,
       missing: type,
     }));

@@ -100,13 +100,12 @@ export interface PhonePrice {
 
 export interface Phone {
   id: string;
-  /** API compatibility aliases used by older admin/export payloads. */
-  brandName?: string;
-  model?: string;
   modelName: string;
   slug: string;
   brandId: string;
   brand?: Brand;
+  brandName?: string;
+  model?: string;
   thumbnail: string;
   pricePKR: number;
   originalPricePKR: number;
@@ -144,7 +143,9 @@ export interface Phone {
   manualLockReason?: string;
   sourceUrl?: string;
   published?: boolean;
-  status?: string;
+  status?: 'published' | 'draft' | 'pending' | 'archived' | string;
+  active?: boolean;
+  deletedAt?: string | null;
   views?: number;
   createdAt?: string;
   updatedAt?: string;
