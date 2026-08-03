@@ -264,6 +264,13 @@ export default function AdminPhonesPage() {
 
   const startIdx = total > 0 ? (page - 1) * rowsPerPage + 1 : 0;
   const endIdx = Math.min(page * rowsPerPage, total);
+  const isPublishedPhone = (phone: Phone) => phone.status === 'published' || phone.published === true;
+  const displayPhoneStatus = (phone: Phone) => {
+    if (isPublishedPhone(phone)) return 'Published';
+    if (phone.status === 'pending' || phone.status === 'review') return 'Pending Review';
+    if (phone.status === 'archived') return 'Archived';
+    return 'Draft';
+  };
 
   const applyStatFilter = (kind: 'all' | 'published' | 'review' | 'upcoming' | 'trending' | 'featured' | 'pta') => {
     setStatusFilter('');
@@ -554,8 +561,11 @@ export default function AdminPhonesPage() {
                       <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating || '—'}</span></div></td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
-                          {p.published !== false && <Badge className="bg-emerald-50 text-emerald-700 text-[10px] border-emerald-200/50">Published</Badge>}
-                          {!p.published && p.status !== 'published' && <Badge variant="secondary" className="text-[10px]">{p.status || 'Draft'}</Badge>}
+                          {isPublishedPhone(p) ? (
+                            <Badge className="bg-emerald-50 text-emerald-700 text-[10px] border-emerald-200/50">Published</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px]">{displayPhoneStatus(p)}</Badge>
+                          )}
                           {p.featured && <Badge className="bg-amber-50 text-amber-700 text-[10px] border-amber-200/50">Featured</Badge>}
                           {p.trending && <Badge className="bg-blue-50 text-blue-700 text-[10px] border-blue-200/50">Trending</Badge>}
                           {p.upcoming && <Badge className="bg-purple-50 text-purple-700 text-[10px] border-purple-200/50">Upcoming</Badge>}

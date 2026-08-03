@@ -371,10 +371,28 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
+    const publishedInventoryFilter = {
+      $or: [
+        { status: 'published' },
+        { published: true },
+      ],
+    };
+    const reviewInventoryFilter = {
+      $and: [
+        { status: { $ne: 'archived' } },
+        { $or: [
+          { status: { $in: ['draft', 'pending', 'review'] } },
+          { published: false },
+          { status: { $exists: false }, published: { $ne: true } },
+          { status: null, published: { $ne: true } },
+          { status: '', published: { $ne: true } },
+        ] },
+      ],
+    };
     const [total, published, draft, upcoming, trending, featured, ptaApproved, priceResult] = await Promise.all([
       Phone.countDocuments({}),
-      Phone.countDocuments({ status: 'published' }),
-      Phone.countDocuments({ status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments(publishedInventoryFilter),
+      Phone.countDocuments(reviewInventoryFilter),
       Phone.countDocuments({ upcoming: true }),
       Phone.countDocuments({ trending: true }),
       Phone.countDocuments({ featured: true }),
@@ -414,12 +432,41 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
       filter.$or = searchOr;
     }
-    // Status filter
+    // Status filter. Support both the current status field and legacy records
+    // that only carry the published boolean. Keep these clauses inside $and so
+    // they do not overwrite the $or used by search.
     const status = url.searchParams.get('status');
-    if (status === 'published') filter.status = 'published';
-    else if (status === 'draft' || status === 'review') filter.status = { $in: ['draft', 'pending'] };
-    else if (status === 'pending') filter.status = 'pending';
-    else if (status === 'archived') filter.status = 'archived';
+    const addAndClause = (clause: Record<string, unknown>) => {
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) || []),
+        clause,
+      ];
+    };
+    if (status === 'published') {
+      addAndClause({ $or: [{ status: 'published' }, { published: true }] });
+    } else if (status === 'review') {
+      addAndClause({
+        $and: [
+          { status: { $ne: 'archived' } },
+          { $or: [
+            { status: { $in: ['draft', 'pending', 'review'] } },
+            { published: false },
+            { status: { $exists: false }, published: { $ne: true } },
+            { status: null, published: { $ne: true } },
+            { status: '', published: { $ne: true } },
+          ] },
+        ],
+      });
+    } else if (status === 'draft') {
+      addAndClause({ $or: [
+        { status: 'draft' },
+        { status: { $exists: false }, published: { $ne: true } },
+        { status: null, published: { $ne: true } },
+        { status: '', published: { $ne: true } },
+      ] });
+    } else if (status === 'pending') {
+      addAndClause({ status: { $in: ['pending', 'review'] } });
+    } else if (status === 'archived') filter.status = 'archived';
     else if (status === 'upcoming') filter.upcoming = true;
     else if (status === 'trending') filter.trending = true;
     else if (status === 'featured') filter.featured = true;

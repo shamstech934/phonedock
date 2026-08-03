@@ -15,7 +15,7 @@ export { SyncJob } from './SyncJob';
 export { Video } from './Video';
 export { Settings, getSettings } from './Settings';
 export { SystemState } from './SystemState';
-export { PriceSource, PhoneRetailListing, PriceTrackerHistory } from './PriceTracker';
+export { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from './PriceTracker';
 export { DataQualityIssue, ScanJob } from './DataQuality';export { User } from './User';
 export { Wishlist, Favorite, RecentlyViewed, CompareHistory, Notification } from './UserFeatures';
 export { AffiliateLink, AffiliateClick, ContactRequest } from './Commercial';
