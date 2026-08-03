@@ -1,6 +1,6 @@
 {
   "name": "specsdekh",
-  "version": "31.12.4",
+  "version": "31.12.5",
   "private": true,
   "packageManager": "npm@11.16.0",
   "scripts": {
