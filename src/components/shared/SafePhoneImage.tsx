@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Image from 'next/image';
 import { Smartphone } from 'lucide-react';
 
@@ -73,6 +73,11 @@ export function SafePhoneImage({
     return !normalized;
   });
 
+  useEffect(() => {
+    const normalized = normalizeSrc(src || '');
+    setBroken(!normalized || (!!src && failedUrls.has(src)));
+  }, [src]);
+
   const isBlank = !src || failedUrls.has(src) || !normalizeSrc(src || '');
   const effectiveSrc = isBlank ? undefined : normalizeSrc(src || '');
 
@@ -100,7 +105,8 @@ export function SafePhoneImage({
       <div
         className={`flex flex-col items-center justify-center gap-2 bg-[#F8FAFC] ${fallbackClassName || className}`}
         style={!width || !height ? undefined : { width: iconSize.w, height: iconSize.h }}
-        aria-hidden="true"
+        role="img"
+        aria-label={fallbackLabel || `${alt} image unavailable`}
       >
         <Smartphone
           className="text-gray-300"

@@ -11,6 +11,7 @@ import { numericSpecClause } from '@/lib/spec-filter-fallback';
 
 export interface PhoneListParams {
   page?: string;
+  limit?: string;
   q?: string;
   brand?: string;
   price?: string;
@@ -119,7 +120,8 @@ export const fetchPublicBrandDetail = unstable_cache(
 async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: PhoneType[]; total: number; queryKey: string }> {
   await connectDB();
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
-  const limit = 20;
+  const requestedLimit = Number.parseInt(params.limit || '20', 10);
+  const limit = [12, 20, 32].includes(requestedLimit) ? requestedLimit : 20;
   const collection = params.collection || '';
   const filter: Record<string, unknown> = getPublicPhoneFilter({
     cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),

@@ -139,27 +139,27 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             <div data-testid="phone-card-specs" className="grid h-16 min-h-16 max-h-16 grid-cols-2 grid-rows-3 content-start gap-1.5 overflow-hidden pt-1">
               {phone.specs?.ram && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Zap className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.ram}</span>
+                  <Zap className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.ram}>{phone.specs.ram}</span>
                 </span>
               )}
               {phone.specs?.storage && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Layers className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.storage}</span>
+                  <Layers className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.storage}>{phone.specs.storage}</span>
                 </span>
               )}
               {displaySize && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Monitor className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{displaySize}</span>
+                  <Monitor className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={displaySize}>{displaySize}</span>
                 </span>
               )}
               {phone.specs?.chipset && (
                 <span className="hidden min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground sm:flex">
-                  <Cpu className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.chipset}</span>
+                  <Cpu className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.chipset}>{phone.specs.chipset}</span>
                 </span>
               )}
               {phone.specs?.battery && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Battery className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.battery}</span>
+                  <Battery className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.battery}>{phone.specs.battery}</span>
                 </span>
               )}
             </div>
