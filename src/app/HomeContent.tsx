@@ -87,15 +87,15 @@ function PakistanTrustBar() {
 // ============ COLORED CATEGORY SYSTEM ============
 type CategoryTone = 'sky' | 'rose' | 'violet' | 'indigo' | 'emerald' | 'amber' | 'orange' | 'fuchsia' | 'cyan';
 const CATEGORY_TONES: Record<CategoryTone, string> = {
-  sky: 'border-sky-300/75 bg-gradient-to-br from-sky-200/90 via-blue-100/70 to-cyan-200/75 shadow-sky-300/30',
-  rose: 'border-rose-300/75 bg-gradient-to-br from-rose-200/90 via-pink-100/70 to-orange-200/65 shadow-rose-300/30',
-  violet: 'border-violet-300/75 bg-gradient-to-br from-violet-200/90 via-purple-100/70 to-fuchsia-200/65 shadow-violet-300/30',
-  indigo: 'border-indigo-300/75 bg-gradient-to-br from-indigo-200/90 via-blue-100/70 to-violet-200/70 shadow-indigo-300/30',
-  emerald: 'border-emerald-300/75 bg-gradient-to-br from-emerald-200/90 via-green-100/70 to-teal-200/70 shadow-emerald-300/30',
-  amber: 'border-amber-300/80 bg-gradient-to-br from-amber-200/95 via-yellow-100/75 to-orange-200/70 shadow-amber-300/30',
-  orange: 'border-orange-300/75 bg-gradient-to-br from-orange-200/90 via-amber-100/70 to-rose-200/65 shadow-orange-300/30',
-  fuchsia: 'border-fuchsia-300/75 bg-gradient-to-br from-fuchsia-200/85 via-pink-100/70 to-violet-200/70 shadow-fuchsia-300/30',
-  cyan: 'border-cyan-300/75 bg-gradient-to-br from-cyan-200/90 via-sky-100/70 to-teal-200/70 shadow-cyan-300/30',
+  sky: 'border-sky-200/80 bg-gradient-to-br from-white/95 via-sky-50/75 to-cyan-50/65 shadow-sky-200/25',
+  rose: 'border-rose-200/80 bg-gradient-to-br from-white/95 via-rose-50/70 to-orange-50/55 shadow-rose-200/25',
+  violet: 'border-violet-200/80 bg-gradient-to-br from-white/95 via-violet-50/70 to-fuchsia-50/55 shadow-violet-200/25',
+  indigo: 'border-indigo-200/80 bg-gradient-to-br from-white/95 via-indigo-50/70 to-blue-50/55 shadow-indigo-200/25',
+  emerald: 'border-emerald-200/80 bg-gradient-to-br from-white/95 via-emerald-50/70 to-teal-50/55 shadow-emerald-200/25',
+  amber: 'border-amber-200/80 bg-gradient-to-br from-white/95 via-amber-50/75 to-yellow-50/60 shadow-amber-200/25',
+  orange: 'border-orange-200/80 bg-gradient-to-br from-white/95 via-orange-50/70 to-amber-50/55 shadow-orange-200/25',
+  fuchsia: 'border-fuchsia-200/80 bg-gradient-to-br from-white/95 via-fuchsia-50/70 to-pink-50/55 shadow-fuchsia-200/25',
+  cyan: 'border-cyan-200/80 bg-gradient-to-br from-white/95 via-cyan-50/70 to-sky-50/55 shadow-cyan-200/25',
 };
 
 // ============ PHONE SECTION (full card grid) ============
@@ -103,7 +103,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
   if (!phones.length) {
     if (!showEmpty) return null;
     return (
-      <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
+      <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
         <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
         <div className="text-center py-12 card-premium">
           <Smartphone className="w-10 h-10 mx-auto mb-2 text-gray-200" />
@@ -114,7 +114,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
     );
   }
   return (
-    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
+    <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
       <PhoneGrid page="home">
         {phones.slice(0, cardCount).map(p => (
@@ -131,7 +131,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
 function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 4 }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number }) {
   if (!phones.length) return null;
   return (
-    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES[tone]}`}>
+    <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
       <PhoneGrid page="home">
         {phones.slice(0, cardCount).map(p => <PhoneCard key={p.id} phone={p} />)}
@@ -396,7 +396,7 @@ function HomeReviewsSection({ phones }: { phones: Phone[] }) {
   if (!reviewedPhones.length) return null;
 
   return (
-    <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.fuchsia}`}>
+    <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES.fuchsia}`}>
       <SectionHeader title="Latest Reviews" icon={Star} link="/reviews" linkText="All Reviews" />
       <PhoneGrid page="home">
         {reviewedPhones.map(p => <PhoneCard key={p.id} phone={p} />)}
@@ -493,7 +493,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const rules = cms.sectionRules || {};
   const visible = (key: string) => sections[key] !== false;
   const sectionOrder = normalizeHomepageSectionOrder(cms.sectionOrder);
-  const contentWidthClass = cms.contentWidth === 'full' ? 'max-w-none' : cms.contentWidth === 'wide' ? 'max-w-[1440px]' : 'max-w-7xl';
+  const contentWidthClass = cms.contentWidth === 'full' ? 'max-w-[1680px]' : cms.contentWidth === 'wide' ? 'max-w-[1520px]' : 'max-w-[1440px]';
   const releaseYear = (phone: Phone) => Number(String(phone.releaseDate || '').slice(0, 4)) || 0;
   const sectionRule = (key: OrderedHomepageSection) => rules[key] || {};
   const filterByRule = (key: OrderedHomepageSection, source: Phone[]) => {
@@ -555,7 +555,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
       case 'reviews': return <HomeReviewsSection phones={data.featured} />;
       case 'videos': return <HomeVideoSection videos={data.videos} />;
       case 'news': return data.news.length > 0 ? (
-        <section className={`rounded-3xl border p-3 shadow-lg sm:p-5 ${CATEGORY_TONES.orange}`}>
+        <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES.orange}`}>
           <SectionHeader title={titles.news || 'Latest News'} icon={Newspaper} link="/news" linkText="All News" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {data.news.slice(0, 4).map(n => (
@@ -585,7 +585,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
         <div className="relative">
           <div className="glass-orb glass-orb-cyan" />
           <div className="glass-orb glass-orb-yellow" />
-          <div className={`glass-page-bg ${contentWidthClass} mx-auto px-4 py-4 sm:py-6 space-y-10 sm:space-y-14 relative z-10`} style={{ backgroundColor: cms.pageBackground || undefined }}>
+          <div className={`glass-page-bg ${contentWidthClass} mx-auto px-3 py-3 sm:px-5 sm:py-5 lg:px-6 space-y-7 sm:space-y-9 relative z-10`} style={{ backgroundColor: cms.pageBackground || undefined }}>
 
             {/* ===== 1. HERO ===== */}
             {cms.heroEnabled !== false && <section className="hero-gradient overflow-hidden rounded-3xl text-white relative sky-glow" style={{ backgroundColor: cms.heroBackground || undefined }}>
@@ -602,8 +602,8 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
               </div>
 
               {/* Content — can overflow for floating phone effect */}
-              <div className="relative z-10 p-4 sm:p-6 lg:p-7">
-                <div className="relative flex flex-col lg:flex-row items-center gap-8 lg:gap-6">
+              <div className="relative z-10 p-4 sm:p-5 lg:p-6">
+                <div className="relative flex flex-col items-center gap-5 lg:flex-row lg:gap-5">
                   {/* Left side — 45% */}
                   <div className="w-full lg:w-[45%]">
                     <div className="hero-badge-pop" style={{ animationDelay: '0.1s' }}>
@@ -628,7 +628,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
                   </div>
 
                   {/* Right side — 55% Featured Phone Showcase with floating effect */}
-                  <div className="h-[330px] w-full flex-shrink-0 sm:h-[390px] lg:h-[470px] lg:w-[55%]">
+                  <div className="h-[290px] w-full flex-shrink-0 sm:h-[340px] lg:h-[390px] lg:w-[55%]">
                     {heroPhones.length > 0 ? (
                       <HeroPhoneShowcase phones={heroPhones} autoplay={cms.heroAnimationEnabled !== false} intervalMs={cms.heroAnimationSpeed || 5000} showInfo={cms.heroShowPhoneInfo !== false} position={{ desktopX: cms.heroDesktopX, desktopY: cms.heroDesktopY, desktopScale: cms.heroDesktopScale, desktopRotate: cms.heroDesktopRotate, mobileX: cms.heroMobileX, mobileY: cms.heroMobileY, mobileScale: cms.heroMobileScale, mobileRotate: cms.heroMobileRotate, imageFit: cms.heroImageFit }} />
                     ) : (
@@ -651,7 +651,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             {/* ===== 4. POPULAR BRANDS + PRICE CATEGORIES ===== */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
-              <div className="min-w-0 space-y-10 sm:space-y-14">
+              <div className="min-w-0 space-y-7 sm:space-y-9">
                 {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 56} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 11} columns={cms.brandColumns || 6} />}
                 {renderOrderedSection('latest')}
               </div>
@@ -663,7 +663,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             </div>
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
-            <div style={{ display: 'grid', gap: `${cms.sectionGap || 56}px` }}>
+            <div style={{ display: 'grid', gap: `${Math.min(cms.sectionGap || 36, 44)}px` }}>
               {sectionOrder.filter(key => key !== 'latest').map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
             </div>
 
