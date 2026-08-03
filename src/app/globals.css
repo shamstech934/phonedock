@@ -1043,7 +1043,7 @@ a {
 
 /* Phase 2.9 — unified public-page layout and visual consistency */
 .site-shell {
-  width: min(100% - clamp(1rem, 3vw, 3rem), 1520px);
+  width: min(100% - clamp(1rem, 1.6vw, 2rem), 1760px);
   margin-inline: auto;
 }
 
@@ -1063,7 +1063,7 @@ a {
 }
 
 @media (max-width: 639px) {
-  .site-shell { width: min(100% - 1rem, 1520px); }
+  .site-shell { width: min(100% - 1rem, 1760px); }
   .phone-card-media { height: 150px !important; }
 }
 
@@ -1082,28 +1082,35 @@ a {
   .phone-grid.ranking-top-five { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
-/* Phase 3.0 — Homepage visual reset */
-.phone-grid[data-page="home"] { gap: clamp(.75rem, 1vw, 1rem) !important; }
+/* Phase 3.1 — Homepage density and six-card desktop layout */
+.phone-grid[data-page="home"] { gap: clamp(.65rem,.8vw,.9rem) !important; }
 .phone-grid[data-page="home"] .phone-card {
-  min-height: 388px !important;
+  min-height: 352px !important;
   height: 100%;
-  border-radius: 1.25rem;
-  box-shadow: 0 10px 28px rgba(15,23,42,.07);
+  border-radius: 1.15rem;
+  box-shadow: 0 8px 22px rgba(15,23,42,.055);
 }
-.phone-grid[data-page="home"] .phone-card > div { padding: .8rem !important; }
-.phone-grid[data-page="home"] .phone-card-media { height: 178px !important; margin-bottom: .7rem !important; }
-.phone-grid[data-page="home"] .phone-card-media img { object-fit: contain !important; padding: .45rem !important; }
-.phone-grid[data-page="home"] [data-testid="phone-card-specs"] { height: 46px !important; min-height: 46px !important; grid-template-rows: repeat(2,minmax(0,1fr)) !important; }
-.phone-grid[data-page="home"] [data-testid="phone-card-actions"] { height: 42px !important; min-height: 42px !important; }
-@media (min-width:1280px) {
+.phone-grid[data-page="home"] .phone-card > div { padding: .7rem !important; }
+.phone-grid[data-page="home"] .phone-card-media { height: 154px !important; margin-bottom: .55rem !important; }
+.phone-grid[data-page="home"] .phone-card-media img { object-fit: contain !important; padding: .3rem !important; }
+.phone-grid[data-page="home"] [data-testid="phone-card-specs"] { height: 42px !important; min-height: 42px !important; grid-template-rows: repeat(2,minmax(0,1fr)) !important; }
+.phone-grid[data-page="home"] [data-testid="phone-card-actions"] { height: 40px !important; min-height: 40px !important; }
+@media (min-width:1536px) {
+  .phone-grid[data-page="home"] { grid-template-columns: repeat(6,minmax(0,1fr)) !important; }
+}
+@media (min-width:1280px) and (max-width:1535px) {
+  .phone-grid[data-page="home"] { grid-template-columns: repeat(5,minmax(0,1fr)) !important; }
+}
+@media (min-width:1024px) and (max-width:1279px) {
   .phone-grid[data-page="home"] { grid-template-columns: repeat(4,minmax(0,1fr)) !important; }
 }
-@media (min-width:768px) and (max-width:1279px) {
+@media (min-width:768px) and (max-width:1023px) {
   .phone-grid[data-page="home"] { grid-template-columns: repeat(3,minmax(0,1fr)) !important; }
 }
 @media (max-width:767px) {
-  .phone-grid[data-page="home"] .phone-card { min-height: 340px !important; }
-  .phone-grid[data-page="home"] .phone-card-media { height: 145px !important; }
+  .phone-grid[data-page="home"] { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  .phone-grid[data-page="home"] .phone-card { min-height: 326px !important; }
+  .phone-grid[data-page="home"] .phone-card-media { height: 132px !important; }
 }
 
 /* Keep the homepage background quiet so sections remain readable. */

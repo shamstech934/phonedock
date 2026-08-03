@@ -99,7 +99,7 @@ const CATEGORY_TONES: Record<CategoryTone, string> = {
 };
 
 // ============ PHONE SECTION (full card grid) ============
-function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky', cardCount = 8 }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone; cardCount?: number }) {
+function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky', cardCount = 6 }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone; cardCount?: number }) {
   if (!phones.length) {
     if (!showEmpty) return null;
     return (
@@ -128,7 +128,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
 }
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
-function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 4 }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number }) {
+function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 6 }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number }) {
   if (!phones.length) return null;
   return (
     <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
@@ -520,11 +520,16 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
     const recent = Boolean(date && !Number.isNaN(date.getTime()) && date >= trendingCutoff);
     return recent && (phone.trending || phone.overallRating >= (cms.trendingMinRating ?? 7.5) || (phone.views || 0) >= 100);
   }).sort((a,b) => Number(b.trending)-Number(a.trending) || b.overallRating-a.overallRating || (b.views||0)-(a.views||0));
-  const balancedTrending = cms.trendingBalancePriceTiers === false ? trendingCandidates : uniquePhones([
+  const trendingFallback = catalog.filter(phone => {
+    const date = phone.releaseDate ? new Date(phone.releaseDate) : null;
+    return Boolean(date && !Number.isNaN(date.getTime()) && date >= trendingCutoff);
+  }).sort((a,b) => Number(b.trending)-Number(a.trending) || (b.views||0)-(a.views||0) || b.overallRating-a.overallRating);
+  const balancedTrending = cms.trendingBalancePriceTiers === false ? uniquePhones([...trendingCandidates, ...trendingFallback]) : uniquePhones([
     ...trendingCandidates.filter(phone => phone.pricePKR > 0 && phone.pricePKR <= 40000).slice(0,3),
     ...trendingCandidates.filter(phone => phone.pricePKR > 40000 && phone.pricePKR <= 100000).slice(0,3),
     ...trendingCandidates.filter(phone => phone.pricePKR > 100000).slice(0,3),
     ...trendingCandidates,
+    ...trendingFallback,
   ]);
   const cameraPhones = filterByRule('camera', catalog.filter(phone => phone.cameraScore > 0)).sort((a,b) => b.cameraScore-a.cameraScore || b.overallRating-a.overallRating);
   const gamingPhones = filterByRule('gaming', catalog.filter(phone => phone.performanceScore > 0)).sort((a,b) => b.performanceScore-a.performanceScore || b.overallRating-a.overallRating);
@@ -544,14 +549,14 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const renderOrderedSection = (key: OrderedHomepageSection) => {
     if (!visible(key)) return null;
     switch (key) {
-      case 'latest': return <PhoneSection phones={latestPhones} title={titles.latest || 'Latest Phones'} icon={Clock} link={ruleLink('latest')} linkText={ruleLinkText('latest', 'View Latest')} showEmpty={showEmpty} tone="sky" cardCount={ruleCount('latest', 8)} />;
-      case 'trending': return <PhoneSection phones={balancedTrending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link={ruleLink('trending')} linkText={ruleLinkText('trending', 'View Trending')} showEmpty={showEmpty} tone="rose" cardCount={ruleCount('trending', 8)} />;
-      case 'camera': return <PhoneSection phones={cameraPhones} title={titles.camera || 'Best Camera Phones'} icon={Camera} link={ruleLink('camera')} linkText={ruleLinkText('camera', 'See All')} showEmpty={showEmpty} tone="violet" cardCount={ruleCount('camera', 4)} />;
-      case 'gaming': return <PhoneSection phones={gamingPhones} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link={ruleLink('gaming')} linkText={ruleLinkText('gaming', 'See All')} showEmpty={showEmpty} tone="indigo" cardCount={ruleCount('gaming', 4)} />;
-      case 'battery': return <PhoneSection phones={batteryPhones} title={titles.battery || 'Best Battery Phones'} icon={Battery} link={ruleLink('battery')} linkText={ruleLinkText('battery', 'See All')} showEmpty={showEmpty} tone="emerald" cardCount={ruleCount('battery', 4)} />;
-      case 'budget': return <CompactTopPhones phones={budgetPhones} cardCount={ruleCount('budget', 4)} title={titles.budget || 'Budget Champions'} icon={Tag} link={ruleLink('budget') || '/best-budget-phone'} linkText={ruleLinkText('budget', 'View All')} tone="amber" />;
-      case 'flagship': return <CompactTopPhones phones={flagshipPhones} cardCount={ruleCount('flagship', 4)} title={titles.flagship || 'Premium Flagships'} icon={Star} link={ruleLink('flagship') || '/best-value-phone'} linkText={ruleLinkText('flagship', 'See All')} tone="orange" />;
-      case 'upcoming': return <CompactTopPhones phones={upcomingPhones} cardCount={ruleCount('upcoming', 4)} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link={ruleLink('upcoming') || '/upcoming'} linkText={ruleLinkText('upcoming', 'View All')} tone="cyan" />;
+      case 'latest': return <PhoneSection phones={latestPhones} title={titles.latest || 'Latest Phones'} icon={Clock} link={ruleLink('latest')} linkText={ruleLinkText('latest', 'View Latest')} showEmpty={showEmpty} tone="sky" cardCount={Math.max(6, ruleCount('latest', 6))} />;
+      case 'trending': return <PhoneSection phones={balancedTrending} title={titles.trending || 'Trending Phones'} icon={TrendingUp} link={ruleLink('trending')} linkText={ruleLinkText('trending', 'View Trending')} showEmpty={showEmpty} tone="rose" cardCount={Math.max(6, ruleCount('trending', 6))} />;
+      case 'camera': return <PhoneSection phones={cameraPhones} title={titles.camera || 'Best Camera Phones'} icon={Camera} link={ruleLink('camera')} linkText={ruleLinkText('camera', 'See All')} showEmpty={showEmpty} tone="violet" cardCount={Math.max(6, ruleCount('camera', 6))} />;
+      case 'gaming': return <PhoneSection phones={gamingPhones} title={titles.gaming || 'Best Gaming Phones'} icon={Cpu} link={ruleLink('gaming')} linkText={ruleLinkText('gaming', 'See All')} showEmpty={showEmpty} tone="indigo" cardCount={Math.max(6, ruleCount('gaming', 6))} />;
+      case 'battery': return <PhoneSection phones={batteryPhones} title={titles.battery || 'Best Battery Phones'} icon={Battery} link={ruleLink('battery')} linkText={ruleLinkText('battery', 'See All')} showEmpty={showEmpty} tone="emerald" cardCount={Math.max(6, ruleCount('battery', 6))} />;
+      case 'budget': return <CompactTopPhones phones={budgetPhones} cardCount={Math.max(6, ruleCount('budget', 6))} title={titles.budget || 'Budget Champions'} icon={Tag} link={ruleLink('budget') || '/best-budget-phone'} linkText={ruleLinkText('budget', 'View All')} tone="amber" />;
+      case 'flagship': return <CompactTopPhones phones={flagshipPhones} cardCount={Math.max(6, ruleCount('flagship', 6))} title={titles.flagship || 'Premium Flagships'} icon={Star} link={ruleLink('flagship') || '/best-value-phone'} linkText={ruleLinkText('flagship', 'See All')} tone="orange" />;
+      case 'upcoming': return <CompactTopPhones phones={upcomingPhones} cardCount={Math.max(6, ruleCount('upcoming', 6))} title={titles.upcoming || 'Upcoming Phones'} icon={Clock} link={ruleLink('upcoming') || '/upcoming'} linkText={ruleLinkText('upcoming', 'View All')} tone="cyan" />;
       case 'reviews': return <HomeReviewsSection phones={data.featured} />;
       case 'videos': return <HomeVideoSection videos={data.videos} />;
       case 'news': return data.news.length > 0 ? (
