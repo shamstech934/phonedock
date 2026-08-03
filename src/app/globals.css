@@ -1116,3 +1116,19 @@ a {
 /* Keep the homepage background quiet so sections remain readable. */
 .glass-page-bg { background-image: linear-gradient(180deg,rgba(248,250,252,.94),rgba(239,246,255,.82)) !important; }
 .glass-page-bg::before,.glass-page-bg::after { opacity:.22 !important; filter:blur(90px) !important; }
+
+/* Homepage full-width catalogue flow: after the discovery sidebar, category
+   sections use the complete canvas. The extra columns activate only when the
+   viewport can keep cards readable. */
+@media (min-width: 1536px) {
+  .homepage-wide-phone-section .phone-grid[data-page="home"],
+  .phone-grid[data-page="home"].home-wide-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1840px) {
+  .homepage-wide-phone-section .phone-grid[data-page="home"],
+  .phone-grid[data-page="home"].home-wide-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}

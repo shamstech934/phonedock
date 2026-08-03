@@ -99,7 +99,7 @@ const CATEGORY_TONES: Record<CategoryTone, string> = {
 };
 
 // ============ PHONE SECTION (full card grid) ============
-function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky', cardCount = 6 }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone; cardCount?: number }) {
+function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, tone = 'sky', cardCount = 6, gridClassName = '' }: { phones: Phone[]; title: string; icon: React.ElementType; link?: string; linkText?: string; showEmpty?: boolean; tone?: CategoryTone; cardCount?: number; gridClassName?: string }) {
   if (!phones.length) {
     if (!showEmpty) return null;
     return (
@@ -116,7 +116,7 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
   return (
     <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText} />
-      <PhoneGrid page="home">
+      <PhoneGrid page="home" className={gridClassName}>
         {phones.slice(0, cardCount).map(p => (
           <div key={p.id} className="min-w-0">
             <PhoneCard phone={p} />
@@ -128,12 +128,12 @@ function PhoneSection({ phones, title, icon: Icon, link, linkText, showEmpty, to
 }
 
 // ============ COMPACT TOP PHONES (for Budget, Flagship, Upcoming) ============
-function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 6 }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number }) {
+function CompactTopPhones({ phones, title, icon: Icon, link, linkText, tone = 'sky', cardCount = 6, gridClassName = '' }: { phones: Phone[]; title: string; icon: React.ElementType; link: string; linkText?: string; tone?: CategoryTone; cardCount?: number; gridClassName?: string }) {
   if (!phones.length) return null;
   return (
     <section className={`rounded-3xl border p-3.5 shadow-sm sm:p-4 ${CATEGORY_TONES[tone]}`}>
       <SectionHeader title={title} icon={Icon} link={link} linkText={linkText || 'View All'} />
-      <PhoneGrid page="home">
+      <PhoneGrid page="home" className={gridClassName}>
         {phones.slice(0, cardCount).map(p => <PhoneCard key={p.id} phone={p} />)}
       </PhoneGrid>
     </section>
@@ -537,6 +537,8 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
   const budgetPhones = filterByRule('budget', catalog.filter(phone => phone.pricePKR >= 5000 && phone.pricePKR <= 40000)).sort((a,b) => b.valueScore-a.valueScore || b.overallRating-a.overallRating);
   const flagshipPhones = filterByRule('flagship', catalog.filter(phone => phone.pricePKR > 150000)).sort((a,b) => b.overallRating-a.overallRating || b.performanceScore-a.performanceScore);
   const upcomingPhones = filterByRule('upcoming', catalog.filter(phone => phone.upcoming || ['rumored','announced','coming_soon'].includes(phone.availabilityStatus || ''))).sort((a,b) => (a.expectedLaunchAt || a.releaseDate || '').localeCompare(b.expectedLaunchAt || b.releaseDate || ''));
+  const priceDropPhones = catalog.filter(phone => Number(phone.priceChange || 0) < 0 || Number(phone.percentageChange || 0) < 0).sort((a,b) => Number(a.percentageChange || 0) - Number(b.percentageChange || 0) || Number(a.priceChange || 0) - Number(b.priceChange || 0));
+  const ptaApprovedPhones = catalog.filter(phone => phone.ptaApproved || String(phone.ptaStatus || '').toLowerCase() === 'approved').sort((a,b) => b.overallRating-a.overallRating || Number(b.lastVerifiedAt ? new Date(b.lastVerifiedAt).getTime() : 0)-Number(a.lastVerifiedAt ? new Date(a.lastVerifiedAt).getTime() : 0));
   const configuredYears = cms.yearMode === 'manual' ? Array.from({ length: Math.max(0, (cms.yearEnd || new Date().getFullYear()+1) - (cms.yearStart || 2015) + 1) }, (_, index) => (cms.yearEnd || new Date().getFullYear()+1) - index) : data.releaseYears || [];
   const displayYears = configuredYears.slice(0, cms.yearLimit || 12);
   const priceRanges = cms.priceRanges?.length ? cms.priceRanges : DEFAULT_HOME_PRICE_RANGES;
@@ -655,18 +657,32 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_TOP_SLOT} format="horizontal" className="py-2" />
 
             {/* ===== 4. POPULAR BRANDS + PHONE DISCOVERY FLOW ===== */}
+            {/* The discovery sidebar belongs only to the opening catalogue row. Keeping
+                later category sections outside this grid lets them reclaim the full viewport
+                instead of leaving a permanent empty rail after the sidebar ends. */}
             <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] ${cms.pricePanelSide === 'left' ? 'lg:[&>*:first-child]:order-2' : ''}`}>
               <div className="min-w-0 space-y-7 sm:space-y-9">
                 {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 56} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 11} columns={cms.brandColumns || 6} />}
-                {sectionOrder
-                  .filter(key => ['latest', 'trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
-                  .map(key => <React.Fragment key={key}>{renderOrderedSection(key)}</React.Fragment>)}
+                {sectionOrder.includes('latest') && renderOrderedSection('latest')}
               </div>
               <aside className="isolate flex flex-col gap-5 min-h-0 self-start lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} limit={cms.homepagePriceLimit || 6} />}
                 {cms.smartFiltersEnabled !== false && <HomeSmartFilterSidebar groups={smartFilterGroups} />}
                 {cms.showYearCategories !== false && <ReleaseYearCategories years={displayYears.slice(0, 6)} />}
               </aside>
+            </div>
+
+            <div className="min-w-0 space-y-7 sm:space-y-9" data-testid="homepage-full-width-phone-sections">
+              {sectionOrder
+                .filter(key => ['trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
+                .map(key => <div key={key} className="homepage-wide-phone-section">{renderOrderedSection(key)}</div>)}
+
+              {priceDropPhones.length > 0 && (
+                <PhoneSection phones={priceDropPhones} title="Latest Price Drops" icon={BadgeDollarSign} link="/phones?priceDrop=true" linkText="View Price Drops" tone="fuchsia" cardCount={8} gridClassName="home-wide-grid" />
+              )}
+              {ptaApprovedPhones.length > 0 && (
+                <PhoneSection phones={ptaApprovedPhones} title="PTA Approved Picks" icon={ShieldCheck} link="/phones?pta=approved" linkText="View PTA Phones" tone="cyan" cardCount={8} gridClassName="home-wide-grid" />
+              )}
             </div>
 
             <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_HOME_MIDDLE_SLOT} format="auto" className="py-2" />
