@@ -54,13 +54,15 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const { searchParams } = new URL(req.url);
     const includeHealth = searchParams.get('health') !== 'false';
 
+    const catalogScope = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
     const [totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands] = await Promise.all([
-      // Inventory totals include every Phone document so imported records cannot
-      // disappear merely because a legacy flag marked them inactive/deleted.
-      Phone.countDocuments({}),
-      Phone.countDocuments({ status: 'published' }),
-      Phone.countDocuments({ status: { $in: ['draft', 'pending'] } }),
-      Phone.countDocuments({ status: 'archived' }),
+      // Data Quality covers the complete working catalog, including draft/review
+      // records. Otherwise imported draft phones disappear from every missing-data
+      // counter and the dashboard misleadingly falls back to zero.
+      Phone.countDocuments(catalogScope),
+      Phone.countDocuments({ deletedAt: null, status: 'published' }),
+      Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
+      Phone.countDocuments({ deletedAt: null, status: 'archived' }),
       Brand.countDocuments({}),
     ]);
 
@@ -78,30 +80,37 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
-    const publishedPhoneIds = await Phone.find({ status: 'published' }).distinct('_id');
+    const catalogPhoneIds = await Phone.find(catalogScope).distinct('_id');
     const [phonesWithSpecs, phonesWithImages] = await Promise.all([
-      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
-      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: catalogPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: catalogPhoneIds } }),
     ]);
 
     const specPhoneIdSet = new Set(phonesWithSpecs.map(id => id.toString()));
     const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
 
-    const [publishedPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
-      Phone.find({ _id: { $in: publishedPhoneIds } })
-        .select('_id thumbnail pricePKR')
+    const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [catalogPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+      Phone.find({ _id: { $in: catalogPhoneIds } })
+        .select('_id thumbnail pricePKR lastPriceCheckedAt')
         .lean(),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
-      DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
+      Phone.countDocuments({ ...catalogScope, $or: [
+        { lastPriceCheckedAt: { $exists: false } },
+        { lastPriceCheckedAt: null },
+        { lastPriceCheckedAt: { $lt: staleBefore } },
+      ] }),
     ]);
 
-    const missingSpecs = publishedPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
-    const missingImages = publishedPhoneRows.filter(phone => {
+    const missingSpecs = catalogPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
+    const missingImages = catalogPhoneRows.filter(phone => {
       const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
-      return !thumbnail && !imagePhoneIdSet.has(phone._id.toString());
+      // A usable catalog entry needs both a primary thumbnail and at least one
+      // gallery record. Treat either missing side as an image-quality problem.
+      return !thumbnail || !imagePhoneIdSet.has(phone._id.toString());
     }).length;
-    const missingPrices = publishedPhoneRows.filter(phone => {
+    const missingPrices = catalogPhoneRows.filter(phone => {
       const price = Number(phone.pricePKR || 0);
       return !Number.isFinite(price) || price <= 0;
     }).length;
@@ -111,7 +120,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
-      phoneId: { $in: publishedPhoneIds },
+      phoneId: { $in: catalogPhoneIds },
       chipset: { $nin: ['', null] },
       ram: { $nin: ['', null] },
       storage: { $nin: ['', null] },
@@ -156,7 +165,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     return NextResponse.json({
       health,
       totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
-      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones },
+      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones, catalogPhones: totalPhones },
       queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
       severity: { critical, high, medium, low, info, total: totalOpen },
       trends: { discoveredToday, fixedToday, newLast7Days },
@@ -165,6 +174,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         checkedAt: new Date().toISOString(),
         linkedSpecs: specPhoneIdSet.size,
         linkedImages: imagePhoneIdSet.size,
+        scope: 'published,draft,pending',
         rawPhoneDocuments,
         inactivePhones,
         softDeletedPhones,
@@ -191,7 +201,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
     }
     const q = (searchParams.get('q') || '').trim();
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     if (type === 'specs') {
@@ -199,8 +209,10 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       baseQuery._id = { $nin: withSpecs.map(id => new Types.ObjectId(id)) };
     } else if (type === 'images') {
       const withImages = await PhoneImage.distinct('phoneId');
-      baseQuery.$and = [
-        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
+      baseQuery.$or = [
+        { thumbnail: '' },
+        { thumbnail: null },
+        { thumbnail: { $exists: false } },
         { _id: { $nin: withImages.map(id => new Types.ObjectId(id)) } },
       ];
     } else {
@@ -268,7 +280,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const limit = parseBoundedInt(searchParams.get('limit'), 50, { min: 1, max: 100 });
     const q = (searchParams.get('q') || '').trim();
 
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     let missingIds: Types.ObjectId[] | null = null;
@@ -279,8 +291,10 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     } else if (type === 'images') {
       const withImages = await PhoneImage.distinct('phoneId');
       missingIds = withImages.map(id => new Types.ObjectId(id));
-      baseQuery.$and = [
-        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
+      baseQuery.$or = [
+        { thumbnail: '' },
+        { thumbnail: null },
+        { thumbnail: { $exists: false } },
         { _id: { $nin: missingIds } },
       ];
     } else {

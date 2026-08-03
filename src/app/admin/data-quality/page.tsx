@@ -22,7 +22,7 @@ interface SummaryData {
     totals: { totalPhones: number; publishedPhones: number; draftPhones: number };
   } | null;
   totals: { totalPhones: number; publishedPhones: number; draftPhones: number; archivedPhones: number; totalBrands: number };
-  specs: { withSpecs: number; completeSpecs: number; publishedPhones: number };
+  specs: { withSpecs: number; completeSpecs: number; publishedPhones: number; catalogPhones: number };
   queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number };
   severity: { critical: number; high: number; medium: number; low: number; info: number; total: number };
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
@@ -160,11 +160,15 @@ export default function DataQualityPage() {
         credentials: 'include',
         body: JSON.stringify({ type, dryRun, execute: true }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setScanStatus({ running: true, scanId: data.scanId });
-      }
-    } catch (e) { console.error(e); }
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Unable to start scan (${res.status})`);
+      setScanStatus({ running: true, scanId: data.scanId });
+      toast({ title: dryRun ? 'Dry run queued' : 'Full scan queued', description: 'Progress will update automatically.' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unable to start data quality scan';
+      setSummaryError(message);
+      toast({ title: 'Scan could not start', description: message, variant: 'destructive' });
+    }
   };
 
   const setTab = (tab: TabId) => {
@@ -417,9 +421,9 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [batchMatchProgress, setBatchMatchProgress] = useState<{ done: number; total: number } | null>(null);
 
   const labels = {
-    specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
-    images: { title: 'Phones Missing Images', help: 'These published phones have neither a thumbnail nor an image record.', icon: Image },
-    prices: { title: 'Phones Missing Prices', help: 'These published phones have no valid PKR price.', icon: DollarSign },
+    specs: { title: 'Phones Missing Specs', help: 'These published or draft/review phones do not have a PhoneSpecs document.', icon: Smartphone },
+    images: { title: 'Phones Missing Images', help: 'These published or draft/review phones are missing a thumbnail or gallery image record.', icon: Image },
+    prices: { title: 'Phones Missing Prices', help: 'These published or draft/review phones have no valid PKR price.', icon: DollarSign },
   } as const;
   const cfg = labels[type];
   const QueueIcon = cfg.icon;
@@ -712,11 +716,15 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
           <StatCard label="Published" value={summary.totals.publishedPhones} icon={CheckCircle} color="text-green-600" />
           <StatCard label="Draft / Review" value={summary.totals.draftPhones} icon={AlertCircle} color="text-amber-600" />
           <StatCard label="Brands" value={summary.totals.totalBrands} icon={ShieldCheck} />
-          <StatCard label="Complete Specs" value={summary.specs.completeSpecs} icon={FileCheck} color="text-blue-600" sub={`${summary.specs.withSpecs} with specs doc`} />
+          <StatCard label="Complete Specs" value={summary.specs.completeSpecs} icon={FileCheck} color="text-blue-600" sub={`${summary.specs.withSpecs} of ${summary.specs.catalogPhones} with specs doc`} />
           <StatCard label="Missing Specs" value={summary.queues.missingSpecs} icon={Smartphone} color="text-red-600" />
           <StatCard label="Missing Images" value={summary.queues.missingImages} icon={Image} color="text-red-600" />
           <StatCard label="Missing Prices" value={summary.queues.missingPrices} icon={DollarSign} color="text-red-600" />
         </div>
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+        Missing-data counters cover the complete working catalog: Published + Draft/Review. Archived and soft-deleted records are excluded. Counts are read live from MongoDB and do not depend on a completed scan.
       </div>
 
       {/* Severity + Queue Rows */}
