@@ -8,6 +8,7 @@ const PriceSourceSchema = new Schema({
   enabled: { type: Boolean, default: true },
   trusted: { type: Boolean, default: false },
   baseUrl: { type: String, default: '' },
+  verificationUrl: { type: String, default: '' },
   allowedDomains: { type: [String], default: [] },
   priority: { type: Number, default: 0 },
   lastCheckedAt: { type: Date, default: null },

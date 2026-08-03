@@ -60,6 +60,7 @@ interface PriceSource {
   lastChecked: string | null;
   failures: number;
   baseUrl: string;
+  verificationUrl: string;
   allowedDomains: string[];
   listingCount: number;
   enabledListings: number;
@@ -227,10 +228,13 @@ export default function AdminPriceTrackerPage() {
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
   const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
-  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
+  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
   const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
+  const [sourceTestModal, setSourceTestModal] = useState<PriceSource | null>(null);
+  const [sourceTestUrl, setSourceTestUrl] = useState('');
+  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null } | null>(null);
 
   // ── Price Changes Tab ──
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -600,6 +604,7 @@ export default function AdminPriceTrackerPage() {
       name: source.name,
       type: source.type,
       baseUrl: source.baseUrl || '',
+      verificationUrl: source.verificationUrl || '',
       allowedDomains: (source.allowedDomains || []).join(', '),
       priority: source.priority || 1,
       status: source.status,
@@ -624,6 +629,7 @@ export default function AdminPriceTrackerPage() {
           name: editSourceForm.name.trim(),
           sourceType: editSourceForm.type,
           baseUrl: editSourceForm.baseUrl.trim(),
+          verificationUrl: editSourceForm.verificationUrl.trim(),
           allowedDomains: editSourceForm.allowedDomains
             .split(',')
             .map(domain => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''))
@@ -676,40 +682,32 @@ export default function AdminPriceTrackerPage() {
     }
   };
 
-  const handleTestAndTrustSource = async (source: PriceSource) => {
-    const productUrl = window.prompt(
-      `Paste one real ${source.name} phone product URL. SpecsDekh will verify price extraction before trusting this source.`,
-      source.baseUrl,
-    );
-    if (!productUrl) return;
-    setActionLoading(`test-${source.id}`); setError(''); setActionMessage('');
+  const openSourceTest = (source: PriceSource) => {
+    setSourceTestModal(source);
+    setSourceTestUrl(source.verificationUrl || '');
+    setSourceTestResult(null);
+    setError('');
+    setActionMessage('');
+  };
+
+  const handleTestAndTrustSource = async () => {
+    const source = sourceTestModal;
+    const productUrl = sourceTestUrl.trim();
+    if (!source || !productUrl) {
+      setError('Paste a real phone product page URL first.');
+      return;
+    }
+    setActionLoading(`test-${source.id}`); setError(''); setActionMessage(''); setSourceTestResult(null);
     try {
       const testResponse = await fetch('/api/admin/price-tracker/test-source', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: productUrl.trim(), sourceId: source.id }),
+        body: JSON.stringify({ url: productUrl, sourceId: source.id }),
       });
       const test = await readApiResponse(testResponse);
+      setSourceTestResult(test);
       if (!testResponse.ok) throw new Error(test.error || 'Source test failed');
-      if (!test.safeToEnable) {
-        throw new Error(test.reachable
-          ? 'Page opened, but a reliable PKR price was not detected. Do not trust this source yet.'
-          : 'Retailer page could not be reached. Check the URL or retailer access policy.');
-      }
-      const updateResponse = await fetch(`/api/admin/price-tracker/sources/${source.id}`, {
-        method: 'PUT', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trusted: true,
-          enabled: true,
-          status: 'active',
-          allowedDomains: source.allowedDomains.length > 0
-            ? source.allowedDomains
-            : [new URL(productUrl.trim()).hostname.replace(/^www\./, '')],
-        }),
-      });
-      const update = await readApiResponse(updateResponse);
-      if (!updateResponse.ok) throw new Error(update.error || 'Could not trust source');
+      if (!test.safeToEnable) throw new Error(test.error || 'A reliable available PKR price was not detected.');
       setActionMessage(`${source.name} verified at PKR ${Number(test.detectedPrice).toLocaleString('en-PK')} and marked trusted.`);
       await fetchSources();
       await fetchOverview();
@@ -1373,7 +1371,7 @@ export default function AdminPriceTrackerPage() {
                         {priceSourceSupportsAutomatedPriceTest(src.type) ? (
                           <button
                             type="button"
-                            onClick={() => handleTestAndTrustSource(src)}
+                            onClick={() => openSourceTest(src)}
                             disabled={Boolean(actionLoading)}
                             className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
                           >
@@ -2261,6 +2259,17 @@ export default function AdminPriceTrackerPage() {
               />
             </div>
             <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Verification product URL</label>
+              <input
+                type="url"
+                value={editSourceForm.verificationUrl}
+                onChange={event => setEditSourceForm(current => ({ ...current, verificationUrl: event.currentTarget.value }))}
+                placeholder="https://retailer.example/phones/real-phone-product-page"
+                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">Use a real phone product page, not a homepage or category URL. Test & trust will reuse this URL.</p>
+            </div>
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>
               <input
                 value={editSourceForm.allowedDomains}
@@ -2356,6 +2365,29 @@ export default function AdminPriceTrackerPage() {
     );
   };
 
+  const renderSourceTestModal = () => {
+    if (!sourceTestModal) return null;
+    const testing = actionLoading === `test-${sourceTestModal.id}`;
+    return (
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div><h2 className="text-base font-bold text-slate-900">Test & trust {sourceTestModal.name}</h2><p className="mt-1 text-xs text-slate-500">Verify one real product page and preview the detected PKR price.</p></div>
+            <button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+          </div>
+          <label className="mt-5 mb-1 block text-xs font-semibold text-slate-600">Real phone product URL *</label>
+          <input type="url" value={sourceTestUrl} onChange={e => setSourceTestUrl(e.currentTarget.value)} placeholder="https://priceoye.pk/mobiles/brand-phone-model" className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
+          {sourceTestResult && <div className={`mt-4 rounded-xl border p-4 ${sourceTestResult.safeToEnable ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="grid grid-cols-2 gap-3 text-xs"><span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong><span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong><span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong><span>Availability</span><strong>{sourceTestResult.availability}</strong><span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong><span>Confidence</span><strong>{sourceTestResult.extractionConfidence || 0}%</strong></div>
+            {sourceTestResult.error && <p className="mt-3 text-xs font-medium text-amber-800">{sourceTestResult.error}</p>}
+          </div>}
+          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium">Cancel</button><button onClick={handleTestAndTrustSource} disabled={testing || !sourceTestUrl.trim()} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{testing ? 'Testing product page...' : sourceTestResult?.safeToEnable ? 'Retest source' : 'Test & trust'}</button></div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDeleteSourceModal = () => {
     if (!deletingSource) return null;
     const hasListings = deletingSource.listingCount > 0;
@@ -2434,6 +2466,7 @@ export default function AdminPriceTrackerPage() {
       {renderEditPriceModal()}
       {renderAddListingModal()}
       {renderEditSourceModal()}
+      {renderSourceTestModal()}
       {renderDeleteSourceModal()}
     </div>
   );

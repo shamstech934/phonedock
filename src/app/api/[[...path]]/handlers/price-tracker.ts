@@ -25,7 +25,7 @@ interface LeanPhoneDoc {
 
 interface LeanSourceDoc {
   _id: Types.ObjectId; name: string; sourceType: string;
-  enabled: boolean; trusted: boolean; baseUrl: string; allowedDomains: string[];
+  enabled: boolean; trusted: boolean; baseUrl: string; verificationUrl: string; allowedDomains: string[];
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
   failureCount: number; nextRetryAt: Date | null; lastError: string; status: string; notes: string;
 }
@@ -320,6 +320,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         enabled: s.enabled,
         trusted: s.trusted,
         baseUrl: s.baseUrl || '',
+        verificationUrl: s.verificationUrl || '',
         allowedDomains: s.allowedDomains || [],
         priority: s.priority || 0,
         lastCheckedAt: s.lastCheckedAt || null,
@@ -812,7 +813,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, allowedDomains, priority } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority } = body;
 
     if (!name || !name.trim()) return NextResponse.json({ error: 'Source name is required' }, { status: 400 });
     if (sourceType !== undefined && !PRICE_SOURCE_TYPES.has(sourceType)) {
@@ -836,6 +837,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       name: name.trim(),
       sourceType: sourceType || 'retailer',
       baseUrl: normalizedBaseUrl,
+      verificationUrl: typeof verificationUrl === 'string' ? verificationUrl.trim() : '',
       allowedDomains: normalizedDomains,
       priority: normalizedPriority,
     });
@@ -1154,6 +1156,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
             },
             $inc: { failureCount: 1 },
           };
+      if (safeToEnable) {
+        (healthUpdate as any).$set.verificationUrl = url;
+        (healthUpdate as any).$set.trusted = true;
+        (healthUpdate as any).$set.enabled = true;
+      }
       await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
         console.error('[price-tracker:test-source:health]', error);
       });
@@ -1455,7 +1462,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, allowedDomains, priority, enabled, trusted, status, notes } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes } = body;
 
     const updates: Record<string, unknown> = {};
 
@@ -1480,6 +1487,21 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     }
     if (allowedDomains !== undefined || baseUrl !== undefined) {
       updates.allowedDomains = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
+    }
+    if (verificationUrl !== undefined) {
+      const candidate = String(verificationUrl || '').trim();
+      if (candidate) {
+        let parsed: URL;
+        try { parsed = new URL(candidate); }
+        catch { return NextResponse.json({ error: 'Verification product URL is invalid' }, { status: 400 }); }
+        if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Verification product URL must use HTTPS' }, { status: 400 });
+        const cleanHost = parsed.hostname.replace(/^www\./, '');
+        const allowed = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
+        if (allowed.length > 0 && !allowed.some((domain: string) => cleanHost === domain || cleanHost.endsWith(`.${domain}`))) {
+          return NextResponse.json({ error: `Verification URL domain ${cleanHost} is not allowed for this source` }, { status: 400 });
+        }
+      }
+      updates.verificationUrl = candidate;
     }
     if (priority !== undefined) {
       const normalizedPriority = Number(priority);
