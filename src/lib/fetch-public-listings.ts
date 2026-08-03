@@ -209,7 +209,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (andFilters.length > 0) filter.$and = andFilters;
 
   const sortMap: Record<string, { field: string; order: 1 | -1 }> = {
-    newest: { field: 'createdAt', order: -1 },
+    newest: { field: 'releaseDate', order: -1 },
     trending: { field: 'trending', order: -1 },
     'price-low': { field: 'pricePKR', order: 1 },
     'price-high': { field: 'pricePKR', order: -1 },
@@ -222,9 +222,13 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   };
   const sorting = sortMap[params.sort || 'newest'] || sortMap.newest;
 
+  const mongoSort = sorting.field === 'releaseDate'
+    ? { releaseDate: -1 as const, availableFrom: -1 as const, pakistanLaunchAt: -1 as const, announcedAt: -1 as const, createdAt: -1 as const, modelName: 1 as const }
+    : { [sorting.field]: sorting.order, modelName: 1 as const };
+
   const [rawPhones, rawTotal] = await Promise.all([
     Phone.find(filter)
-      .sort({ [sorting.field]: sorting.order })
+      .sort(mongoSort)
       .skip((page - 1) * limit)
       .limit(limit)
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')

@@ -262,7 +262,7 @@ export default function PhonesClient({
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 pt-20 sm:pt-24">
+      <main className="flex-1 pt-6 sm:pt-8">
         <div className="site-shell pb-8 animate-fade-in space-y-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
