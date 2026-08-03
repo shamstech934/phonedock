@@ -229,6 +229,7 @@ export default function AdminPriceTrackerPage() {
   const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
   const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
   const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
+  const [editSourceFieldErrors, setEditSourceFieldErrors] = useState<Record<string, string>>({});
   const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
@@ -612,6 +613,7 @@ export default function AdminPriceTrackerPage() {
       notes: source.notes || '',
     });
     setError('');
+    setEditSourceFieldErrors({});
     setActionMessage('');
   };
 
@@ -619,8 +621,31 @@ export default function AdminPriceTrackerPage() {
     if (!editingSource) return;
     setActionLoading(`edit-${editingSource.id}`);
     setError('');
+    setEditSourceFieldErrors({});
     setActionMessage('');
     try {
+      const allowedDomains = editSourceForm.allowedDomains
+        .split(',')
+        .map(domain => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''))
+        .filter(Boolean);
+      const verificationUrl = editSourceForm.verificationUrl.trim();
+      if (verificationUrl) {
+        let host = '';
+        try {
+          const parsed = new URL(verificationUrl);
+          if (parsed.protocol !== 'https:') throw new Error('Verification product URL must use HTTPS.');
+          host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+        } catch (urlError) {
+          const message = urlError instanceof Error ? urlError.message : 'Verification product URL is invalid.';
+          setEditSourceFieldErrors({ verificationUrl: message });
+          throw new Error(message);
+        }
+        if (allowedDomains.length > 0 && !allowedDomains.some(domain => host === domain || host.endsWith(`.${domain}`))) {
+          const message = `Verification URL must belong to ${allowedDomains.join(' or ')}. Current URL belongs to ${host}.`;
+          setEditSourceFieldErrors({ verificationUrl: message });
+          throw new Error(message);
+        }
+      }
       const response = await fetch(`/api/admin/price-tracker/sources/${editingSource.id}`, {
         method: 'PUT',
         credentials: 'include',
@@ -629,11 +654,8 @@ export default function AdminPriceTrackerPage() {
           name: editSourceForm.name.trim(),
           sourceType: editSourceForm.type,
           baseUrl: editSourceForm.baseUrl.trim(),
-          verificationUrl: editSourceForm.verificationUrl.trim(),
-          allowedDomains: editSourceForm.allowedDomains
-            .split(',')
-            .map(domain => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''))
-            .filter(Boolean),
+          verificationUrl,
+          allowedDomains,
           priority: Number(editSourceForm.priority),
           status: editSourceForm.status,
           enabled: editSourceForm.status === 'active',
@@ -647,7 +669,17 @@ export default function AdminPriceTrackerPage() {
       await fetchSources();
       await fetchOverview();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to update source');
+      const message = cause instanceof Error ? cause.message : 'Failed to update source';
+      setError(message);
+      if (/verification/i.test(message) || /domain/i.test(message)) {
+        setEditSourceFieldErrors(current => ({ ...current, verificationUrl: message }));
+      } else if (/base URL/i.test(message)) {
+        setEditSourceFieldErrors(current => ({ ...current, baseUrl: message }));
+      } else if (/name/i.test(message)) {
+        setEditSourceFieldErrors(current => ({ ...current, name: message }));
+      } else if (/priority/i.test(message)) {
+        setEditSourceFieldErrors(current => ({ ...current, priority: message }));
+      }
     } finally {
       setActionLoading('');
     }
@@ -2230,8 +2262,9 @@ export default function AdminPriceTrackerPage() {
                   const name = event.currentTarget.value;
                   setEditSourceForm(current => ({ ...current, name }));
                 }}
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.name ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
               />
+              {editSourceFieldErrors.name && <p className="mt-1 text-[11px] text-red-600">{editSourceFieldErrors.name}</p>}
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Source type</label>
@@ -2259,8 +2292,9 @@ export default function AdminPriceTrackerPage() {
                   setEditSourceForm(current => ({ ...current, baseUrl }));
                 }}
                 placeholder="https://www.example.com"
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.baseUrl ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
               />
+              {editSourceFieldErrors.baseUrl && <p className="mt-1 text-[11px] text-red-600">{editSourceFieldErrors.baseUrl}</p>}
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">Verification product URL</label>
@@ -2272,9 +2306,9 @@ export default function AdminPriceTrackerPage() {
                   setEditSourceForm(current => ({ ...current, verificationUrl }));
                 }}
                 placeholder="https://retailer.example/phones/real-phone-product-page"
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.verificationUrl ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
               />
-              <p className="mt-1 text-[11px] text-slate-400">Use a real phone product page, not a homepage or category URL. Test & trust will reuse this URL.</p>
+              {editSourceFieldErrors.verificationUrl ? <p className="mt-1 text-[11px] font-medium text-red-600">{editSourceFieldErrors.verificationUrl}</p> : <p className="mt-1 text-[11px] text-slate-400">Use a real phone product page, not a homepage or category URL. Test & trust will reuse this URL.</p>}
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>

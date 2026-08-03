@@ -1510,15 +1510,27 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       if (candidate) {
         let parsed: URL;
         try { parsed = new URL(candidate); }
-        catch { return NextResponse.json({ error: 'Verification product URL is invalid' }, { status: 400 }); }
-        if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Verification product URL must use HTTPS' }, { status: 400 });
+        catch { return NextResponse.json({ error: 'Verification product URL is invalid', field: 'verificationUrl', code: 'INVALID_VERIFICATION_URL' }, { status: 400 }); }
+        if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Verification product URL must use HTTPS', field: 'verificationUrl', code: 'VERIFICATION_URL_REQUIRES_HTTPS' }, { status: 400 });
         const cleanHost = parsed.hostname.replace(/^www\./, '');
         const allowed = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
         if (allowed.length > 0 && !allowed.some((domain: string) => cleanHost === domain || cleanHost.endsWith(`.${domain}`))) {
-          return NextResponse.json({ error: `Verification URL domain ${cleanHost} is not allowed for this source` }, { status: 400 });
+          return NextResponse.json({
+            error: `Verification URL must belong to ${allowed.join(' or ')}. Current URL belongs to ${cleanHost}.`,
+            field: 'verificationUrl',
+            code: 'VERIFICATION_DOMAIN_NOT_ALLOWED',
+            currentDomain: cleanHost,
+            allowedDomains: allowed,
+          }, { status: 400 });
         }
       }
-      updates.verificationUrl = candidate;
+      const normalizedVerificationUrl = candidate ? new URL(candidate).toString() : '';
+      updates.verificationUrl = normalizedVerificationUrl;
+      // A changed verification target must be tested again before the source remains trusted.
+      if (normalizedVerificationUrl !== String(source.verificationUrl || '')) {
+        updates.trusted = false;
+        updates.lastError = normalizedVerificationUrl ? 'Verification URL changed; run Test & trust again.' : '';
+      }
     }
     if (priority !== undefined) {
       const normalizedPriority = Number(priority);
@@ -1529,14 +1541,17 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     }
     if (typeof enabled === 'boolean') updates.enabled = enabled;
     if (typeof trusted === 'boolean') updates.trusted = trusted;
-    if (status !== undefined && ['active', 'paused', 'failed'].includes(status)) updates.status = status;
+    if (status !== undefined && ['active', 'paused', 'failed'].includes(status)) {
+      updates.status = status;
+      updates.enabled = status === 'active';
+    }
     if (notes !== undefined) updates.notes = (notes || '').trim().slice(0, 1000);
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    await PriceSource.findByIdAndUpdate(sourceId, { $set: updates });
+    const updatedSource = await PriceSource.findByIdAndUpdate(sourceId, { $set: updates }, { new: true });
 
     try {
       await ActivityLog.create({
@@ -1548,7 +1563,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json({ success: true, id: sourceId });
+    return NextResponse.json({ success: true, id: sourceId, message: 'Price source updated successfully', source: updatedSource });
   }
 
   // ---- /api/admin/price-tracker/listings/:id ----
