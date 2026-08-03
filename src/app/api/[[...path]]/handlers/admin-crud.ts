@@ -417,7 +417,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     // Status filter
     const status = url.searchParams.get('status');
     if (status === 'published') filter.status = 'published';
-    else if (status === 'draft') filter.status = 'draft';
+    else if (status === 'draft' || status === 'draft-review') filter.status = { $in: ['draft', 'pending'] };
     else if (status === 'pending') filter.status = 'pending';
     else if (status === 'archived') filter.status = 'archived';
     else if (status === 'upcoming') filter.upcoming = true;
@@ -435,6 +435,15 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const ptaFilter = url.searchParams.get('pta');
     if (ptaFilter === 'approved') filter.ptaApproved = true;
     else if (ptaFilter === 'non-pta') filter.ptaApproved = false;
+    else if (ptaFilter === 'unknown') {
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) || []),
+        { $or: [
+          { ptaStatus: { $in: ['', null, 'Unknown', 'unknown'] } },
+          { ptaStatus: { $exists: false } },
+        ] },
+      ];
+    }
     // Price range filter
     const minPrice = url.searchParams.get('minPrice');
     const maxPrice = url.searchParams.get('maxPrice');
