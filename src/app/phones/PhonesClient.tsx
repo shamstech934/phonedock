@@ -262,8 +262,8 @@ export default function PhonesClient({
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 pt-24 sm:pt-28">
-        <div className="max-w-7xl mx-auto px-4 pb-6 animate-fade-in space-y-6">
+      <main className="flex-1 pt-20 sm:pt-24">
+        <div className="site-shell pb-8 animate-fade-in space-y-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
@@ -404,7 +404,7 @@ export default function PhonesClient({
             )}
           </div>
 
-          <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
+          <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)] lg:items-start lg:gap-6">
             <aside className="hidden lg:flex sticky top-24 max-h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.28)]" aria-label="Price categories">
               <div className="border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
                 <div className="flex items-center gap-3">

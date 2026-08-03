@@ -146,7 +146,7 @@ export default async function RootLayout({
     const compact = config.density === 'compact' || desktop >= 7;
     return `
       .phone-grid[data-page="${page}"]{--phone-grid-mobile:${mobile};--phone-grid-tablet:${tablet};--phone-grid-desktop:${desktop}}
-      ${compact ? `.phone-grid[data-page="${page}"] .phone-card{height:410px}.phone-grid[data-page="${page}"] .phone-card>div{padding:.65rem}` : ''}
+      ${compact ? `.phone-grid[data-page="${page}"] .phone-card{min-height:410px}.phone-grid[data-page="${page}"] .phone-card>div{padding:.65rem}` : ''}
     `;
   }).join('');
   const themeStyle = `:root{${primaryColor ? `--primary:${primaryColor};--ring:${primaryColor};` : ''}${secondaryColor ? `--secondary:${secondaryColor};` : ''}${accentColor ? `--accent:${accentColor};` : ''}}
@@ -156,7 +156,7 @@ export default async function RootLayout({
     .phone-grid .phone-card{container-type:inline-size;max-width:100%}
     @media(max-width:639px){
       .phone-grid{gap:.5rem!important}
-      .phone-grid .phone-card{height:350px!important}
+      .phone-grid .phone-card{min-height:350px!important;height:auto!important}
       .phone-grid .phone-card>div{padding:.65rem!important}
       .phone-grid .phone-card [data-testid="phone-card-specs"]{display:none}
       .phone-grid .phone-card [data-testid="phone-card-actions"]{height:40px;min-height:40px}
@@ -164,7 +164,7 @@ export default async function RootLayout({
       .phone-grid .phone-card [data-testid="phone-card-title"]{font-size:.75rem;line-height:1rem;height:2rem;min-height:2rem}
       .phone-grid .phone-card [data-testid="wishlist-action"],.phone-grid .phone-card [data-testid="compare-action"],.phone-grid .phone-card [data-testid="quick-view-action"]{display:none}
     }
-    @media(max-width:359px){.phone-grid{grid-template-columns:1fr}.phone-grid .phone-card{height:390px!important}}
+    @media(max-width:359px){.phone-grid{grid-template-columns:1fr}.phone-grid .phone-card{min-height:390px!important;height:auto!important}}
     @media(min-width:768px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-tablet,3),minmax(0,1fr))}}
     @media(min-width:1280px){.phone-grid{grid-template-columns:repeat(var(--phone-grid-desktop,4),minmax(0,1fr))}}
     @container(max-width:190px){
@@ -173,7 +173,7 @@ export default async function RootLayout({
       .phone-card [data-testid="wishlist-action"],.phone-card [data-testid="compare-action"],.phone-card [data-testid="quick-view-action"]{display:none}
       .phone-card [data-testid="phone-card-image"]{margin-bottom:.5rem}
       .phone-card [data-testid="phone-card-title"]{font-size:.75rem;line-height:1rem;height:2rem;min-height:2rem}
-      .phone-card{height:330px!important}
+      .phone-card{min-height:330px!important;height:auto!important}
     }
     ${catalogRules}`;
   return (

@@ -32,7 +32,7 @@ export function Footer() {
   return (
     <footer className="bg-[#0F172A] text-gray-400 mt-auto relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16 relative z-10">
+      <div className="site-shell py-12 sm:py-16 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 mb-10">
           <div className="col-span-2 sm:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">

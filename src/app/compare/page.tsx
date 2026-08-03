@@ -314,7 +314,7 @@ function CompareContent() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="site-shell py-6">
         <div className="skeleton-shimmer h-64 rounded-2xl" />
         <div className="skeleton-shimmer h-96 rounded-2xl mt-4" />
       </div>
@@ -322,7 +322,7 @@ function CompareContent() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+    <div className="site-shell py-4 sm:py-6 animate-fade-in space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
         <div className="flex items-center gap-3">
@@ -714,7 +714,7 @@ export default function ComparePage() {
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
-        <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-6"><div className="skeleton-shimmer h-64 rounded-2xl" /></div>}>
+        <Suspense fallback={<div className="site-shell py-6"><div className="skeleton-shimmer h-64 rounded-2xl" /></div>}>
           <CompareContent />
         </Suspense>
       </main>

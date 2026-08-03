@@ -65,7 +65,7 @@ export default async function RankingsPage() {
     <main className="min-h-screen bg-slate-50">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
       <section className="border-b bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:py-16">
+        <div className="site-shell py-10 sm:py-14">
           <div className="max-w-3xl">
             <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">SpecsDekh Intelligence</span>
             <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">Smart phone rankings for Pakistan</h1>
@@ -74,11 +74,11 @@ export default async function RankingsPage() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl space-y-10 px-4 py-10">
+      <div className="site-shell space-y-8 py-8 sm:py-10">
         {sections.map(section => {
           const Icon = section.icon;
           return (
-            <section key={section.key} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+            <section key={section.key} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
               <div className="mb-5 flex items-start gap-3">
                 <div className="rounded-xl bg-blue-50 p-2.5 text-blue-600"><Icon className="h-5 w-5" /></div>
                 <div>

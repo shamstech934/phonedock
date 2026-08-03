@@ -511,7 +511,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+          <div className="site-shell py-6 space-y-6">
             <div className="skeleton-shimmer h-6 w-64 rounded-lg" />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="space-y-4">
@@ -537,7 +537,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+          <div className="site-shell py-20 text-center">
             <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mx-auto mb-5">
               <Smartphone className="w-10 h-10 text-gray-300" />
             </div>
@@ -620,7 +620,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
+        <div className="site-shell py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}
           <nav aria-label="Breadcrumb">
             <ol className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
@@ -1244,7 +1244,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
         </div>
 
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200/80 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
-          <div className="mx-auto flex max-w-7xl gap-2">
+          <div className="site-shell flex gap-2">
             <Button variant="outline" className="h-11 flex-1 rounded-xl" asChild>
               <Link href={`/compare?phones=${encodeURIComponent(p.slug)}`}><GitCompare className="mr-2 h-4 w-4" /> Compare</Link>
             </Button>

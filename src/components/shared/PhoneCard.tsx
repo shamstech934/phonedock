@@ -68,7 +68,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
 
   return (
     <>
-      <article data-testid="phone-card" className="phone-card glass-shine group flex h-[440px] min-h-0 overflow-hidden sm:h-[472px]">
+      <article data-testid="phone-card" className="phone-card glass-shine group flex min-h-[438px] overflow-hidden sm:min-h-[470px]">
         <div className="flex h-full min-w-0 flex-1 flex-col p-3 sm:p-4">
           <Link
             href={`/phones/${phone.slug}`}
@@ -77,13 +77,13 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             data-testid="phone-card-link"
             className="flex min-h-0 flex-1 cursor-pointer flex-col rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
           >
-          <div data-testid="phone-card-image" className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
+          <div data-testid="phone-card-image" className="phone-card-media relative mb-3 flex h-[210px] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60 sm:h-[230px]">
             <SafePhoneImage
               src={phone.thumbnail}
               alt={phone.modelName}
               width={200}
               height={200}
-              className="p-4 transition-transform duration-500 ease-out group-hover:scale-[1.035]"
+              className="h-full w-full p-2.5 transition-transform duration-500 ease-out group-hover:scale-[1.025] sm:p-3"
               fallbackLabel="Image unavailable"
             />
             {phone.ptaApproved && (
