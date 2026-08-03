@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
-import { Award, BatteryCharging, Camera, Gamepad2, Sparkles, WalletCards } from 'lucide-react';
+import { ArrowLeft, Award, BatteryCharging, Camera, ChevronRight, Gamepad2, Home, Sparkles, WalletCards } from 'lucide-react';
 import { getTopPhones } from '@/lib/get-top-phones';
 import { rankPhones, getRankingMethodology, type RankingCategory } from '@/lib/intelligence/rankings';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { PhoneGrid } from '@/components/shared/PhoneGrid';
+import { Header } from '@/components/shared/Header';
+import { Footer } from '@/components/shared/Footer';
+import Link from 'next/link';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
 const CURRENT_YEAR = new Date().getFullYear();
@@ -62,19 +65,39 @@ export default async function RankingsPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
-      <section className="border-b bg-white">
-        <div className="site-shell py-10 sm:py-14">
-          <div className="max-w-3xl">
-            <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">SpecsDekh Intelligence</span>
-            <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">Smart phone rankings for Pakistan</h1>
-            <p className="mt-4 text-base leading-7 text-slate-600 sm:text-lg">Rankings combine verified scores, Pakistan pricing and data-confidence checks. Missing specifications are never silently treated as zero.</p>
-          </div>
-        </div>
-      </section>
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <Header />
+      <main className="flex-1">
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }} />
+        <section className="border-b bg-white">
+          <div className="site-shell py-6 sm:py-9">
+            <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-2 text-sm text-slate-500">
+              <Link href="/" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition hover:bg-slate-100 hover:text-blue-700">
+                <Home className="h-4 w-4" aria-hidden="true" />
+                Home
+              </Link>
+              <ChevronRight className="h-4 w-4 text-slate-300" aria-hidden="true" />
+              <span aria-current="page" className="font-semibold text-slate-800">Rankings</span>
+            </nav>
 
-      <div className="site-shell space-y-8 py-8 sm:py-10">
+            <Link href="/phones" className="mb-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 lg:hidden">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to phones
+            </Link>
+
+            <div className="max-w-3xl">
+              <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">SpecsDekh Intelligence</span>
+              <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">Smart phone rankings for Pakistan</h1>
+              <p className="mt-4 text-base leading-7 text-slate-600 sm:text-lg">Rankings combine verified scores, Pakistan pricing and data-confidence checks. Missing specifications are never silently treated as zero.</p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link href="/phones" className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700">Browse all phones</Link>
+                <Link href="/compare" className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">Compare phones</Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="site-shell space-y-8 py-8 sm:py-10">
         {sections.map(section => {
           const Icon = section.icon;
           return (
@@ -103,7 +126,9 @@ export default async function RankingsPage() {
             </section>
           );
         })}
-      </div>
-    </main>
+        </div>
+      </main>
+      <Footer />
+    </div>
   );
 }
