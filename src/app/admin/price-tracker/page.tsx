@@ -2200,9 +2200,9 @@ export default function AdminPriceTrackerPage() {
   const renderEditSourceModal = () => {
     if (!editingSource) return null;
     return (
-      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
-        <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-          <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="fixed inset-0 z-[110] overflow-y-auto bg-black/50 p-4">
+        <div className="mx-auto my-4 flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-6 py-5">
             <div>
               <h2 className="text-base font-bold text-slate-900">Edit price source</h2>
               <p className="mt-1 text-xs text-slate-500">Update retailer identity, domains, trust and availability.</p>
@@ -2217,7 +2217,7 @@ export default function AdminPriceTrackerPage() {
             </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid flex-1 gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-600">Source name *</label>
               <input
@@ -2263,7 +2263,10 @@ export default function AdminPriceTrackerPage() {
               <input
                 type="url"
                 value={editSourceForm.verificationUrl}
-                onChange={event => setEditSourceForm(current => ({ ...current, verificationUrl: event.currentTarget.value }))}
+                onChange={event => {
+                  const verificationUrl = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, verificationUrl }));
+                }}
                 placeholder="https://retailer.example/phones/real-phone-product-page"
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
               />
@@ -2342,8 +2345,8 @@ export default function AdminPriceTrackerPage() {
             </div>
           </div>
 
-          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <div className="mt-5 flex justify-end gap-2">
+          {error && <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">
             <button
               type="button"
               onClick={() => { setEditingSource(null); setError(''); }}
@@ -2381,8 +2384,8 @@ export default function AdminPriceTrackerPage() {
             <div className="grid grid-cols-2 gap-3 text-xs"><span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong><span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong><span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong><span>Availability</span><strong>{sourceTestResult.availability}</strong><span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong><span>Confidence</span><strong>{sourceTestResult.extractionConfidence || 0}%</strong></div>
             {sourceTestResult.error && <p className="mt-3 text-xs font-medium text-amber-800">{sourceTestResult.error}</p>}
           </div>}
-          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <div className="mt-5 flex justify-end gap-2"><button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium">Cancel</button><button onClick={handleTestAndTrustSource} disabled={testing || !sourceTestUrl.trim()} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{testing ? 'Testing product page...' : sourceTestResult?.safeToEnable ? 'Retest source' : 'Test & trust'}</button></div>
+          {error && <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4"><button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium">Cancel</button><button onClick={handleTestAndTrustSource} disabled={testing || !sourceTestUrl.trim()} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{testing ? 'Testing product page...' : sourceTestResult?.safeToEnable ? 'Retest source' : 'Test & trust'}</button></div>
         </div>
       </div>
     );
