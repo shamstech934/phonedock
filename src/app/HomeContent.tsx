@@ -664,6 +664,11 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
               <div className="min-w-0 space-y-7 sm:space-y-9">
                 {visible('brands') && <BrandsGrid brands={data.brands} title={titles.brands || 'Popular Brands'} logoSize={cms.brandLogoSize || 56} onlyWithPhones={cms.showOnlyBrandsWithPhones !== false} limit={cms.brandLimit || 11} columns={cms.brandColumns || 6} />}
                 {sectionOrder.includes('latest') && renderOrderedSection('latest')}
+                {/* Keep the next catalogue section in the same column as the opening
+                    discovery row. This lets content continue while the taller sticky
+                    sidebar is still visible and prevents the large blank block that
+                    previously appeared before Trending Phones. */}
+                {sectionOrder.includes('trending') && renderOrderedSection('trending')}
               </div>
               <aside className="isolate flex flex-col gap-5 min-h-0 self-start lg:sticky lg:top-24 [&>*]:!m-0 [&>*]:shrink-0">
                 {cms.showPriceCategories !== false && <PriceCategorySidebar ranges={priceRanges} limit={cms.homepagePriceLimit || 6} />}
@@ -674,7 +679,7 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             <div className="min-w-0 space-y-7 sm:space-y-9" data-testid="homepage-full-width-phone-sections">
               {sectionOrder
-                .filter(key => key !== 'latest')
+                .filter(key => !['latest', 'trending'].includes(key))
                 .filter(key => ['trending', 'camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
                 .map(key => <div key={key} className="homepage-wide-phone-section">{renderOrderedSection(key)}</div>)}
 

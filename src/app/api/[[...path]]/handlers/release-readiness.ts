@@ -43,11 +43,23 @@ export async function handleReleaseReadinessGet(req: NextRequest): Promise<NextR
     MonitoringRun.findOne().sort({ createdAt: -1 }).lean(),
   ]);
 
-  const publishedIds = await Phone.distinct('_id', { status: 'published' });
+  const publishedPhones = await Phone.find({ status: 'published' }).select('_id thumbnail').lean();
+  const publishedIds = publishedPhones.map((phone) => phone._id);
   const specsSet = new Set(specsPhoneIds.map(String));
   const imagesSet = new Set(imagePhoneIds.map(String));
+  const thumbnailSet = new Set(
+    publishedPhones
+      .filter((phone) => typeof phone.thumbnail === 'string' && phone.thumbnail.trim().length > 0)
+      .map((phone) => String(phone._id)),
+  );
   const missingSpecsCount = publishedIds.filter((id) => !specsSet.has(String(id))).length;
-  const missingImagesCount = publishedIds.filter((id) => !imagesSet.has(String(id))).length;
+  // A phone has a usable image when either the normalized PhoneImage collection has
+  // a record or the legacy/current thumbnail field used by public cards is populated.
+  // Counting only PhoneImage produced false failures for fully rendered catalogues.
+  const missingImagesCount = publishedIds.filter((id) => {
+    const key = String(id);
+    return !imagesSet.has(key) && !thumbnailSet.has(key);
+  }).length;
 
   const checks: ReleaseCheck[] = [];
   checks.push({ key: 'database', label: 'Database configuration', status: databaseConfigured ? 'pass' : 'fail', detail: databaseConfigured ? 'MongoDB environment is configured.' : 'MONGODB_URI or MONGO_URL is missing.' });
@@ -56,7 +68,7 @@ export async function handleReleaseReadinessGet(req: NextRequest): Promise<NextR
   checks.push({ key: 'content', label: 'Published phone catalog', status: publishedCount > 0 ? 'pass' : 'fail', detail: `${publishedCount} published of ${phoneCount} total phones.` });
   checks.push({ key: 'critical-quality', label: 'Critical data-quality issues', status: criticalIssues === 0 ? 'pass' : 'fail', detail: `${criticalIssues} critical and ${openIssues} total open issues.` });
   checks.push({ key: 'missing-specs', label: 'Published phones with specs', status: missingSpecsCount === 0 ? 'pass' : missingSpecsCount <= 5 ? 'warning' : 'fail', detail: `${missingSpecsCount} published phones have no specs record.` });
-  checks.push({ key: 'missing-images', label: 'Published phones with images', status: missingImagesCount === 0 ? 'pass' : missingImagesCount <= 5 ? 'warning' : 'fail', detail: `${missingImagesCount} published phones have no image record.` });
+  checks.push({ key: 'missing-images', label: 'Published phones with images', status: missingImagesCount === 0 ? 'pass' : missingImagesCount <= 5 ? 'warning' : 'fail', detail: `${missingImagesCount} published phones have no usable image (PhoneImage or thumbnail).` });
   checks.push({ key: 'missing-prices', label: 'Published phones with prices', status: missingPriceCount === 0 ? 'pass' : missingPriceCount <= 5 ? 'warning' : 'fail', detail: `${missingPriceCount} published phones have no valid PKR price.` });
 
   const monitoringAgeHours = latestMonitoring?.createdAt ? (now - new Date(latestMonitoring.createdAt).getTime()) / 3_600_000 : null;
