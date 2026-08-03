@@ -85,6 +85,14 @@ export interface PhoneJson {
   reviewSummary?: string;
   reviewVerdict?: string;
   published?: boolean;
+  /** Canonical workflow status returned by phoneToJSON. */
+  status?: string;
+  /** Whether the record is active and not administratively disabled. */
+  active?: boolean;
+  deletedAt?: Date | string | null;
+  views?: number;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
   specs?: Record<string, string | number | null> | null;
   benchmarks?: Record<string, unknown>;
   images?: Array<{ id?: string; url?: string; altText?: string; sortOrder?: number }>;
@@ -129,6 +137,11 @@ interface RawPhoneObject {
   reviewSummary?: string;
   reviewVerdict?: string;
   status?: string;
+  active?: boolean;
+  deletedAt?: Date | string | null;
+  views?: number;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
   priceMode?: string;
   manualLock?: boolean;
   manualLockReason?: string;
