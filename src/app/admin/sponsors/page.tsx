@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Star, Plus, Edit, Trash2, Eye, EyeOff, ExternalLink, X, Check, Search, RefreshCw, BarChart3, Pause } from 'lucide-react';
@@ -66,8 +67,8 @@ export default function AdminSponsorsPage() {
         body: JSON.stringify(form),
       });
       if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || `Save failed (${r.status})`);
+        const d = await readApiResponse<{ error?: string; message?: string }>(r).catch(() => null);
+        throw new Error(d?.error || d?.message || `Save failed (${r.status})`);
       }
       setShowForm(false);
       fetchSponsors();

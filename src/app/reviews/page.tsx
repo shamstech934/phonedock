@@ -1,6 +1,6 @@
 export const revalidate = 900;
 
-import { Star, MessageSquare } from 'lucide-react';
+import { Star, MessageSquare, Smartphone, PenLine, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
@@ -49,8 +49,8 @@ export default async function ReviewsPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in space-y-6">
+      <main className="flex-1 bg-slate-50/70">
+        <div className="site-shell py-8 sm:py-12 animate-fade-in space-y-8">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">User Reviews</h1>
             <p className="text-sm text-muted-foreground mt-1">Read real user reviews for smartphones in Pakistan</p>
@@ -104,11 +104,35 @@ export default async function ReviewsPage() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-20 text-muted-foreground">
-              <MessageSquare className="w-14 h-14 mx-auto mb-4 opacity-15" />
-              <h3 className="text-lg font-bold text-gray-900 mb-1">No reviews yet</h3>
-              <p className="text-sm">Check back later for user reviews</p>
-            </div>
+            <section className="grid min-h-[430px] items-center gap-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:grid-cols-[1.1fr_0.9fr] lg:p-10">
+              <div className="max-w-2xl">
+                <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <MessageSquare className="h-7 w-7" />
+                </div>
+                <h2 className="text-2xl font-extrabold text-slate-950 sm:text-3xl">Be the first to help Pakistan’s phone buyers</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">Reviews appear here after they are submitted on a phone page and approved. Browse a phone you have used, then share a useful and honest experience.</p>
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <Link href="/phones" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700">
+                    Browse phones <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link href="/rankings" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                    Explore rankings
+                  </Link>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="rounded-2xl bg-slate-50 p-5">
+                  <Smartphone className="h-5 w-5 text-blue-600" />
+                  <h3 className="mt-3 font-bold text-slate-900">Choose the exact phone</h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">Open its detail page so your review is attached to the correct model.</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-5">
+                  <PenLine className="h-5 w-5 text-emerald-600" />
+                  <h3 className="mt-3 font-bold text-slate-900">Write a genuine review</h3>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">Mention performance, battery, camera and value instead of a one-word rating.</p>
+                </div>
+              </div>
+            </section>
           )}
         </div>
       </main>

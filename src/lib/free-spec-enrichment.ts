@@ -87,7 +87,7 @@ async function getJson(url: string): Promise<Record<string, unknown>> {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'User-Agent': 'PhoneDock-Free-Spec-Enrichment/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'SpecsDekh-Free-Spec-Enrichment/1.0' },
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(`Free provider returned HTTP ${response.status}`);

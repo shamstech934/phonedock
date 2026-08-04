@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Types } from 'mongoose';
-import { Phone, Brand, ActivityLog, PriceHistory, SystemState } from '@/lib/models';
+import { Phone, Brand, ActivityLog, PriceHistory, PhonePrice, SystemState } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from '@/lib/models/PriceTracker';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
 import { parseBoundedInt } from '@/lib/http';
-import { fetchWithValidatedRedirects, readResponseTextLimited } from '@/lib/ssrf-guard';
-import { extractRetailPageSignals } from '@/lib/price-extraction';
+import { PRICE_SOURCE_TYPES as PRICE_SOURCE_TYPE_VALUES } from '@/lib/price-source-types';
+import { extractRetailPrice } from '@/lib/price-extraction';
+import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -22,9 +25,11 @@ interface LeanPhoneDoc {
 
 interface LeanSourceDoc {
   _id: Types.ObjectId; name: string; sourceType: string;
-  enabled: boolean; trusted: boolean; baseUrl: string; allowedDomains: string[];
+  enabled: boolean; trusted: boolean; baseUrl: string; verificationUrl: string; allowedDomains: string[];
+  discoveryEnabled?: boolean; discoveryMode?: string; catalogUrls?: string[]; sitemapUrls?: string[]; feedUrl?: string; syncFrequency?: string;
+  lastDiscoveryAt?: Date | null; productsFound?: number; productsAdded?: number; productsUpdated?: number; productsRemoved?: number;
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
-  failureCount: number; status: string; notes: string;
+  failureCount: number; nextRetryAt: Date | null; lastError: string; status: string; notes: string;
 }
 
 interface LeanPopulatedPhone {
@@ -51,8 +56,6 @@ interface LeanListingDoc {
   productUrl: string; ram: string; storage: string; ptaStatus: string; warrantyType: string;
   currentSourcePrice: number; previousSourcePrice: number; availability: string;
   lastCheckedAt: Date | null; lastChangedAt: Date | null; enabled: boolean; verificationStatus: string;
-  lastFinalUrl?: string; lastDetectedTitle?: string; lastExtractionMethod?: string;
-  lastConfidence?: number; lastError?: string; consecutiveFailures?: number;
 }
 
 interface LeanPhoneMini { currentPrice?: number; previousPrice?: number; modelName?: string; slug?: string }
@@ -68,6 +71,7 @@ interface LeanMatchCandidate {
 
 // ── Price Tracker Settings (stored in SystemState) ──
 const PT_SETTINGS_KEY = 'price_tracker_settings';
+const PT_LAST_RUN_KEY = 'price_tracker_last_run';
 
 export const DEFAULT_PT_SETTINGS = {
   autoApproveThreshold: 2,   // % — changes below this are auto-approved silently
@@ -75,6 +79,48 @@ export const DEFAULT_PT_SETTINGS = {
   batchSize: 10,             // phones per batch run
   checkFrequency: 'daily',   // daily | twice-daily | hourly
 };
+
+const PRICE_SOURCE_TYPES = new Set<string>(PRICE_SOURCE_TYPE_VALUES);
+
+function normalizeSourceBaseUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new URL(raw);
+  if (parsed.protocol !== 'https:') throw new Error('baseUrl must use HTTPS');
+  parsed.hash = '';
+  parsed.search = '';
+  parsed.pathname = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '');
+  return parsed.toString().replace(/\/$/, '');
+}
+
+function normalizeAllowedDomains(value: unknown, baseUrl = ''): string[] {
+  const values = Array.isArray(value) ? value : [];
+  const domains = values
+    .map(item => String(item || '').trim().toLowerCase())
+    .map(item => item.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].replace(/^\./, ''))
+    .filter(Boolean);
+  if (domains.length === 0 && baseUrl) {
+    try { domains.push(new URL(baseUrl).hostname.toLowerCase().replace(/^www\./, '')); } catch { /* validated elsewhere */ }
+  }
+  return [...new Set(domains)];
+}
+
+function isLikelyProductPageUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    // A domain homepage or a single generic catalogue segment is not a stable
+    // product record and must never be marked verified automatically.
+    if (!path || path === '/') return false;
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length < 2) return false;
+    if (/^(mobiles?|phones?|products?|shop|store|category|collections?)$/i.test(segments.at(-1) || '')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 export async function getPriceTrackerSettings() {
   const doc = await SystemState.findOne({ key: PT_SETTINGS_KEY }).lean();
@@ -95,14 +141,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     todayStart.setHours(0, 0, 0, 0);
 
     const [
-      totalPhonesWithPrices,
+      phonesWithPrices,
       manualCount,
       automaticCount,
       priceDropsToday,
       priceIncreasesToday,
       pendingReview,
-      failedChecks,
-      lastSuccessfulUpdate,
+      failedListings,
+      failedSources,
+      lastRunState,
       totalSources,
       enabledSources,
       readySources,
@@ -110,14 +157,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       trackedPhoneIds,
       pendingSourceGaps,
     ] = await Promise.all([
-      Phone.countDocuments({ currentPrice: { $gt: 0 } }),
-      Phone.countDocuments({ priceMode: 'manual', currentPrice: { $gt: 0 } }),
-      Phone.countDocuments({ priceMode: 'automatic', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', priceMode: 'manual', currentPrice: { $gt: 0 } }),
+      Phone.countDocuments({ active: true, status: 'published', priceMode: 'automatic', currentPrice: { $gt: 0 } }),
       PriceTrackerHistory.countDocuments({ changeType: 'decrease', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ changeType: 'increase', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ verificationStatus: 'pending' }),
+      PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'failed' }),
       PriceSource.countDocuments({ status: 'failed' }),
-      PriceTrackerHistory.findOne({ verificationStatus: { $ne: 'pending' } }).sort({ capturedAt: -1 }).lean(),
+      SystemState.findOne({ key: PT_LAST_RUN_KEY }).lean(),
       PriceSource.countDocuments({}),
       PriceSource.countDocuments({ enabled: true, status: 'active' }),
       PriceSource.countDocuments({
@@ -127,28 +175,28 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         allowedDomains: { $exists: true, $ne: [] },
       }),
       Phone.countDocuments({ active: true, status: 'published' }),
-      PhoneRetailListing.distinct('phoneId', {
-        enabled: true,
-        verificationStatus: 'verified',
-      }),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: { $in: ['verified', 'pending'] } }),
       PriceMatchCandidate.countDocuments({ status: 'pending' }),
     ]);
 
     return NextResponse.json({
-      monitoredPhones: totalPhonesWithPrices,
+      monitoredPhones: trackedPhoneIds.length,
+      phonesWithPrices,
       manualPrices: manualCount,
       automaticPrices: automaticCount,
       dropsToday: priceDropsToday,
       increasesToday: priceIncreasesToday,
       pendingReview,
-      failedChecks,
-      lastSuccessfulUpdate: lastSuccessfulUpdate?.capturedAt || null,
+      failedChecks: failedListings + failedSources,
+      lastSuccessfulUpdate: (lastRunState?.metadata as { lastSuccessAt?: string } | undefined)?.lastSuccessAt || null,
+      lastRunSummary: (lastRunState?.metadata as Record<string, unknown> | undefined) || null,
       totalSources,
       enabledSources,
       readySources,
       totalPublishedPhones,
       trackingReadyPhones: trackedPhoneIds.length,
-      pendingSourceGaps,
+      pendingSourceGaps: Math.max(pendingSourceGaps, Math.max(0, totalPublishedPhones - trackedPhoneIds.length)),
+      unlinkedPhones: Math.max(0, totalPublishedPhones - trackedPhoneIds.length),
       trackingCoveragePct: totalPublishedPhones > 0
         ? Math.round((trackedPhoneIds.length / totalPublishedPhones) * 100)
         : 0,
@@ -156,6 +204,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
   }
 
   // ---- /api/admin/price-tracker/phones ----
+  // The catalog view must include every published phone, not only phones that
+  // already have a price. Listing state is joined separately so unlinked phones
+  // remain visible and actionable instead of disappearing from the tracker.
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'phones') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
@@ -163,68 +214,85 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 
     const url = new URL(req.url);
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
-    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
+    const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 200 });
     const skip = (page - 1) * limit;
     const search = (url.searchParams.get('search') || '').trim();
     const mode = url.searchParams.get('mode') || 'all';
-    const status = url.searchParams.get('status');
-    const sort = url.searchParams.get('sort') || 'lastPriceChangedAt';
+    const sort = url.searchParams.get('sort') || 'name-az';
 
-    const filter: Record<string, unknown> = { active: true, currentPrice: { $gt: 0 } };
-
-    // Mode filter
-    if (mode === 'manual') filter.priceMode = 'manual';
+    const filter: Record<string, unknown> = { active: true, status: 'published' };
+    if (mode === 'manual') filter.priceMode = { $ne: 'automatic' };
     else if (mode === 'automatic') filter.priceMode = 'automatic';
 
-    // Status filter
-    if (status === 'locked') filter.manualLock = true;
-    else if (status === 'unlocked') filter.manualLock = false;
-    else if (status === 'price-drop') filter.priceChange = { $lt: 0 };
-    else if (status === 'price-increase') filter.priceChange = { $gt: 0 };
-
-    // Search
     if (search.length >= 2) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const brandMatches = await Brand.find({ name: { $regex: safe, $options: 'i' } }).select('_id').lean();
       const brandIds = brandMatches.map((b: { _id: Types.ObjectId }) => b._id);
-      const searchOr: Record<string, unknown>[] = [{ modelName: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }];
+      const searchOr: Record<string, unknown>[] = [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+      ];
       if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
       filter.$or = searchOr;
     }
 
-    // Sort
-    let sortObj: Record<string, 1 | -1> = { lastPriceChangedAt: -1 };
-    if (sort === 'currentPrice') sortObj = { currentPrice: 1 };
-    else if (sort === 'currentPrice-desc') sortObj = { currentPrice: -1 };
-    else if (sort === 'lastPriceChangedAt') sortObj = { lastPriceChangedAt: -1 };
-    else if (sort === 'priceChange') sortObj = { priceChange: -1 };
-    else if (sort === 'percentageChange') sortObj = { percentageChange: -1 };
+    let sortObj: Record<string, 1 | -1> = { modelName: 1 };
+    if (sort === 'name-za') sortObj = { modelName: -1 };
+    else if (sort === 'price-low') sortObj = { currentPrice: 1, modelName: 1 };
+    else if (sort === 'price-high') sortObj = { currentPrice: -1, modelName: 1 };
+    else if (sort === 'change-desc') sortObj = { percentageChange: 1 };
+    else if (sort === 'change-asc') sortObj = { percentageChange: -1 };
+    else if (sort === 'updated') sortObj = { lastPriceCheckedAt: -1, modelName: 1 };
 
     const [phones, total] = await Promise.all([
       Phone.find(filter).sort(sortObj).skip(skip).limit(limit).populate('brand').lean(),
       Phone.countDocuments(filter),
     ]);
 
+    const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
+    const listingRows = await PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
+      .sort({ verificationStatus: 1, lastSuccessAt: -1, createdAt: 1 })
+      .populate('sourceId', 'name sourceType')
+      .lean();
+    const listingByPhone = new Map<string, typeof listingRows[number]>();
+    for (const listing of listingRows) {
+      const key = String(listing.phoneId);
+      if (!listingByPhone.has(key)) listingByPhone.set(key, listing);
+    }
+
     return NextResponse.json({
-      phones: phones.map((p: LeanPhoneDoc) => ({
-        id: p._id?.toString(),
-        modelName: p.modelName,
-        slug: p.slug,
-        brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name } : undefined,
-        thumbnail: p.thumbnail || '',
-        currentPrice: p.currentPrice || 0,
-        previousPrice: p.previousPrice || 0,
-        lowestPrice: p.lowestPrice || 0,
-        highestPrice: p.highestPrice || 0,
-        priceChange: p.priceChange || 0,
-        percentageChange: p.percentageChange || 0,
-        lastPriceCheckedAt: p.lastPriceCheckedAt || null,
-        lastPriceChangedAt: p.lastPriceChangedAt || null,
-        priceMode: p.priceMode || 'manual',
-        manualLock: p.manualLock || false,
-        manualLockReason: p.manualLockReason || '',
-      })),
-      total, page, limit, totalPages: Math.ceil(total / limit),
+      phones: phones.map((p: LeanPhoneDoc) => {
+        const listing = listingByPhone.get(p._id.toString()) as unknown as {
+          sourceId?: LeanPopulatedSource | null; verificationStatus?: string; availability?: string;
+          lastCheckedAt?: Date | null; lastSuccessAt?: Date | null; enabled?: boolean;
+        } | undefined;
+        const automatic = Boolean(listing) && p.manualLock !== true;
+        return {
+          id: p._id.toString(),
+          phoneId: p._id.toString(),
+          phoneName: p.modelName,
+          name: p.modelName,
+          slug: p.slug,
+          brand: p.brand?.name || '',
+          currentPrice: Number(p.currentPrice || 0),
+          previousPrice: Number(p.previousPrice || 0),
+          difference: Number(p.priceChange || 0),
+          percentChange: Number(p.percentageChange || 0),
+          mode: automatic ? 'automatic' : 'manual',
+          source: listing?.sourceId?.name || '',
+          sourceType: listing?.sourceId?.sourceType || '',
+          linked: Boolean(listing),
+          verificationStatus: listing?.verificationStatus || 'unlinked',
+          availability: listing?.availability || 'unknown',
+          lastUpdated: (listing?.lastSuccessAt || listing?.lastCheckedAt || p.lastPriceCheckedAt || p.lastPriceChangedAt || '').toString(),
+          status: listing?.enabled === false ? 'inactive' : 'active',
+          manualLock: Boolean(p.manualLock),
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     });
   }
 
@@ -275,11 +343,25 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         enabled: s.enabled,
         trusted: s.trusted,
         baseUrl: s.baseUrl || '',
+        verificationUrl: s.verificationUrl || '',
+        discoveryEnabled: Boolean(s.discoveryEnabled),
+        discoveryMode: s.discoveryMode || 'manual',
+        catalogUrls: s.catalogUrls || [],
+        sitemapUrls: s.sitemapUrls || [],
+        feedUrl: s.feedUrl || '',
+        syncFrequency: s.syncFrequency || 'daily',
+        lastDiscoveryAt: s.lastDiscoveryAt || null,
+        productsFound: s.productsFound || 0,
+        productsAdded: s.productsAdded || 0,
+        productsUpdated: s.productsUpdated || 0,
+        productsRemoved: s.productsRemoved || 0,
         allowedDomains: s.allowedDomains || [],
         priority: s.priority || 0,
         lastCheckedAt: s.lastCheckedAt || null,
         lastSuccessAt: s.lastSuccessAt || null,
         failureCount: s.failureCount || 0,
+        nextRetryAt: s.nextRetryAt || null,
+        lastError: s.lastError || '',
         status: s.status || 'active',
         notes: s.notes || '',
         listingCount: coverage?.total || 0,
@@ -441,12 +523,6 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         lastChangedAt: l.lastChangedAt || null,
         enabled: l.enabled ?? true,
         verificationStatus: l.verificationStatus || 'pending',
-        lastFinalUrl: l.lastFinalUrl || '',
-        lastDetectedTitle: l.lastDetectedTitle || '',
-        lastExtractionMethod: l.lastExtractionMethod || '',
-        lastConfidence: l.lastConfidence || 0,
-        lastError: l.lastError || '',
-        consecutiveFailures: l.consecutiveFailures || 0,
       })),
     });
   }
@@ -486,7 +562,11 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const permCheck = requirePermission(authResult.admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
     const settings = await getPriceTrackerSettings();
-    return NextResponse.json(settings);
+    return NextResponse.json({
+      ...settings,
+      cronConfigured: Boolean(process.env.CRON_SECRET),
+      cronSchedule: process.env.PRICE_SYNC_CRON || '0 1 * * *',
+    });
   }
 
   return undefined;
@@ -495,6 +575,32 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 // ============ PRICE TRACKER POST ============
 
 export async function handlePriceTrackerPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  // ---- /api/admin/price-tracker/bootstrap ----
+  // Idempotently creates/refreshes Pakistan official source definitions so a
+  // production deployment does not depend on running a one-off CLI command.
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'bootstrap') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    let created = 0;
+    let refreshed = 0;
+    for (const source of PAKISTAN_OFFICIAL_PRICE_SOURCES) {
+      const result = await PriceSource.updateOne(
+        { name: source.name },
+        {
+          $set: { baseUrl: source.baseUrl, allowedDomains: source.allowedDomains, priority: source.priority, sourceType: source.sourceType, notes: source.notes },
+          $setOnInsert: { enabled: source.enabled, trusted: source.trusted, status: source.status },
+        },
+        { upsert: true },
+      );
+      if (result.upsertedCount) created++; else refreshed++;
+    }
+
+    await ActivityLog.create({ adminId: admin._id, action: 'bootstrap_price_sources', details: `Created ${created} and refreshed ${refreshed} Pakistan official price sources.`, entityType: 'price_source' }).catch(() => undefined);
+    return NextResponse.json({ success: true, created, refreshed, total: PAKISTAN_OFFICIAL_PRICE_SOURCES.length });
+  }
+
   // ---- /api/admin/price-tracker/auto-link ----
   // Converts already imported, source-backed phone records into verified
   // tracker listings in one operation. A URL is linked only when its hostname
@@ -518,76 +624,78 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       );
     }
 
-    const phones = await Phone.find({
-      active: true,
-      status: 'published',
-      sourceUrl: { $regex: '^https://' },
-    }).select('_id modelName sourceUrl').lean();
+    const phones = await Phone.find({ active: true, status: 'published' })
+      .select('_id modelName sourceUrl')
+      .lean();
+    const legacyPriceRows = await PhonePrice.find({
+      phoneId: { $in: phones.map(phone => phone._id) },
+      $or: [{ url: { $type: 'string', $ne: '' } }, { sourceUrl: { $type: 'string', $ne: '' } }],
+    }).select('phoneId url sourceUrl storeName price ptaStatus warrantyType').lean();
+    const legacyUrlsByPhone = new Map<string, Array<{ url: string; storeName: string; price: number; ptaStatus: string; warrantyType: string }>>();
+    for (const row of legacyPriceRows) {
+      const url = String(row.url || row.sourceUrl || '').trim();
+      if (!url) continue;
+      const key = row.phoneId.toString();
+      const values = legacyUrlsByPhone.get(key) || [];
+      values.push({ url, storeName: String(row.storeName || ''), price: Number(row.price || 0), ptaStatus: String(row.ptaStatus || ''), warrantyType: String(row.warrantyType || '') });
+      legacyUrlsByPhone.set(key, values);
+    }
 
     let linked = 0;
     let alreadyLinked = 0;
     let unmatched = 0;
+    let rejectedHomepageUrls = 0;
+    let missingProductUrls = 0;
     const examples: string[] = [];
 
     for (const phone of phones) {
-      let hostname = '';
-      try {
-        hostname = new URL(phone.sourceUrl).hostname.toLowerCase();
-      } catch {
-        unmatched++;
+      const candidates = [
+        ...(String(phone.sourceUrl || '').trim() ? [{ url: String(phone.sourceUrl).trim(), storeName: '', price: 0, ptaStatus: '', warrantyType: '' }] : []),
+        ...(legacyUrlsByPhone.get(phone._id.toString()) || []),
+      ].filter((candidate, index, all) => all.findIndex(other => other.url === candidate.url) === index);
+
+      if (candidates.length === 0) {
+        missingProductUrls++;
         continue;
       }
 
-      const source = sources.find(candidate => (candidate.allowedDomains || []).some((domain: string) => {
-        const clean = domain.trim().toLowerCase().replace(/^\./, '');
-        return clean && (hostname === clean || hostname.endsWith(`.${clean}`));
-      }));
-      if (!source) {
-        unmatched++;
-        if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
-        await PriceMatchCandidate.findOneAndUpdate(
-          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
-          {
-            $set: {
-              hostname,
-              status: 'pending',
-              reason: `No enabled trusted source covers ${hostname}.`,
-              resolvedSourceId: null,
-              resolvedAt: null,
-            },
-          },
-          { upsert: true, setDefaultsOnInsert: true },
-        );
-        continue;
-      }
-
-      const existing = await PhoneRetailListing.findOne({
-        phoneId: phone._id,
-        sourceId: source._id,
-        productUrl: phone.sourceUrl,
-      }).select('_id').lean();
-      if (existing) {
-        alreadyLinked++;
+      let phoneLinked = false;
+      for (const candidate of candidates) {
+        const sourceUrl = candidate.url;
+        if (!isLikelyProductPageUrl(sourceUrl)) { rejectedHomepageUrls++; continue; }
+        let hostname = '';
+        try { hostname = new URL(sourceUrl).hostname.toLowerCase(); } catch { unmatched++; continue; }
+        const source = sources.find(item => (item.allowedDomains || []).some((domain: string) => {
+          const clean = domain.trim().toLowerCase().replace(/^\./, '');
+          return clean && (hostname === clean || hostname.endsWith(`.${clean}`));
+        }));
+        if (!source) {
+          unmatched++;
+          if (examples.length < 5) examples.push(`${phone.modelName}: ${hostname}`);
+          await PriceMatchCandidate.findOneAndUpdate(
+            { phoneId: phone._id, sourceUrl },
+            { $set: { hostname, status: 'pending', reason: `No enabled trusted source covers ${hostname}.`, resolvedSourceId: null, resolvedAt: null } },
+            { upsert: true, setDefaultsOnInsert: true },
+          );
+          continue;
+        }
+        const existing = await PhoneRetailListing.findOne({ phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl }).select('_id').lean();
+        if (existing) {
+          alreadyLinked++; phoneLinked = true;
+        } else {
+          await PhoneRetailListing.create({
+            phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl, sourceTitle: candidate.storeName || phone.modelName,
+            currentSourcePrice: candidate.price > 0 ? candidate.price : 0, ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType,
+            enabled: true, verificationStatus: 'verified',
+          });
+          linked++; phoneLinked = true;
+        }
         await PriceMatchCandidate.updateOne(
-          { phoneId: phone._id, sourceUrl: phone.sourceUrl },
+          { phoneId: phone._id, sourceUrl },
           { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
         );
-        continue;
       }
-
-      await PhoneRetailListing.create({
-        phoneId: phone._id,
-        sourceId: source._id,
-        productUrl: phone.sourceUrl,
-        sourceTitle: phone.modelName,
-        enabled: true,
-        verificationStatus: 'verified',
-      });
-      await PriceMatchCandidate.updateOne(
-        { phoneId: phone._id, sourceUrl: phone.sourceUrl },
-        { $set: { status: 'resolved', resolvedSourceId: source._id, resolvedAt: new Date() } },
-      );
-      linked++;
+      if (!phoneLinked && candidates.length > 0 && examples.length < 5) examples.push(`${phone.modelName}: no trusted product URL matched`);
     }
 
     await ActivityLog.create({
@@ -603,6 +711,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       linked,
       alreadyLinked,
       unmatched,
+      missingProductUrls,
+      rejectedHomepageUrls,
+      eligibleProductUrls: Math.max(0, phones.length - missingProductUrls - rejectedHomepageUrls),
       unmatchedExamples: examples,
     });
   }
@@ -736,25 +847,39 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, allowedDomains, priority } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
 
     if (!name || !name.trim()) return NextResponse.json({ error: 'Source name is required' }, { status: 400 });
+    if (sourceType !== undefined && !PRICE_SOURCE_TYPES.has(sourceType)) {
+      return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
+    }
 
     // Check uniqueness
     const existing = await PriceSource.findOne({ name: name.trim() });
     if (existing) return NextResponse.json({ error: 'Source name already exists' }, { status: 409 });
 
-    // Validate baseUrl must be HTTPS
-    if (baseUrl && !baseUrl.startsWith('https://')) {
-      return NextResponse.json({ error: 'baseUrl must use HTTPS' }, { status: 400 });
+    let normalizedBaseUrl = '';
+    try { normalizedBaseUrl = normalizeSourceBaseUrl(baseUrl); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid base URL' }, { status: 400 }); }
+    const normalizedDomains = normalizeAllowedDomains(allowedDomains, normalizedBaseUrl);
+    const normalizedPriority = Number(priority ?? 0);
+    if (!Number.isFinite(normalizedPriority) || normalizedPriority < 0 || normalizedPriority > 100) {
+      return NextResponse.json({ error: 'Priority must be between 0 and 100' }, { status: 400 });
     }
 
     const source = await PriceSource.create({
       name: name.trim(),
       sourceType: sourceType || 'retailer',
-      baseUrl: baseUrl || '',
-      allowedDomains: allowedDomains || [],
-      priority: typeof priority === 'number' ? priority : 0,
+      baseUrl: normalizedBaseUrl,
+      verificationUrl: typeof verificationUrl === 'string' ? verificationUrl.trim() : '',
+      discoveryEnabled: Boolean(discoveryEnabled),
+      discoveryMode: ['manual', 'sitemap', 'catalog', 'feed', 'api'].includes(String(discoveryMode)) ? discoveryMode : 'manual',
+      catalogUrls: Array.isArray(catalogUrls) ? catalogUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [],
+      sitemapUrls: Array.isArray(sitemapUrls) ? sitemapUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [],
+      feedUrl: typeof feedUrl === 'string' ? feedUrl.trim() : '',
+      syncFrequency: ['manual', 'hourly', 'daily', 'weekly'].includes(String(syncFrequency)) ? syncFrequency : 'daily',
+      allowedDomains: normalizedDomains,
+      priority: normalizedPriority,
     });
 
     try {
@@ -843,6 +968,69 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       );
     }
 
+    let verificationStatus: 'pending' | 'verified' = 'pending';
+    let detectedPrice = 0;
+    let sourceTitle = '';
+    let availability: 'available' | 'unavailable' | 'unknown' = 'unknown';
+    let extractionMethod = '';
+    let extractionConfidence = 0;
+    let verificationMessage = source.trusted
+      ? 'The product page could not be verified automatically. Review it before enabling automatic checks.'
+      : 'Source is not trusted yet. Test and trust the source before automatic checks.';
+
+    if (source.trusted && source.enabled && source.status === 'active') {
+      const safety = await validateUrlForFetch(productUrl, source.allowedDomains || []);
+      if (safety.safe) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12_000);
+          const response = await fetch(productUrl, {
+            signal: controller.signal,
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          });
+          clearTimeout(timeout);
+          if (response.ok) {
+            const html = await response.text();
+            const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; ptaStatus?: string };
+            const validation = validateRetailListingPage({
+              html,
+              phoneModel: phoneIdentity.modelName || '',
+              brandName: phoneIdentity.brandName || '',
+              expectedRam: ram || '',
+              expectedStorage: storage || '',
+              expectedPtaStatus: ptaStatus || phoneIdentity.ptaStatus || '',
+            });
+            const extracted = extractRetailPrice(html);
+            sourceTitle = validation.title;
+            detectedPrice = extracted?.price || 0;
+            extractionMethod = extracted?.method || '';
+            extractionConfidence = extracted?.confidence || 0;
+            availability = /out\s*of\s*stock|unavailable|sold\s*out/i.test(html)
+              ? 'unavailable'
+              : /add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(html)
+                ? 'available'
+                : 'unknown';
+            if (validation.valid && detectedPrice > 0) {
+              verificationStatus = 'verified';
+              verificationMessage = 'Product page verified and ready for automatic price checks.';
+            } else {
+              verificationMessage = validation.reasons.join('; ') || 'No reliable PKR price was detected.';
+            }
+          } else {
+            verificationMessage = `Retailer returned HTTP ${response.status}.`;
+          }
+        } catch (error) {
+          verificationMessage = error instanceof Error ? error.message : 'Product page verification failed.';
+        }
+      } else {
+        verificationMessage = safety.reason || 'Product URL failed safety validation.';
+      }
+    }
+
     const listing = await PhoneRetailListing.create({
       phoneId,
       sourceId,
@@ -851,7 +1039,15 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       storage: storage || '',
       ptaStatus: ptaStatus || '',
       warrantyType: warrantyType || '',
-      verificationStatus: 'pending',
+      sourceTitle,
+      currentSourcePrice: detectedPrice,
+      availability,
+      verificationStatus,
+      lastCheckedAt: source.trusted ? new Date() : null,
+      lastSuccessAt: verificationStatus === 'verified' ? new Date() : null,
+      extractionMethod,
+      extractionConfidence,
+      lastError: verificationStatus === 'verified' ? '' : verificationMessage,
     });
 
     try {
@@ -868,6 +1064,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       success: true,
       id: listing._id?.toString(),
       verificationStatus: listing.verificationStatus,
+      detectedPrice,
+      availability,
+      message: verificationMessage,
     });
   }
 
@@ -881,8 +1080,6 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const { url, sourceId } = body;
 
     if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
-    const testedSource = sourceId ? await PriceSource.findById(sourceId).lean() as LeanSourceDoc | null : null;
-    if (sourceId && !testedSource) return NextResponse.json({ error: 'Price source not found' }, { status: 404 });
 
     // SSRF protection: validate URL safety
     if (!url.startsWith('https://') && !url.startsWith('http://')) {
@@ -901,58 +1098,38 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     let availability = 'unknown' as string;
     let matched = false;
     let safeToEnable = false;
-    let extractionMethod = '';
-    let confidence = 0;
-    let finalUrl = url;
+    let extractionMethod: string | null = null;
+    let extractionConfidence = 0;
     let testError = '';
 
     try {
-      const response = await fetchWithValidatedRedirects(url, {
-        allowedDomains: testedSource?.allowedDomains || [],
-        timeoutMs: 10_000,
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(url, {
+        signal: controller.signal,
         headers: {
-          'User-Agent': 'PhoneDock-PriceChecker/1.0 (compatible; bot)',
-          'Accept': 'text/html,application/xhtml+xml;q=0.9',
+          'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
+        redirect: 'follow',
       });
-      finalUrl = response.url || url;
+      clearTimeout(timeout);
 
       reachable = response.ok;
 
       if (response.ok) {
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
-          throw new Error('Source did not return an HTML product page');
-        }
-        const html = await readResponseTextLimited(response);
-        const signals = extractRetailPageSignals(html);
-        title = signals.title;
-        detectedPrice = signals.price?.price ?? null;
-        availability = signals.availability;
-        extractionMethod = signals.price?.method || '';
-        confidence = signals.price?.confidence || 0;
+        const html = await response.text();
 
         // Extract title
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (titleMatch) title = titleMatch[1].trim().slice(0, 200);
 
-        // Try to extract price in PKR — look for common patterns
-        const pricePatterns = [
-          /(?:PKR|Rs\.?|₨)\s*([\d,]+(?:\.\d{1,2})?)/i,
-          /price[^>]*>\s*(?:PKR|Rs\.?|₨)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-          /"price"\s*:\s*"?([\d,]+(?:\.\d{1,2})?)"?/i,
-          /data-price="([\d,]+(?:\.\d{1,2})?)"/i,
-        ];
-
-        void pricePatterns;
-        for (const pattern of [] as RegExp[]) {
-          const m = html.match(pattern);
-          if (m) {
-            const parsed = parseFloat(m[1].replace(/,/g, ''));
-            if (parsed > 0) {
-              detectedPrice = parsed;
-              break;
-            }
-          }
-        }
+        // Shared deterministic extraction supports JSON-LD, meta tags and
+        // visible PKR price markup. The same parser is used by scheduled sync.
+        const extracted = extractRetailPrice(html);
+        detectedPrice = extracted?.price ?? null;
+        extractionMethod = extracted?.method ?? null;
+        extractionConfidence = extracted?.confidence ?? 0;
 
         // Check availability
         if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
@@ -963,28 +1140,87 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       }
     } catch (error) {
       reachable = false;
-      testError = error instanceof Error ? error.message : 'Source test failed';
+      testError = error instanceof Error ? error.message : 'Product page could not be fetched';
     }
 
-    // Determine if the source is matched and safe to enable
-    matched = detectedPrice !== null;
+    // A deterministic parser returns confidence on a 0..1 scale. A real PKR
+    // price is reliable when it is in range and comes from a supported parser.
+    const MIN_TRUST_CONFIDENCE = 0.70;
+    matched = detectedPrice !== null && extractionConfidence >= MIN_TRUST_CONFIDENCE;
     safeToEnable = reachable && matched && availability !== 'unavailable';
 
-    // If sourceId provided, verify domain match
+    let domainAllowed = true;
+    let expectedDomains: string[] = [];
+
+    // A source may only be trusted with a product page hosted by that source.
     if (sourceId) {
       const source = await PriceSource.findById(sourceId).lean();
       if (source) {
+        expectedDomains = Array.isArray(source.allowedDomains)
+          ? source.allowedDomains.map((domain: string) => domain.replace(/^\./, '').toLowerCase()).filter(Boolean)
+          : [];
         try {
-          const urlDomain = new URL(url).hostname;
-          if (source.allowedDomains && source.allowedDomains.length > 0) {
-            const domainAllowed = source.allowedDomains.some((d: string) => {
-              const clean = d.replace(/^\./, '');
+          const urlDomain = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+          if (expectedDomains.length > 0) {
+            domainAllowed = expectedDomains.some((domain: string) => {
+              const clean = domain.replace(/^www\./, '');
               return urlDomain === clean || urlDomain.endsWith('.' + clean);
             });
             if (!domainAllowed) safeToEnable = false;
           }
-        } catch { /* ignore URL parse error */ }
+        } catch {
+          domainAllowed = false;
+          safeToEnable = false;
+        }
       }
+    }
+
+    const validationError = testError || (!reachable
+      ? 'Product page is not reachable'
+      : !domainAllowed
+        ? `Wrong domain. Use a real product page from ${expectedDomains.join(' or ') || 'this source domain'}.`
+        : detectedPrice === null
+          ? 'No PKR price was detected on this product page.'
+          : extractionConfidence < MIN_TRUST_CONFIDENCE
+            ? `Price confidence is too low (${Math.round(extractionConfidence * 100)}%).`
+            : availability === 'unavailable'
+              ? 'Product is currently unavailable.'
+              : 'Source validation failed.');
+
+    if (sourceId) {
+      const sourceHealth = await PriceSource.findById(sourceId).select('failureCount').lean();
+      const nextFailureCount = Number(sourceHealth?.failureCount || 0) + 1;
+      const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
+      const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60_000);
+      const failureReason = validationError;
+      const healthUpdate = safeToEnable
+        ? {
+            $set: {
+              lastCheckedAt: new Date(),
+              lastSuccessAt: new Date(),
+              failureCount: 0,
+              nextRetryAt: null,
+              lastError: '',
+              status: 'active',
+            },
+          }
+        : {
+            $set: {
+              lastCheckedAt: new Date(),
+              nextRetryAt,
+              lastError: failureReason,
+              status: nextFailureCount >= 3 ? 'failed' : 'active',
+            },
+            $inc: { failureCount: 1 },
+          };
+      if (safeToEnable) {
+        (healthUpdate as any).$set.verificationUrl = url;
+        (healthUpdate as any).$set.trusted = true;
+        (healthUpdate as any).$set.enabled = true;
+      }
+      await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
+        console.error('[price-tracker:test-source:health]', error);
+      });
     }
 
     return NextResponse.json({
@@ -994,10 +1230,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       availability,
       matched,
       safeToEnable,
-      finalUrl,
-      extractionMethod: extractionMethod || null,
-      confidence,
-      error: testError || null,
+      extractionMethod,
+      extractionConfidence,
+      error: safeToEnable ? null : validationError,
     });
   }
 
@@ -1284,7 +1519,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, allowedDomains, priority, enabled, trusted, status, notes } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
 
     const updates: Record<string, unknown> = {};
 
@@ -1297,25 +1532,72 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       }
       updates.name = name.trim();
     }
-    if (sourceType !== undefined) updates.sourceType = sourceType;
-    if (baseUrl !== undefined) {
-      if (baseUrl && !baseUrl.startsWith('https://')) {
-        return NextResponse.json({ error: 'baseUrl must use HTTPS' }, { status: 400 });
-      }
-      updates.baseUrl = baseUrl;
+    if (sourceType !== undefined) {
+      if (!PRICE_SOURCE_TYPES.has(sourceType)) return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
+      updates.sourceType = sourceType;
     }
-    if (allowedDomains !== undefined) updates.allowedDomains = allowedDomains;
-    if (typeof priority === 'number') updates.priority = priority;
+    let normalizedBaseUrl = source.baseUrl || '';
+    if (baseUrl !== undefined) {
+      try { normalizedBaseUrl = normalizeSourceBaseUrl(baseUrl); }
+      catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid base URL' }, { status: 400 }); }
+      updates.baseUrl = normalizedBaseUrl;
+    }
+    if (allowedDomains !== undefined || baseUrl !== undefined) {
+      updates.allowedDomains = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
+    }
+    if (verificationUrl !== undefined) {
+      const candidate = String(verificationUrl || '').trim();
+      if (candidate) {
+        let parsed: URL;
+        try { parsed = new URL(candidate); }
+        catch { return NextResponse.json({ error: 'Verification product URL is invalid', field: 'verificationUrl', code: 'INVALID_VERIFICATION_URL' }, { status: 400 }); }
+        if (parsed.protocol !== 'https:') return NextResponse.json({ error: 'Verification product URL must use HTTPS', field: 'verificationUrl', code: 'VERIFICATION_URL_REQUIRES_HTTPS' }, { status: 400 });
+        const cleanHost = parsed.hostname.replace(/^www\./, '');
+        const allowed = normalizeAllowedDomains(allowedDomains !== undefined ? allowedDomains : source.allowedDomains, normalizedBaseUrl);
+        if (allowed.length > 0 && !allowed.some((domain: string) => cleanHost === domain || cleanHost.endsWith(`.${domain}`))) {
+          return NextResponse.json({
+            error: `Verification URL must belong to ${allowed.join(' or ')}. Current URL belongs to ${cleanHost}.`,
+            field: 'verificationUrl',
+            code: 'VERIFICATION_DOMAIN_NOT_ALLOWED',
+            currentDomain: cleanHost,
+            allowedDomains: allowed,
+          }, { status: 400 });
+        }
+      }
+      const normalizedVerificationUrl = candidate ? new URL(candidate).toString() : '';
+      updates.verificationUrl = normalizedVerificationUrl;
+      // A changed verification target must be tested again before the source remains trusted.
+      if (normalizedVerificationUrl !== String(source.verificationUrl || '')) {
+        updates.trusted = false;
+        updates.lastError = normalizedVerificationUrl ? 'Verification URL changed; run Test & trust again.' : '';
+      }
+    }
+    if (priority !== undefined) {
+      const normalizedPriority = Number(priority);
+      if (!Number.isFinite(normalizedPriority) || normalizedPriority < 0 || normalizedPriority > 100) {
+        return NextResponse.json({ error: 'Priority must be between 0 and 100' }, { status: 400 });
+      }
+      updates.priority = normalizedPriority;
+    }
     if (typeof enabled === 'boolean') updates.enabled = enabled;
     if (typeof trusted === 'boolean') updates.trusted = trusted;
-    if (status !== undefined && ['active', 'paused', 'failed'].includes(status)) updates.status = status;
+    if (status !== undefined && ['active', 'paused', 'failed'].includes(status)) {
+      updates.status = status;
+      updates.enabled = status === 'active';
+    }
+    if (typeof discoveryEnabled === 'boolean') updates.discoveryEnabled = discoveryEnabled;
+    if (discoveryMode !== undefined && ['manual', 'sitemap', 'catalog', 'feed', 'api'].includes(String(discoveryMode))) updates.discoveryMode = discoveryMode;
+    if (catalogUrls !== undefined) updates.catalogUrls = Array.isArray(catalogUrls) ? catalogUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [];
+    if (sitemapUrls !== undefined) updates.sitemapUrls = Array.isArray(sitemapUrls) ? sitemapUrls.map((value: unknown) => String(value || '').trim()).filter(Boolean).slice(0, 20) : [];
+    if (feedUrl !== undefined) updates.feedUrl = String(feedUrl || '').trim().slice(0, 2000);
+    if (syncFrequency !== undefined && ['manual', 'hourly', 'daily', 'weekly'].includes(String(syncFrequency))) updates.syncFrequency = syncFrequency;
     if (notes !== undefined) updates.notes = (notes || '').trim().slice(0, 1000);
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    await PriceSource.findByIdAndUpdate(sourceId, { $set: updates });
+    const updatedSource = await PriceSource.findByIdAndUpdate(sourceId, { $set: updates }, { new: true });
 
     try {
       await ActivityLog.create({
@@ -1327,7 +1609,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json({ success: true, id: sourceId });
+    return NextResponse.json({ success: true, id: sourceId, message: 'Price source updated successfully', source: updatedSource });
   }
 
   // ---- /api/admin/price-tracker/listings/:id ----

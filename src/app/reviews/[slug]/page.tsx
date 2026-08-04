@@ -11,14 +11,15 @@ import { Footer } from '@/components/shared/Footer';
 import { PhoneCard } from '@/components/shared/PhoneCard';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
-export const revalidate = 900;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 import { connectDB } from '@/lib/mongodb';
 import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models';
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 interface PhoneData {

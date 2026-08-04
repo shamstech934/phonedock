@@ -37,7 +37,7 @@ import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdmi
 import { handleAiResearchGet, handleAiResearchPost } from './handlers/ai-research';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
-import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv } from './handlers/import-v2';
+import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv, handleImportV2Reconcile } from './handlers/import-v2';
 import { handleDownloadSample } from './handlers/download';
 import { handlePriceTrackerGet, handlePriceTrackerPost, handlePriceTrackerPut, handlePriceTrackerDelete } from './handlers/price-tracker';
 import { handleAdminRunPriceSync, handleCronUpdatePrices } from './handlers/cron-update-prices';
@@ -46,6 +46,17 @@ import { syncYouTubeVideos } from '@/lib/video-sync';
 import { createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { syncRumourFeeds } from '@/lib/rumour-sync';
 import { handleAdminAutomationPipeline, handleAdminAutomationStatus, handleCronAutomationPipeline } from './handlers/automation-pipeline';
+import { handleLaunchIntelligenceGet, handleLaunchIntelligencePost } from './handlers/launch-intelligence';
+import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
+import { handlePakistanIntelligenceGet, handlePakistanIntelligencePost } from './handlers/pakistan-intelligence';
+import { handleImageIntelligenceGet, handleImageIntelligencePost } from './handlers/image-intelligence';
+import { handleSpecsIntelligenceGet, handleSpecsIntelligencePost } from './handlers/specs-intelligence';
+import { handlePriceIntelligenceV2Get, handlePriceIntelligenceV2Post } from './handlers/price-intelligence-v2';
+import { handleYouTubeIntelligenceGet, handleYouTubeIntelligencePost } from './handlers/youtube-intelligence';
+import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
+import { handleReleaseReadinessGet } from './handlers/release-readiness';
+import { handleSeoMonitoringGet } from './handlers/seo-monitoring';
+import { runContinuousMonitoring } from '@/lib/continuous-monitoring';
 
 type HandlerResult = Promise<NextResponse | undefined>;
 
@@ -137,7 +148,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     // Lightweight production health check. Deliberately does not expose environment values.
     if (segments.length === 1 && segments[0] === 'health') {
       return NextResponse.json(
-        { status: 'ok', service: 'phonedock', version: APP_VERSION },
+        { status: 'ok', service: 'specsdekh', version: APP_VERSION },
         { status: 200, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
       );
     }
@@ -178,13 +189,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return NextResponse.json(await syncRumourFeeds());
     }
 
+    // Cron: /api/cron/continuous-monitoring — daily bounded review-first checks.
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'continuous-monitoring') {
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '') || req.headers.get('x-cron-secret');
+      if (!isValidCronSecret(secret)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      await connectDB();
+      return NextResponse.json(await runContinuousMonitoring({ trigger: 'cron', syncFeeds: true }));
+    }
+
     // Cron: /api/cron/collector-sync — triggers due collector source syncs (Scheduler)
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'collector-sync') {
-      const secret = req.headers.get('authorization')?.replace('Bearer ', '');
+      const secret = req.headers.get('authorization')?.replace('Bearer ', '') || req.headers.get('x-cron-secret');
       if (!isValidCronSecret(secret)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       await connectDB();
+      const resumableJobs = await CollectorJob.find({ status: { $in: ['queued', 'paused'] } }).sort({ updatedAt: 1 }).limit(3).lean();
+      const resumed: string[] = [];
+      for (const pendingJob of resumableJobs) {
+        await startJob(String(pendingJob._id));
+        resumed.push(String(pendingJob._id));
+      }
       // Only sources with scheduling enabled (syncFrequencyHours > 0) and enabled=true.
       const dueSources = await CollectorSource.find({ enabled: true, syncFrequencyHours: { $gt: 0 } }).lean();
       const now = Date.now();
@@ -200,7 +225,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         await startJob(job._id.toString());
         triggered.push(source.name);
       }
-      return NextResponse.json({ success: true, triggered, skipped, checkedSources: dueSources.length });
+      return NextResponse.json({ success: true, triggered, skipped, resumed, checkedSources: dueSources.length });
     }
 
     // Cron: /api/cron/sync-youtube — protected by CRON_SECRET, NO rate limiting
@@ -249,11 +274,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
           // Price has dropped! Send notification email (using nodemailer)
           try {
             const transporter = await getEmailTransporter();
-            const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+            const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
             const unsubscribeToken = createUnsubscribeToken(alert.email, phone._id.toString());
             const unsubscribeUrl = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(alert.email)}&phoneId=${phone._id}&token=${unsubscribeToken}`;
             await transporter.sendMail({
-              from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
+              from: `"SpecsDekh" <${process.env.EMAIL_USER}>`,
               to: alert.email,
               subject: `Price Drop: ${phone.modelName} is now PKR ${phone.pricePKR.toLocaleString()}`,
               html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:20px">
@@ -264,7 +289,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
                   <td style="padding:0 8px;color:#ccc">→</td>
                   <td style="padding:12px;background:#f0fdf4;color:#16a34a;font-size:18px;font-weight:bold">PKR ${phone.pricePKR.toLocaleString()}</td>
                 </tr></table>
-                <p style="color:#999;font-size:12px">You're receiving this because you subscribed to price drop alerts on PhoneDock.</p>
+                <p style="color:#999;font-size:12px">You're receiving this because you subscribed to price drop alerts on SpecsDekh.</p>
                 <p style="font-size:12px"><a href="${unsubscribeUrl}" style="color:#666">Unsubscribe</a></p>
               </div>`,
             });
@@ -283,7 +308,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const token = searchParams.get('token') || '';
       const email = (searchParams.get('email') || '').toLowerCase();
       if (!token || !email) {
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/?alert=invalid`);
       }
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const alert = await PriceAlert.findOne({
@@ -293,12 +318,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
         status: 'pending',
       });
       if (!alert) {
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/?alert=invalid`);
       }
       await PriceAlert.updateOne({ _id: alert._id }, {
         $set: { status: 'confirmed', confirmedAt: new Date(), confirmTokenHash: null, confirmTokenExpires: null },
       });
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=confirmed`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/?alert=confirmed`);
     }
 
     // Price alert unsubscribe: /api/price-alerts/unsubscribe?email=xxx&phoneId=xxx
@@ -309,13 +334,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       const phoneId = searchParams.get('phoneId') || '';
       const token = searchParams.get('token') || '';
       if (!email || !phoneId || !verifyUnsubscribeToken(email, phoneId, token)) {
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=invalid`);
+        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/?alert=invalid`);
       }
       await PriceAlert.updateMany(
         { email, phoneId, status: { $ne: 'unsubscribed' } },
         { $set: { status: 'unsubscribed', unsubscribedAt: new Date() } },
       );
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk'}/?alert=unsubscribed`);
+      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/?alert=unsubscribed`);
     }
 
     // Download sample data (no auth needed)
@@ -336,6 +361,46 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'automation') {
       return handleAdminAutomationStatus(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
+      return handleLaunchIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'intelligence-center') {
+      return handleIntelligenceCenterGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'pakistan-intelligence') {
+      return handlePakistanIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'image-intelligence') {
+      return handleImageIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-intelligence') {
+      return handleSpecsIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {
+      return handlePriceIntelligenceV2Get(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'youtube-intelligence') {
+      return handleYouTubeIntelligenceGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
+      return handleContinuousMonitoringGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'release-readiness') {
+      return handleReleaseReadinessGet(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'seo-monitoring') {
+      return handleSeoMonitoringGet(req);
     }
 
     // Admin CRUD routes (stats, phones, brands, news, users, activity)
@@ -504,7 +569,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
         if (subscriber.status !== 'confirmed' && isEmailConfigured()) {
           const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
           const transporter = await getEmailTransporter();
-          await transporter.sendMail({ from: `"PhoneDock" <${process.env.EMAIL_USER}>`, to: email, subject: 'Confirm your PhoneDock newsletter subscription', text: `Confirm: ${baseUrl}/api/newsletter/confirm?token=${encodeURIComponent(rawConfirm)}\n\nUnsubscribe: ${baseUrl}/api/newsletter/unsubscribe?token=${encodeURIComponent(rawUnsubscribe)}` });
+          await transporter.sendMail({ from: `"SpecsDekh" <${process.env.EMAIL_USER}>`, to: email, subject: 'Confirm your SpecsDekh newsletter subscription', text: `Confirm: ${baseUrl}/api/newsletter/confirm?token=${encodeURIComponent(rawConfirm)}\n\nUnsubscribe: ${baseUrl}/api/newsletter/unsubscribe?token=${encodeURIComponent(rawUnsubscribe)}` });
         }
         return NextResponse.json({ success: true, message: isEmailConfigured() ? 'Check your email to confirm your subscription.' : 'Subscription saved pending email verification.' });
       } catch (e: unknown) {
@@ -564,14 +629,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
       // Send confirmation email if email is configured
       if (isEmailConfigured()) {
-        const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+        const siteUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
         const confirmLink = `${siteUrl}/api/price-alerts/confirm?token=${confirmToken}&email=${encodeURIComponent(emailLower)}`;
         const unsubscribeToken = createUnsubscribeToken(emailLower, phone._id.toString());
         const unsubscribeLink = `${siteUrl}/api/price-alerts/unsubscribe?email=${encodeURIComponent(emailLower)}&phoneId=${phone._id}&token=${unsubscribeToken}`;
         try {
           const transporter = await getEmailTransporter();
           await transporter.sendMail({
-            from: `"PhoneDock" <${process.env.EMAIL_USER}>`,
+            from: `"SpecsDekh" <${process.env.EMAIL_USER}>`,
             to: emailLower,
             subject: `Confirm: Price Alert for ${phone.modelName}`,
             html: `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:20px">
@@ -610,7 +675,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       || await handleImportV2Retry(req, segments)
       || await handleImportV2Cancel(req, segments)
       || await handleImportV2Rollback(req, segments)
-      || await handleImportV2QualityScan(req, segments);
+      || await handleImportV2QualityScan(req, segments)
+      || await handleImportV2Reconcile(req, segments);
     if (importV2Result) return importV2Result;
 
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
@@ -630,6 +696,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     }
     if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'automation' && segments[2] === 'run') {
       return handleAdminAutomationPipeline(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'launch-intelligence') {
+      return handleLaunchIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'pakistan-intelligence') {
+      return handlePakistanIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'image-intelligence') {
+      return handleImageIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-intelligence') {
+      return handleSpecsIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {
+      return handlePriceIntelligenceV2Post(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'youtube-intelligence') {
+      return handleYouTubeIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'continuous-monitoring') {
+      return handleContinuousMonitoringPost(req);
     }
 
     // Price Tracker POST routes (update-price, sources, listings, test-source, approve, reject, toggle-lock)

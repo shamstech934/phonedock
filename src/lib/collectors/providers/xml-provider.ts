@@ -17,4 +17,28 @@ export class XmlFeedProvider extends BaseProvider {
     catch (error) { return { phones: [], hasNextPage: false, providerErrors: [error instanceof Error ? error.message : 'XML feed failed'] }; }
   }
 }
-export class RssFeedProvider extends XmlFeedProvider { constructor(config: ProviderConfig, sourceId: string, sourceName: string) { super(config, sourceId, sourceName, true); } }
+export class RssFeedProvider extends BaseProvider {
+  async fetch(): Promise<ProviderFetchResult> {
+    if (!this.config.endpoint) return { phones: [], hasNextPage: false, providerErrors: ['No endpoint configured'] };
+    try {
+      const response = await this.fetchWithTimeout(this.config.endpoint, {}, this.config.timeoutMs);
+      if (!response.ok) return { phones: [], hasNextPage: false, providerErrors: [`HTTP ${response.status}`] };
+      const records = recordsFromXml(await this.readTextLimited(response), true);
+      // RSS/Atom feeds are article streams, not reliable phone catalog records.
+      // Do not manufacture phone entities from article titles. Treat a readable
+      // feed as a successful monitoring source and leave phone creation to a
+      // structured feed/manufacturer parser or the review workflow.
+      return {
+        phones: [],
+        totalAvailable: records.length,
+        hasNextPage: false,
+        providerErrors: [],
+        providerWarnings: records.length
+          ? [`RSS feed scanned ${records.length} article entries. No phone records were imported because RSS articles are not structured catalog data.`]
+          : ['RSS feed was readable but contained no item/entry records.'],
+      };
+    } catch (error) {
+      return { phones: [], hasNextPage: false, providerErrors: [error instanceof Error ? error.message : 'RSS feed failed'] };
+    }
+  }
+}

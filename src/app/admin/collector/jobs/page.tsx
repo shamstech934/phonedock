@@ -1,7 +1,8 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Trash2, Loader, RefreshCw, Zap, AlertTriangle, RotateCcw, BarChart3, Search, Filter, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 
@@ -10,6 +11,8 @@ interface CollectorJob {
   lastError?: string; startedAt?: string; completedAt?: string; createdAt: string;
   fetched?: number; newPhones?: number; possibleUpdates?: number; duplicates?: number; failureCount?: number;
   currentBatch?: number; totalBatches?: number; totalExpected?: number; retryCount?: number;
+  normalized?: number; conflictCount?: number; duration?: number; trigger?: string; mode?: string;
+  errorLog?: string[]; warningLog?: string[]; warningCount?: number; skippedCount?: number; requestId?: string; updatedAt?: string;
 }
 
 export default function AdminCollectorJobsPage() {
@@ -20,37 +23,133 @@ export default function AdminCollectorJobsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [deleteModal, setDeleteModal] = useState<CollectorJob | null>(null);
+  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const autoResumeKeys = useRef<Set<string>>(new Set());
 
-  const fetchJobs = useCallback(() => {
+  const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
-    fetch('/api/collector/jobs', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error('Failed to fetch jobs'); return r.json(); })
-      .then(d => { setJobs(d.jobs || []); setLoading(false); })
-      .catch((e) => { setError(e?.message || 'Failed to load jobs. Please try again.'); setLoading(false); });
+    try {
+      const response = await fetch('/api/collector/jobs', { credentials: 'include' });
+      const payload = await readApiResponse<{ jobs?: CollectorJob[]; error?: string }>(response);
+      if (!response.ok) throw new Error(payload.error || 'Failed to fetch jobs');
+      setJobs(payload.jobs || []);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load jobs. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
+  useEffect(() => {
+    const hasActiveJob = jobs.some(job => job.status === 'queued' || job.status === 'running');
+    if (!hasActiveJob) return;
+    const timer = window.setInterval(() => fetchJobs(), 5000);
+    return () => window.clearInterval(timer);
+  }, [jobs, fetchJobs]);
+
   const deleteJob = async (id: string) => {
+    setDeleteBusy(true);
+    setActionError(null);
     try {
-      const response = await fetch('/api/collector/jobs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ jobId: id }) });
-      if (!response.ok) throw new Error('Failed to delete collector job');
+      const response = await fetch('/api/collector/jobs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ jobId: id, force: true, preserveReviewCandidates: true }),
+      });
+      const payload = await readApiResponse<{ success?: boolean; error?: string; code?: string; deletedJobId?: string }>(response).catch(() => null);
+      if (!response.ok) {
+        const fallback = response.status === 409
+          ? 'The job changed state while deleting. Refresh and try again.'
+          : `Failed to delete collector job (HTTP ${response.status})`;
+        throw new Error(payload?.error || fallback);
+      }
       setDeleteModal(null);
-      setJobs(prev => prev.filter(j => j.id !== id));
-    } catch (error) { setError(error instanceof Error ? error.message : 'Failed to delete collector job'); }
+      setJobs(previous => previous.filter(job => job.id !== id));
+    } catch (reason) {
+      // A failed action must not replace the whole jobs screen with a load error.
+      setActionError(reason instanceof Error ? reason.message : 'Failed to delete collector job');
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
-  const runJobAction = async (id: string, action: 'resume' | 'retry' | 'cancel') => {
+  const runJobAction = useCallback(async (id: string, action: 'resume' | 'retry' | 'cancel') => {
     setActionBusyId(id);
+    setActionError(null);
     try {
       const response = await fetch(`/api/collector/jobs/${id}/${action}`, { method: 'POST', credentials: 'include' });
-      const data = await response.json().catch(() => ({}));
+      const data = await readApiResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(data.error || `Failed to ${action} job`);
-      fetchJobs();
-    } catch (error) { setError(error instanceof Error ? error.message : `Failed to ${action} job`); }
-    finally { setActionBusyId(null); }
+      await fetchJobs();
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : `Failed to ${action} job`);
+    } finally {
+      setActionBusyId(null);
+    }
+  }, [fetchJobs]);
+
+  // Manual collector runs are split into bounded serverless batches. Continue
+  // paused batches automatically while this page is open instead of making the
+  // admin press Resume after every batch. Scheduled cron remains the fallback
+  // when the page is closed.
+  useEffect(() => {
+    if (actionBusyId) return;
+    const pausedJob = jobs.find(job => job.status === 'paused');
+    if (!pausedJob) return;
+    const continuationKey = `${pausedJob.id}:${pausedJob.currentBatch || 0}`;
+    if (autoResumeKeys.current.has(continuationKey)) return;
+    autoResumeKeys.current.add(continuationKey);
+    const timer = window.setTimeout(() => { void runJobAction(pausedJob.id, 'resume'); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [jobs, actionBusyId, runJobAction]);
+
+
+  const toggleJob = (id: string) => {
+    setExpandedJobs(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const downloadJobLog = (job: CollectorJob) => {
+    const lines = [
+      `Collector Job ${job.id}`,
+      `Source: ${job.sourceName || 'Unknown'}`,
+      `Status: ${job.status}`,
+      `Created: ${job.createdAt || ''}`,
+      `Started: ${job.startedAt || ''}`,
+      `Completed: ${job.completedAt || ''}`,
+      `Fetched: ${job.fetched || 0}`,
+      `New phones: ${job.newPhones || 0}`,
+      `Possible updates: ${job.possibleUpdates || 0}`,
+      `Duplicates: ${job.duplicates || 0}`,
+      `Failures: ${job.failureCount || 0}`,
+      `Warnings: ${job.warningCount || 0}`,
+      `Skipped assets: ${job.skippedCount || 0}`,
+      '',
+      'Warnings:',
+      ...(job.warningLog?.length ? job.warningLog : ['No warnings recorded.']),
+      '',
+      'Errors / warnings:',
+      ...(job.errorLog?.length ? job.errorLog : [job.lastError || 'No error log recorded.']),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `collector-job-${job.id.slice(-6)}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
@@ -115,6 +214,13 @@ export default function AdminCollectorJobsPage() {
         </div>
       </div>
 
+      {actionError && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
@@ -148,6 +254,7 @@ export default function AdminCollectorJobsPage() {
       {/* Jobs List */}
       <div className="space-y-2">
         {filteredJobs.map(job => {
+          const expanded = expandedJobs.has(job.id);
           const config = statusConfig[job.status] || statusConfig.pending;
           const Icon = config.icon;
           return (
@@ -172,6 +279,8 @@ export default function AdminCollectorJobsPage() {
                       {job.possibleUpdates !== undefined && job.possibleUpdates > 0 && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">~{job.possibleUpdates} possible updates</span>}
                       {job.duplicates !== undefined && job.duplicates > 0 && <span className="text-[10px] font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded-full">{job.duplicates} duplicates</span>}
                       {job.failureCount !== undefined && job.failureCount > 0 && <span className="text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">{job.failureCount} failed</span>}
+                      {(job.warningCount || 0) > 0 && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">{job.warningCount} warnings</span>}
+                      {(job.skippedCount || 0) > 0 && <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">{job.skippedCount} skipped assets</span>}
                       {job.fetched !== undefined && <span className="text-[10px] text-gray-400">{job.fetched} fetched total</span>}
                     </div>
                   )}
@@ -196,12 +305,15 @@ export default function AdminCollectorJobsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0 mt-1 sm:mt-0">
-                  {(job.status === 'paused' || job.status === 'failed') && (
+                  <button onClick={() => toggleJob(job.id)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title={expanded ? 'Hide details' : 'View details'} aria-label={expanded ? 'Hide job details' : 'View job details'}>
+                    {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                  {job.status === 'paused' && (
                     <button onClick={() => runJobAction(job.id, 'resume')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50" title="Resume from where it left off" aria-label="Resume job">
                       <Zap className="w-4 h-4" />
                     </button>
                   )}
-                  {job.status === 'failed' && (
+                  {['failed', 'partially_completed'].includes(job.status) && (
                     <button onClick={() => runJobAction(job.id, 'retry')} disabled={actionBusyId === job.id} className="p-2 rounded-lg hover:bg-emerald-100 text-gray-400 hover:text-emerald-600 transition-colors disabled:opacity-50" title="Retry from the start" aria-label="Retry job">
                       <RotateCcw className="w-4 h-4" />
                     </button>
@@ -216,6 +328,54 @@ export default function AdminCollectorJobsPage() {
                   </button>
                 </div>
               </div>
+
+              {expanded && (
+                <div className="mt-4 border-t border-gray-100 pt-4 grid gap-4 lg:grid-cols-[1fr_1.25fr]">
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <div className="flex items-center gap-2 mb-3"><FileText className="w-4 h-4 text-blue-500" /><h4 className="text-sm font-semibold text-gray-900">Job details</h4></div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                      <dt className="text-gray-500">Source</dt><dd className="font-medium text-gray-900 text-right break-words">{job.sourceName || 'Unknown'}</dd>
+                      <dt className="text-gray-500">Status</dt><dd className="font-medium text-gray-900 text-right">{config.label}</dd>
+                      <dt className="text-gray-500">Trigger</dt><dd className="font-medium text-gray-900 text-right">{job.trigger || 'manual'}</dd>
+                      <dt className="text-gray-500">Mode</dt><dd className="font-medium text-gray-900 text-right">{job.mode || 'incremental'}</dd>
+                      <dt className="text-gray-500">Fetched</dt><dd className="font-medium text-gray-900 text-right">{job.fetched || 0}</dd>
+                      <dt className="text-gray-500">Normalized</dt><dd className="font-medium text-gray-900 text-right">{job.normalized || 0}</dd>
+                      <dt className="text-gray-500">New phones</dt><dd className="font-medium text-emerald-700 text-right">{job.newPhones || 0}</dd>
+                      <dt className="text-gray-500">Possible updates</dt><dd className="font-medium text-blue-700 text-right">{job.possibleUpdates || 0}</dd>
+                      <dt className="text-gray-500">Duplicates</dt><dd className="font-medium text-gray-900 text-right">{job.duplicates || 0}</dd>
+                      <dt className="text-gray-500">Conflicts</dt><dd className="font-medium text-amber-700 text-right">{job.conflictCount || 0}</dd>
+                      <dt className="text-gray-500">Failures</dt><dd className="font-medium text-red-700 text-right">{job.failureCount || 0}</dd>
+                      <dt className="text-gray-500">Warnings</dt><dd className="font-medium text-amber-700 text-right">{job.warningCount || 0}</dd>
+                      <dt className="text-gray-500">Skipped assets</dt><dd className="font-medium text-slate-700 text-right">{job.skippedCount || 0}</dd>
+                      <dt className="text-gray-500">Retry count</dt><dd className="font-medium text-gray-900 text-right">{job.retryCount || 0}</dd>
+                    </dl>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" /><h4 className="text-sm font-semibold text-gray-900">Errors and warnings</h4></div>
+                      <button onClick={() => downloadJobLog(job)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700"><Download className="w-3.5 h-3.5" /> Download log</button>
+                    </div>
+                    {job.warningLog?.length ? (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-amber-800 mb-2">Warnings</p>
+                        <ol className="space-y-2 max-h-40 overflow-auto pr-1">
+                          {job.warningLog.map((entry, index) => <li key={`${job.id}-warning-${index}`} className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg p-2.5"><span className="font-semibold mr-1">#{index + 1}</span>{entry}</li>)}
+                        </ol>
+                      </div>
+                    ) : null}
+                    {job.errorLog?.length ? (
+                      <ol className="space-y-2 max-h-56 overflow-auto pr-1">
+                        {job.errorLog.map((entry, index) => <li key={`${job.id}-error-${index}`} className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5"><span className="font-semibold mr-1">#{index + 1}</span>{entry}</li>)}
+                      </ol>
+                    ) : job.lastError ? (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-2.5">{job.lastError}</p>
+                    ) : !job.warningLog?.length ? (
+                      <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">No errors or warnings were recorded for this job.</p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -249,9 +409,9 @@ export default function AdminCollectorJobsPage() {
               <p className="text-[10px] text-muted-foreground mt-0.5">Status: {deleteModal.status} &middot; Created: {new Date(deleteModal.createdAt).toLocaleDateString()}</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setDeleteModal(null)} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => deleteJob(deleteModal.id)} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1.5">
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+              <button onClick={() => setDeleteModal(null)} disabled={deleteBusy} className="flex-1 h-10 disabled:opacity-50 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => deleteJob(deleteModal.id)} disabled={deleteBusy} className="flex-1 h-10 disabled:opacity-60 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 flex items-center justify-center gap-1.5">
+                {deleteBusy ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} {deleteBusy ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>

@@ -15,14 +15,6 @@ export const mobileConfigSchema = z.object({
     updateUrlIos: z.string().default(''),
     supportUrl: z.string().default('/contact'),
     homeSections: z.array(z.string()).default(['hero', 'latest', 'brands', 'features', 'priceGroups']),
-    discovery: z.object({
-      enabled: z.boolean().default(true),
-      title: z.string().default('Find Your Phone'),
-      categories: z.array(z.enum(['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year']))
-        .default(['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year']),
-      viewAllText: z.string().default('Explore all phones'),
-      viewAllUrl: z.string().default('/phones'),
-    }).default({}),
     navigation: booleanMap.default({}),
     features: booleanMap.default({}),
     campaign: z.object({

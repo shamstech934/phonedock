@@ -37,7 +37,7 @@ export function SmartPhoneFinder() {
       <div className="text-center max-w-3xl mx-auto">
         <Badge className="rounded-full bg-violet-100 text-violet-700 hover:bg-violet-100"><Sparkles className="w-3.5 h-3.5 mr-1" /> Smart Finder</Badge>
         <h1 className="font-display text-3xl sm:text-5xl font-extrabold text-gray-900 mt-5">Tell us what phone you need</h1>
-        <p className="text-gray-500 mt-4 text-base sm:text-lg">Roman Urdu ya English mein budget, RAM, camera, gaming, battery aur brand likhein. PhoneDock automatically matching filters laga dega.</p>
+        <p className="text-gray-500 mt-4 text-base sm:text-lg">Roman Urdu ya English mein budget, RAM, camera, gaming, battery aur brand likhein. SpecsDekh automatically matching filters laga dega.</p>
       </div>
 
       <div className="card-premium p-5 sm:p-8 mt-8">

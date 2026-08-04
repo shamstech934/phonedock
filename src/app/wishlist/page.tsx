@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { PersonalizedPhonesPage } from '@/components/shared/PersonalizedPhonesPage';
 
 export const metadata: Metadata = {
-  title: 'Wishlist | PhoneDock',
-  description: 'Your saved phones on PhoneDock.',
+  title: 'Wishlist | SpecsDekh',
+  description: 'Your saved phones on SpecsDekh.',
   robots: { index: false, follow: true },
 };
 

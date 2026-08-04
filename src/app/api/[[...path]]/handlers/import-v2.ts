@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { connectDB, getAdminFromRequest, requirePermission, MAX_UPLOAD_RECORDS, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES } from './helpers';
 import { parseBoundedInt } from '@/lib/http';
 import { ImportJob, ImportBatch, ImportRecord } from '@/lib/models';
-import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters } from '@/lib/import/import-v2-engine';
+import { validateRecords, estimateDuplicates, processBatch, cancelJob, rollbackJob, updateDuplicateEstimate, markBatchFailed, reconcileJobCounters, reconcileImportSystem } from '@/lib/import/import-v2-engine';
 import { parseImportFile, generateFileHash } from '@/lib/import/v2-parsers';
 
 // ============ POST /api/admin/import-v2/upload ============
@@ -618,6 +618,27 @@ export async function handleImportV2ErrorsCsv(req: NextRequest, segments: string
   });
 }
 
+
+
+// ============ POST /api/admin/import-v2/reconcile ============
+// Repairs stale job state, recalculates counters, reconciles hidden imported
+// phones, and removes orphan/duplicate specs documents without deleting phones.
+export async function handleImportV2Reconcile(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
+  if (segments.length !== 3 || segments[2] !== 'reconcile') return undefined;
+  const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+  const permCheck = requirePermission(authResult.admin, 'imports:execute'); if (permCheck) return permCheck;
+
+  try {
+    const report = await reconcileImportSystem();
+    return NextResponse.json({ success: true, data: report });
+  } catch (error: unknown) {
+    return NextResponse.json({
+      success: false,
+      error: { code: 'RECONCILE_FAILED', message: error instanceof Error ? error.message : String(error) },
+    }, { status: 500 });
+  }
+}
+
 // ============ GET /api/admin/import-v2/history ============
 
 export async function handleImportV2History(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
@@ -632,6 +653,16 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
     ImportJob.find().sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
     ImportJob.countDocuments({}),
   ]);
+  const importIds = jobs.map(job => job.importId);
+  const batches = importIds.length > 0
+    ? await ImportBatch.find({ importId: { $in: importIds } }).sort({ importId: 1, batchNumber: 1 }).lean()
+    : [];
+  const batchesByImport = new Map<string, typeof batches>();
+  for (const batch of batches) {
+    const current = batchesByImport.get(batch.importId) || [];
+    current.push(batch);
+    batchesByImport.set(batch.importId, current);
+  }
 
   return NextResponse.json({
     success: true,
@@ -656,6 +687,21 @@ export async function handleImportV2History(req: NextRequest, segments: string[]
       duration: j.startedAt && j.completedAt ? Math.round(j.completedAt.getTime() - j.startedAt.getTime()) : null,
       rollbackStatus: j.rollbackStatus,
       errorSummary: j.errorSummary,
+      batches: (batchesByImport.get(j.importId) || []).map(batch => ({
+        batchNumber: batch.batchNumber,
+        status: batch.status,
+        total: batch.recordCount,
+        created: batch.created,
+        updated: batch.updated,
+        replaced: batch.replaced,
+        skipped: batch.skipped,
+        failed: batch.failed,
+        startedAt: batch.startedAt,
+        completedAt: batch.completedAt,
+        durationMs: batch.startedAt && batch.completedAt ? batch.completedAt.getTime() - batch.startedAt.getTime() : null,
+        rowActions: batch.rowActions || [],
+        errors: batch.errors || [],
+      })),
     })),
     total,
     page,

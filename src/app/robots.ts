@@ -7,17 +7,17 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: 'Googlebot',
         allow: '/',
-        disallow: ['/admin/', '/api/'],
+        disallow: ['/admin/', '/api/', '/account/', '/profile/', '/wishlist/', '/recently-viewed/', '/login/', '/signup/', '/search'],
       },
       {
         userAgent: 'Bingbot',
         allow: '/',
-        disallow: ['/admin/', '/api/'],
+        disallow: ['/admin/', '/api/', '/account/', '/profile/', '/wishlist/', '/recently-viewed/', '/login/', '/signup/', '/search'],
       },
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/admin/', '/api/'],
+        disallow: ['/admin/', '/api/', '/account/', '/profile/', '/wishlist/', '/recently-viewed/', '/login/', '/signup/', '/search'],
       },
     ],
     sitemap: `${getBaseUrl()}/sitemap.xml`,

@@ -34,7 +34,7 @@ density when showing many cards.
 
 ## Links / href management
 
-Open **Admin → Links & Hrefs**. It opens the Navigation tab in Homepage
+Open **Admin → Homepage Builder → Header & links**. It opens the navigation controls on the homepage
 Builder. Internal links must begin with `/`; external links must use HTTPS.
 Unsafe protocols are rejected on the server.
 

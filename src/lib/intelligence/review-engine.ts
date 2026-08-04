@@ -184,7 +184,7 @@ export function generatePhoneReview(input: ReviewInput): GeneratedReview {
 
   const recommendation: GeneratedReview['recommendation'] = overall >= 7.7 && scores.value >= 6.5 ? 'buy' : overall >= 6.3 ? 'consider' : 'skip';
   const quickSummary = `${input.modelName} scores ${overall}/10 overall, led by ${ranked[0][0]} and ${ranked[1][0]}. It is best suited for ${bestFor.slice(0, 2).join(' and ')}.`;
-  const fullSummary = `${input.modelName} offers a ${overall >= 8 ? 'strong' : overall >= 6.5 ? 'balanced' : 'limited'} overall package. Its highest-rated areas are ${ranked.slice(0, 3).map(([k, v]) => `${k} (${v}/10)`).join(', ')}. The result is generated only from available PhoneDock specifications and existing editorial scores; missing data lowers confidence and is not fabricated.`;
+  const fullSummary = `${input.modelName} offers a ${overall >= 8 ? 'strong' : overall >= 6.5 ? 'balanced' : 'limited'} overall package. Its highest-rated areas are ${ranked.slice(0, 3).map(([k, v]) => `${k} (${v}/10)`).join(', ')}. The result is generated only from available SpecsDekh specifications and existing editorial scores; missing data lowers confidence and is not fabricated.`;
   const verdict = recommendation === 'buy'
     ? `Buy it when the verified Pakistan price is competitive with similarly scored alternatives.`
     : recommendation === 'consider'

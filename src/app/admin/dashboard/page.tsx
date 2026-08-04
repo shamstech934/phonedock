@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -21,6 +22,10 @@ interface DashboardStats {
   totalReviews: number;
   totalSponsors: number;
   totalAdmins: number;
+  publishedPhones: number;
+  draftPhones: number;
+  upcomingPhones: number;
+  ptaApprovedPhones: number;
   priceDistribution: Array<{ range: string; count: number }>;
   dataHealth?: {
     publishedPhones: number;
@@ -30,6 +35,25 @@ interface DashboardStats {
     phonesMissingImages: number;
     completenessPercent: number;
   };
+  automationHealth?: Record<string, {
+    status: string;
+    label: string;
+    processed: number;
+    total: number;
+    succeeded: number;
+    failed: number;
+    created?: number;
+    updated?: number;
+    replaced?: number;
+    skipped?: number;
+    currentBatch?: number;
+    totalBatches?: number;
+    metricLabels?: [string, string, string] | string[];
+    reason?: string;
+    actionLabel?: string;
+    actionHref?: string;
+    lastRunAt?: string | null;
+  } | null>;
   recentActivity: Array<{
     action?: string;
     details?: string;
@@ -44,15 +68,30 @@ export default function AdminDashboardPage() {
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadStats = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/stats', { credentials: 'include', cache: 'no-store' });
+      const payload = await readApiResponse<DashboardStats>(response);
+      setStats(payload);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load dashboard stats');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/admin/stats', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(`Request failed (${r.status})`); return r.json(); })
-      .then(d => { setStats(d); setLoading(false); })
-      .catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); });
+    void loadStats();
   }, []);
 
   const statCards = [
     { label: 'Total Phones', value: stats.totalPhones ?? 0, icon: Smartphone, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
+    { label: 'Published', value: stats.publishedPhones ?? 0, icon: CheckCircle2, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
+    { label: 'Draft / Review', value: stats.draftPhones ?? 0, icon: FileWarning, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
+    { label: 'Upcoming', value: stats.upcomingPhones ?? 0, icon: TrendingUp, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
+    { label: 'PTA Approved', value: stats.ptaApprovedPhones ?? 0, icon: ShieldCheck, bg: 'bg-teal-50', iconColor: 'text-teal-500' },
     { label: 'Brands', value: stats.totalBrands ?? 0, icon: Layers, bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
     { label: 'Trending', value: stats.trendingCount ?? 0, icon: TrendingUp, bg: 'bg-red-50', iconColor: 'text-red-500' },
     { label: 'Featured', value: stats.featuredCount ?? 0, icon: Star, bg: 'bg-amber-50', iconColor: 'text-amber-500' },
@@ -61,7 +100,7 @@ export default function AdminDashboardPage() {
     { label: 'Videos', value: stats.totalVideos ?? 0, icon: Video, bg: 'bg-rose-50', iconColor: 'text-rose-500' },
     { label: 'Reviews', value: stats.totalReviews ?? 0, icon: MessageSquare, bg: 'bg-sky-50', iconColor: 'text-sky-500' },
     { label: 'Sponsors', value: stats.totalSponsors ?? 0, icon: HandCoins, bg: 'bg-orange-50', iconColor: 'text-orange-500' },
-    { label: 'Admin Users', value: stats.totalAdmins ?? 0, icon: ShieldCheck, bg: 'bg-teal-50', iconColor: 'text-teal-500' },
+    { label: 'Admin Users', value: stats.totalAdmins ?? 0, icon: ShieldCheck, bg: 'bg-slate-50', iconColor: 'text-slate-500' },
   ];
 
   const quickActions = [
@@ -80,13 +119,67 @@ export default function AdminDashboardPage() {
     { range: '60K - 100K', count: 0 }, { range: 'Above 100K', count: 0 },
   ];
   const maxPriceCount = Math.max(...priceDist.map(d => d.count || 0), 1);
+  const automationEntries = [
+    ['import', 'Import Engine', '/admin/import-v2'],
+    ['sync', 'Sync', '/admin/sync'],
+    ['collector', 'Collector', '/admin/collector/jobs'],
+    ['monitoring', 'Monitoring', '/admin/continuous-monitoring'],
+    ['priceTracker', 'Price Tracker', '/admin/price-tracker'],
+  ] as const;
+  const statusTone = (status?: string) => {
+    const normalized = (status || '').toLowerCase();
+    if (['completed', 'configured', 'ready', 'healthy'].includes(normalized)) return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+    if (['running', 'processing', 'queued', 'pending', 'uploaded', 'validating'].includes(normalized)) return 'text-blue-700 bg-blue-50 border-blue-100';
+    if (['failed', 'cancelled', 'completed_with_errors', 'completed_with_warnings', 'not_configured'].includes(normalized)) return 'text-amber-700 bg-amber-50 border-amber-100';
+    if (['not_run'].includes(normalized)) return 'text-slate-600 bg-slate-50 border-slate-200';
+    return 'text-slate-700 bg-slate-50 border-slate-100';
+  };
+  const humanStatus = (status?: string) => (status || 'Not run').replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
+  const formatLastRun = (value?: string | null) => value
+    ? new Date(value).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'Never';
+
+  const humanizeActivity = (log: DashboardStats['recentActivity'][number]) => {
+    const fallback = log.action || 'Activity recorded';
+    const raw = log.details?.trim();
+    if (!raw) return fallback;
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const message = typeof parsed.message === 'string' ? parsed.message : '';
+      const prices = parsed.prices && typeof parsed.prices === 'object' ? parsed.prices as Record<string, unknown> : null;
+      const rumours = parsed.rumours && typeof parsed.rumours === 'object' ? parsed.rumours as Record<string, unknown> : null;
+      const parts: string[] = [];
+      if (message && message !== 'No eligible listings to process') parts.push(message);
+      if (prices && typeof prices.processed === 'number') {
+        const processed = prices.processed;
+        const updated = typeof prices.updated === 'number' ? prices.updated : 0;
+        parts.push(processed > 0
+          ? `Price Tracker checked ${processed} listing${processed === 1 ? '' : 's'} and updated ${updated}`
+          : 'Price Tracker skipped: no verified phone listings are linked');
+      }
+      if (rumours && typeof rumours.scanned === 'number') {
+        const scanned = rumours.scanned;
+        const imported = typeof rumours.imported === 'number' ? rumours.imported : 0;
+        parts.push(`Launch Tracker scanned ${scanned} record${scanned === 1 ? '' : 's'}${imported > 0 ? ` and imported ${imported}` : '; no new launches found'}`);
+      }
+      return parts.length ? parts.join(' · ') : fallback;
+    } catch {
+      return raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
+    }
+  };
+
+  const dedupedRecentActivity = (stats.recentActivity || []).filter((log, index, all) => {
+    const key = `${log.action || ''}|${humanizeActivity(log)}`;
+    return all.findIndex(candidate => `${candidate.action || ''}|${humanizeActivity(candidate)}` === key) === index;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">Welcome back, {admin?.name || 'Admin'}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with PhoneDock</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Here&apos;s what&apos;s happening with SpecsDekh</p>
         </div>
         <Link href="/" className="self-start bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 h-9 rounded-xl text-sm font-medium transition-colors flex items-center gap-2">
           <Eye className="w-4 h-4 shrink-0" /> View Site
@@ -101,12 +194,12 @@ export default function AdminDashboardPage() {
               <p className="text-sm font-semibold text-red-800">Failed to load dashboard</p>
               <p className="text-xs text-red-600 mt-0.5">{error}</p>
             </div>
-            <button onClick={() => { setError(null); setLoading(true); fetch('/api/admin/stats', { credentials: 'include' }).then(r => r.json()).then(d => { setStats(d); setLoading(false); }).catch((err) => { setError(err instanceof Error ? err.message : 'Failed to load dashboard stats'); setLoading(false); }); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline shrink-0">Retry</button>
+            <button onClick={() => { void loadStats(); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline shrink-0">Retry</button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7 gap-3">
         {statCards.map(s => (
           <div key={s.label} className="card-premium p-4">
             <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-3`}><s.icon className={`w-4 h-4 ${s.iconColor} shrink-0`} /></div>
@@ -144,15 +237,16 @@ export default function AdminDashboardPage() {
             <p className="text-xs font-medium text-emerald-800 mt-1">Overall completeness</p>
           </div>
           {[
-            { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices' },
-            { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
-            { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs' },
-            { label: 'Missing gallery', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images' },
+            { label: 'Missing prices', value: stats.dataHealth?.phonesMissingPrice ?? 0, icon: CircleDollarSign, href: '/admin/data-quality?tab=missing-prices', action: 'Open queue' },
+            { label: 'Missing thumbnails', value: stats.dataHealth?.phonesMissingThumbnail ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images', action: 'Open queue' },
+            { label: 'Missing specs', value: stats.dataHealth?.phonesMissingSpecs ?? 0, icon: FileWarning, href: '/admin/data-quality?tab=missing-specs', action: 'Open queue' },
+            { label: 'No gallery records', value: stats.dataHealth?.phonesMissingImages ?? 0, icon: ImageOff, href: '/admin/data-quality?tab=missing-images', action: 'Review gallery queue' },
           ].map(item => (
             <Link key={item.label} href={item.href} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
               <div className="flex items-center justify-between gap-2"><item.icon className="w-4 h-4 text-gray-500" /><span className={`text-xs font-semibold ${(item.value || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{(item.value || 0) > 0 ? 'Needs work' : 'Clear'}</span></div>
               <p className="text-xl font-extrabold text-gray-900 mt-3">{item.value}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{item.label}</p>
+              {(item.value || 0) > 0 && <p className="text-[10px] font-semibold text-blue-600 mt-2">{item.action}</p>}
             </Link>
           ))}
         </div>
@@ -165,6 +259,46 @@ export default function AdminDashboardPage() {
             <p className="text-xs font-semibold text-gray-700">{a.label}</p>
           </Link>
         ))}
+      </div>
+
+      <div className="card-premium p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-500" /> Automation Health</h3>
+            <p className="text-xs text-muted-foreground mt-1">Live status from real import, sync, collector, monitoring and price-tracking jobs.</p>
+          </div>
+          <Link href="/admin/automation" className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1">Open Automation <ArrowRight className="w-3 h-3" /></Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+          {automationEntries.map(([key, fallbackLabel, href]) => {
+            const item = stats.automationHealth?.[key];
+            const label = item?.label || fallbackLabel;
+            return (
+              <Link key={key} href={item?.actionHref || href} className="rounded-2xl border border-gray-100 bg-white p-4 hover:border-blue-200 transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900 truncate">{fallbackLabel}</p>
+                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</p>
+                  </div>
+                  <span className={`text-[10px] font-semibold rounded-full border px-2 py-1 whitespace-nowrap ${statusTone(item?.status)}`}>{humanStatus(item?.status)}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                  <div><p className="text-sm font-extrabold text-gray-900">{item?.processed ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[0] || 'Processed'}</p></div>
+                  <div><p className="text-sm font-extrabold text-emerald-600">{item?.succeeded ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[1] || 'Success'}</p></div>
+                  <div><p className="text-sm font-extrabold text-red-500">{item?.failed ?? 0}</p><p className="text-[9px] text-muted-foreground">{item?.metricLabels?.[2] || 'Failed'}</p></div>
+                </div>
+                {key === 'import' && item && (
+                  <p className="text-[10px] text-muted-foreground mt-3">Created {item.created ?? 0} · Updated {item.updated ?? 0} · Skipped {item.skipped ?? 0}</p>
+                )}
+                {item?.reason && <p className="text-[10px] text-muted-foreground mt-2 leading-4">{item.reason}</p>}
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <p className="text-[10px] text-muted-foreground">Last run: {formatLastRun(item?.lastRunAt)}</p>
+                  {item?.actionHref && <span className="text-[10px] font-semibold text-blue-600">{item.actionLabel || 'Open'}</span>}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -188,18 +322,18 @@ export default function AdminDashboardPage() {
             <Link href="/admin/activity" className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 shrink-0">View All <ArrowRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-3">
-            {(stats.recentActivity || []).slice(0, 6).map((log, i: number) => (
+            {dedupedRecentActivity.slice(0, 6).map((log, i: number) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
                 {log.action?.includes('delete') ? <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" /> : log.action?.includes('update') ? <Edit className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <Plus className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-900">{log.details || log.action}</p>
+                  <p className="text-xs font-medium text-gray-900 leading-5">{humanizeActivity(log)}</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">{log.admin?.name || 'Admin'} · {log.createdAt ? new Date(log.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}</p>
                 </div>
               </div>
             ))}
-            {(!stats.recentActivity || stats.recentActivity.length === 0) && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
+            {dedupedRecentActivity.length === 0 && <p className="text-xs text-muted-foreground text-center py-6">No recent activity</p>}
           </div>
         </div>
       </div>

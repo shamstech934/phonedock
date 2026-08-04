@@ -68,8 +68,7 @@ export async function runContinuousMonitoring(options: RunOptions) {
   try {
     if (options.syncFeeds !== false) {
       try {
-        const syncedFeeds = await syncRumourFeeds();
-        feedSummary = { ...syncedFeeds, candidates: 0 };
+        feedSummary = await syncRumourFeeds();
         errors.push(...feedSummary.errors);
       } catch (error) {
         errors.push(error instanceof Error ? error.message : 'Rumour feed sync failed');

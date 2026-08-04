@@ -7,9 +7,11 @@ import { buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/han
 import type { Brand as BrandType, Phone as PhoneType } from '@/components/shared/types';
 import { getPriceCategory } from '@/lib/price-categories';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { numericSpecClause } from '@/lib/spec-filter-fallback';
 
 export interface PhoneListParams {
   page?: string;
+  limit?: string;
   q?: string;
   brand?: string;
   price?: string;
@@ -17,6 +19,8 @@ export interface PhoneListParams {
   priceMin?: string;
   priceMax?: string;
   displayType?: string;
+  screenMin?: string;
+  screenMax?: string;
   refreshMin?: string;
   cameraMin?: string;
   batteryMin?: string;
@@ -54,17 +58,26 @@ const loadPublicBrands = cache(async (): Promise<BrandType[]> => {
     ]),
   ]);
   const countMap = new Map(counts.map((item: { _id: { toString(): string }; phones: number }) => [item._id.toString(), item.phones]));
-  return brands.map(brand => ({
-    id: brand._id.toString(),
-    name: brand.name,
-    slug: brand.slug,
-    logo: brand.logo || '',
-    country: brand.country || '',
-    description: brand.description || '',
-    _count: { phones: countMap.get(brand._id.toString()) || 0 },
-  }));
+  return brands
+    .map(brand => ({
+      id: brand._id.toString(),
+      name: brand.name,
+      slug: brand.slug,
+      logo: brand.logo || '',
+      country: brand.country || '',
+      description: brand.description || '',
+      _count: { phones: countMap.get(brand._id.toString()) || 0 },
+    }))
+    // Public brand directory should grow with real imported/published data.
+    // Empty catalogue placeholders remain manageable in Admin → Brands, but
+    // are intentionally hidden from visitors until at least one phone exists.
+    .filter(brand => (brand._count?.phones || 0) > 0)
+    .sort((a, b) => {
+      const countDifference = (b._count?.phones || 0) - (a._count?.phones || 0);
+      return countDifference || a.name.localeCompare(b.name);
+    });
 });
-export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v1'], { revalidate: 900, tags: ['brands', 'phones'] });
+export const fetchPublicBrands = unstable_cache(loadPublicBrands, ['public-brands-v2-non-empty'], { revalidate: 900, tags: ['brands', 'phones'] });
 
 async function loadPublicBrandDetail(slug: string): Promise<{ brand: BrandType | null; phones: PhoneType[] }> {
   await connectDB();
@@ -107,7 +120,8 @@ export const fetchPublicBrandDetail = unstable_cache(
 async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: PhoneType[]; total: number; queryKey: string }> {
   await connectDB();
   const page = Math.max(1, Number.parseInt(params.page || '1', 10) || 1);
-  const limit = 20;
+  const requestedLimit = Number.parseInt(params.limit || '20', 10);
+  const limit = [12, 20, 32].includes(requestedLimit) ? requestedLimit : 20;
   const collection = params.collection || '';
   const filter: Record<string, unknown> = getPublicPhoneFilter({
     cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
@@ -164,15 +178,19 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (params.priceDrop === 'true') filter.$expr = { $gt: ['$originalPricePKR', '$pricePKR'] };
 
   const specFilter: Record<string, unknown> = {};
+  const numericClauses: Record<string, unknown>[] = [];
   const ram = Number.parseFloat(params.ram || '');
   const storage = Number.parseFloat(params.storage || '');
+  const screenMin = Number.parseFloat(params.screenMin || '');
+  const screenMax = Number.parseFloat(params.screenMax || '');
   const refreshMin = Number.parseFloat(params.refreshMin || '');
   const cameraMin = Number.parseFloat(params.cameraMin || '');
   const batteryMin = Number.parseFloat(params.batteryMin || '');
-  if (Number.isFinite(ram)) specFilter.ramGB = { $gte: ram };
-  if (Number.isFinite(storage)) specFilter.storageGB = { $gte: storage };
-  if (Number.isFinite(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
-  if (Number.isFinite(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+  if (Number.isFinite(ram)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: ram, max: ram }));
+  if (Number.isFinite(storage)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: storage, max: storage }));
+  if (Number.isFinite(screenMin) || Number.isFinite(screenMax)) numericClauses.push(numericSpecClause({ numericField: 'screenSizeInch', textField: 'display', kind: 'screen', min: Number.isFinite(screenMin) ? screenMin : undefined, max: Number.isFinite(screenMax) ? screenMax : undefined }));
+  if (Number.isFinite(cameraMin)) numericClauses.push(numericSpecClause({ numericField: 'mainCameraMP', textField: 'mainCamera', kind: 'camera', min: cameraMin }));
+  if (Number.isFinite(batteryMin)) numericClauses.push(numericSpecClause({ numericField: 'batteryMAh', textField: 'battery', kind: 'battery', min: batteryMin }));
   if (params.displayType) specFilter.displayType = { $regex: escapeRegex(params.displayType), $options: 'i' };
   if (params.chipset) specFilter.chipset = { $regex: escapeRegex(params.chipset), $options: 'i' };
   if (Number.isFinite(refreshMin)) {
@@ -183,6 +201,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   else if (params['5g'] === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
   if (params.nfc === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
   else if (params.nfc === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
+  if (numericClauses.length) specFilter.$and = numericClauses;
   if (Object.keys(specFilter).length > 0) {
     const ids = await PhoneSpecs.find(specFilter).distinct('phoneId');
     filter._id = { $in: ids };
@@ -190,7 +209,7 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (andFilters.length > 0) filter.$and = andFilters;
 
   const sortMap: Record<string, { field: string; order: 1 | -1 }> = {
-    newest: { field: 'createdAt', order: -1 },
+    newest: { field: 'releaseDate', order: -1 },
     trending: { field: 'trending', order: -1 },
     'price-low': { field: 'pricePKR', order: 1 },
     'price-high': { field: 'pricePKR', order: -1 },
@@ -203,9 +222,13 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   };
   const sorting = sortMap[params.sort || 'newest'] || sortMap.newest;
 
+  const mongoSort = sorting.field === 'releaseDate'
+    ? { releaseDate: -1 as const, availableFrom: -1 as const, pakistanLaunchAt: -1 as const, announcedAt: -1 as const, createdAt: -1 as const, modelName: 1 as const }
+    : { [sorting.field]: sorting.order, modelName: 1 as const };
+
   const [rawPhones, rawTotal] = await Promise.all([
     Phone.find(filter)
-      .sort({ [sorting.field]: sorting.order })
+      .sort(mongoSort)
       .skip((page - 1) * limit)
       .limit(limit)
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
@@ -234,8 +257,10 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     if (category.min !== undefined) apiParams.set('priceMin', String(category.min));
     if (category.max !== undefined) apiParams.set('priceMax', String(category.max));
   }
-  if (Number.isFinite(ram)) apiParams.set('ramMin', String(ram));
-  if (Number.isFinite(storage)) apiParams.set('storageMin', String(storage));
+  if (Number.isFinite(ram)) { apiParams.set('ramMin', String(ram)); apiParams.set('ramMax', String(ram)); }
+  if (Number.isFinite(storage)) { apiParams.set('storageMin', String(storage)); apiParams.set('storageMax', String(storage)); }
+  if (Number.isFinite(screenMin)) apiParams.set('screenMin', String(screenMin));
+  if (Number.isFinite(screenMax)) apiParams.set('screenMax', String(screenMax));
   if (Number.isFinite(refreshMin)) apiParams.set('refreshMin', String(refreshMin));
   if (Number.isFinite(cameraMin)) apiParams.set('cameraMin', String(cameraMin));
   if (Number.isFinite(batteryMin)) apiParams.set('batteryMin', String(batteryMin));
@@ -253,4 +278,4 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
 
   return { phones, total, queryKey: apiParams.toString() };
 }
-export const fetchPhoneListing = unstable_cache(loadPhoneListing, ['public-phone-listing-v1'], { revalidate: 300, tags: ['phones'] });
+export const fetchPhoneListing = unstable_cache(loadPhoneListing, ['public-phone-listing-v2-exact-variant-tokens'], { revalidate: 300, tags: ['phones'] });

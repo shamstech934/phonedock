@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export function GET() {
   const client = process.env.NEXT_PUBLIC_ADSENSE_CLIENT?.trim();
   if (!client) {
-    return new NextResponse('# PhoneDock ads.txt\n# Add NEXT_PUBLIC_ADSENSE_CLIENT to enable Google AdSense.\n', {
+    return new NextResponse('# SpecsDekh ads.txt\n# Add NEXT_PUBLIC_ADSENSE_CLIENT to enable Google AdSense.\n', {
       headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
     });
   }

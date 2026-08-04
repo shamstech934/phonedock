@@ -161,7 +161,7 @@ export function Header() {
     { label: 'PTA Approved', href: '/phones?pta=approved', icon: Shield },
     { label: 'Price Tracker', href: '/price-ranges', icon: BarChart3 },
     { label: 'News', href: '/news', icon: Newspaper },
-    { label: 'About PhoneDock', href: '/about', icon: Info },
+    { label: 'About SpecsDekh', href: '/about', icon: Info },
     { label: 'Contact', href: '/contact', icon: Mail },
     { label: 'Wishlist', href: '/wishlist', icon: Heart },
     { label: 'Recently Viewed', href: '/recently-viewed', icon: Clock3 },
@@ -169,11 +169,11 @@ export function Header() {
 
   return (
     <header className="glass-nav sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="site-shell">
         <div className="flex items-center justify-between h-14 sm:h-16">
           <Link href="/" className="flex items-center gap-2.5">
             {siteSettings.logo ? (
-              <Image src={siteSettings.logo} alt={siteSettings.siteName || 'PhoneDock'} width={36} height={36} className="w-9 h-9 rounded-xl object-contain" unoptimized />
+              <Image src={siteSettings.logo} alt={siteSettings.siteName || 'SpecsDekh'} width={36} height={36} className="w-9 h-9 rounded-xl object-contain" unoptimized />
             ) : (
               <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/25">
                 <Smartphone className="w-5 h-5 text-white" />
@@ -182,7 +182,7 @@ export function Header() {
             {siteSettings.siteName ? (
               <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">{siteSettings.siteName}</span>
             ) : (
-              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Phone<span className="text-blue-700">Dock</span></span>
+              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Specs<span className="text-blue-700">Dekh</span></span>
             )}
           </Link>
 
@@ -203,13 +203,15 @@ export function Header() {
                 More <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`} />
               </button>
               {moreOpen && (
-                <div role="menu" className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl shadow-black/10 dark:shadow-black/40 border border-gray-200/60 dark:border-slate-700 py-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div role="menu" className="absolute left-1/2 top-full mt-2 w-[360px] -translate-x-1/2 rounded-2xl border border-gray-200/70 bg-white/98 p-2 shadow-2xl shadow-slate-900/12 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/98 dark:shadow-black/40 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="grid grid-cols-2 gap-1">
                   {moreLinks.map(item => (
-                    <Link role="menuitem" key={item.href} href={item.href} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <Link role="menuitem" key={item.href} href={item.href} className="flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-gray-700 transition-colors hover:bg-slate-50 hover:text-gray-950 dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white">
                       <item.icon className="w-4 h-4 text-gray-400" />
                       {item.label}
                     </Link>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -352,15 +354,17 @@ export function Header() {
             </div>
             {/* More links in mobile */}
             <p className="mb-2 mt-5 px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Tools & resources</p>
-            <div className="grid grid-cols-2 gap-1">{moreLinks.map(item => (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-                <item.icon className="w-4 h-4 text-gray-400" />
-                {item.label}
+            <div className="grid grid-cols-2 gap-1">
+              {moreLinks.map(item => (
+                <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+                  <item.icon className="w-4 h-4 text-gray-400" />
+                  {item.label}
+                </Link>
+              ))}
+              <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
+                <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
               </Link>
-            ))}</div>
-            <Link href={user ? "/account" : "/login"} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/60 hover:text-gray-900 transition-all duration-200">
-              <UserRound className="w-4 h-4 text-gray-400" />{user ? 'My Account' : 'Sign in / Sign up'}
-            </Link>
+            </div>
           </nav>
         </div>
       )}

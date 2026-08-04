@@ -1,5 +1,5 @@
 /**
- * Production Authentication System — PhoneDock
+ * Production Authentication System — SpecsDekh
  *
  * SECURITY DESIGN (simplified single-cookie architecture):
  *  - Single signed HttpOnly session cookie (pd_session)

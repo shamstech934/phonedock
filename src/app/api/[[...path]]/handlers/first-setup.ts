@@ -1,5 +1,5 @@
 /**
- * First Superadmin Setup Handler — PhoneDock
+ * First Superadmin Setup Handler — SpecsDekh
  *
  * SECURITY DESIGN:
  *  - One-time only: permanently locks after first superadmin creation

@@ -1,24 +1,20 @@
-import { BaseProvider, ProviderFetchResult, ProviderTestResult } from './base';
+import { ManualUrlProvider } from './manual-url-provider';
+import type { ProviderTestResult } from './base';
+import { registeredParserIds } from '../parsers/registry';
 
 /**
- * Official manufacturer integrations require a vendor-approved adapter.
- * The generic collector intentionally stays disabled rather than pretending to scrape or map arbitrary sites.
+ * Manufacturer sources use the modular parser registry. A known domain can use
+ * a dedicated plugin, while every future brand automatically falls back to the
+ * generic JSON-LD/link discovery parser. This keeps brand creation data-driven:
+ * adding a Collector Source with a brand filter is enough for ordinary sites.
  */
-export class ManufacturerProvider extends BaseProvider {
-  async fetch(_page?: number, _pageToken?: string): Promise<ProviderFetchResult> {
-    return {
-      phones: [],
-      hasNextPage: false,
-      providerErrors: [
-        'Unsupported provider: install a vendor-approved manufacturer adapter before enabling this source.',
-      ],
-    };
-  }
-
+export class ManufacturerProvider extends ManualUrlProvider {
   async test(): Promise<ProviderTestResult> {
+    const result = await super.test();
+    if (result.success) return result;
     return {
-      success: false,
-      message: 'Manufacturer sources are disabled until a vendor-approved adapter is installed.',
+      ...result,
+      message: `${result.message} Registered parsers: ${registeredParserIds().join(', ')}.`,
     };
   }
 }

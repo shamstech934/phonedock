@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone, ImportJob, SyncJob, CollectorJob, MonitoringRun } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
@@ -12,6 +12,7 @@ import { normalizePhoneRecord } from '@/lib/import/normalize-phone-record';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
 import { isPhoneAvailabilityStatus } from '@/lib/phone-lifecycle';
 import { normalizeHomepageSectionOrder } from '@/lib/homepage-builder';
+import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
 
 // ============ LOCAL TYPES ============
 
@@ -39,6 +40,18 @@ interface PhoneUpdateBody {
 }
 
 // ============ ADMIN CRUD GET ============
+
+function humanizeAutomationError(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/Headers\.(?:append|set)|invalid header value/i.test(raw)) {
+    return 'Invalid HTTP header configuration. Review the collector source headers, then retry the job.';
+  }
+  if (raw.length > 500 || /ObjectId\(|Map\(|__v|createdAt|updatedAt/.test(raw)) {
+    return 'Collector failed because its saved request configuration was invalid. Open the collector job for details and retry after reviewing the source.';
+  }
+  return raw.replace(/\s+/g, ' ').slice(0, 300);
+}
 
 export async function handleAdminCrudGet(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
   // ---- /api/admin/analytics ----
@@ -113,57 +126,183 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'dashboard:read'); if (permCheck) return permCheck;
     await connectDB();
+    const publishedFilter = { active: true, status: 'published', deletedAt: null } as const;
     const [
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount, recentActivity,
       totalVideos, totalReviews, totalAdmins, totalSponsors, publishedPhones,
-      phonesMissingPrice, phonesMissingThumbnail, phonesWithSpecs, phonesWithImages,
+      draftPhones, upcomingPhones, ptaApprovedPhones,
+      phonesMissingPrice, phonesMissingThumbnail, publishedPhoneIds,
     ] = await Promise.all([
-      Phone.countDocuments({ active: true }),
+      Phone.countDocuments({ active: true, deletedAt: null }),
       Brand.countDocuments({ active: true }),
-      Phone.countDocuments({ active: true, trending: true }),
-      Phone.countDocuments({ active: true, featured: true }),
+      Phone.countDocuments({ ...publishedFilter, trending: true }),
+      Phone.countDocuments({ ...publishedFilter, featured: true }),
       News.countDocuments({ published: true }),
       ActivityLog.find().sort({ createdAt: -1 }).limit(20).populate('adminId', 'name email').lean(),
       Video.countDocuments({ active: true }),
       UserReview.estimatedDocumentCount(),
       Admin.countDocuments({ active: true }),
       Sponsor.estimatedDocumentCount(),
-      Phone.countDocuments({ active: true, status: 'published' }),
-      Phone.countDocuments({ active: true, status: 'published', $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] }),
-      Phone.countDocuments({ active: true, status: 'published', $or: [{ thumbnail: { $exists: false } }, { thumbnail: '' }, { thumbnail: null }] }),
-      PhoneSpecs.distinct('phoneId'),
-      PhoneImage.distinct('phoneId'),
+      Phone.countDocuments(publishedFilter),
+      Phone.countDocuments({ active: true, status: { $in: ['draft', 'pending'] }, deletedAt: null }),
+      Phone.countDocuments({ active: true, deletedAt: null, $or: [{ upcoming: true }, { availabilityStatus: { $in: ['rumored', 'announced', 'coming_soon'] } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ ptaApproved: true }, { ptaStatus: { $in: ['Approved', 'PTA Approved', 'approved'] } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ pricePKR: { $exists: false } }, { pricePKR: { $lte: 0 } }] }),
+      Phone.countDocuments({ ...publishedFilter, $or: [{ thumbnail: { $exists: false } }, { thumbnail: '' }, { thumbnail: null }] }),
+      Phone.find(publishedFilter).distinct('_id'),
     ]);
-    const priceResult = await Phone.aggregate([
-      { $match: { active: true, pricePKR: { $gt: 0 } } },
-      { $group: { _id: null, avg: { $avg: '$pricePKR' } } },
-    ]);
-    const priceDistribution = await Phone.aggregate([
-      { $match: { active: true, pricePKR: { $gt: 0 } } },
-      {
-        $bucket: {
-          groupBy: '$pricePKR',
-          boundaries: [0, 20000, 40000, 60000, 100000, Infinity],
-          default: 'Above 100K',
-          output: { count: { $sum: 1 } },
+
+    const [phonesWithSpecs, phonesWithImages, priceResult, priceDistributionRows, latestImportJob, latestSyncJob, latestCollectorJob, latestMonitoringRun, monitoredPhoneIds, latestPriceCheck] = await Promise.all([
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      Phone.aggregate([
+        { $match: { ...publishedFilter, pricePKR: { $gt: 0 } } },
+        { $group: { _id: null, avg: { $avg: '$pricePKR' } } },
+      ]),
+      Phone.aggregate([
+        { $match: { ...publishedFilter, pricePKR: { $gt: 0 } } },
+        {
+          $group: {
+            _id: {
+              $switch: {
+                branches: [
+                  { case: { $lt: ['$pricePKR', 20000] }, then: 'Under 20K' },
+                  { case: { $lt: ['$pricePKR', 40000] }, then: '20K - 40K' },
+                  { case: { $lt: ['$pricePKR', 60000] }, then: '40K - 60K' },
+                  { case: { $lt: ['$pricePKR', 100000] }, then: '60K - 100K' },
+                ],
+                default: 'Above 100K',
+              },
+            },
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
+      ImportJob.findOne().sort({ createdAt: -1 }).select('status fileName processedRecords totalRecords createdRecords updatedRecords replacedRecords skippedRecords failedRecords currentBatch totalBatches startedAt completedAt updatedAt').lean(),
+      SyncJob.findOne().sort({ createdAt: -1 }).select('status source processed totalPhones inserted updated errorCount startedAt completedAt updatedAt').lean(),
+      CollectorJob.findOne().sort({ createdAt: -1 }).select('status sourceName fetched normalized newPhones possibleUpdates duplicates conflictCount failureCount totalExpected trigger lastError startedAt completedAt updatedAt').lean(),
+      MonitoringRun.findOne().sort({ createdAt: -1 }).select('status trigger summary errors durationMs startedAt completedAt updatedAt').lean(),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified' }),
+      PriceTrackerHistory.findOne().sort({ checkedAt: -1, createdAt: -1 }).select('status oldPrice newPrice checkedAt createdAt verificationStatus').lean(),
     ]);
-    const distLabels = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
+
+    const phonesMissingSpecs = Math.max(publishedPhones - phonesWithSpecs.length, 0);
+    const phonesMissingImages = Math.max(publishedPhones - phonesWithImages.length, 0);
+    const totalHealthChecks = publishedPhones * 4;
+    const failedHealthChecks = phonesMissingPrice + phonesMissingThumbnail + phonesMissingSpecs + phonesMissingImages;
+    const completenessPercent = totalHealthChecks > 0
+      ? Math.max(0, Math.min(100, Math.round(((totalHealthChecks - failedHealthChecks) / totalHealthChecks) * 100)))
+      : 100;
+    const distributionOrder = ['Under 20K', '20K - 40K', '40K - 60K', '60K - 100K', 'Above 100K'];
+    const distributionMap = new Map(priceDistributionRows.map((row: { _id: string; count: number }) => [row._id, row.count]));
+
     return NextResponse.json({
       totalPhones, totalBrands, trendingCount, featuredCount, newsCount, totalVideos, totalReviews, totalAdmins, totalSponsors,
-      avgPrice: priceResult[0]?.avg || 0,
+      publishedPhones, draftPhones, upcomingPhones, ptaApprovedPhones,
+      avgPrice: Math.round(priceResult[0]?.avg || 0),
       dataHealth: {
         publishedPhones,
         phonesMissingPrice,
         phonesMissingThumbnail,
-        phonesMissingSpecs: Math.max(publishedPhones - phonesWithSpecs.length, 0),
-        phonesMissingImages: Math.max(publishedPhones - phonesWithImages.length, 0),
-        completenessPercent: publishedPhones > 0
-          ? Math.max(0, Math.round((1 - ((phonesMissingPrice + phonesMissingThumbnail + Math.max(publishedPhones - phonesWithSpecs.length, 0)) / (publishedPhones * 3))) * 100))
-          : 100,
+        phonesMissingSpecs,
+        phonesMissingImages,
+        completenessPercent,
       },
-      priceDistribution: priceDistribution.map((d: AggBucketResult, i: number) => ({ range: distLabels[i] || d._id, count: d.count })),
+      automationHealth: {
+        import: latestImportJob ? {
+          status: latestImportJob.status,
+          label: latestImportJob.fileName || 'Import',
+          processed: latestImportJob.processedRecords || 0,
+          total: latestImportJob.totalRecords || 0,
+          succeeded: (latestImportJob.createdRecords || 0) + (latestImportJob.updatedRecords || 0) + (latestImportJob.replacedRecords || 0),
+          failed: latestImportJob.failedRecords || 0,
+          created: latestImportJob.createdRecords || 0,
+          updated: latestImportJob.updatedRecords || 0,
+          replaced: latestImportJob.replacedRecords || 0,
+          skipped: latestImportJob.skippedRecords || 0,
+          currentBatch: latestImportJob.currentBatch || 0,
+          totalBatches: latestImportJob.totalBatches || 0,
+          metricLabels: ['Processed', 'Created / Updated', 'Failed'],
+          reason: latestImportJob.status === 'completed' && (latestImportJob.createdRecords || 0) === 0
+            ? 'No new phone records were created in the latest import.'
+            : '',
+          actionLabel: 'Open import history',
+          actionHref: '/admin/import-v2?tab=history',
+          lastRunAt: latestImportJob.completedAt || latestImportJob.updatedAt || latestImportJob.startedAt || null,
+        } : null,
+        sync: latestSyncJob ? {
+          status: latestSyncJob.status,
+          label: latestSyncJob.source || 'Sync',
+          processed: latestSyncJob.processed || 0,
+          total: latestSyncJob.totalPhones || 0,
+          succeeded: (latestSyncJob.inserted || 0) + (latestSyncJob.updated || 0),
+          failed: latestSyncJob.errorCount || 0,
+          lastRunAt: latestSyncJob.completedAt || latestSyncJob.updatedAt || latestSyncJob.startedAt || null,
+        } : null,
+        collector: latestCollectorJob ? {
+          status: latestCollectorJob.status,
+          label: latestCollectorJob.sourceName || 'Collector',
+          processed: latestCollectorJob.normalized || latestCollectorJob.fetched || 0,
+          total: latestCollectorJob.totalExpected || latestCollectorJob.fetched || 0,
+          succeeded: (latestCollectorJob.newPhones || 0) + (latestCollectorJob.possibleUpdates || 0),
+          failed: latestCollectorJob.failureCount || 0,
+          created: latestCollectorJob.newPhones || 0,
+          updated: latestCollectorJob.possibleUpdates || 0,
+          skipped: (latestCollectorJob.duplicates || 0) + (latestCollectorJob.conflictCount || 0),
+          metricLabels: ['Scanned', 'Candidates', 'Failed'],
+          reason: humanizeAutomationError(latestCollectorJob.lastError),
+          actionLabel: latestCollectorJob.status === 'failed' ? 'Review collector job' : 'Open collector jobs',
+          actionHref: '/admin/collector/jobs',
+          lastRunAt: latestCollectorJob.completedAt || latestCollectorJob.updatedAt || latestCollectorJob.startedAt || null,
+        } : {
+          status: 'not_run',
+          label: 'Collector',
+          processed: 0,
+          total: 0,
+          succeeded: 0,
+          failed: 0,
+          metricLabels: ['Scanned', 'Candidates', 'Failed'],
+          reason: 'No collector job exists yet. Configure a source, then run the collector.',
+          actionLabel: 'Configure collector',
+          actionHref: '/admin/collector/sources',
+          lastRunAt: null,
+        },
+        monitoring: latestMonitoringRun ? (() => {
+          const scanned = latestMonitoringRun.summary?.feedsScanned || 0;
+          const failed = Array.isArray(latestMonitoringRun.errors) ? latestMonitoringRun.errors.length : 0;
+          const discoveries = (latestMonitoringRun.summary?.newsImported || 0) + (latestMonitoringRun.summary?.launchCandidatesCreated || 0);
+          return {
+            status: latestMonitoringRun.status,
+            label: latestMonitoringRun.trigger === 'cron' ? 'Scheduled monitoring' : 'Manual monitoring',
+            processed: scanned,
+            total: latestMonitoringRun.summary?.feedsConfigured || scanned,
+            succeeded: Math.max(scanned - failed, 0),
+            failed,
+            created: discoveries,
+            metricLabels: ['Scanned', 'Completed', 'Failed'],
+            reason: discoveries > 0 ? `${discoveries} new candidate${discoveries === 1 ? '' : 's'} found.` : 'Scan completed; no new launch or news candidates were found.',
+            actionLabel: 'Open monitoring',
+            actionHref: '/admin/continuous-monitoring',
+            lastRunAt: latestMonitoringRun.completedAt || latestMonitoringRun.updatedAt || latestMonitoringRun.startedAt || null,
+          };
+        })() : null,
+        priceTracker: {
+          status: monitoredPhoneIds.length > 0 ? 'configured' : 'not_configured',
+          label: monitoredPhoneIds.length > 0 ? `${monitoredPhoneIds.length}/${publishedPhones} phones linked` : 'No verified phone listings linked',
+          processed: monitoredPhoneIds.length,
+          total: publishedPhones,
+          succeeded: monitoredPhoneIds.length,
+          failed: 0,
+          metricLabels: ['Linked', 'Ready', 'Failed'],
+          reason: monitoredPhoneIds.length > 0
+            ? `${publishedPhones - monitoredPhoneIds.length} published phones still need an exact verified retailer product URL.`
+            : 'Add exact retailer product-page URLs and verify them before automatic price checks can run.',
+          actionLabel: monitoredPhoneIds.length > 0 ? 'Open Price Tracker' : 'Configure sources',
+          actionHref: monitoredPhoneIds.length > 0 ? '/admin/price-tracker' : '/admin/collector/sources',
+          lastRunAt: latestPriceCheck?.checkedAt || latestPriceCheck?.createdAt || null,
+        },
+      },
+      priceDistribution: distributionOrder.map(range => ({ range, count: distributionMap.get(range) || 0 })),
       recentActivity: recentActivity.map((l: Record<string, unknown>) => ({
         ...l,
         id: (l._id as { toString(): string } | undefined)?.toString(),
@@ -232,15 +371,33 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'phones:read'); if (permCheck) return permCheck;
     await connectDB();
+    const publishedInventoryFilter = {
+      $or: [
+        { status: 'published' },
+        { published: true },
+      ],
+    };
+    const reviewInventoryFilter = {
+      $and: [
+        { status: { $ne: 'archived' } },
+        { $or: [
+          { status: { $in: ['draft', 'pending', 'review'] } },
+          { published: false },
+          { status: { $exists: false }, published: { $ne: true } },
+          { status: null, published: { $ne: true } },
+          { status: '', published: { $ne: true } },
+        ] },
+      ],
+    };
     const [total, published, draft, upcoming, trending, featured, ptaApproved, priceResult] = await Promise.all([
-      Phone.countDocuments({ active: true }),
-      Phone.countDocuments({ active: true, status: 'published' }),
-      Phone.countDocuments({ active: true, status: 'draft' }),
-      Phone.countDocuments({ active: true, upcoming: true }),
-      Phone.countDocuments({ active: true, trending: true }),
-      Phone.countDocuments({ active: true, featured: true }),
-      Phone.countDocuments({ active: true, ptaApproved: true }),
-      Phone.aggregate([{ $match: { active: true, pricePKR: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$pricePKR' } } }]),
+      Phone.countDocuments({}),
+      Phone.countDocuments(publishedInventoryFilter),
+      Phone.countDocuments(reviewInventoryFilter),
+      Phone.countDocuments({ upcoming: true }),
+      Phone.countDocuments({ trending: true }),
+      Phone.countDocuments({ featured: true }),
+      Phone.countDocuments({ ptaApproved: true }),
+      Phone.aggregate([{ $match: { pricePKR: { $gt: 0 } } }, { $group: { _id: null, avg: { $avg: '$pricePKR' } } }]),
     ]);
     return NextResponse.json({ total, published, draft, upcoming, trending, featured, ptaApproved, avgPrice: Math.round(priceResult[0]?.avg || 0) });
   }
@@ -254,7 +411,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const page = parseBoundedInt(url.searchParams.get('page'), 1);
     const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 500 });
     const skip = (page - 1) * limit;
-    const filter: Record<string, unknown> = { active: true };
+    // Admin inventory must show every Phone document, including legacy inactive
+    // and soft-deleted imports. Public APIs continue to enforce active/published.
+    const filter: Record<string, unknown> = {};
+    const visibility = url.searchParams.get('visibility') || 'all';
+    if (visibility === 'visible') { filter.active = true; filter.deletedAt = null; }
+    else if (visibility === 'inactive') filter.active = { $ne: true };
+    else if (visibility === 'deleted') filter.deletedAt = { $ne: null };
+    else if (visibility === 'non-deleted') filter.deletedAt = null;
     // Search
     const search = (url.searchParams.get('search') || '').trim();
     if (search.length >= 2) {
@@ -268,12 +432,41 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       if (brandIds.length > 0) searchOr.push({ brandId: { $in: brandIds } });
       filter.$or = searchOr;
     }
-    // Status filter
+    // Status filter. Support both the current status field and legacy records
+    // that only carry the published boolean. Keep these clauses inside $and so
+    // they do not overwrite the $or used by search.
     const status = url.searchParams.get('status');
-    if (status === 'published') filter.status = 'published';
-    else if (status === 'draft') filter.status = 'draft';
-    else if (status === 'pending') filter.status = 'pending';
-    else if (status === 'archived') filter.status = 'archived';
+    const addAndClause = (clause: Record<string, unknown>) => {
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) || []),
+        clause,
+      ];
+    };
+    if (status === 'published') {
+      addAndClause({ $or: [{ status: 'published' }, { published: true }] });
+    } else if (status === 'review') {
+      addAndClause({
+        $and: [
+          { status: { $ne: 'archived' } },
+          { $or: [
+            { status: { $in: ['draft', 'pending', 'review'] } },
+            { published: false },
+            { status: { $exists: false }, published: { $ne: true } },
+            { status: null, published: { $ne: true } },
+            { status: '', published: { $ne: true } },
+          ] },
+        ],
+      });
+    } else if (status === 'draft') {
+      addAndClause({ $or: [
+        { status: 'draft' },
+        { status: { $exists: false }, published: { $ne: true } },
+        { status: null, published: { $ne: true } },
+        { status: '', published: { $ne: true } },
+      ] });
+    } else if (status === 'pending') {
+      addAndClause({ status: { $in: ['pending', 'review'] } });
+    } else if (status === 'archived') filter.status = 'archived';
     else if (status === 'upcoming') filter.upcoming = true;
     else if (status === 'trending') filter.trending = true;
     else if (status === 'featured') filter.featured = true;
@@ -289,6 +482,17 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const ptaFilter = url.searchParams.get('pta');
     if (ptaFilter === 'approved') filter.ptaApproved = true;
     else if (ptaFilter === 'non-pta') filter.ptaApproved = false;
+    else if (ptaFilter === 'unknown') {
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) || []),
+        { $or: [
+          { ptaStatus: { $exists: false } },
+          { ptaStatus: null },
+          { ptaStatus: '' },
+          { ptaStatus: { $regex: '^unknown$', $options: 'i' } },
+        ] },
+      ];
+    }
     // Price range filter
     const minPrice = url.searchParams.get('minPrice');
     const maxPrice = url.searchParams.get('maxPrice');
@@ -313,15 +517,15 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     if (url.searchParams.get('featured') === 'true') filter.featured = true;
     if (url.searchParams.get('trending') === 'true') filter.trending = true;
     // Sort
-    let sort: MongooseSort = { createdAt: -1 };
+    let sort: MongooseSort = { ...PHONE_NEWEST_SORT };
     const sortParam = url.searchParams.get('sort');
-    if (sortParam === 'oldest') sort = { createdAt: 1 };
+    if (sortParam === 'oldest') sort = { ...PHONE_OLDEST_SORT };
     else if (sortParam === 'price-low') sort = { pricePKR: 1 };
     else if (sortParam === 'price-high') sort = { pricePKR: -1 };
     else if (sortParam === 'name-az') sort = { modelName: 1 };
     else if (sortParam === 'name-za') sort = { modelName: -1 };
-    else if (sortParam === 'rating') sort = { overallRating: -1 };
-    else if (sortParam === 'views') sort = { views: -1 };
+    else if (sortParam === 'rating') sort = rankedPhoneSort('overallRating');
+    else if (sortParam === 'views') sort = rankedPhoneSort('views');
 
     const [phones, total] = await Promise.all([
       Phone.find(filter).sort(sort).skip(skip).limit(limit).populate('brand').lean(),
@@ -1104,8 +1308,8 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
         const acceptLink = `${baseUrl}/admin/accept-invite?token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
         await transporter.sendMail({
           from: process.env.EMAIL_USER, to: email.toLowerCase(),
-          subject: `Invitation to join PhoneDock Admin`,
-          html: `<p>You've been invited to join PhoneDock as <strong>${assignedRole}</strong>.</p><p><a href="${acceptLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Accept Invitation</a></p><p>This link expires in ${expiresInHours} hours.</p>`,
+          subject: `Invitation to join SpecsDekh Admin`,
+          html: `<p>You've been invited to join SpecsDekh as <strong>${assignedRole}</strong>.</p><p><a href="${acceptLink}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Accept Invitation</a></p><p>This link expires in ${expiresInHours} hours.</p>`,
         });
       }
     } catch (e) { console.error('[Invite] Email failed:', (e as Error).message); }
@@ -1188,15 +1392,17 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (!['published', 'draft', 'pending', 'archived'].includes(requestedStatus)) {
       return NextResponse.json({ error: 'Invalid phone status' }, { status: 400 });
     }
+    let effectiveStatus = requestedStatus;
+    let publicationWarnings: string[] = [];
     if (requestedStatus === 'published') {
       const pubCheck = requirePermission(admin, 'phones:publish'); if (pubCheck) return pubCheck;
-      const publicationIssues = getPhonePublicationIssues({ brandId, modelName, slug, thumbnail, pricePKR, upcoming });
-      if (publicationIssues.length > 0) {
-        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
-      }
+      publicationWarnings = getPhonePublicationIssues({ brandId, modelName, slug, thumbnail, pricePKR, upcoming });
+      // Admin saves must never be blocked by incomplete catalogue data. Keep the
+      // record safe by saving it as draft until the publication requirements are met.
+      if (publicationWarnings.length > 0) effectiveStatus = 'draft';
     }
     const lifecycleStatus = isPhoneAvailabilityStatus(availabilityStatus) ? availabilityStatus : (upcoming ? 'coming_soon' : 'available');
-    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: ['rumored', 'announced', 'coming_soon'].includes(lifecycleStatus), availabilityStatus: lifecycleStatus, announcedAt: announcedAt || '', expectedLaunchAt: expectedLaunchAt || '', pakistanLaunchAt: pakistanLaunchAt || '', availableFrom: availableFrom || '', discontinuedAt: discontinuedAt || '', status: requestedStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
+    const phone = await Phone.create({ brandId, modelName, slug, pricePKR: pricePKR || 0, originalPricePKR: originalPricePKR || 0, ptaStatus: ptaStatus || 'Unknown', ptaApproved: ptaApproved || false, releaseDate: releaseDate || '', thumbnail: thumbnail || '', description: description || '', featured: featured || false, trending: trending || false, upcoming: ['rumored', 'announced', 'coming_soon'].includes(lifecycleStatus), availabilityStatus: lifecycleStatus, announcedAt: announcedAt || '', expectedLaunchAt: expectedLaunchAt || '', pakistanLaunchAt: pakistanLaunchAt || '', availableFrom: availableFrom || '', discontinuedAt: discontinuedAt || '', status: effectiveStatus, active: true, cameraScore: cameraScore || 0, performanceScore: performanceScore || 0, batteryScore: batteryScore || 0, displayScore: displayScore || 0, valueScore: valueScore || 0, overallRating: overallRating || 0, pros: pros || '', cons: cons || '', reviewSummary: reviewSummary || '', reviewVerdict: reviewVerdict || '', seoTitle: seoTitle || '', seoDescription: seoDescription || '', keywords: keywords || '' });
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: ImageInput, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
@@ -1207,7 +1413,7 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     revalidatePublicContent({ phoneSlug: slug });
-    return NextResponse.json({ success: true, id: phone._id?.toString(), slug });
+    return NextResponse.json({ success: true, id: phone._id?.toString(), slug, status: effectiveStatus, warnings: publicationWarnings });
   }
 
   // ---- /api/admin/brands (CREATE) ----
@@ -1798,11 +2004,12 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     if (manualLockReason !== undefined) phone.manualLockReason = String(manualLockReason).slice(0, 500);
     if (sourceUrl !== undefined) { phone.sourceUrl = String(sourceUrl); phone.sourceName = 'Manual Entry'; }
 
+    let publicationWarnings: string[] = [];
     if (phone.status === 'published') {
-      const publicationIssues = getPhonePublicationIssues(phone);
-      if (publicationIssues.length > 0) {
-        return NextResponse.json({ error: 'Phone is not ready to publish', issues: publicationIssues }, { status: 400 });
-      }
+      publicationWarnings = getPhonePublicationIssues(phone);
+      // Incomplete imported/legacy phones must remain editable. Saving is allowed,
+      // but the record is automatically moved to draft so it cannot leak publicly.
+      if (publicationWarnings.length > 0) phone.status = 'draft';
     }
 
     // Save phone — with clear error on failure
@@ -1915,7 +2122,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'update_phone', details: `Updated: ${phone.modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     revalidatePublicContent({ phoneSlug: phone.slug });
-    return NextResponse.json({ success: true, id: phone._id?.toString() });
+    return NextResponse.json({ success: true, id: phone._id?.toString(), status: phone.status, warnings: publicationWarnings });
 
     } catch (e: unknown) {
       // Catch-all for any uncaught error in the phone update flow
@@ -2145,7 +2352,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     await connectDB();
     const body = await req.json();
     const { Settings } = await import('@/lib/models');
-    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout','mobileApp'];
+    const allowed = ['siteName','tagline','contactEmail','supportEmail','logo','favicon','facebook','twitter','instagram','youtubeChannel','titleSuffix','metaDescription','ogImage','googleAnalyticsId','googleSiteVerification','bingSiteVerification','canonicalDomain','phoneTitleTemplate','brandTitleTemplate','indexEmptyBrands','maintenanceMode','footerText','homepage','announcement','theme','catalogLayout','mobileApp'];
     const update: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (body[key] !== undefined) update[key] = body[key];
@@ -2189,22 +2396,6 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
           return '';
         }
       };
-      const discoveryCategoryOrder = ['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year'];
-      const requestedDiscoveryCategories = Array.isArray(homepage.discoveryCategories)
-        ? homepage.discoveryCategories.filter((value): value is string =>
-            typeof value === 'string' && discoveryCategoryOrder.includes(value))
-        : discoveryCategoryOrder;
-      homepage.discoveryEnabled = homepage.discoveryEnabled !== false;
-      homepage.discoveryTitle = typeof homepage.discoveryTitle === 'string'
-        ? homepage.discoveryTitle.trim().slice(0, 80)
-        : 'Find Your Phone';
-      homepage.discoveryCategories = discoveryCategoryOrder.filter(category =>
-        requestedDiscoveryCategories.includes(category));
-      homepage.discoveryViewAllText = typeof homepage.discoveryViewAllText === 'string'
-        ? homepage.discoveryViewAllText.trim().slice(0, 60)
-        : 'Explore all phones';
-      homepage.discoveryViewAllUrl = safeHref(homepage.discoveryViewAllUrl) || '/phones';
-      homepage.pricePanelSide = homepage.pricePanelSide === 'left' ? 'left' : 'right';
       homepage.navigation = Array.isArray(homepage.navigation)
         ? homepage.navigation.slice(0, 20).map((item) => {
             const link = item && typeof item === 'object' ? item as Record<string, unknown> : {};
@@ -2268,7 +2459,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       update.mobileApp = {
         enabled: source.enabled !== false,
         maintenanceMode: source.maintenanceMode === true,
-        maintenanceTitle: safeText(source.maintenanceTitle, 80) || 'PhoneDock is being improved',
+        maintenanceTitle: safeText(source.maintenanceTitle, 80) || 'SpecsDekh is being improved',
         maintenanceMessage: safeText(source.maintenanceMessage, 240) || 'Please check back shortly.',
         minimumVersion: safeVersion(source.minimumVersion, '0.1.0'),
         latestVersion: safeVersion(source.latestVersion, '0.1.0'),

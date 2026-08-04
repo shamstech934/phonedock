@@ -4,21 +4,62 @@ import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { createProvider } from '@/lib/collectors/providers';
 import { startJob, approveAndImport } from '@/lib/collectors/job-runner';
 import type { ProviderConfig, ProviderType } from '@/lib/collectors/types';
+import { detectCollectorSourceType } from '@/lib/collectors/source-detection';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
-import { discoverPhoneModels } from '@/lib/ai-enrichment';
 import { generateSlug } from '@/lib/import/validators';
 import { randomUUID } from 'node:crypto';
 
+
+function toStringRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value) return result;
+  const add = (key: unknown, rawValue: unknown): void => {
+    if (typeof key !== 'string' || !key.trim()) return;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') return;
+    const normalized = String(rawValue).trim();
+    if (!normalized || /[\r\n]/.test(normalized)) return;
+    result[key] = normalized;
+  };
+  if (value instanceof Map) {
+    value.forEach((entryValue, key) => add(key, entryValue));
+    return result;
+  }
+  const candidate = value as { entries?: () => IterableIterator<[unknown, unknown]>; toObject?: () => unknown };
+  if (typeof candidate.entries === 'function') {
+    try {
+      for (const [key, entryValue] of candidate.entries()) add(key, entryValue);
+      return result;
+    } catch { /* continue */ }
+  }
+  if (typeof candidate.toObject === 'function') {
+    try { return toStringRecord(candidate.toObject()); } catch { /* continue */ }
+  }
+  if (typeof value === 'object') {
+    for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) add(key, entryValue);
+  }
+  return result;
+}
+
 const PROVIDER_TYPES: ProviderType[] = ['json_url', 'csv_url', 'api', 'xml_feed', 'rss_feed', 'manufacturer', 'manual_url', 'file_upload'];
+
+
+function sanitizeCollectorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || 'Collector request failed');
+  if (/Headers\.(?:append|set)|invalid header value/i.test(raw)) {
+    return 'Invalid HTTP header configuration. Remove non-text custom headers from this source and retry.';
+  }
+  return raw.replace(/\s+/g, ' ').slice(0, 500);
+}
 
 function sourceConfig(source: Record<string, unknown>): ProviderConfig {
   return {
     type: source.type as ProviderType, endpoint: String(source.endpoint || ''), apiKeyEnvVar: String(source.apiKeyEnvVar || ''),
-    headers: Object.fromEntries(Object.entries((source.headers as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    headers: toStringRecord(source.headers),
     brandFilter: (source.brandFilter as string[]) || [], allowedDomains: (source.allowedDomains as string[]) || [],
-    dataPath: String(source.dataPath || ''), mappingRules: Object.fromEntries(Object.entries((source.mappingRules as Record<string, unknown>) || {}).map(([key, value]) => [key, String(value)])),
+    dataPath: String(source.dataPath || ''), mappingRules: toStringRecord(source.mappingRules),
     timeoutMs: Number(source.timeoutMs || 30000), maxResponseBytes: Number(source.maxResponseBytes || 5242880), enabled: source.enabled !== false,
     pagination: { pageSize: Number(source.paginationPageSize || 50), maxPages: Number(source.paginationMaxPages || 10), pageParam: String(source.paginationPageParam || 'page') },
+    parserId: String(source.parserId || 'auto'), maxProductPages: Number(source.maxProductPages || 20),
   };
 }
 
@@ -58,7 +99,8 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
         pagesPerInvocation: pagesPerInvocationEnv > 0 ? pagesPerInvocationEnv : 'unlimited',
         maxCollectPerJob: 2000,
         schedulerEnabled: true,
-        aiDiscoverConfigured: Boolean(process.env.TAVILY_API_KEY) && Boolean(process.env.AI_PROVIDER ? (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY) : process.env.OPENROUTER_API_KEY),
+        deterministicOnly: true,
+        aiDiscoverConfigured: false,
       },
     });
   }
@@ -77,8 +119,35 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:read'); if (permCheck) return permCheck;
     await connectDB();
+    // Recover serverless invocations that were terminated before the runner
+    // could write a final status. A running job with no heartbeat for two
+    // minutes is safe to pause and can be resumed from its last batch.
+    const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
+    await CollectorJob.updateMany(
+      {
+        status: 'running',
+        $or: [
+          { lastProcessedAt: { $lt: staleBefore } },
+          { lastProcessedAt: { $exists: false }, startedAt: { $lt: staleBefore } },
+        ],
+      },
+      {
+        $set: {
+          status: 'paused',
+          lastError: 'Collector run exceeded the serverless execution window. Resume to continue from the saved batch.',
+          lastProcessedAt: new Date(),
+        },
+      },
+    );
     const jobs = await CollectorJob.find().sort({ createdAt: -1 }).limit(50).lean();
-    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({ ...j, id: (j._id as { toString(): string } | undefined)?.toString(), sourceId: (j.sourceId as { toString(): string } | undefined)?.toString() })) });
+    return NextResponse.json({ jobs: jobs.map((j: Record<string, unknown>) => ({
+      ...j,
+      id: (j._id as { toString(): string } | undefined)?.toString(),
+      sourceId: (j.sourceId as { toString(): string } | undefined)?.toString(),
+      lastError: j.lastError ? sanitizeCollectorMessage(j.lastError) : '',
+      errorLog: Array.isArray(j.errorLog) ? j.errorLog.map(entry => sanitizeCollectorMessage(String(entry))).filter(Boolean) : [],
+      warningLog: Array.isArray(j.warningLog) ? j.warningLog.map(entry => sanitizeCollectorMessage(String(entry))).filter(Boolean) : [],
+    })) });
   }
 
   // ---- /api/collector/review — list the review queue ----
@@ -121,6 +190,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'sources') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     const { name: srcName, type: srcType, endpoint: bodyEndpoint, url, enabled: srcEnabled, apiKeyEnvVar, mappingRules, headers, brandFilter: srcBrandFilter, allowedDomains, dataPath, pollingSchedule } = body;
@@ -129,26 +199,82 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     if (!normalizedName) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     if (!srcType) return NextResponse.json({ error: 'Source type is required' }, { status: 400 });
     if (!PROVIDER_TYPES.includes(srcType)) return NextResponse.json({ error: 'Invalid source type' }, { status: 400 });
-    if (srcType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
-    if (srcType !== 'file_upload') {
+    const detectedType = srcEndpoint ? detectCollectorSourceType(srcEndpoint).type : srcType;
+    const normalizedType: ProviderType = srcType === 'manufacturer' || srcType === 'file_upload' ? srcType : detectedType;
+    if (normalizedType === 'manufacturer') return NextResponse.json({ error: 'Manufacturer adapters require an approved adapter deployment.' }, { status: 400 });
+    if (normalizedType !== 'file_upload') {
       if (!srcEndpoint) return NextResponse.json({ error: 'URL / Endpoint is required for this source type' }, { status: 400 });
       const checked = await validateUrlForFetch(srcEndpoint, allowedDomains || []);
       if (!checked.safe) return NextResponse.json({ error: checked.reason || 'Invalid endpoint' }, { status: 400 });
     }
-    const safeHeaders = Object.fromEntries(Object.entries((headers || {}) as Record<string, string>).filter(([key]) => !/authorization|api-key|cookie/i.test(key)));
+    // Persist only primitive text headers. Normal HTML/feed sources do not
+    // need custom request headers at all; API sources may keep sanitized
+    // non-secret headers. This prevents legacy Maps/documents from ever being
+    // stored as HTTP header values.
+    const safeHeaders = normalizedType === 'api'
+      ? Object.fromEntries(
+          Object.entries(toStringRecord(headers)).filter(([key]) => !/authorization|api-key|cookie/i.test(key)),
+        )
+      : {};
     const normalizedBrands = Array.isArray(srcBrandFilter) ? srcBrandFilter : String(srcBrandFilter || '').split(',').map(value => value.trim()).filter(Boolean);
+    const normalizedAllowedDomains = Array.isArray(allowedDomains) ? allowedDomains.map(value => String(value).trim().toLowerCase()).filter(Boolean) : String(allowedDomains || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+    if (srcEndpoint && normalizedAllowedDomains.length === 0) normalizedAllowedDomains.push(new URL(srcEndpoint).hostname.toLowerCase());
     const duplicate = await CollectorSource.exists({ name: { $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
     if (duplicate) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
     let source;
     try {
-      source = await CollectorSource.create({ name: normalizedName, type: srcType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains, dataPath, pollingSchedule });
+      source = await CollectorSource.create({ name: normalizedName, type: normalizedType, endpoint: srcEndpoint, enabled: srcEnabled !== false, apiKeyEnvVar: apiKeyEnvVar || '', mappingRules, headers: safeHeaders, brandFilter: normalizedBrands, allowedDomains: normalizedAllowedDomains, dataPath, pollingSchedule, lastSyncStatus: 'never', lastTestStatus: 'never' });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) return NextResponse.json({ error: 'Source already exists' }, { status: 409 });
-      throw error;
+      const message = error instanceof Error ? error.message : 'Collector source could not be saved';
+      console.error('[collector.sources.create]', error);
+      return NextResponse.json({ error: message }, { status: 500 });
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_source', details: `Created source: ${srcName}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     const created = source.toObject();
     return NextResponse.json({ success: true, source: { ...created, id: source._id.toString() } }, { status: 201 });
+  }
+
+  // ---- /api/collector/sources/repair — sanitize legacy source headers and stale jobs ----
+  if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources' && segments[2] === 'repair') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const sources = await CollectorSource.find({});
+    let repairedSources = 0;
+    let clearedSourceErrors = 0;
+    for (const source of sources) {
+      const safeHeaders = toStringRecord(source.headers);
+      const hadHeaderError = /invalid header|Headers\.(?:append|set)/i.test(String(source.lastError || source.lastTestMessage || ''));
+      const before = toStringRecord((source.toObject({ flattenMaps: true }) as Record<string, unknown>).headers);
+      const changed = JSON.stringify(before) !== JSON.stringify(safeHeaders);
+      if (changed || hadHeaderError) {
+        await CollectorSource.updateOne({ _id: source._id }, {
+          $set: {
+            headers: safeHeaders,
+            lastError: hadHeaderError ? '' : source.lastError,
+            lastTestMessage: hadHeaderError ? '' : source.lastTestMessage,
+            lastTestStatus: hadHeaderError ? 'never' : source.lastTestStatus,
+            lastSyncStatus: hadHeaderError ? 'never' : source.lastSyncStatus,
+          },
+        });
+        repairedSources += 1;
+        if (hadHeaderError) clearedSourceErrors += 1;
+      }
+    }
+
+    const staleJobFilter = { status: 'failed', lastError: { $regex: 'invalid header|Headers\.(append|set)', $options: 'i' } };
+    const staleJobs = await CollectorJob.find(staleJobFilter, { _id: 1 }).lean();
+    if (staleJobs.length) {
+      await CollectorJob.updateMany(staleJobFilter, {
+        $set: { lastError: 'Legacy header configuration was repaired. Retry this job.', errorLog: [] },
+        $unset: { completedAt: 1 },
+      });
+    }
+
+    try { await ActivityLog.create({ adminId: admin._id, action: 'repair_collector_sources', details: `Repaired ${repairedSources} source(s) and ${staleJobs.length} stale job(s)`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, repairedSources, clearedSourceErrors, repairedJobs: staleJobs.length });
   }
 
   // ---- /api/collector/jobs/run-all — start a job for every enabled source without an active job ----
@@ -156,8 +282,10 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
     await connectDB();
-    const sources = await CollectorSource.find({ enabled: true }).lean();
-    if (!sources.length) return NextResponse.json({ error: 'No enabled sources to run' }, { status: 400 });
+    const enabledSources = await CollectorSource.find({ enabled: true }).lean();
+    const sources = enabledSources.filter(source => source.type === 'file_upload' || Boolean(String(source.endpoint || '').trim()));
+    const unconfigured = enabledSources.filter(source => !sources.some(candidate => String(candidate._id) === String(source._id))).map(source => source.name);
+    if (!sources.length) return NextResponse.json({ error: 'No configured enabled sources to run', unconfigured }, { status: 400 });
     const started: string[] = []; const skipped: string[] = [];
     for (const source of sources) {
       const active = await CollectorJob.exists({ sourceId: source._id, status: { $in: ['queued', 'running', 'paused'] } });
@@ -167,43 +295,40 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       started.push(source.name);
     }
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_run_all', details: `Started ${started.length} job(s), skipped ${skipped.length} (already active)`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, started, skipped });
+    return NextResponse.json({ success: true, started, skipped, unconfigured });
   }
 
   // ---- /api/collector/jobs ----
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    const body = await req.json();
+    await connectDB();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     const { sourceId: jobSourceId, mode: jobMode, brandFilter: jobBrandFilter } = body;
     if (!jobSourceId) return NextResponse.json({ error: 'sourceId required' }, { status: 400 });
     const active = await CollectorJob.exists({ sourceId: jobSourceId, status: { $in: ['queued', 'running'] } });
     if (active) return NextResponse.json({ error: 'A job is already active for this source.' }, { status: 409 });
     const source = await CollectorSource.findById(jobSourceId);
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+    if (!source.enabled) return NextResponse.json({ error: 'Source is disabled' }, { status: 409 });
+    if (source.type !== 'file_upload' && !String(source.endpoint || '').trim()) return NextResponse.json({ error: 'Source has no endpoint configured' }, { status: 409 });
     const job = await CollectorJob.create({ sourceId: jobSourceId, sourceName: source.name, mode: jobMode === 'full' ? 'full' : 'incremental', filterBrand: jobBrandFilter || '', status: 'queued', requestId: req.headers.get('x-request-id') || randomUUID() });
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_collector_job', details: `Created job for source ${jobSourceId}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
     return NextResponse.json({ success: true, id: job._id });
   }
 
-  // ---- /api/collector/discover — find real phone models for a brand/year/series via web search ----
+  // ---- /api/collector/discover ----
+  // AI/web-search discovery is intentionally disabled. Production collection
+  // runs only from admin-approved JSON/CSV/XML/RSS/API/manual sources.
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'discover') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    const body = await req.json().catch(() => ({}));
-    const brand = String(body.brand || '').trim();
-    const year = String(body.year || '').trim();
-    const series = String(body.series || '').trim();
-    if (!brand) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
-    let models;
-    try {
-      models = await discoverPhoneModels(brand, year, series);
-    } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : 'Discovery failed' }, { status: 400 });
-    }
-    if (!models.length) return NextResponse.json({ models: [], message: 'No models found in web search results for this brand/year/series.' });
-    return NextResponse.json({ models });
+    return NextResponse.json({
+      error: 'AI discovery is disabled. Configure an approved Collector Source and run a deterministic collector job.',
+      deterministicOnly: true,
+    }, { status: 410 });
   }
 
   // ---- /api/collector/discover/stage — save selected discovered models as pending CollectedPhone entries for review ----
@@ -224,9 +349,9 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
       if (exists) continue;
       await CollectedPhone.create({
         status: 'pending', brandName: brand, model: modelName, slug,
-        sourceName: 'AI Discover', sourceUrl: m.sourceUrl || '',
+        sourceName: 'Manual Discovery', sourceUrl: m.sourceUrl || '',
         collectedAt: new Date(), qualityScore: 0, completenessScore: 0, confidenceScore: 30,
-        validationIssues: ['Discovered via AI search — specs not yet collected. Run AI Research or a source import to fill in details before approving.'],
+        validationIssues: ['Manually staged without verified specifications. Run an approved collector source or import a verified dataset before approving.'],
         isValid: false,
       });
       staged++;
@@ -293,7 +418,7 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     await connectDB();
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (!['paused', 'failed'].includes(job.status)) return NextResponse.json({ error: `Job is ${job.status}, not paused or failed` }, { status: 409 });
+    if (job.status !== 'paused') return NextResponse.json({ error: `Only paused jobs can be resumed (job is ${job.status})` }, { status: 409 });
     await CollectorJob.updateOne({ _id: job._id }, { $set: { status: 'queued' } });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_resume', details: `Resumed job ${job._id} from page ${job.currentBatch}`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
@@ -307,9 +432,21 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     await connectDB();
     const job = await CollectorJob.findById(segments[2]);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (job.status !== 'failed') return NextResponse.json({ error: `Only failed jobs can be retried (job is ${job.status})` }, { status: 409 });
+    if (!['failed', 'partially_completed'].includes(job.status)) return NextResponse.json({ error: `Only failed or partially completed jobs can be retried (job is ${job.status})` }, { status: 409 });
+    if (job.sourceId) {
+      const source = await CollectorSource.findById(job.sourceId);
+      if (!source) return NextResponse.json({ error: 'Collector source no longer exists' }, { status: 404 });
+      const safeHeaders = source.type === 'api' ? toStringRecord(source.headers) : {};
+      source.headers = new Map(Object.entries(safeHeaders));
+      source.lastError = '';
+      source.lastTestMessage = '';
+      source.lastTestStatus = 'never';
+      source.lastSyncStatus = 'never';
+      await source.save();
+    }
     await CollectorJob.updateOne({ _id: job._id }, {
-      $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, errorLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
+      $set: { status: 'queued', currentBatch: 0, fetched: 0, normalized: 0, newPhones: 0, possibleUpdates: 0, duplicates: 0, conflictCount: 0, failureCount: 0, warningCount: 0, skippedCount: 0, errorLog: [], warningLog: [], lastError: '', retryCount: (job.retryCount || 0) + 1 },
+      $unset: { completedAt: 1 },
     });
     try { await ActivityLog.create({ adminId: admin._id, action: 'collector_job_retry', details: `Retrying job ${job._id} from the start (attempt ${(job.retryCount || 0) + 1})`, entityType: 'collector' }); } catch (e) { console.error('[ActivityLog]', e); }
     await startJob(job._id.toString());
@@ -379,10 +516,25 @@ export async function handleCollectorPost(req: NextRequest, segments: string[]):
     await connectDB();
     const source = await CollectorSource.findById(segments[2]).lean();
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
-    const provider = createProvider(sourceConfig(source as unknown as Record<string, unknown>), String(source._id), String(source.name));
-    const result = await provider.test();
-    await CollectorSource.updateOne({ _id: source._id }, { $set: result.success ? { lastSuccessfulSyncAt: new Date(), lastError: '' } : { lastError: result.message } });
-    return NextResponse.json({ ...result, sample: result.success ? (await provider.fetch(1)).phones.slice(0, 5) : [] }, { status: result.success ? 200 : 422 });
+    try {
+      const config = sourceConfig(source as unknown as Record<string, unknown>);
+      if (config.type !== 'api') config.headers = {};
+      const provider = createProvider(config, String(source._id), String(source.name || 'Collector source'));
+      const startedAt = Date.now();
+      const fetchResult = await provider.fetch(1);
+      const success = fetchResult.providerErrors.length === 0;
+      const message = success
+        ? fetchResult.providerWarnings?.length
+          ? `Connected with warnings. Found ${fetchResult.phones.length} record(s). ${fetchResult.providerWarnings.join('; ')}`
+          : `Connected. Found ${fetchResult.phones.length} record(s).`
+        : fetchResult.providerErrors.join('; ');
+      await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: success ? 'success' : 'failed', lastTestMessage: message, lastError: success ? '' : message } });
+      return NextResponse.json({ success, message, sampleCount: fetchResult.phones.length, latencyMs: Date.now() - startedAt, sample: fetchResult.phones.slice(0, 5), errors: fetchResult.providerErrors, warnings: fetchResult.providerWarnings || [], skippedCount: fetchResult.skippedCount || 0 }, { status: success ? 200 : 422 });
+    } catch (error) {
+      const message = sanitizeCollectorMessage(error);
+      await CollectorSource.updateOne({ _id: source._id }, { $set: { lastTestAt: new Date(), lastTestStatus: 'failed', lastTestMessage: message, lastError: message } });
+      return NextResponse.json({ success: false, error: message, message, sample: [] }, { status: 422 });
+    }
   }
 
   return undefined;
@@ -395,11 +547,21 @@ export async function handleCollectorPut(req: NextRequest, segments: string[]): 
   if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
     const source = await CollectorSource.findById(segments[2]);
     if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    source.enabled = !source.enabled;
+    const body = await req.json().catch(() => null);
+    if (!body || Object.keys(body).length === 0) {
+      source.enabled = !source.enabled;
+    } else {
+      if (typeof body.enabled === 'boolean') source.enabled = body.enabled;
+      if (typeof body.pollingSchedule === 'string') source.pollingSchedule = body.pollingSchedule;
+      if (Number.isFinite(Number(body.syncFrequencyHours))) source.syncFrequencyHours = Math.max(0, Number(body.syncFrequencyHours));
+      if (typeof body.reliabilityScore === 'number') source.reliabilityScore = Math.max(0, Math.min(1, body.reliabilityScore));
+      if (typeof body.notes === 'string') source.notes = body.notes.slice(0, 2000);
+    }
     await source.save();
-    return NextResponse.json({ success: true, enabled: source.enabled });
+    return NextResponse.json({ success: true, enabled: source.enabled, source: { ...source.toObject(), id: source._id.toString() } });
   }
 
   return undefined;
@@ -412,14 +574,54 @@ export async function handleCollectorDelete(req: NextRequest, segments: string[]
   if (segments.length === 2 && segments[0] === 'collector' && segments[1] === 'jobs') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
-    const body = await req.json();
-    await CollectorJob.findByIdAndDelete(body.jobId);
-    return NextResponse.json({ success: true });
+    await connectDB();
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const requestUrl = new URL(req.url);
+    const jobId = String(body?.jobId || requestUrl.searchParams.get('jobId') || '').trim();
+    const force = body?.force !== false;
+    if (!jobId) return NextResponse.json({ error: 'jobId is required' }, { status: 400 });
+
+    const job = await CollectorJob.findById(jobId);
+    if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+
+    // Admin delete is intentionally force-capable. The jobs screen can be stale
+    // for a few seconds while a serverless batch changes queued/running/paused
+    // state, so a completed-looking card must not fail with an unexplained 409.
+    // When force=true, active work is atomically cancelled before removal.
+    if (['queued', 'running'].includes(job.status)) {
+      if (!force) {
+        return NextResponse.json(
+          { error: 'This job is still active. Cancel it first or confirm force delete.', code: 'JOB_ACTIVE' },
+          { status: 409 },
+        );
+      }
+      await CollectorJob.updateOne(
+        { _id: job._id },
+        { $set: { status: 'cancelled', completedAt: new Date(), lastProcessedAt: new Date() } },
+      );
+    }
+
+    // Review candidates are valuable collected data. Preserve them, but remove
+    // the dangling job reference so deleting job history never deletes phones.
+    await CollectedPhone.updateMany({ jobId: job._id }, { $unset: { jobId: 1 } });
+    const deleted = await CollectorJob.findOneAndDelete({ _id: job._id });
+    if (!deleted) return NextResponse.json({ error: 'Job was already removed. Refresh the list.' }, { status: 404 });
+
+    await ActivityLog.create({
+      adminId: admin._id,
+      action: 'collector_job_deleted',
+      entityType: 'collector_job',
+      entityId: job._id,
+      details: JSON.stringify({ sourceName: job.sourceName || '', previousStatus: job.status, force }),
+    }).catch(() => undefined);
+
+    return NextResponse.json({ success: true, deletedJobId: jobId, previousStatus: job.status });
   }
 
   if (segments.length === 3 && segments[0] === 'collector' && segments[1] === 'sources') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'collectors:manage'); if (permCheck) return permCheck;
+    await connectDB();
     const active = await CollectorJob.exists({ sourceId: segments[2], status: { $in: ['queued', 'running'] } });
     if (active) return NextResponse.json({ error: 'Cancel the active job before deleting this source.' }, { status: 409 });
     await Promise.all([CollectorSource.findByIdAndDelete(segments[2]), CollectorJob.deleteMany({ sourceId: segments[2] })]);

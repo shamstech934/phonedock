@@ -15,12 +15,12 @@
 
 import { Types, type QueryFilter, type UpdateQuery } from 'mongoose';
 import type { IPhone } from '@/lib/models/Phone';
-import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark } from '@/lib/models';
+import { Phone, Brand, PhoneSpecs, PhoneImage, PhoneBenchmark, PriceHistory } from '@/lib/models';
 import { ImportJob, ImportBatch } from '@/lib/models';
 import { connectDB } from '@/lib/mongodb';
 import { revalidatePublicContent } from '@/lib/revalidate';
 import { normalizePhoneRecord, isValidPhoneRecord, getEmptyFieldInfo, type NormalizedPhoneImportRecord } from './normalize-phone-record';
-import { buildDuplicateIndex, checkDuplicate, getDuplicateKey } from './duplicate-detector';
+import { buildDuplicateIndex, checkDuplicate, getDuplicateKey, normalizePhoneIdentity } from './duplicate-detector';
 import { getPhonePublicationIssues } from '@/lib/phone-publication';
 
 const SPEC_FIELDS = new Set([
@@ -90,6 +90,25 @@ interface SpecsChangeItem {
   fields?: Record<string, string>;
 }
 
+interface BenchmarkChangeItem {
+  phoneId: Types.ObjectId;
+  changeType: 'created' | 'updated';
+  beforeFields: Record<string, unknown>;
+  afterFields: Record<string, unknown>;
+}
+
+interface ImageSnapshotItem {
+  url: string;
+  altText: string;
+  sortOrder: number;
+}
+
+interface ImageChangeItem {
+  phoneId: Types.ObjectId;
+  beforeImages: ImageSnapshotItem[];
+  afterImages: ImageSnapshotItem[];
+}
+
 interface PhoneUpdateOp {
   filter: QueryFilter<IPhone>;
   update: UpdateQuery<IPhone>;
@@ -99,6 +118,38 @@ interface PhoneUpdateOp {
 /** Safely extract an error message from an unknown thrown value. */
 function getErrorMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** Normalize RAM/storage text into a stable variant identity. */
+function normalizeVariantPart(value: unknown, unit: 'gb' | 'tb'): string {
+  const raw = String(value || '').toLowerCase().replace(/,/g, ' ');
+  const values: number[] = [];
+  const re = /(\d+(?:\.\d+)?)\s*(tb|gb)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(raw))) {
+    let amount = Number(match[1]);
+    const detectedUnit = match[2] || unit;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    if (detectedUnit === 'tb') amount *= 1024;
+    values.push(amount);
+  }
+  return [...new Set(values)].sort((a, b) => a - b).join('/');
+}
+
+function getVariantIdentity(specs: Record<string, unknown> | null | undefined): string {
+  if (!specs) return '';
+  const ram = normalizeVariantPart(specs.ram, 'gb');
+  const storage = normalizeVariantPart(specs.storage, 'gb');
+  return ram || storage ? `ram:${ram}|storage:${storage}` : '';
+}
+
+function slugifyVariant(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+}
+
+/** Escape user/import text before placing it inside an exact-match RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // FIX #11: Valid state transitions for jobs
@@ -120,15 +171,29 @@ interface BatchProcessInput {
   recordEnd?: number;
 }
 
+interface ImportRowAction {
+  rowNumber: number;
+  brand?: string;
+  model?: string;
+  action: 'create' | 'update' | 'replace' | 'skip' | 'fail';
+  matchedPhoneId?: string;
+  matchedSlug?: string;
+  matchType?: string;
+  reason: string;
+}
+
 interface BatchResult {
   created: number;
   updated: number;
   skipped: number;
   failed: number;
   replaced: number;
+  rowActions: ImportRowAction[];
   errors: BatchErrorItem[];
   fieldChanges: FieldChangeItem[];
   specsChanges: SpecsChangeItem[];
+  benchmarkChanges: BenchmarkChangeItem[];
+  imageChanges: ImageChangeItem[];
   createdPhoneIds: Types.ObjectId[];
   updatedPhoneIds: Types.ObjectId[];
   // Dry-run simulation counts (not persisted to ImportJob)
@@ -340,7 +405,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
 
   const result: BatchResult = {
     created: 0, updated: 0, skipped: 0, failed: 0, replaced: 0,
-    errors: [], fieldChanges: [], specsChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
+    rowActions: [], errors: [], fieldChanges: [], specsChanges: [], benchmarkChanges: [], imageChanges: [], createdPhoneIds: [], updatedPhoneIds: [],
   };
 
   // Idempotency is scoped to the persisted source checksum and execution mode.
@@ -356,9 +421,12 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       skipped: existingBatch.skipped || 0,
       failed: existingBatch.failed || 0,
       replaced: existingBatch.replaced || 0,
+      rowActions: existingBatch.rowActions || [],
       errors: existingBatch.errors || [],
       fieldChanges: existingBatch.fieldChanges || [],
       specsChanges: existingBatch.specsChanges || [],
+      benchmarkChanges: existingBatch.benchmarkChanges || [],
+      imageChanges: existingBatch.imageChanges || [],
       createdPhoneIds: existingBatch.createdPhoneIds || [],
       updatedPhoneIds: existingBatch.updatedPhoneIds || [],
     };
@@ -439,13 +507,48 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
   }
 
-  // Fetch existing phones for duplicate checking
-  const allSlugs = validRecords.map(r => r.normalizedData.slug).filter(Boolean);
-  const existingPhones = allSlugs.length > 0
-    ? await Phone.find({ slug: { $in: allSlugs } }).select('_id slug brandId modelName pricePKR releaseDate ptaStatus ptaApproved featured trending upcoming thumbnail description').lean()
+  // Fetch only exact identity candidates. Import writes must never use fuzzy
+  // matching because similar model names can belong to different brands or
+  // generations. An existing phone is considered the same record only when:
+  //   1) slug + brand + normalized model all agree, or
+  //   2) brandId + normalized model agree exactly (legacy slug migration).
+  const allSlugs = [...new Set(validRecords.map(r => r.normalizedData.slug).filter(Boolean))];
+  const brandIds = [...new Set([...brandMap.values()].map(item => item._id.toString()))]
+    .map(id => new Types.ObjectId(id));
+  const modelRegexes = [...new Set(validRecords.map(r => r.normalizedData.model).filter(Boolean))]
+    .map(model => new RegExp(`^${escapeRegExp(String(model))}$`, 'i'));
+  const existingPhones = (allSlugs.length > 0 || (brandIds.length > 0 && modelRegexes.length > 0))
+    ? await Phone.find({
+        $or: [
+          ...(allSlugs.length > 0 ? [{ slug: { $in: allSlugs } }] : []),
+          ...(brandIds.length > 0 && modelRegexes.length > 0
+            ? [{ brandId: { $in: brandIds }, modelName: { $in: modelRegexes } }]
+            : []),
+        ],
+      })
+        .select('_id slug brandId modelName pricePKR releaseDate ptaStatus ptaApproved featured trending upcoming thumbnail description status active deletedAt')
+        .lean()
     : [];
-  const phoneBySlug = new Map(existingPhones.map(p => [p.slug, p]));
-  const duplicateIndex = buildDuplicateIndex(existingPhones);
+
+  const existingPhoneIds = existingPhones.map(phone => phone._id);
+  const existingSpecDocs = existingPhoneIds.length
+    ? await PhoneSpecs.find({ phoneId: { $in: existingPhoneIds } }).select('phoneId ram storage').lean()
+    : [];
+  const existingSpecsByPhoneId = new Map(
+    existingSpecDocs.map(spec => [String(spec.phoneId), { ram: spec.ram, storage: spec.storage }]),
+  );
+
+  const exactIdentityKey = (brandId: Types.ObjectId | string, modelName: string) =>
+    `${String(brandId)}|${normalizePhoneIdentity(modelName)}`;
+  const phoneByIdentity = new Map<string, typeof existingPhones>();
+  for (const phone of existingPhones) {
+    const key = exactIdentityKey(phone.brandId as Types.ObjectId, phone.modelName);
+    const list = phoneByIdentity.get(key) || [];
+    list.push(phone);
+    phoneByIdentity.set(key, list);
+  }
+  const phoneBySlug = new Map(existingPhones.map(phone => [phone.slug, phone]));
+  const reservedSlugs = new Set(existingPhones.map(phone => phone.slug));
 
   // Build batch write operations
   const phonesToCreate: Record<string, unknown>[] = [];
@@ -461,22 +564,69 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   const updatedIds: Types.ObjectId[] = [];
   const fieldChanges: FieldChangeItem[] = [];
   const specsChanges: SpecsChangeItem[] = []; // FIX #8: Track PhoneSpecs before-state
+  const benchmarkChanges: BenchmarkChangeItem[] = [];
+  const imageChanges: ImageChangeItem[] = [];
 
   for (const rec of validRecords) {
     const d = rec.normalizedData;
     const brand = brandMap.get(d.brand.toLowerCase());
 
     if (!brand) {
+      result.rowActions.push({ rowNumber: rec.originalRowNumber, brand: d.brand, model: d.model, action: 'fail', reason: `Brand \"${d.brand}\" not found` });
       result.errors.push({ rowNumber: rec.originalRowNumber, errorCode: 'BRAND_NOT_FOUND', errorMessage: `Brand "${d.brand}" not found`, brand: d.brand, model: d.model, batchNumber });
       result.failed++;
       continue;
     }
 
-    const dup = checkDuplicate({ brand: d.brand, model: d.model, slug: d.slug, specs: d.specs }, duplicateIndex);
+    const incomingVariant = getVariantIdentity(d.specs as Record<string, unknown>);
+    const slugCandidate = phoneBySlug.get(d.slug);
+    const identityCandidates = phoneByIdentity.get(exactIdentityKey(brand._id, d.model)) || [];
+    const exactExisting = (() => {
+      // A slug is safe only when brand/model AND variant agree. This prevents a
+      // new RAM/storage variant from silently overwriting the first model record.
+      if (slugCandidate) {
+        const sameBrand = String(slugCandidate.brandId) === String(brand._id);
+        const sameModel = normalizePhoneIdentity(slugCandidate.modelName) === normalizePhoneIdentity(d.model);
+        const existingVariant = getVariantIdentity(existingSpecsByPhoneId.get(String(slugCandidate._id)));
+        const sameVariant = !incomingVariant ? true : Boolean(existingVariant && incomingVariant === existingVariant);
+        if (sameBrand && sameModel && sameVariant) return slugCandidate;
+      }
 
-    if (dup.isDuplicate) {
+      if (incomingVariant) {
+        const variantMatches = identityCandidates.filter(candidate => {
+          const candidateVariant = getVariantIdentity(existingSpecsByPhoneId.get(String(candidate._id)));
+          return candidateVariant && candidateVariant === incomingVariant;
+        });
+        return variantMatches.length === 1 ? variantMatches[0] : undefined;
+      }
+
+      // Without variant data, update only an unambiguous exact brand/model match.
+      return identityCandidates.length === 1 ? identityCandidates[0] : undefined;
+    })();
+
+    const dup = exactExisting
+      ? {
+          isDuplicate: true,
+          matchType: exactExisting.slug === d.slug ? 'exact' as const : 'slug' as const,
+          existingSlug: exactExisting.slug,
+          existingPhoneId: exactExisting._id.toString(),
+          confidence: 1,
+        }
+      : { isDuplicate: false, matchType: 'none' as const, confidence: 0 };
+
+    if (dup.isDuplicate && exactExisting) {
       if (duplicateMode === 'skip') {
         result.skipped++;
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'skip',
+          matchedPhoneId: dup.existingPhoneId,
+          matchedSlug: dup.existingSlug,
+          matchType: dup.matchType,
+          reason: `Exact existing phone matched; duplicateMode=skip`,
+        });
         result.errors.push({
           rowNumber: rec.originalRowNumber,
           brand: d.brand,
@@ -489,17 +639,39 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       }
 
       if (duplicateMode === 'update') {
-        if (!phoneBySlug.has(d.slug)) {
-          result.skipped++;
-          continue;
-        }
-        const existingPhone = phoneBySlug.get(d.slug)!;
+        const existingPhone = exactExisting;
         const updateFields: Record<string, unknown> = {
           updatedAt: new Date(),
           lastImportId: importId,
           lastImportAt: new Date(),
           lastImportMode: 'update',
+          // Exact legacy/draft matches are reactivated instead of remaining
+          // invisible after a successful import.
+          active: true,
+          deletedAt: null,
         };
+
+        if (publishMode === 'immediate') {
+          const publicationIssues = getPhonePublicationIssues({
+            brandId: brand._id,
+            modelName: d.model,
+            slug: d.slug,
+            thumbnail: d.thumbnail || existingPhone.thumbnail,
+            pricePKR: d.pricePKR || existingPhone.pricePKR,
+            upcoming: d.upcoming,
+          });
+          updateFields.status = publicationIssues.length === 0 ? 'published' : 'draft';
+          if (publicationIssues.length > 0) {
+            result.errors.push({
+              rowNumber: rec.originalRowNumber,
+              brand: d.brand,
+              model: d.model,
+              errorCode: 'UPDATED_AS_DRAFT',
+              errorMessage: `Exact existing record updated but kept as draft: ${publicationIssues.join('; ')}`,
+              batchNumber,
+            });
+          }
+        }
 
         if (d.pricePKR) updateFields.pricePKR = d.pricePKR;
         if (d.releaseDate) updateFields.releaseDate = d.releaseDate;
@@ -565,6 +737,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
         }
 
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'update',
+          matchedPhoneId: existingPhone._id.toString(),
+          matchedSlug: existingPhone.slug,
+          matchType: dup.matchType,
+          reason: `Exact brand + normalized model matched existing phone`,
+        });
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: updateFields },
@@ -577,11 +759,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       }
 
       if (duplicateMode === 'replace') {
-        if (!phoneBySlug.has(d.slug)) {
-          result.skipped++;
-          continue;
-        }
-        const existingPhone = phoneBySlug.get(d.slug)!;
+        const existingPhone = exactExisting;
         const replaceFields: Record<string, unknown> = {
           modelName: d.model,
           pricePKR: d.pricePKR || 0,
@@ -600,7 +778,20 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           lastImportId: importId,
           lastImportAt: new Date(),
           lastImportMode: 'replace',
+          active: true,
+          deletedAt: null,
         };
+        if (publishMode === 'immediate') {
+          const publicationIssues = getPhonePublicationIssues({
+            brandId: brand._id,
+            modelName: d.model,
+            slug: d.slug,
+            thumbnail: d.thumbnail,
+            pricePKR: d.pricePKR,
+            upcoming: d.upcoming,
+          });
+          replaceFields.status = publicationIssues.length === 0 ? 'published' : 'draft';
+        }
 
         // Capture before-state for rollback
         for (const field of PHONE_REPLACEABLE_FIELDS) {
@@ -646,6 +837,16 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
           imagesForUpdatedPhones.push({ phoneId: existingPhone._id, images: d.images });
         }
 
+        result.rowActions.push({
+          rowNumber: rec.originalRowNumber,
+          brand: d.brand,
+          model: d.model,
+          action: 'replace',
+          matchedPhoneId: existingPhone._id.toString(),
+          matchedSlug: existingPhone.slug,
+          matchType: dup.matchType,
+          reason: `Exact brand + normalized model matched; existing record replaced`,
+        });
         phonesToUpdate.push({
           filter: { _id: existingPhone._id },
           update: { $set: replaceFields },
@@ -657,15 +858,27 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         continue;
       }
 
+      result.rowActions.push({ rowNumber: rec.originalRowNumber, brand: d.brand, model: d.model, action: 'skip', matchedPhoneId: dup.existingPhoneId, matchedSlug: dup.existingSlug, matchType: dup.matchType, reason: `Existing phone matched but duplicate mode did not allow a write` });
       result.skipped++;
       continue;
     }
+
+    // Create new phone. If the base slug already belongs to another variant,
+    // append the normalized RAM/storage identity instead of overwriting it.
+    let effectiveSlug = d.slug;
+    if (reservedSlugs.has(effectiveSlug)) {
+      const suffix = slugifyVariant(incomingVariant || `row-${rec.originalRowNumber}`);
+      effectiveSlug = `${d.slug}-${suffix || rec.originalRowNumber}`;
+      let counter = 2;
+      while (reservedSlugs.has(effectiveSlug)) effectiveSlug = `${d.slug}-${suffix || rec.originalRowNumber}-${counter++}`;
+    }
+    reservedSlugs.add(effectiveSlug);
 
     // Create new phone
     const publicationIssues = getPhonePublicationIssues({
       brandId: brand._id,
       modelName: d.model,
-      slug: d.slug,
+      slug: effectiveSlug,
       thumbnail: d.thumbnail,
       pricePKR: d.pricePKR,
       upcoming: d.upcoming,
@@ -682,10 +895,20 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
       });
     }
 
+    result.rowActions.push({
+      rowNumber: rec.originalRowNumber,
+      brand: d.brand,
+      model: d.model,
+      action: 'create',
+      matchedSlug: effectiveSlug,
+      matchType: 'none',
+      reason: 'No exact brand + normalized model match found; creating a new phone',
+    });
+
     const phoneData: Record<string, unknown> = {
       brandId: brand._id,
       modelName: d.model,
-      slug: d.slug,
+      slug: effectiveSlug,
       pricePKR: d.pricePKR || 0,
       originalPricePKR: 0,
       releaseDate: d.releaseDate || '',
@@ -709,7 +932,7 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     };
 
     phonesToCreate.push(phoneData);
-    touchedSlugs.add(d.slug);
+    touchedSlugs.add(effectiveSlug);
 
     const specFields: Record<string, string> = {};
     for (const [k, v] of Object.entries(d.specs)) {
@@ -876,41 +1099,70 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
     }
 
     if (benchmarksForUpdatedPhones.length > 0) {
-      const benchmarkOps: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = benchmarksForUpdatedPhones.map(entry => ({
-        updateOne: {
-          filter: { phoneId: entry.phoneId },
-          update: { $set: { ...entry.benchmarkFields }, $setOnInsert: { phoneId: entry.phoneId } },
-          upsert: true,
-        },
-      }));
-      try {
-        await PhoneBenchmark.bulkWrite(benchmarkOps);
-      } catch (e: unknown) {
-        result.errors.push({
-          rowNumber: -1,
-          errorCode: 'BENCHMARKS_UPDATE_FAILED',
-          errorMessage: `Failed to update benchmarks: ${getErrorMsg(e).slice(0, 200)}`,
-          batchNumber,
-        });
+      for (const entry of benchmarksForUpdatedPhones) {
+        try {
+          const beforeDoc = await PhoneBenchmark.findOne({ phoneId: entry.phoneId }).lean();
+          const beforeFields: Record<string, unknown> = {};
+          if (beforeDoc) {
+            for (const key of Object.keys(entry.benchmarkFields)) {
+              beforeFields[key] = (beforeDoc as Record<string, unknown>)[key];
+            }
+          }
+          await PhoneBenchmark.findOneAndUpdate(
+            { phoneId: entry.phoneId },
+            { $set: entry.benchmarkFields, $setOnInsert: { phoneId: entry.phoneId } },
+            { upsert: true, new: true },
+          );
+          benchmarkChanges.push({
+            phoneId: entry.phoneId,
+            changeType: beforeDoc ? 'updated' : 'created',
+            beforeFields,
+            afterFields: entry.benchmarkFields,
+          });
+        } catch (e: unknown) {
+          result.errors.push({
+            rowNumber: -1,
+            errorCode: 'BENCHMARKS_UPDATE_FAILED',
+            errorMessage: `Failed to update benchmarks for phone ${entry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
+            batchNumber,
+            phoneId: entry.phoneId.toString(),
+          });
+        }
       }
     }
 
     if (imagesForUpdatedPhones.length > 0) {
       for (const entry of imagesForUpdatedPhones) {
+        const beforeDocs = await PhoneImage.find({ phoneId: entry.phoneId }).sort({ sortOrder: 1 }).lean();
+        const beforeImages: ImageSnapshotItem[] = beforeDocs.map((img: Record<string, unknown>) => ({
+          url: String(img.url || ''),
+          altText: String(img.altText || ''),
+          sortOrder: Number(img.sortOrder || 0),
+        })).filter((img: ImageSnapshotItem) => img.url);
+        const afterImages: ImageSnapshotItem[] = entry.images.map((url, sortOrder) => ({ url, altText: '', sortOrder }));
         try {
-          // Imported images replace the existing set for that phone — the CSV
-          // is treated as the current source of truth when images are provided.
           await PhoneImage.deleteMany({ phoneId: entry.phoneId });
           await PhoneImage.insertMany(
-            entry.images.map((url, sortOrder) => ({ phoneId: entry.phoneId, url, altText: '', sortOrder })),
-            { ordered: false },
+            afterImages.map(img => ({ phoneId: entry.phoneId, ...img })),
+            { ordered: true },
           );
+          imageChanges.push({ phoneId: entry.phoneId, beforeImages, afterImages });
         } catch (e: unknown) {
+          // Never leave a phone imageless because a replacement set failed.
+          try {
+            await PhoneImage.deleteMany({ phoneId: entry.phoneId });
+            if (beforeImages.length > 0) {
+              await PhoneImage.insertMany(beforeImages.map(img => ({ phoneId: entry.phoneId, ...img })), { ordered: true });
+            }
+          } catch (restoreError) {
+            console.error('[import] failed to restore previous images', restoreError);
+          }
           result.errors.push({
             rowNumber: -1,
             errorCode: 'IMAGES_UPDATE_FAILED',
             errorMessage: `Failed to update images for phone ${entry.phoneId}: ${getErrorMsg(e).slice(0, 200)}`,
             batchNumber,
+            phoneId: entry.phoneId.toString(),
           });
         }
       }
@@ -931,6 +1183,8 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
   result.updatedPhoneIds = updatedIds;
   result.fieldChanges = fieldChanges;
   result.specsChanges = specsChanges;
+  result.benchmarkChanges = benchmarkChanges;
+  result.imageChanges = imageChanges;
 
   // FIX #6: Only update job counters if NOT dry-run
   if (!dryRun) {
@@ -948,6 +1202,26 @@ export async function processBatch(input: BatchProcessInput): Promise<BatchResul
         $set: { status: 'processing' },
       },
     );
+  }
+
+  if (!dryRun) {
+    const historyRows: Array<{ phoneId: Types.ObjectId; storeName: null; price: number }> = [];
+    for (const docId of createdIds) {
+      const createdPhone = await Phone.findById(docId).select('pricePKR').lean();
+      const price = Number(createdPhone?.pricePKR || 0);
+      if (price > 0) historyRows.push({ phoneId: docId, storeName: null, price });
+    }
+    for (const change of fieldChanges) {
+      if (change.collection !== 'Phone' || change.field !== 'pricePKR') continue;
+      const price = Number(change.newValue || 0);
+      if (price > 0 && Number(change.oldValue || 0) !== price) {
+        historyRows.push({ phoneId: change.phoneId, storeName: null, price });
+      }
+    }
+    if (historyRows.length > 0) {
+      try { await PriceHistory.insertMany(historyRows, { ordered: false }); }
+      catch (e) { console.warn('[import] price history write failed', e); }
+    }
   }
 
   await completeBatch(importId, batchNumber, result, dryRun);
@@ -984,11 +1258,14 @@ async function completeBatch(importId: string, batchNumber: number, result: Batc
         replaced: result.replaced,
         skipped: result.skipped,
         failed: result.failed,
+        rowActions: result.rowActions.slice(0, 500),
         errors: result.errors.slice(0, 100),
         createdPhoneIds: result.createdPhoneIds,
         updatedPhoneIds: result.updatedPhoneIds,
         fieldChanges: result.fieldChanges,
         specsChanges: result.specsChanges || [],
+        benchmarkChanges: result.benchmarkChanges || [],
+        imageChanges: result.imageChanges || [],
       },
     },
     { upsert: true },
@@ -1242,6 +1519,35 @@ export async function rollbackJob(importId: string): Promise<{ deleted: number; 
         conflicts++;
       }
     }
+
+    for (const bc of batch.benchmarkChanges || []) {
+      try {
+        if (bc.changeType === 'created') {
+          await PhoneBenchmark.deleteOne({ phoneId: bc.phoneId });
+          continue;
+        }
+        const current = await PhoneBenchmark.findOne({ phoneId: bc.phoneId }).lean();
+        if (!current) { conflicts++; continue; }
+        const changedAfterImport = Object.entries(bc.afterFields || {}).some(([field, value]) =>
+          String((current as Record<string, unknown>)[field] ?? '') !== String(value ?? '')
+        );
+        if (changedAfterImport) { conflicts++; continue; }
+        await PhoneBenchmark.findOneAndUpdate({ phoneId: bc.phoneId }, { $set: bc.beforeFields || {} });
+      } catch { conflicts++; }
+    }
+
+    for (const ic of batch.imageChanges || []) {
+      try {
+        const currentDocs = await PhoneImage.find({ phoneId: ic.phoneId }).sort({ sortOrder: 1 }).lean();
+        const currentUrls = currentDocs.map((img: Record<string, unknown>) => String(img.url || ''));
+        const importedUrls = (ic.afterImages || []).map((img: ImageSnapshotItem) => img.url);
+        if (JSON.stringify(currentUrls) !== JSON.stringify(importedUrls)) { conflicts++; continue; }
+        await PhoneImage.deleteMany({ phoneId: ic.phoneId });
+        if ((ic.beforeImages || []).length > 0) {
+          await PhoneImage.insertMany(ic.beforeImages.map((img: ImageSnapshotItem) => ({ phoneId: ic.phoneId, ...img })), { ordered: true });
+        }
+      } catch { conflicts++; }
+    }
   }
 
   await ImportJob.findOneAndUpdate(
@@ -1292,4 +1598,150 @@ export async function reconcileJobCounters(importId: string): Promise<void> {
       },
     },
   );
+}
+
+
+export interface ImportSystemReconciliationReport {
+  jobsChecked: number;
+  jobsReconciled: number;
+  staleJobsFailed: number;
+  orphanBatchesRemoved: number;
+  rawPhones: number;
+  activePhones: number;
+  publishedPhones: number;
+  importedPhones: number;
+  hiddenImportedPhones: number;
+  publishableImportedPhonesRepaired: number;
+  uniquePhonesWithSpecs: number;
+  rawSpecsDocuments: number;
+  orphanSpecs: number;
+  duplicateSpecsRemoved: number;
+}
+
+/**
+ * Reconcile persistent import state with the real database.
+ * Safe by default: never deletes phones and never publishes incomplete records.
+ * It only repairs counters/statuses, removes truly orphaned tracking rows/specs,
+ * reactivates imported phones, and publishes imported drafts that satisfy the
+ * same publication rules used by the editor/importer.
+ */
+export async function reconcileImportSystem(): Promise<ImportSystemReconciliationReport> {
+  await connectDB();
+
+  const report: ImportSystemReconciliationReport = {
+    jobsChecked: 0,
+    jobsReconciled: 0,
+    staleJobsFailed: 0,
+    orphanBatchesRemoved: 0,
+    rawPhones: 0,
+    activePhones: 0,
+    publishedPhones: 0,
+    importedPhones: 0,
+    hiddenImportedPhones: 0,
+    publishableImportedPhonesRepaired: 0,
+    uniquePhonesWithSpecs: 0,
+    rawSpecsDocuments: 0,
+    orphanSpecs: 0,
+    duplicateSpecsRemoved: 0,
+  };
+
+  const jobs = await ImportJob.find().select('importId status totalBatches updatedAt').lean();
+  report.jobsChecked = jobs.length;
+  const validImportIds = new Set(jobs.map(job => job.importId));
+
+  // Remove tracking batches whose parent job no longer exists. These are not
+  // phone records and are safe to remove.
+  const orphanBatchDocs = await ImportBatch.find({ importId: { $nin: [...validImportIds] } }).select('_id').lean();
+  if (orphanBatchDocs.length > 0) {
+    const result = await ImportBatch.deleteMany({ _id: { $in: orphanBatchDocs.map(row => row._id) } });
+    report.orphanBatchesRemoved = result.deletedCount;
+  }
+
+  const staleCutoff = new Date(Date.now() - 60 * 60 * 1000);
+  for (const job of jobs) {
+    await reconcileJobCounters(job.importId);
+    const batches = await ImportBatch.find({ importId: job.importId, executionMode: 'real' })
+      .select('status recordCount created updated replaced skipped failed completedAt')
+      .lean();
+    const completed = batches.filter(batch => batch.status === 'completed').length;
+    const failed = batches.filter(batch => batch.status === 'failed').length;
+    const inFlight = batches.filter(batch => ['pending', 'processing', 'retrying'].includes(batch.status)).length;
+
+    let nextStatus = job.status;
+    if (job.status !== 'rolled_back' && job.status !== 'cancelled') {
+      if (batches.length > 0 && inFlight === 0) {
+        nextStatus = failed > 0 ? 'completed_with_errors' : 'completed';
+      } else if (
+        ['uploaded', 'parsing', 'validating', 'ready', 'queued', 'processing', 'paused'].includes(job.status) &&
+        new Date(job.updatedAt) < staleCutoff
+      ) {
+        nextStatus = 'failed';
+        report.staleJobsFailed++;
+      }
+    }
+
+    if (nextStatus !== job.status) {
+      await ImportJob.updateOne(
+        { importId: job.importId },
+        { $set: {
+          status: nextStatus,
+          completedAt: ['completed', 'completed_with_errors', 'failed'].includes(nextStatus) ? new Date() : null,
+          errorSummary: nextStatus === 'failed' ? 'Import became stale before completion. Retry the failed batch or upload again.' : '',
+          currentBatch: completed,
+        } },
+      );
+      report.jobsReconciled++;
+    }
+  }
+
+  report.rawPhones = await Phone.countDocuments({});
+  report.activePhones = await Phone.countDocuments({ active: { $ne: false }, deletedAt: null });
+  report.publishedPhones = await Phone.countDocuments({ status: 'published', active: { $ne: false }, deletedAt: null });
+  report.importedPhones = await Phone.countDocuments({ lastImportId: { $exists: true, $ne: '' } });
+  report.hiddenImportedPhones = await Phone.countDocuments({
+    lastImportId: { $exists: true, $ne: '' },
+    $or: [{ active: false }, { deletedAt: { $ne: null } }, { status: { $ne: 'published' } }],
+  });
+
+  const hiddenImported = await Phone.find({
+    lastImportId: { $exists: true, $ne: '' },
+    $or: [{ active: false }, { deletedAt: { $ne: null } }, { status: { $ne: 'published' } }],
+  })
+    .select('_id brandId modelName slug thumbnail pricePKR upcoming status active deletedAt')
+    .limit(5000)
+    .lean();
+
+  for (const phone of hiddenImported) {
+    const issues = getPhonePublicationIssues(phone);
+    const update: Record<string, unknown> = { active: true, deletedAt: null };
+    if (issues.length === 0) update.status = 'published';
+    const result = await Phone.updateOne({ _id: phone._id }, { $set: update });
+    if (result.modifiedCount > 0 && issues.length === 0) report.publishableImportedPhonesRepaired++;
+  }
+
+  const phoneIds = new Set((await Phone.find().select('_id').lean()).map(phone => String(phone._id)));
+  const specs = await PhoneSpecs.find().select('_id phoneId updatedAt').sort({ updatedAt: -1, _id: -1 }).lean();
+  report.rawSpecsDocuments = specs.length;
+  const keptByPhone = new Set<string>();
+  const orphanIds: Types.ObjectId[] = [];
+  const duplicateIds: Types.ObjectId[] = [];
+  for (const spec of specs) {
+    const phoneId = String(spec.phoneId || '');
+    if (!phoneId || !phoneIds.has(phoneId)) {
+      orphanIds.push(spec._id);
+      continue;
+    }
+    if (keptByPhone.has(phoneId)) duplicateIds.push(spec._id);
+    else keptByPhone.add(phoneId);
+  }
+  report.uniquePhonesWithSpecs = keptByPhone.size;
+  report.orphanSpecs = orphanIds.length;
+  if (orphanIds.length > 0) await PhoneSpecs.deleteMany({ _id: { $in: orphanIds } });
+  if (duplicateIds.length > 0) {
+    const result = await PhoneSpecs.deleteMany({ _id: { $in: duplicateIds } });
+    report.duplicateSpecsRemoved = result.deletedCount;
+  }
+
+  revalidatePublicContent({ includeBrands: true });
+  return report;
 }

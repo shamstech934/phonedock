@@ -1,4 +1,5 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -16,7 +17,7 @@ import {
 } from '@/lib/homepage-builder';
 
 type Device = 'desktop' | 'tablet' | 'mobile';
-type Tab = 'overview' | 'hero' | 'sections' | 'design' | 'navigation' | 'media' | 'preview';
+type Tab = 'overview' | 'hero' | 'sections' | 'filters' | 'design' | 'navigation' | 'media' | 'preview';
 type SectionMode = 'automatic' | 'manual';
 
 interface HeroCampaign {
@@ -58,6 +59,10 @@ interface SectionRule {
   viewAllUrl: string;
 }
 
+interface HomepagePriceRange { id: string; label: string; min: number; max: number | null; enabled: boolean; }
+interface HomepageSmartFilterItem { id: string; label: string; param: string; value: string; enabled: boolean; }
+interface HomepageSmartFilterGroup { id: string; title: string; subtitle: string; enabled: boolean; items: HomepageSmartFilterItem[]; }
+
 interface HomepageSettings {
   heroEnabled: boolean;
   heroBadge: string;
@@ -98,11 +103,20 @@ interface HomepageSettings {
   showPriceCategories: boolean;
   showYearCategories: boolean;
   pricePanelSide: 'left' | 'right';
-  discoveryEnabled: boolean;
-  discoveryTitle: string;
-  discoveryCategories: Array<'price' | 'ram' | 'storage' | 'camera' | 'battery' | 'pta' | 'year'>;
-  discoveryViewAllText: string;
-  discoveryViewAllUrl: string;
+  hideEmptySections: boolean;
+  showOnlyBrandsWithPhones: boolean;
+  brandLimit: number;
+  trendingMonths: number;
+  trendingMinRating: number;
+  trendingBalancePriceTiers: boolean;
+  yearMode: 'data' | 'manual';
+  yearStart: number;
+  yearEnd: number;
+  yearLimit: number;
+  priceRanges: HomepagePriceRange[];
+  homepagePriceLimit: number;
+  smartFiltersEnabled: boolean;
+  smartFilterGroups: HomepageSmartFilterGroup[];
   navigation: Array<{ label: string; url: string; enabled: boolean }>;
   media: {
     heroBackground: string;
@@ -192,16 +206,48 @@ const DEFAULT_HOMEPAGE: HomepageSettings = {
   heroBackgroundImage: '',
   heroCampaigns: [],
   heroCampaignSpeed: 7000,
-  brandLogoSize: 48,
-  brandColumns: 7,
+  brandLogoSize: 56,
+  brandColumns: 6,
   showPriceCategories: true,
   showYearCategories: true,
   pricePanelSide: 'right',
-  discoveryEnabled: true,
-  discoveryTitle: 'Find Your Phone',
-  discoveryCategories: ['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year'],
-  discoveryViewAllText: 'Explore all phones',
-  discoveryViewAllUrl: '/phones',
+  hideEmptySections: true,
+  showOnlyBrandsWithPhones: true,
+  brandLimit: 11,
+  trendingMonths: 12,
+  trendingMinRating: 7.5,
+  trendingBalancePriceTiers: true,
+  yearMode: 'data',
+  yearStart: 2015,
+  yearEnd: new Date().getFullYear() + 1,
+  yearLimit: 12,
+  priceRanges: [
+    { id: 'under-25000', label: 'Rs. 1 – 24,999', min: 1, max: 24999, enabled: true },
+    { id: '25000-50000', label: 'Rs. 25,000 – 49,999', min: 25000, max: 49999, enabled: true },
+    { id: '50000-100000', label: 'Rs. 50,000 – 99,999', min: 50000, max: 99999, enabled: true },
+    { id: '100000-150000', label: 'Rs. 100,000 – 149,999', min: 100000, max: 149999, enabled: true },
+    { id: '150000-250000', label: 'Rs. 150,000 – 249,999', min: 150000, max: 249999, enabled: true },
+    { id: 'above-250000', label: 'Rs. 250,000+', min: 250000, max: null, enabled: true },
+  ],
+  homepagePriceLimit: 6,
+  smartFiltersEnabled: true,
+  smartFilterGroups: [
+    { id: 'ram', title: 'Search by RAM', subtitle: 'Choose memory size', enabled: true, items: [
+      { id: 'ram-4', label: '4GB RAM', param: 'ram', value: '4', enabled: true }, { id: 'ram-6', label: '6GB RAM', param: 'ram', value: '6', enabled: true }, { id: 'ram-8', label: '8GB RAM', param: 'ram', value: '8', enabled: true }, { id: 'ram-12', label: '12GB RAM', param: 'ram', value: '12', enabled: true }, { id: 'ram-16', label: '16GB & above', param: 'ram', value: '16', enabled: true },
+    ]},
+    { id: 'storage', title: 'Search by Storage', subtitle: 'Choose internal storage', enabled: true, items: [
+      { id: 'storage-64', label: '64GB', param: 'storage', value: '64', enabled: true }, { id: 'storage-128', label: '128GB', param: 'storage', value: '128', enabled: true }, { id: 'storage-256', label: '256GB', param: 'storage', value: '256', enabled: true }, { id: 'storage-512', label: '512GB', param: 'storage', value: '512', enabled: true }, { id: 'storage-1tb', label: '1TB', param: 'storage', value: '1024', enabled: true },
+    ]},
+    { id: 'camera', title: 'Search by Camera', subtitle: 'Main camera resolution', enabled: true, items: [
+      { id: 'camera-13', label: '13MP+ Mobiles', param: 'camera', value: '13', enabled: true }, { id: 'camera-32', label: '32MP+ Mobiles', param: 'camera', value: '32', enabled: true }, { id: 'camera-50', label: '50MP+ Mobiles', param: 'camera', value: '50', enabled: true }, { id: 'camera-108', label: '108MP+ Mobiles', param: 'camera', value: '108', enabled: true }, { id: 'camera-200', label: '200MP+ Mobiles', param: 'camera', value: '200', enabled: true },
+    ]},
+    { id: 'screen', title: 'Search by Screen', subtitle: 'Display size', enabled: true, items: [
+      { id: 'screen-under6', label: 'Under 6.0 inch', param: 'screenMax', value: '5.99', enabled: true }, { id: 'screen-6-64', label: '6.0 – 6.4 inch', param: 'screenRange', value: '6|6.4', enabled: true }, { id: 'screen-65-67', label: '6.5 – 6.7 inch', param: 'screenRange', value: '6.5|6.7', enabled: true }, { id: 'screen-68', label: '6.8 inch & above', param: 'screenMin', value: '6.8', enabled: true },
+    ]},
+    { id: 'features', title: 'More Phone Filters', subtitle: 'Popular capabilities', enabled: true, items: [
+      { id: 'feature-5g', label: '5G Phones', param: '5g', value: 'yes', enabled: true }, { id: 'feature-battery', label: '5000mAh+ Battery', param: 'battery', value: '5000', enabled: true }, { id: 'feature-refresh', label: '120Hz+ Display', param: 'refresh', value: '120', enabled: true }, { id: 'feature-nfc', label: 'NFC Phones', param: 'nfc', value: 'yes', enabled: true }, { id: 'feature-pta', label: 'PTA Approved', param: 'pta', value: 'approved', enabled: true },
+    ]},
+  ],
   navigation: [
     { label: 'Home', url: '/', enabled: true },
     { label: 'Phones', url: '/phones', enabled: true },
@@ -273,14 +319,15 @@ export default function HomepageBuilderPage() {
       setHomepage({
         ...DEFAULT_HOMEPAGE,
         ...current,
-        discoveryCategories: Array.isArray(current.discoveryCategories) && current.discoveryCategories.length
-          ? current.discoveryCategories
-          : DEFAULT_HOMEPAGE.discoveryCategories,
         sections: { ...DEFAULT_HOMEPAGE.sections, ...(current.sections || {}) },
         titles: { ...DEFAULT_HOMEPAGE.titles, ...(current.titles || {}) },
         sectionOrder: normalizeHomepageSectionOrder(current.sectionOrder),
         sectionRules: current.sectionRules || {},
         navigation: Array.isArray(current.navigation) ? current.navigation : DEFAULT_HOMEPAGE.navigation,
+        priceRanges: Array.isArray(current.priceRanges) && current.priceRanges.length ? current.priceRanges : DEFAULT_HOMEPAGE.priceRanges,
+        homepagePriceLimit: Number(current.homepagePriceLimit) || DEFAULT_HOMEPAGE.homepagePriceLimit,
+        smartFiltersEnabled: current.smartFiltersEnabled !== false,
+        smartFilterGroups: Array.isArray(current.smartFilterGroups) && current.smartFilterGroups.length ? current.smartFilterGroups : DEFAULT_HOMEPAGE.smartFilterGroups,
         media: {
           ...DEFAULT_HOMEPAGE.media,
           ...(current.media || {}),
@@ -375,7 +422,7 @@ export default function HomepageBuilderPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...settings, homepage }),
       });
-      const payload = await response.json();
+      const payload = await readApiResponse(response);
       if (!response.ok) throw new Error(payload.error || 'Changes could not be saved');
       setSettings(current => ({ ...current, homepage }));
       setSaved(true);
@@ -401,7 +448,7 @@ export default function HomepageBuilderPage() {
       enabled: true,
       desktopImage: '',
       mobileImage: '',
-      alt: 'PhoneDock Independence Day campaign',
+      alt: 'SpecsDekh Independence Day campaign',
       startAt: '',
       endAt: '',
       overlay: 45,
@@ -435,6 +482,7 @@ export default function HomepageBuilderPage() {
           ['overview', LayoutDashboard, 'Overview'],
           ['hero', Image, 'Hero stage'],
           ['sections', GripVertical, 'Sections'],
+          ['filters', Settings2, 'Smart filters'],
           ['design', Palette, 'Design system'],
           ['navigation', Navigation, 'Header & links'],
           ['media', Upload, 'Media library'],
@@ -452,7 +500,7 @@ export default function HomepageBuilderPage() {
 
       <main className="border-r border-slate-200 p-4 sm:p-5">
         {tab === 'overview' && <div className="space-y-4">
-          <Panel title="Builder status" subtitle="A safe control room for the existing PhoneDock homepage.">
+          <Panel title="Builder status" subtitle="A safe control room for the existing SpecsDekh homepage.">
             <div className="grid grid-cols-2 gap-3">
               <Stat value={homepage.sectionOrder.filter(key => homepage.sections[key]).length} label="Visible sections" />
               <Stat value={homepage.heroPhoneSlugs.filter(Boolean).length || 'Auto'} label="Hero phones" />
@@ -460,7 +508,8 @@ export default function HomepageBuilderPage() {
           </Panel>
           <Panel title="Quick actions" subtitle="Choose an area to start editing.">
             <button onClick={() => setTab('hero')} className="mb-2 flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Edit floating 3D hero</strong><small className="text-slate-500">Text, buttons, timing and phones</small></span><ChevronRight /></button>
-            <button onClick={() => setTab('sections')} className="flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Arrange homepage sections</strong><small className="text-slate-500">Drag, filter and configure cards</small></span><ChevronRight /></button>
+            <button onClick={() => setTab('sections')} className="mb-2 flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Arrange homepage sections</strong><small className="text-slate-500">Drag, filter and configure cards</small></span><ChevronRight /></button>
+            <button onClick={() => setTab('filters')} className="flex w-full items-center justify-between rounded-xl border bg-white p-4 text-left"><span><strong className="block text-sm">Manage smart filters</strong><small className="text-slate-500">Price, RAM, storage, camera, screen and features</small></span><ChevronRight /></button>
           </Panel>
         </div>}
 
@@ -587,8 +636,37 @@ export default function HomepageBuilderPage() {
               <Toggle label="Show “See all” link" checked={selectedRule.showViewAll} onChange={showViewAll => updateRule({ showViewAll })} />
               {selectedRule.showViewAll && <div className="grid grid-cols-2 gap-3"><Field label="Link text" value={selectedRule.viewAllText} onChange={viewAllText => updateRule({ viewAllText })} /><Field label="Link URL override" value={selectedRule.viewAllUrl} onChange={viewAllUrl => updateRule({ viewAllUrl })} /></div>}
               <MediaField label="Section cover/background image" value={homepage.media.sectionImages[selected] || ''} uploading={uploading === selected} onUrlChange={url => updateHomepage('media', { ...homepage.media, sectionImages: { ...homepage.media.sectionImages, [selected]: url } })} onFile={file => void upload(file, selected)} />
-              <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800"><strong>Checkpoint note:</strong> rules are saved safely with the homepage configuration. Existing homepage data queries continue unchanged until the next rule-engine checkpoint, preventing accidental content loss.</p>
+              <p className="rounded-xl bg-emerald-50 p-3 text-xs leading-5 text-emerald-800"><strong>Live rule engine:</strong> these filters now control the public homepage. Empty or incomplete categories stay hidden when “Hide empty sections” is enabled.</p>
             </div>
+          </Panel>
+        </div>}
+
+        {tab === 'filters' && <div className="space-y-4">
+          <Panel title="Homepage smart filter manager" subtitle="These compact filter cards appear in the homepage sidebar. All labels, links and visibility are controlled here.">
+            <div className="space-y-4">
+              <Toggle label="Show smart filters on homepage" checked={homepage.smartFiltersEnabled} onChange={value => updateHomepage('smartFiltersEnabled', value)} />
+              <NumberRange label="Price ranges visible on homepage" value={homepage.homepagePriceLimit} min={3} max={8} onChange={value => updateHomepage('homepagePriceLimit', value)} />
+              {homepage.smartFilterGroups.map((group, groupIndex) => <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <Field label="Group title" value={group.title} onChange={title => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, title } : item))} />
+                  <Field label="Subtitle" value={group.subtitle} onChange={subtitle => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, subtitle } : item))} />
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, enabled: !item.enabled } : item))} className={`mt-5 rounded-xl px-3 py-2 text-xs font-bold ${group.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{group.enabled ? 'Visible' : 'Hidden'}</button>
+                </div>
+                <div className="mt-3 space-y-2">{group.items.map((filterItem, itemIndex) => <div key={filterItem.id} className="grid items-end gap-2 rounded-xl bg-white p-2 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
+                  <Field label="Label" value={filterItem.label} onChange={label => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, label } : entry) } : item))} />
+                  <Field label="URL parameter" value={filterItem.param} onChange={param => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, param } : entry) } : item))} />
+                  <Field label="Value" value={filterItem.value} onChange={value => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, value } : entry) } : item))} />
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.map((entry, entryIndex) => entryIndex === itemIndex ? { ...entry, enabled: !entry.enabled } : entry) } : item))} className={`rounded-lg px-2.5 py-2 text-[11px] font-bold ${filterItem.enabled ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{filterItem.enabled ? 'On' : 'Off'}</button>
+                  <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: item.items.filter((_, entryIndex) => entryIndex !== itemIndex) } : item))} className="rounded-lg px-2.5 py-2 text-[11px] font-bold text-red-600">Remove</button>
+                </div>)}</div>
+                <button type="button" onClick={() => updateHomepage('smartFilterGroups', homepage.smartFilterGroups.map((item, index) => index === groupIndex ? { ...item, items: [...item.items, { id: `filter-${Date.now()}`, label: 'New filter', param: 'ram', value: '8', enabled: true }] } : item))} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add filter</button>
+              </div>)}
+              <button type="button" onClick={() => updateHomepage('smartFilterGroups', [...homepage.smartFilterGroups, { id: `group-${Date.now()}`, title: 'New filter group', subtitle: 'Choose a filter', enabled: true, items: [] }])} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white">Add filter group</button>
+            </div>
+          </Panel>
+          <Panel title="Detailed price range manager" subtitle="The homepage shows only the first enabled ranges. The View all page can still show the complete list.">
+            <div className="space-y-2">{homepage.priceRanges.map((range, index) => <div key={range.id} className="grid grid-cols-1 items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 xl:grid-cols-[minmax(150px,1.5fr)_1fr_1fr_auto_auto]"><Field label="Label" value={range.label} onChange={label => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, label } : item))} /><Field label="Minimum" value={String(range.min)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, min: Math.max(0, Number(value)) } : item))} type="number" /><Field label="Maximum (blank = no limit)" value={range.max === null ? '' : String(range.max)} onChange={value => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, max: value === '' ? null : Math.max(0, Number(value)) } : item))} type="number" /><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))} className={`mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold ${range.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{range.enabled ? 'On' : 'Off'}</button><button type="button" onClick={() => updateHomepage('priceRanges', homepage.priceRanges.filter((_, itemIndex) => itemIndex !== index))} className="mb-0.5 rounded-xl px-3 py-2.5 text-xs font-bold text-red-600">Remove</button></div>)}</div>
+            <button type="button" onClick={() => updateHomepage('priceRanges', [...homepage.priceRanges, { id: `range-${Date.now()}`, label: 'New price range', min: 0, max: null, enabled: true }])} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Add price range</button>
           </Panel>
         </div>}
 
@@ -611,26 +689,16 @@ export default function HomepageBuilderPage() {
                 <NumberRange label="Brand logo size" value={homepage.brandLogoSize} min={28} max={90} suffix="px" onChange={value => updateHomepage('brandLogoSize', value)} />
                 <NumberRange label="Desktop brand columns" value={homepage.brandColumns} min={4} max={10} onChange={value => updateHomepage('brandColumns', value)} />
               </div>
-              <Toggle label="Show discovery panel" checked={homepage.discoveryEnabled} onChange={value => updateHomepage('discoveryEnabled', value)} />
+              <Toggle label="Show price categories" checked={homepage.showPriceCategories} onChange={value => updateHomepage('showPriceCategories', value)} />
+              <Toggle label="Show release-year categories" checked={homepage.showYearCategories} onChange={value => updateHomepage('showYearCategories', value)} />
               <label className="block text-xs font-semibold text-slate-600">Category panel position<select className={inputClass} value={homepage.pricePanelSide} onChange={event => updateHomepage('pricePanelSide', event.target.value as HomepageSettings['pricePanelSide'])}><option value="right">Right side</option><option value="left">Left side</option></select></label>
-              <Field label="Discovery panel title" value={homepage.discoveryTitle} onChange={value => updateHomepage('discoveryTitle', value)} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="View all button text" value={homepage.discoveryViewAllText} onChange={value => updateHomepage('discoveryViewAllText', value)} />
-                <Field label="View all button URL" value={homepage.discoveryViewAllUrl} onChange={value => updateHomepage('discoveryViewAllUrl', value)} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold text-slate-600">Visible discovery tabs</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year'] as const).map(category => {
-                    const enabled = homepage.discoveryCategories.includes(category);
-                    return <Toggle key={category} label={category === 'pta' ? 'PTA status' : category.charAt(0).toUpperCase() + category.slice(1)}
-                      checked={enabled}
-                      onChange={checked => updateHomepage('discoveryCategories', checked
-                        ? [...homepage.discoveryCategories, category]
-                        : homepage.discoveryCategories.filter(value => value !== category))} />;
-                  })}
-                </div>
-              </div>
+              <Toggle label="Hide sections with no qualifying phones" checked={homepage.hideEmptySections} onChange={value => updateHomepage('hideEmptySections', value)} />
+              <Toggle label="Show only brands that have published phones" checked={homepage.showOnlyBrandsWithPhones} onChange={value => updateHomepage('showOnlyBrandsWithPhones', value)} />
+              <Field label="Maximum brands on homepage" value={String(homepage.brandLimit)} onChange={value => updateHomepage('brandLimit', clamp(Number(value), 1, 30))} type="number" />
+              <div className="grid grid-cols-2 gap-3"><Field label="Trending period (months)" value={String(homepage.trendingMonths)} onChange={value => updateHomepage('trendingMonths', clamp(Number(value), 1, 36))} type="number" /><Field label="Trending minimum rating" value={String(homepage.trendingMinRating)} onChange={value => updateHomepage('trendingMinRating', Math.min(10, Math.max(0, Number(value))))} type="number" /></div>
+              <Toggle label="Balance Trending across low, mid and high prices" checked={homepage.trendingBalancePriceTiers} onChange={value => updateHomepage('trendingBalancePriceTiers', value)} />
+              <label className="block text-xs font-semibold text-slate-600">Year source<select className={inputClass} value={homepage.yearMode} onChange={event => updateHomepage('yearMode', event.target.value as HomepageSettings['yearMode'])}><option value="data">Automatically use years found in imported phones</option><option value="manual">Manual year range</option></select></label>
+              <div className="grid grid-cols-3 gap-3"><Field label="Start year" value={String(homepage.yearStart)} onChange={value => updateHomepage('yearStart', clamp(Number(value), 1990, 2100))} type="number" /><Field label="End year" value={String(homepage.yearEnd)} onChange={value => updateHomepage('yearEnd', clamp(Number(value), 1990, 2100))} type="number" /><Field label="Years to show" value={String(homepage.yearLimit)} onChange={value => updateHomepage('yearLimit', clamp(Number(value), 1, 40))} type="number" /></div>
             </div>
           </Panel>
         </div>}
@@ -638,7 +706,7 @@ export default function HomepageBuilderPage() {
         {tab === 'navigation' && <div className="space-y-4">
           <Panel title="Brand identity" subtitle="Logo and name are already consumed by the public header.">
             <div className="space-y-3">
-              <Field label="Website name" value={String(settings.siteName || 'PhoneDock')} onChange={value => updateSetting('siteName', value)} />
+              <Field label="Website name" value={String(settings.siteName || 'SpecsDekh')} onChange={value => updateSetting('siteName', value)} />
               <Field label="Tagline" value={String(settings.tagline || '')} onChange={value => updateSetting('tagline', value)} />
               <MediaField label="Header logo" value={String(settings.logo || '')} uploading={uploading === 'logo'} onUrlChange={value => updateSetting('logo', value)} onFile={file => void upload(file, 'logo')} />
               <MediaField label="Browser favicon" value={String(settings.favicon || '')} uploading={uploading === 'favicon'} onUrlChange={value => updateSetting('favicon', value)} onFile={file => void upload(file, 'favicon')} />
@@ -741,7 +809,7 @@ function MediaField({ label, hint = 'Recommended 1600 × 900 px · WebP/AVIF · 
 function HomepagePreview({ homepage, device }: { homepage: HomepageSettings; device: Device }) {
   const compact = device !== 'desktop';
   return <div className="min-h-[620px] bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 text-slate-950">
-    <div className="flex h-12 items-center border-b bg-white/80 px-4"><strong className="text-sm">Phone<span className="text-blue-600">Dock</span></strong><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
+    <div className="flex h-12 items-center border-b bg-white/80 px-4"><strong className="text-sm">Specs<span className="text-blue-600">Dekh</span></strong><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
     {homepage.heroEnabled && <section className={`m-3 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-600 p-5 text-white ${compact ? 'min-h-72' : 'min-h-64'}`}>
       <div className={compact ? '' : 'grid grid-cols-2 items-center gap-5'}>
         <div><span className="rounded-full border border-white/20 px-2 py-1 text-[7px] font-bold">{homepage.heroBadge}</span><h3 className="mt-4 text-2xl font-black leading-tight">{homepage.heroTitle}<br /><span className="text-blue-400">{homepage.heroHighlight}</span></h3><p className="mt-2 line-clamp-2 text-[9px] leading-4 text-slate-300">{homepage.heroSubtitle}</p><div className="mt-4 flex gap-2"><span className="rounded-lg bg-blue-600 px-3 py-2 text-[8px] font-bold">{homepage.cta1Text}</span><span className="rounded-lg border border-white/20 px-3 py-2 text-[8px] font-bold">{homepage.cta2Text}</span></div></div>

@@ -5,11 +5,15 @@ import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailCon
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
 import { escapeRegex } from '@/lib/sanitize';
+import { numericSpecClause } from '@/lib/spec-filter-fallback';
 import { normalizeCompareValues } from '@/lib/compare';
 import { getEmailTransporter } from '@/lib/email';
 import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-specs';
 import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
+import { getSettings } from '@/lib/models/Settings';
+import { normalizePublicPriceRanges } from '@/lib/public-price-ranges';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -226,8 +230,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const limit = parseBoundedInt(url.searchParams.get('limit'), 20, { max: 100 });
     const search = url.searchParams.get('search') || '';
     const brand = url.searchParams.get('brand') || '';
-    const ALLOWED_SORTS = new Set(['createdAt', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
-    const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'createdAt';
+    const ALLOWED_SORTS = new Set(['createdAt', 'releaseDate', 'pricePKR', 'modelName', 'overallRating', 'cameraScore', 'performanceScore', 'batteryScore', 'displayScore', 'views', 'trending']);
+    const sort = ALLOWED_SORTS.has(url.searchParams.get('sort') || '') ? (url.searchParams.get('sort')!) : 'releaseDate';
     const order = url.searchParams.get('order') === 'asc' ? 1 : -1;
 
     // Boolean/enum filters
@@ -297,14 +301,12 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     if (hasSpecFilters) {
       const specFilter: Record<string, unknown> = {};
-      if (!isNaN(ramMin)) specFilter.ramGB = { ...((specFilter.ramGB as Record<string, number>) || {}), $gte: ramMin };
-      if (!isNaN(ramMax)) specFilter.ramGB = { ...((specFilter.ramGB as Record<string, number>) || {}), $lte: ramMax };
-      if (!isNaN(storageMin)) specFilter.storageGB = { ...((specFilter.storageGB as Record<string, number>) || {}), $gte: storageMin };
-      if (!isNaN(storageMax)) specFilter.storageGB = { ...((specFilter.storageGB as Record<string, number>) || {}), $lte: storageMax };
-      if (!isNaN(screenMin)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $gte: screenMin };
-      if (!isNaN(screenMax)) specFilter.screenSizeInch = { ...((specFilter.screenSizeInch as Record<string, number>) || {}), $lte: screenMax };
-      if (!isNaN(cameraMin)) specFilter.mainCameraMP = { $gte: cameraMin };
-      if (!isNaN(batteryMin)) specFilter.batteryMAh = { $gte: batteryMin };
+      const numericClauses: Record<string, unknown>[] = [];
+      if (!isNaN(ramMin) || !isNaN(ramMax)) numericClauses.push(numericSpecClause({ numericField: 'ramGB', textField: 'ram', kind: 'ram', min: !isNaN(ramMin) ? ramMin : undefined, max: !isNaN(ramMax) ? ramMax : undefined }));
+      if (!isNaN(storageMin) || !isNaN(storageMax)) numericClauses.push(numericSpecClause({ numericField: 'storageGB', textField: 'storage', kind: 'storage', min: !isNaN(storageMin) ? storageMin : undefined, max: !isNaN(storageMax) ? storageMax : undefined }));
+      if (!isNaN(screenMin) || !isNaN(screenMax)) numericClauses.push(numericSpecClause({ numericField: 'screenSizeInch', textField: 'display', kind: 'screen', min: !isNaN(screenMin) ? screenMin : undefined, max: !isNaN(screenMax) ? screenMax : undefined }));
+      if (!isNaN(cameraMin)) numericClauses.push(numericSpecClause({ numericField: 'mainCameraMP', textField: 'mainCamera', kind: 'camera', min: cameraMin }));
+      if (!isNaN(batteryMin)) numericClauses.push(numericSpecClause({ numericField: 'batteryMAh', textField: 'battery', kind: 'battery', min: batteryMin }));
       if (displayType) specFilter.displayType = { $regex: escapeRegex(displayType), $options: 'i' };
       if (chipset) specFilter.chipset = { $regex: escapeRegex(chipset), $options: 'i' };
       if (!isNaN(refreshMin)) {
@@ -322,6 +324,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       else if (fiveGFilter === 'no') specFilter.fiveG = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
       if (nfcFilter === 'yes') specFilter.nfc = { $regex: /yes|supported|true/i };
       else if (nfcFilter === 'no') specFilter.nfc = { $in: [null, '', 'No', 'no', 'Not Supported', 'None'] };
+      if (numericClauses.length) specFilter.$and = numericClauses;
 
       const matchingSpecPhoneIds = await PhoneSpecs.find(specFilter).distinct('phoneId');
       filter._id = { ...((filter._id as Record<string, unknown>) || {}), $in: matchingSpecPhoneIds };
@@ -329,7 +332,11 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     if (andFilters.length > 0) filter.$and = andFilters;
 
     const [phones, rawTotal] = await Promise.all([
-      Phone.find(filter).sort({ [sort]: order }).skip((page - 1) * limit).limit(limit)
+      Phone.find(filter).sort(
+        (sort === 'createdAt' || sort === 'releaseDate')
+          ? (order === -1 ? PHONE_NEWEST_SORT : PHONE_OLDEST_SORT)
+          : rankedPhoneSort(sort, order)
+      ).skip((page - 1) * limit).limit(limit)
         .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
         .populate('brand').lean(),
       Phone.countDocuments(filter),
@@ -369,71 +376,70 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       const bOrder = orderMap.get(`slug:${b.slug}`) ?? orderMap.get(`id:${bId}`) ?? Number.MAX_SAFE_INTEGER;
       return aOrder - bOrder;
     });
-    return cached({ phones: phonesWithSpecs }, 60, 300);
+    return cached({ phones: phonesWithSpecs }, 300, 1800);
   }
 
   // ---- /api/phones/autocomplete?q=... ----
   if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'autocomplete') {
-    // The limiter is MongoDB-backed, so the connection must exist before it is
-    // queried. Calling it first makes cold serverless requests fail closed.
     await connectDB();
     if (!await checkIpRateLimit(`autocomplete:${ip}`, 120, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
     }
     const url = new URL(req.url);
-    const q = (url.searchParams.get('q') || '').trim();
-    if (q.length < 2) return cached({ phones: [] }, 60, 180);
-    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const tokenMatchStage = tokens.length
-      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
-      : {};
-    const safe = escapeRegex(q);
+    const q = (url.searchParams.get('q') || '').trim().slice(0, 80);
+    if (q.length < 2) return cached({ phones: [] }, 300, 1800);
 
-    let phones: AutocompletePhone[];
-    try {
-      phones = await Phone.aggregate<AutocompletePhone>([
-        { $match: { active: true, status: 'published' } },
-        { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
-        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-        { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
-        { $match: tokenMatchStage },
-        {
-          $addFields: {
-            _rank: {
-              $cond: [
-                { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
-                { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
-              ],
-            },
-          },
-        },
-        { $sort: { _rank: 1, modelName: 1 } },
-        { $limit: 12 },
-        { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
-      ]).option({ maxTimeMS: 5000 });
-    } catch {
-      // A bounded fallback keeps search usable when the aggregation exceeds the
-      // serverless time budget. It intentionally returns the same light shape.
-      const brandIds = await Brand.find({
-        $or: [
-          { name: { $regex: safe, $options: 'i' } },
-          { slug: { $regex: safe, $options: 'i' } },
-        ],
-      }).distinct('_id');
-      phones = await Phone.find({
+    const safe = escapeRegex(q);
+    const words = q.split(/\s+/).filter(Boolean);
+    const brandIds = await Brand.find({
+      active: true,
+      $or: [{ name: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }, ...words.map(word => ({ name: { $regex: `^${escapeRegex(word)}`, $options: 'i' } }))],
+    }).select('_id name slug').limit(8).lean();
+    const matchingBrandIds = brandIds.map(brand => brand._id);
+    const brandWords = new Set(brandIds.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
+    const modelWords = words.filter(word => !brandWords.has(word.toLowerCase()));
+    const modelAnd = modelWords.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } }));
+
+    const queryFilter: Record<string, unknown> = {
+      active: true,
+      status: 'published',
+      $or: [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+        ...(matchingBrandIds.length ? [{ brandId: { $in: matchingBrandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
+        ...(modelAnd.length ? [{ $and: modelAnd }] : []),
+      ],
+    };
+
+    let phones = await Phone.find(queryFilter)
+      .maxTimeMS(5000)
+      .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
+      .sort(PHONE_NEWEST_SORT)
+      .limit(12)
+      .populate('brand', 'name slug')
+      .lean();
+
+    // Forgiving fallback: when an over-specific query has no exact result
+    // (for example "samsung s26 ultra" while only S26 Plus is available),
+    // return the closest published models instead of an empty picker.
+    if (!phones.length && words.length > 1) {
+      const relaxedTokens = modelWords.length ? modelWords : words;
+      const relaxedFilter: Record<string, unknown> = {
         active: true,
         status: 'published',
         $or: [
-          { modelName: { $regex: safe, $options: 'i' } },
-          { slug: { $regex: safe, $options: 'i' } },
-          ...(brandIds.length ? [{ brandId: { $in: brandIds } }] : []),
+          ...relaxedTokens.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } })),
+          ...relaxedTokens.map(word => ({ slug: { $regex: escapeRegex(word), $options: 'i' } })),
+          ...(matchingBrandIds.length ? [{ brandId: { $in: matchingBrandIds } }] : []),
         ],
-      })
-        .select('slug modelName thumbnail pricePKR brandId')
-        .sort({ modelName: 1 })
+      };
+      phones = await Phone.find(relaxedFilter)
+        .maxTimeMS(5000)
+        .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
+        .sort(PHONE_NEWEST_SORT)
         .limit(12)
-        .populate('brand')
-        .lean() as unknown as AutocompletePhone[];
+        .populate('brand', 'name slug')
+        .lean();
     }
 
     return cached({ phones: phones.map(p => ({
@@ -441,9 +447,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       slug: p.slug,
       modelName: p.modelName,
       thumbnail: p.thumbnail || '',
-      pricePKR: p.pricePKR,
+      pricePKR: p.pricePKR || 0,
       brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name, slug: p.brand.slug } : null,
-    })) }, 60, 180);
+    })) }, 300, 1800);
   }
 
   // ---- /api/phones/:slug ----
@@ -457,7 +463,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
       PhonePrice.find({ phoneId: phone._id }).limit(10).lean(),
-      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort({ createdAt: -1 }).limit(6).populate('brand').lean(),
+      Phone.find({ active: true, status: 'published', brandId: phone.brandId, _id: { $ne: phone._id } }).select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl').sort(PHONE_NEWEST_SORT).limit(6).populate('brand').lean(),
       Video.find({ phoneId: phone._id, active: true }).sort({ publishedAt: -1 }).lean(),
       // Check CollectedPhone for specs fallback (phones created via collector approval)
       CollectedPhone.findOne({ approvedPhoneId: phone._id, status: { $in: ['approved', 'imported'] } }).lean(),
@@ -591,7 +597,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const limit = parseBoundedInt(url.searchParams.get('limit'), 100, { max: 250 });
     const sortParam = url.searchParams.get('sort');
     const sortMap: Record<string, Record<string, 1 | -1>> = {
-      newest: { createdAt: -1 },
+      newest: { ...PHONE_NEWEST_SORT },
       price_low: { pricePKR: 1 },
       price_high: { pricePKR: -1 },
       rating: { overallRating: -1 },
@@ -627,57 +633,53 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
   // ---- /api/search ----
   if (segments.length === 1 && segments[0] === 'search') {
+    await connectDB();
     if (!await checkIpRateLimit(`search:${ip}`, 60, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
     }
-    await connectDB();
     const url = new URL(req.url);
-    const q = (url.searchParams.get('q') || '').trim();
-    if (!q) return cached({ phones: [], brands: [], query: q }, 60, 180);
+    const q = (url.searchParams.get('q') || '').trim().slice(0, 100);
+    if (!q) return cached({ phones: [], brands: [], query: q }, 300, 1800);
+
     const safe = escapeRegex(q);
-    // Match every query word independently against "brand name + model name"
-    // combined — this is what makes "samsung s26" find "Samsung Galaxy S26
-    // Ultra 1TB" even though "galaxy" sits between the two matched words, and
-    // even though the brand name isn't part of modelName by itself.
-    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const tokenMatchStage = tokens.length
-      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
-      : {};
+    const words = q.split(/\s+/).filter(Boolean);
+    const brands = await Brand.find({ active: true, $or: [{ name: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }] })
+      .select('name slug logo sortOrder')
+      .sort({ sortOrder: 1, name: 1 })
+      .limit(6)
+      .lean();
+    const broadBrandMatches = await Brand.find({ active: true, $or: words.map(word => ({ name: { $regex: `^${escapeRegex(word)}`, $options: 'i' } })) })
+      .select('_id name').limit(8).lean();
+    const brandIds = broadBrandMatches.map(brand => brand._id);
+    const brandWords = new Set(broadBrandMatches.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
+    const modelWords = words.filter(word => !brandWords.has(word.toLowerCase()));
+    const modelAnd = modelWords.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } }));
 
-    const phonesPromise = Phone.aggregate([
-      { $match: { active: true, status: 'published' } },
-      { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
-      { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-      { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
-      { $match: tokenMatchStage },
-      {
-        $addFields: {
-          // Rank: whole query as an exact prefix of the combined text ranks highest,
-          // then whole-query-anywhere, then the individual-token matches above.
-          _rank: {
-            $cond: [
-              { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
-              { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
-            ],
-          },
-        },
-      },
-      { $sort: { _rank: 1, modelName: 1 } },
-      { $limit: 20 },
-      { $project: { description: 0, pros: 0, cons: 0, reviewSummary: 0, reviewVerdict: 0, seoTitle: 0, seoDescription: 0, keywords: 0, sourceName: 0, sourceUrl: 0, searchText: 0, _rank: 0 } },
-    ]).option({ maxTimeMS: 3000 });
+    const phoneFilter: Record<string, unknown> = {
+      active: true,
+      status: 'published',
+      $or: [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+        ...(brandIds.length ? [{ brandId: { $in: brandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
+        ...(modelAnd.length ? [{ $and: modelAnd }] : []),
+      ],
+    };
 
-    const brandPromise = Brand.aggregate([
-        { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
-        { $sort: { sortOrder: 1 } },
-        { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
-        { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
-      ]).option({ maxTimeMS: 3000 });
+    const phones = await Phone.find(phoneFilter)
+      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+      .sort(PHONE_NEWEST_SORT)
+      .limit(20)
+      .populate('brand')
+      .lean();
 
-    const [phones, brandAgg] = await Promise.all([phonesPromise, brandPromise]);
+    const brandCounts = brands.length
+      ? await Phone.aggregate([{ $match: { active: true, status: 'published', brandId: { $in: brands.map(brand => brand._id) } } }, { $group: { _id: '$brandId', count: { $sum: 1 } } }])
+      : [];
+    const countMap = new Map(brandCounts.map(item => [String(item._id), Number(item.count || 0)]));
+    const serializedBrands = brands.map(brand => ({ ...brand, id: brand._id?.toString(), _count: { phones: countMap.get(String(brand._id)) || 0 } }));
 
-    const brands = (brandAgg as BrandAggResult[]).map(b => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } }));
-    return cached({ phones: await attachListSpecs(phones), brands, query: q }, 60, 180);
+    return cached({ phones: await attachListSpecs(phones), brands: serializedBrands, query: q }, 300, 1800);
   }
 
   // ---- /api/videos ----
@@ -722,28 +724,11 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const { getSettings } = await import('@/lib/models');
     const settings = await getSettings();
     const mobileApp = settings.mobileApp && typeof settings.mobileApp === 'object' ? settings.mobileApp : {};
-    const homepage = settings.homepage && typeof settings.homepage === 'object'
-      ? settings.homepage as Record<string, unknown>
-      : {};
-    const allowedDiscoveryCategories = ['price', 'ram', 'storage', 'camera', 'battery', 'pta', 'year'];
-    const configuredDiscoveryCategories = Array.isArray(homepage.discoveryCategories)
-      ? homepage.discoveryCategories.filter((value): value is string => typeof value === 'string')
-      : [];
-    const discoveryCategories = configuredDiscoveryCategories.length
-      ? allowedDiscoveryCategories.filter(category => configuredDiscoveryCategories.includes(category))
-      : allowedDiscoveryCategories;
     return cached({
       config: {
         ...mobileApp,
-        discovery: {
-          enabled: homepage.discoveryEnabled !== false,
-          title: typeof homepage.discoveryTitle === 'string' ? homepage.discoveryTitle : 'Find Your Phone',
-          categories: discoveryCategories,
-          viewAllText: typeof homepage.discoveryViewAllText === 'string' ? homepage.discoveryViewAllText : 'Explore all phones',
-          viewAllUrl: typeof homepage.discoveryViewAllUrl === 'string' ? homepage.discoveryViewAllUrl : '/phones',
-        },
         branding: {
-          siteName: settings.siteName || 'PhoneDock',
+          siteName: settings.siteName || 'SpecsDekh',
           tagline: settings.tagline || '',
           logo: settings.logo || '',
           primaryColor: typeof settings.theme?.primaryColor === 'string' ? settings.theme.primaryColor : '#1769ff',
@@ -769,7 +754,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       [sort]: { $gt: 0 },
     })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
-      .sort({ [sort]: order }).limit(limit).lean();
+      .sort(rankedPhoneSort(sort, order)).limit(limit).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
     const brandIds = [...new Set(raw.map(p => p.brandId?.toString()).filter(Boolean))];
     let brandMap = new Map<string, LeanBrand>();
@@ -788,7 +773,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   if (segments.length === 1 && segments[0] === 'upcoming-phones') {
     await connectDB();
     const raw = await Phone.find({ active: true, upcoming: true })
-      .sort({ createdAt: -1 }).limit(20).lean();
+      .sort({ ...PHONE_NEWEST_SORT, expectedLaunchAt: 1 }).limit(20).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
     const brandIds = [...new Set(raw.map(p => p.brandId?.toString()).filter(Boolean))];
     let brandMap = new Map<string, LeanBrand>();
@@ -822,20 +807,24 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   // ---- /api/price-ranges ----
   if (segments.length === 1 && segments[0] === 'price-ranges') {
     await connectDB();
-    const ranges = [
-      { label: 'Under 20,000 PKR', slug: 'under-20000', min: 0, max: 20000 },
-      { label: '20K - 40K PKR', slug: '20000-40000', min: 20000, max: 40000 },
-      { label: '40K - 60K PKR', slug: '40000-60000', min: 40000, max: 60000 },
-      { label: '60K - 100K PKR', slug: '60000-100000', min: 60000, max: 100000 },
-      { label: 'Above 100K PKR', slug: 'above-100000', min: 100000, max: Infinity },
-    ];
+    const settings = await getSettings();
+    const configuredRanges = settings.homepage && typeof settings.homepage === 'object'
+      ? (settings.homepage as Record<string, unknown>).priceRanges
+      : undefined;
+    const ranges = normalizePublicPriceRanges(configuredRanges);
     const counts = await Promise.all(
-      ranges.map(r => Phone.countDocuments({
-        active: true, status: 'published',
-        pricePKR: r.max === Infinity ? { $gte: r.min, $gt: 0 } : { $gte: r.min, $lte: r.max, $gt: 0 },
+      ranges.map(range => Phone.countDocuments({
+        active: true,
+        status: 'published',
+        pricePKR: range.max === null
+          ? { $gte: range.min }
+          : { $gte: range.min, $lte: range.max },
       }))
     );
-    return cached({ ranges: ranges.map((r, i) => ({ ...r, count: counts[i] })) }, 300, 600);
+    return cached({
+      ranges: ranges.map((range, index) => ({ ...range, count: counts[index] })),
+      source: 'website-settings',
+    }, 300, 600);
   }
 
   // ---- /api/reviews (public user reviews) ----
@@ -900,7 +889,7 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
           from: process.env.EMAIL_USER,
           to: process.env.EMAIL_USER, // Send to site owner
           replyTo: cleanEmail,
-          subject: `[PhoneDock Contact] ${cleanSubject}`,
+          subject: `[SpecsDekh Contact] ${cleanSubject}`,
           html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:20px">
             <h2 style="color:#1a1a1a;margin-bottom:16px">New Contact Message</h2>
             <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -909,7 +898,7 @@ export async function handlePublicPost(req: NextRequest, segments: string[], ip:
               <tr><td style="padding:8px 0;color:#666;font-size:14px">Subject</td><td style="padding:8px 0;font-size:14px;font-weight:500">${cleanSubject}</td></tr>
             </table>
             <div style="background:#f9fafb;border-radius:8px;padding:16px;font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap">${cleanMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-            <p style="color:#999;font-size:12px;margin-top:16px">Sent from PhoneDock contact form</p>
+            <p style="color:#999;font-size:12px;margin-top:16px">Sent from SpecsDekh contact form</p>
           </div>`,
         });
       } catch (emailErr: unknown) {

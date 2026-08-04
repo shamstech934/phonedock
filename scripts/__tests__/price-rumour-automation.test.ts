@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { extractRetailPageSignals, extractRetailPrice, isLikelySameRetailProduct } from '../../src/lib/price-extraction';
+import { extractRetailPrice } from '../../src/lib/price-extraction';
 import { parseRumourFeed } from '../../src/lib/rumour-sync';
 
 const jsonLd = `<script type="application/ld+json">
@@ -15,13 +15,6 @@ const meta = `<meta property="product:price:amount" content="84999"><div>Rs. 99,
 assert.equal(extractRetailPrice(meta)?.price, 84999);
 assert.equal(extractRetailPrice('<div>Model number 123</div>'), null);
 assert.equal(extractRetailPrice('<div>PKR 99</div>'), null);
-const signals = extractRetailPageSignals(`<title>Samsung Galaxy S22 128GB | Retailer</title>${jsonLd}<button>Add to cart</button>`);
-assert.equal(signals.title, 'Samsung Galaxy S22 128GB | Retailer');
-assert.equal(signals.price?.price, 129999);
-assert.equal(signals.availability, 'available');
-assert.equal(isLikelySameRetailProduct('Samsung Galaxy S22', signals.title), true);
-assert.equal(isLikelySameRetailProduct('Samsung Galaxy S23', signals.title), false);
-assert.equal(isLikelySameRetailProduct('Apple iPhone 15 Pro', signals.title), false);
 
 const rss = `<?xml version="1.0"?><rss><channel><item>
   <title><![CDATA[Galaxy Z prototype reportedly leaks]]></title>
@@ -49,9 +42,6 @@ assert.match(trackerHandler, /segments\[2\] === 'match-queue'/);
 assert.match(trackerHandler, /PriceMatchCandidate/);
 assert.match(cronHandler, /handleAdminRunPriceSync/);
 assert.match(cronHandler, /requirePermission\(authResult\.admin, 'prices:edit'\)/);
-assert.match(cronHandler, /fetchWithValidatedRedirects/);
-assert.match(cronHandler, /isLikelySameRetailProduct/);
-assert.doesNotMatch(cronHandler, /redirect: 'follow'/);
 assert.match(trackerUi, /Run sync now/);
 assert.match(trackerUi, /Auto-link catalog/);
 assert.match(trackerUi, /Test & trust/);

@@ -20,7 +20,12 @@ assert.equal(recordsFromXml(rss, true)[0].model, 'Model Z');
 const issues = validateCollectedPhone(phone); const scores = scoreCollectedPhone(phone, issues, 0.8);
 assert.ok(scores.completenessScore > 0 && scores.confidenceScore <= scores.qualityScore);
 const manufacturer = createProvider({ type: 'manufacturer', enabled: false }, 'source', 'Vendor');
-const result = await manufacturer.test(); assert.equal(result.success, false); assert.match(result.message, /approved adapter/i);
+const result = await manufacturer.test();
+assert.equal(result.success, false);
+assert.match(result.message, /No URL configured/i);
+assert.match(result.message, /Registered parsers:/i);
+assert.match(result.message, /samsung/i);
+assert.match(result.message, /generic/i);
 
 console.log('Data Platform v2 tests passed');
 }

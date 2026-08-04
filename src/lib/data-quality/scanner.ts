@@ -866,13 +866,17 @@ export async function calculateHealthScore(): Promise<{
     draftPhones: number;
   };
 }> {
+  const catalogScope = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
   const [totalPhones, publishedPhones, draftPhones] = await Promise.all([
-    Phone.countDocuments({ deletedAt: null }),
+    Phone.countDocuments(catalogScope),
     Phone.countDocuments({ deletedAt: null, status: 'published' }),
     Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
   ]);
 
-  const base = publishedPhones || 1;
+  // Health and queue counters must use the same catalog scope. Using only
+  // published phones made the overview show 0 missing records while draft/review
+  // imports were still incomplete.
+  const base = totalPhones || 1;
   const categories: Array<{ name: string; score: number; deduction: number; maxDeduction: number; details: string }> = [];
 
   for (const cat of HEALTH_CATEGORIES) {
@@ -881,10 +885,10 @@ export async function calculateHealthScore(): Promise<{
 
     switch (cat.name) {
       case 'Core Identity': {
-        const missingBrand = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ brandId: null }, { brandId: { $exists: false } }] });
-        const missingSlug = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ slug: '' }, { slug: null }] });
-        const missingModel = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ modelName: '' }, { modelName: null }] });
-        const missingStatus = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ ptaStatus: 'Unknown' }, { ptaStatus: '' }, { ptaStatus: null }] });
+        const missingBrand = await Phone.countDocuments({ ...catalogScope, $or: [{ brandId: null }, { brandId: { $exists: false } }] });
+        const missingSlug = await Phone.countDocuments({ ...catalogScope, $or: [{ slug: '' }, { slug: null }] });
+        const missingModel = await Phone.countDocuments({ ...catalogScope, $or: [{ modelName: '' }, { modelName: null }] });
+        const missingStatus = await Phone.countDocuments({ ...catalogScope, $or: [{ ptaStatus: 'Unknown' }, { ptaStatus: '' }, { ptaStatus: null }] });
         deduction = Math.min(cat.maxDeduction,
           (missingBrand / base) * 8 +
           (missingSlug / base) * 6 +
@@ -900,10 +904,10 @@ export async function calculateHealthScore(): Promise<{
         break;
       }
       case 'Specifications': {
-        const publishedIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+        const publishedIds = await Phone.find(catalogScope).distinct('_id');
         const allSpecs = await PhoneSpecs.find({ phoneId: { $in: publishedIds } }).lean();
         const specPhoneIds = new Set(allSpecs.map((s: LeanSpecs) => s.phoneId?.toString()).filter(Boolean));
-        const missingSpecs = Math.max(0, publishedPhones - specPhoneIds.size);
+        const missingSpecs = Math.max(0, totalPhones - specPhoneIds.size);
         const emptySpecs = allSpecs.filter((s: LeanSpecs) => {
           const keys = ['chipset', 'ram', 'storage', 'display', 'battery'];
           return keys.every(k => {
@@ -922,19 +926,19 @@ export async function calculateHealthScore(): Promise<{
         break;
       }
       case 'Images': {
-        const publishedIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
+        const publishedIds = await Phone.find(catalogScope).distinct('_id');
         const phonesWithoutThumb = await Phone.countDocuments({ _id: { $in: publishedIds }, $or: [{ thumbnail: '' }, { thumbnail: null }] });
         const phonesWithImages = await PhoneImage.distinct('phoneId', { phoneId: { $in: publishedIds } });
-        const phonesNoImg = Math.max(0, publishedPhones - phonesWithImages.length);
+        const phonesNoImg = Math.max(0, totalPhones - phonesWithImages.length);
         const imgIssues = Math.max(phonesWithoutThumb, phonesNoImg);
         deduction = Math.min(cat.maxDeduction, (imgIssues / base) * 15);
         details = imgIssues > 0 ? `${imgIssues} phones missing images` : 'All phones have images';
         break;
       }
       case 'Prices': {
-        const noPrice = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ pricePKR: 0 }, { pricePKR: null }, { pricePKR: { $lt: 0 } }] });
+        const noPrice = await Phone.countDocuments({ ...catalogScope, $or: [{ pricePKR: 0 }, { pricePKR: null }, { pricePKR: { $lt: 0 } }] });
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const stalePrices = await Phone.countDocuments({ deletedAt: null, status: 'published', $or: [{ lastPriceCheckedAt: null }, { lastPriceCheckedAt: { $lt: thirtyDaysAgo } }] });
+        const stalePrices = await Phone.countDocuments({ ...catalogScope, $or: [{ lastPriceCheckedAt: null }, { lastPriceCheckedAt: { $lt: thirtyDaysAgo } }] });
         deduction = Math.min(cat.maxDeduction,
           (noPrice / base) * 10 +
           (stalePrices / base) * 5
@@ -958,7 +962,7 @@ export async function calculateHealthScore(): Promise<{
         break;
       }
       case 'Verification': {
-        const unverified = await Phone.countDocuments({ deletedAt: null, status: 'published', dataConfidence: { $ne: 'verified' } });
+        const unverified = await Phone.countDocuments({ ...catalogScope, dataConfidence: { $ne: 'verified' } });
         deduction = Math.min(cat.maxDeduction, (unverified / base) * 5);
         details = unverified > 0 ? `${unverified} unverified phones` : 'All phones verified';
         break;

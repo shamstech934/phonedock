@@ -12,7 +12,6 @@ assert.match(settings, /minimumVersion/, 'Mobile minimum version must be configu
 const publicApi = read('src/app/api/[[...path]]/handlers/public.ts');
 assert.match(publicApi, /segments\[0\] === 'mobile'.*segments\[1\] === 'config'/s, 'Public mobile config endpoint must exist');
 assert.doesNotMatch(publicApi, /mobile\/config[\s\S]{0,900}CRON_SECRET/, 'Mobile config must never expose CRON_SECRET');
-assert.match(publicApi, /discoveryCategories/, 'Mobile config must inherit discovery categories from the shared homepage CMS');
 
 const adminApi = read('src/app/api/[[...path]]/handlers/admin-crud.ts');
 assert.match(adminApi, /update\.mobileApp/, 'Admin API must sanitize mobile settings');
@@ -25,8 +24,5 @@ assert.match(adminPage, /Force users to update/, 'Force update control must exis
 const provider = read('mobile-app/src/state/MobileConfigProvider.tsx');
 assert.match(provider, /compareVersions/, 'Mobile app must enforce minimum compatible version');
 assert.match(provider, /Network\/config failures do not brick/, 'Mobile app must fail open safely on transient config failures');
-
-const mobileSchema = read('mobile-app/src/api/config.ts');
-assert.match(mobileSchema, /discovery: z\.object/, 'Mobile app must validate the shared discovery configuration');
 
 console.log('✓ mobile shared-control regression checks passed');

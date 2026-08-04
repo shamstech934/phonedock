@@ -219,7 +219,7 @@ function BuyingInsight({ phone }: { phone: Phone }) {
   if (available.length < 2) {
     return (
       <div className="card-premium p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">SpecsDekh buying insight</p>
         <h3 className="mt-1 text-xl font-bold text-gray-900">Compare the essentials before buying</h3>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Detailed category scores are not available for this phone yet. Check its chipset, camera, battery, display and current price, then compare it with nearby alternatives below.
@@ -238,7 +238,7 @@ function BuyingInsight({ phone }: { phone: Phone }) {
     <div className="card-premium p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">PhoneDock buying insight</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">SpecsDekh buying insight</p>
           <h3 className="mt-1 text-xl font-bold text-gray-900">{verdict}</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Best for <strong className="text-gray-800">{best[0].toLowerCase()}</strong>, with {priceValue}. Its weakest scored area is {weakest[0].toLowerCase()}, so buyers focused on that should compare nearby options first.
@@ -259,7 +259,7 @@ function ScoreBar({ score, label, mini }: { score: number; label: string; mini?:
     return (
       <div className={mini ? 'flex items-center justify-between gap-2' : 'space-y-1.5'}>
         <span className={mini ? 'w-14 shrink-0 text-xs text-muted-foreground' : 'text-sm text-muted-foreground'}>{label}</span>
-        <span className='text-xs font-medium text-muted-foreground'>Not rated yet</span>
+        <span className="max-w-[92px] text-right text-[11px] font-medium leading-tight text-muted-foreground">Not rated yet</span>
       </div>
     );
   }
@@ -469,6 +469,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [activeImage, setActiveImage] = useState(0);
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [priceTrackerError, setPriceTrackerError] = useState('');
   const [priceTracker, setPriceTracker] = useState<{
     currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
@@ -489,10 +490,15 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(r => r.json())
       .then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } })
       .catch(() => { if (!cancelled) setHistoryLoading(false); });
+    setPriceTrackerError('');
     fetch(`/api/phones/${slug}/price-tracker`)
-      .then(r => r.json())
+      .then(async r => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || d.message || 'Price tracker is temporarily unavailable');
+        return d;
+      })
       .then(d => { if (!cancelled && !d.error) setPriceTracker(d); })
-      .catch(() => {});
+      .catch(err => { if (!cancelled) setPriceTrackerError(err instanceof Error ? err.message : 'Price tracker is temporarily unavailable'); });
     return () => { cancelled = true; };
   }, [slug]);
 
@@ -505,7 +511,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+          <div className="site-shell py-6 space-y-6">
             <div className="skeleton-shimmer h-6 w-64 rounded-lg" />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="space-y-4">
@@ -531,7 +537,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+          <div className="site-shell py-20 text-center">
             <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mx-auto mb-5">
               <Smartphone className="w-10 h-10 text-gray-300" />
             </div>
@@ -614,7 +620,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6 animate-fade-in">
+        <div className="site-shell py-4 sm:py-6 animate-fade-in">
           {/* Breadcrumb */}
           <nav aria-label="Breadcrumb">
             <ol className="flex items-center gap-2 text-sm text-muted-foreground mb-5 flex-wrap">
@@ -744,7 +750,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   </button>
                   <PhoneShareMenu title={`${p.brand?.name || ''} ${p.modelName}`.trim()} text={`${p.modelName} price, full specifications and review in Pakistan`} compact />
                 </div>
-                <a href={`mailto:info@phonedock.pk?subject=Incorrect info: ${p.modelName}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-blue-500 transition-colors justify-center">
+                <a href={`mailto:info@specsdekh.com?subject=${encodeURIComponent(`Incorrect information: ${p.brand?.name || ''} ${p.modelName}`)}&body=${encodeURIComponent(`Phone URL: ${typeof window !== 'undefined' ? window.location.href : `/phones/${p.slug}`}\n\nPlease describe the incorrect information:`)}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-blue-500 transition-colors justify-center">
                   <AlertTriangle className="w-3 h-3" /> Report incorrect information
                 </a>
               </div>
@@ -867,7 +873,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-blue-500" /> Price Tracker
                   </h3>
-                  <p className="text-xs text-muted-foreground text-center py-4">Price history not available yet</p>
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-center">
+                    <p className="text-xs font-semibold text-blue-800">Tracking is active</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-blue-700/80">The current price is recorded. A trend chart will appear after the next confirmed price update.</p>
+                  </div>
+                </div>
+              ) : priceTrackerError ? (
+                <div className="card-premium p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" /> Price Tracker
+                  </h3>
+                  <p className="text-xs text-amber-700 rounded-xl border border-amber-200 bg-amber-50 p-3">{priceTrackerError}</p>
                 </div>
               ) : null}
 
@@ -943,7 +959,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                           <div className="text-center">
                             {Number(p.overallRating) > 0 ? (<>
                               <span className="text-xl font-extrabold">{p.overallRating}</span>
-                              <span className="text-[10px] block opacity-70">/ 10</span>
+                              <span className="text-[10px] block opacity-70">editorial / 10</span>
                             </>) : <span className="px-2 text-center text-[10px] font-bold leading-tight">Not rated yet</span>}
                           </div>
                         </div>
@@ -955,7 +971,8 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                           <p className="text-sm text-muted-foreground leading-relaxed">{p.reviewVerdict}</p>
                         </div>
                       </div>
-                      <div className="sm:ml-auto sm:w-64 space-y-2">
+                      <div className="sm:ml-auto sm:w-72 space-y-2 rounded-xl bg-slate-50/70 p-3">
+                        <p className="pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Category scores</p>
                         <ScoreBar score={p.cameraScore} label="Camera" mini />
                         <ScoreBar score={p.performanceScore} label="Performance" mini />
                         <ScoreBar score={p.displayScore} label="Display" mini />
@@ -1227,7 +1244,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
         </div>
 
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200/80 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
-          <div className="mx-auto flex max-w-7xl gap-2">
+          <div className="site-shell flex gap-2">
             <Button variant="outline" className="h-11 flex-1 rounded-xl" asChild>
               <Link href={`/compare?phones=${encodeURIComponent(p.slug)}`}><GitCompare className="mr-2 h-4 w-4" /> Compare</Link>
             </Button>

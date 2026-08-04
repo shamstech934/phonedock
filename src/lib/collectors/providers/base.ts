@@ -1,12 +1,53 @@
 import { NormalizedPhone, ProviderConfig, FieldProvenance } from '../types';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
+function normalizeHeaderRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!value) return result;
+
+  const append = (key: unknown, rawValue: unknown): void => {
+    if (typeof key !== 'string' || !key.trim()) return;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') return;
+    const normalized = String(rawValue).trim();
+    if (!normalized || /[\r\n]/.test(normalized)) return;
+    result[key] = normalized;
+  };
+
+  if (value instanceof Headers) {
+    value.forEach((headerValue, key) => append(key, headerValue));
+    return result;
+  }
+
+  if (value instanceof Map) {
+    value.forEach((headerValue, key) => append(key, headerValue));
+    return result;
+  }
+
+  const candidate = value as { entries?: () => IterableIterator<[unknown, unknown]>; toObject?: () => unknown };
+  if (typeof candidate.entries === 'function') {
+    try {
+      for (const [key, headerValue] of candidate.entries()) append(key, headerValue);
+      return result;
+    } catch { /* fall through */ }
+  }
+  if (typeof candidate.toObject === 'function') {
+    try { return normalizeHeaderRecord(candidate.toObject()); } catch { /* fall through */ }
+  }
+
+  if (typeof value === 'object') {
+    for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) append(key, headerValue);
+  }
+  return result;
+}
+
 export interface ProviderFetchResult {
   phones: NormalizedPhone[];
   totalAvailable?: number;
   hasNextPage: boolean;
   nextPageToken?: string;
   providerErrors: string[];
+  providerWarnings?: string[];
+  skippedCount?: number;
 }
 
 export interface ProviderTestResult {
@@ -36,8 +77,10 @@ export abstract class BaseProvider {
       return {
         success: result.providerErrors.length === 0,
         message: result.providerErrors.length > 0
-          ? `Warnings: ${result.providerErrors.join('; ')}`
-          : `Connected. Found ${result.phones.length} records.`,
+          ? `Errors: ${result.providerErrors.join('; ')}`
+          : result.providerWarnings?.length
+            ? `Connected with warnings. Found ${result.phones.length} records. ${result.providerWarnings.join('; ')}`
+            : `Connected. Found ${result.phones.length} records.`,
         sampleCount: result.phones.length,
         latencyMs: Date.now() - start,
       };
@@ -74,31 +117,59 @@ export abstract class BaseProvider {
   }
 
   protected async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 30000): Promise<Response> {
-    const validation = await validateUrlForFetch(url, this.config.allowedDomains || []);
-    if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const headers: Record<string, string> = {
-        'User-Agent': 'PhoneDock-Collector/1.0',
-        'Accept': 'application/json',
-        ...this.config.headers,
-        ...(options.headers as Record<string, string> || {}),
+      // Build a real Headers instance from primitive string values only. This is
+      // intentionally stricter than passing a Mongoose Map/plain object directly
+      // to fetch, because Node's undici otherwise stringifies entire documents as
+      // a header value and throws `Headers.append ... is an invalid header value`.
+      const configuredHeaders = this.config.type === 'api'
+        ? normalizeHeaderRecord(this.config.headers)
+        : {};
+      const safeHeaderRecord: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (compatible; SpecsDekhBot/2.0; +https://specsdekh.com)',
+        Accept: this.config.type === 'manual_url'
+          ? 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+          : 'application/json,text/plain,*/*',
+        ...configuredHeaders,
+        ...normalizeHeaderRecord(options.headers),
       };
-      // Inject API key from env if configured
-      if (this.config.apiKeyEnvVar && process.env[this.config.apiKeyEnvVar]) {
-        const key = process.env[this.config.apiKeyEnvVar]!;
+      if (this.config.apiKeyEnvVar) {
+        const key = process.env[this.config.apiKeyEnvVar];
+        if (!key) throw new Error(`Required secret ${this.config.apiKeyEnvVar} is not configured`);
         const headerStyle = this.config.apiKeyHeader || 'Authorization';
-        if (headerStyle === 'x-api-key') {
-          headers['x-api-key'] = key;
-        } else {
-          headers['Authorization'] = `Bearer ${key}`;
-        }
+        safeHeaderRecord[headerStyle] = headerStyle.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
       }
-      const response = await fetch(url, { ...options, headers, signal: controller.signal, redirect: 'error' });
-      const declaredLength = Number(response.headers.get('content-length') || 0);
-      if (declaredLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
-      return response;
+      // Keep headers as a plain Record<string, string>. Avoid constructing a
+      // Headers instance here: legacy Mongoose Map/document values can trigger
+      // undici's `Headers.append(... invalid header value)` before our request
+      // reaches the network. The record below has already been reduced to
+      // primitive, newline-free strings only.
+      const requestHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(safeHeaderRecord)) {
+        if (!key.trim() || !value.trim() || /[\r\n]/.test(key) || /[\r\n]/.test(value)) continue;
+        requestHeaders[key] = value;
+      }
+
+      let currentUrl = url;
+      for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+        const validation = await validateUrlForFetch(currentUrl, this.config.allowedDomains || []);
+        if (!validation.safe) throw new Error(`Source URL blocked: ${validation.reason}`);
+        const { headers: _ignoredHeaders, signal: _ignoredSignal, redirect: _ignoredRedirect, ...safeOptions } = options;
+        const response = await fetch(currentUrl, { ...safeOptions, headers: requestHeaders, signal: controller.signal, redirect: 'manual' });
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          const location = response.headers.get('location');
+          if (!location) throw new Error(`Source returned HTTP ${response.status} without a redirect location`);
+          if (redirectCount >= 3) throw new Error('Source redirected too many times');
+          currentUrl = new URL(location, currentUrl).toString();
+          continue;
+        }
+        const declaredLength = Number(response.headers.get('content-length') || 0);
+        if (declaredLength > (this.config.maxResponseBytes || 5 * 1024 * 1024)) throw new Error('Source response exceeds the configured size limit');
+        return response;
+      }
+      throw new Error('Source redirected too many times');
     } finally {
       clearTimeout(timer);
     }

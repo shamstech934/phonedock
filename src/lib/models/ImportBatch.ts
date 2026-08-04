@@ -16,6 +16,16 @@ export interface IImportBatch {
   replaced: number;
   skipped: number;
   failed: number;
+  rowActions: {
+    rowNumber: number;
+    brand?: string;
+    model?: string;
+    action: 'create' | 'update' | 'replace' | 'skip' | 'fail';
+    matchedPhoneId?: string;
+    matchedSlug?: string;
+    matchType?: string;
+    reason: string;
+  }[];
   errors: {
     rowNumber: number;
     brand?: string;
@@ -46,11 +56,34 @@ export interface IImportBatch {
     afterFields?: Record<string, string>;
     fields?: Record<string, string>;
   }[];
+  benchmarkChanges: {
+    phoneId: mongoose.Types.ObjectId;
+    changeType: 'created' | 'updated';
+    beforeFields: Record<string, unknown>;
+    afterFields: Record<string, unknown>;
+  }[];
+  imageChanges: {
+    phoneId: mongoose.Types.ObjectId;
+    beforeImages: { url: string; altText: string; sortOrder: number }[];
+    afterImages: { url: string; altText: string; sortOrder: number }[];
+  }[];
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+
+const RowActionSchema = new Schema({
+  rowNumber: Number,
+  brand: String,
+  model: String,
+  action: { type: String, enum: ['create', 'update', 'replace', 'skip', 'fail'], required: true },
+  matchedPhoneId: String,
+  matchedSlug: String,
+  matchType: String,
+  reason: { type: String, default: '' },
+}, { _id: false, suppressReservedKeysWarning: true });
 
 const BatchErrorSchema = new Schema({
   rowNumber: Number,
@@ -82,6 +115,26 @@ const SpecsChangeSchema = new Schema({
   fields: { type: Schema.Types.Mixed, default: {} },
 }, { _id: false, suppressReservedKeysWarning: true });
 
+
+const BenchmarkChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  changeType: { type: String, enum: ['created', 'updated'], required: true },
+  beforeFields: { type: Schema.Types.Mixed, default: {} },
+  afterFields: { type: Schema.Types.Mixed, default: {} },
+}, { _id: false, suppressReservedKeysWarning: true });
+
+const ImageSnapshotSchema = new Schema({
+  url: { type: String, required: true },
+  altText: { type: String, default: '' },
+  sortOrder: { type: Number, default: 0 },
+}, { _id: false });
+
+const ImageChangeSchema = new Schema({
+  phoneId: { type: Schema.Types.ObjectId, ref: 'Phone' },
+  beforeImages: { type: [ImageSnapshotSchema], default: [] },
+  afterImages: { type: [ImageSnapshotSchema], default: [] },
+}, { _id: false, suppressReservedKeysWarning: true });
+
 const ImportBatchSchema = new Schema<IImportBatch>({
   importId: { type: String, required: true, index: true },
   batchNumber: { type: Number, required: true },
@@ -97,11 +150,14 @@ const ImportBatchSchema = new Schema<IImportBatch>({
   replaced: { type: Number, default: 0 },
   skipped: { type: Number, default: 0 },
   failed: { type: Number, default: 0 },
+  rowActions: { type: [RowActionSchema], default: [] },
   errors: { type: [BatchErrorSchema], default: [] },
   createdPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   updatedPhoneIds: [{ type: Schema.Types.ObjectId, ref: 'Phone' }],
   fieldChanges: { type: [FieldChangeSchema], default: [] },
   specsChanges: { type: [SpecsChangeSchema], default: [] },
+  benchmarkChanges: { type: [BenchmarkChangeSchema], default: [] },
+  imageChanges: { type: [ImageChangeSchema], default: [] },
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
 }, { timestamps: true, suppressReservedKeysWarning: true });

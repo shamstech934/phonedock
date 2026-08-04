@@ -10,7 +10,7 @@ import { connectDB } from '@/lib/mongodb';
 import { News } from '@/lib/models';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 interface NewsArticle {
@@ -100,19 +100,6 @@ async function getRelatedNews(currentSlug: string, category: string, limit = 4):
   }
 }
 
-/* ── generateStaticParams ──────────────────────────────────────────── */
-export async function generateStaticParams(): Promise<{ slug: string }[]> {
-  try {
-    await connectDB();
-    const articles = await News.find({ published: true, status: 'published' })
-      .select('slug')
-      .lean();
-    return articles.map((a) => ({ slug: a.slug as string }));
-  } catch {
-    return [];
-  }
-}
-
 /* ── generateMetadata ──────────────────────────────────────────────── */
 export async function generateMetadata({
   params,
@@ -130,7 +117,7 @@ export async function generateMetadata({
   const description =
     article.seoDescription ||
     article.excerpt ||
-    `Read the latest news about ${article.title} on PhoneDock Pakistan.`;
+    `Read the latest news about ${article.title} on SpecsDekh Pakistan.`;
 
   return {
     title,
@@ -155,7 +142,8 @@ export async function generateMetadata({
 }
 
 /* ── Page Component ────────────────────────────────────────────────── */
-export const revalidate = 900;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function NewsArticlePage({
   params,
@@ -197,7 +185,7 @@ export default async function NewsArticlePage({
       : undefined,
     publisher: {
       '@type': 'Organization',
-      name: 'PhoneDock',
+      name: 'SpecsDekh',
       url: BASE_URL,
       logo: {
         '@type': 'ImageObject',

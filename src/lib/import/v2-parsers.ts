@@ -113,8 +113,14 @@ export function parseCSV(content: string, fileName: string): ParsedFile {
     transformHeader: (h: string) => h.trim().toLowerCase().replace(/[\s_-]+/g, ''),
   });
 
-  if (result.errors.length > 0 && result.data.length < result.data.length * 0.5) {
+  // Reject heavily malformed CSV files. The previous condition compared the
+  // record count with half of itself, so it could never be true. Treat a file as
+  // unusable when parsing produced no rows, or when errors outnumber valid rows.
+  if (result.errors.length > 0 && (result.data.length === 0 || result.errors.length > result.data.length)) {
     return { records: [], fileType: 'csv', fileName, totalRecords: 0, warnings: [`CSV parse errors: ${result.errors.length}`] };
+  }
+  if (result.errors.length > 0) {
+    warnings.push(`CSV parsed with ${result.errors.length} warning${result.errors.length === 1 ? '' : 's'}`);
   }
 
   let records = result.data as Record<string, unknown>[];

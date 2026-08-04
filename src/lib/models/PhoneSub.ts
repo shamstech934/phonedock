@@ -5,6 +5,16 @@ const PhoneImageSchema = new Schema({
   url: { type: String, required: true },
   altText: { type: String, default: '' },
   sortOrder: { type: Number, default: 0 },
+  role: { type: String, enum: ['front', 'back', 'side', 'gallery', 'thumbnail', 'unknown'], default: 'unknown' },
+  color: { type: String, default: '' },
+  sourceName: { type: String, default: '' },
+  sourceUrl: { type: String, default: '' },
+  verified: { type: Boolean, default: false },
+  width: { type: Number, default: 0 },
+  height: { type: Number, default: 0 },
+  fileType: { type: String, default: '' },
+  checksum: { type: String, default: '' },
+  status: { type: String, enum: ['active', 'pending', 'rejected'], default: 'active' },
 }, { timestamps: true });
 
 PhoneImageSchema.index({ phoneId: 1, sortOrder: 1 });

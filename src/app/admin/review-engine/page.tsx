@@ -1,13 +1,16 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState } from 'react';
 import { Sparkles, ShieldCheck, RefreshCw } from 'lucide-react';
+
+type ReviewEngineResult = { updated?: number; skipped?: number; error?: string };
 
 export default function ReviewEngineAdminPage() {
   const [limit, setLimit] = useState(25);
   const [overwrite, setOverwrite] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ updated?: number; skipped?: number; error?: string } | null>(null);
+  const [result, setResult] = useState<ReviewEngineResult | null>(null);
 
   async function run() {
     setLoading(true); setResult(null);
@@ -17,7 +20,7 @@ export default function ReviewEngineAdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit, overwrite }),
       });
-      const data = await response.json();
+      const data = await readApiResponse<ReviewEngineResult>(response);
       if (!response.ok) throw new Error(data.error || 'Review generation failed');
       setResult(data);
     } catch (error) {
@@ -29,7 +32,7 @@ export default function ReviewEngineAdminPage() {
     <div className="max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Sparkles className="w-6 h-6 text-violet-600" /> Smart Review Engine</h1>
-        <p className="text-sm text-muted-foreground mt-1">Generate deterministic scores, pros, cons and buying verdicts from existing PhoneDock data. No external AI or fabricated specs.</p>
+        <p className="text-sm text-muted-foreground mt-1">Generate deterministic scores, pros, cons and buying verdicts from existing SpecsDekh data. No external AI or fabricated specs.</p>
       </div>
 
       <div className="card-premium p-5 space-y-5">

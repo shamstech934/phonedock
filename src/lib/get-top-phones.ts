@@ -13,7 +13,7 @@ import { unstable_cache } from 'next/cache';
 type LeanDoc = any;
 
 // Field allowlist for card-level queries (excludes heavy fields)
-const CARD_SELECT = '-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl -manualLock -manualLockReason -sourceUrl -priceMode -preferredPriceSourceId -lastVerifiedAt -dataConfidence -createdBy -updatedBy -publishedBy -publishedAt -deletedAt -currentPrice -previousPrice -lowestPrice -highestPrice -priceChange -percentageChange -lastPriceCheckedAt -lastPriceChangedAt';
+const CARD_SELECT = '-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl -manualLock -manualLockReason -sourceUrl -priceMode -preferredPriceSourceId -lastVerifiedAt -dataConfidence -createdBy -updatedBy -publishedBy -publishedAt -deletedAt';
 
 const SORT_FIELDS = new Set([
   'cameraScore', 'batteryScore', 'performanceScore',

@@ -1,7 +1,9 @@
 'use client';
+import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/lib/useAdmin';
+import { toast } from '@/hooks/use-toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck, AlertTriangle, AlertCircle, Info, XCircle,
@@ -20,7 +22,7 @@ interface SummaryData {
     totals: { totalPhones: number; publishedPhones: number; draftPhones: number };
   } | null;
   totals: { totalPhones: number; publishedPhones: number; draftPhones: number; archivedPhones: number; totalBrands: number };
-  specs: { withSpecs: number; completeSpecs: number; publishedPhones: number };
+  specs: { withSpecs: number; completeSpecs: number; publishedPhones: number; catalogPhones: number };
   queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number };
   severity: { critical: number; high: number; medium: number; low: number; info: number; total: number };
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
@@ -158,11 +160,15 @@ export default function DataQualityPage() {
         credentials: 'include',
         body: JSON.stringify({ type, dryRun, execute: true }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setScanStatus({ running: true, scanId: data.scanId });
-      }
-    } catch (e) { console.error(e); }
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Unable to start scan (${res.status})`);
+      setScanStatus({ running: true, scanId: data.scanId });
+      toast({ title: dryRun ? 'Dry run queued' : 'Full scan queued', description: 'Progress will update automatically.' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unable to start data quality scan';
+      setSummaryError(message);
+      toast({ title: 'Scan could not start', description: message, variant: 'destructive' });
+    }
   };
 
   const setTab = (tab: TabId) => {
@@ -216,7 +222,7 @@ export default function DataQualityPage() {
                 });
                 if (res.ok) {
                   const data = await res.json();
-                  alert(`Cleaned up ${data.deleted} issues`);
+                  toast({ title: 'Cleanup complete', description: `Cleaned up ${data.deleted} issues` });
                   fetchSummary();
                 }
               } catch (e) { console.error(e); }
@@ -415,9 +421,9 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const [batchMatchProgress, setBatchMatchProgress] = useState<{ done: number; total: number } | null>(null);
 
   const labels = {
-    specs: { title: 'Phones Missing Specs', help: 'These published phones do not have a PhoneSpecs document.', icon: Smartphone },
-    images: { title: 'Phones Missing Images', help: 'These published phones have neither a thumbnail nor an image record.', icon: Image },
-    prices: { title: 'Phones Missing Prices', help: 'These published phones have no valid PKR price.', icon: DollarSign },
+    specs: { title: 'Phones Missing Specs', help: 'These published or draft/review phones do not have a PhoneSpecs document.', icon: Smartphone },
+    images: { title: 'Phones Missing Images', help: 'These published or draft/review phones are missing a thumbnail or gallery image record.', icon: Image },
+    prices: { title: 'Phones Missing Prices', help: 'These published or draft/review phones have no valid PKR price.', icon: DollarSign },
   } as const;
   const cfg = labels[type];
   const QueueIcon = cfg.icon;
@@ -458,7 +464,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     const csv = '\uFEFF' + [header, ...rows].map(row => row.map(quote).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `phonedock-missing-${type}-${suffix}.csv`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `specsdekh-missing-${type}-${suffix}.csv`; anchor.click(); URL.revokeObjectURL(url);
   };
 
   const exportPageCsv = () => downloadItemsCsv(items, `page-${page}`);
@@ -585,7 +591,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
     try {
       const res = await fetch('/api/admin/data-quality/spec-enrichment/apply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ phoneId: specSearchPhone.id, specs: editableSpecs, sourceName: selectedCandidate.sourceName || 'PhoneDock local dataset', sourceUrl: selectedCandidate.sourceUrl }),
+        body: JSON.stringify({ phoneId: specSearchPhone.id, specs: editableSpecs, sourceName: selectedCandidate.sourceName || 'SpecsDekh local dataset', sourceUrl: selectedCandidate.sourceUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unable to apply specifications');
@@ -617,7 +623,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
 
       <div className="bg-white border border-blue-100 rounded-2xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-          <div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-blue-600" /> Import reviewed repair CSV</h3><p className="text-sm text-gray-500 mt-1">Accepts exported repair work packs or PhoneDock specs CSV files. Phones are matched by ID, slug, or brand + model.</p></div>
+          <div className="flex-1"><h3 className="font-semibold text-gray-900 flex items-center gap-2"><Upload className="w-4 h-4 text-blue-600" /> Import reviewed repair CSV</h3><p className="text-sm text-gray-500 mt-1">Accepts exported repair work packs or SpecsDekh specs CSV files. Phones are matched by ID, slug, or brand + model.</p></div>
           <label className="h-10 px-4 inline-flex items-center justify-center rounded-xl border border-blue-200 text-blue-700 text-sm font-medium cursor-pointer hover:bg-blue-50">
             Choose CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; const rows = parseCsvWorkPack(await file.text()); setRepairRows(rows); setRepairFileName(file.name); setRepairResult(null); }} />
           </label>
@@ -644,7 +650,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
           <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between z-10"><div><h3 className="font-bold text-gray-900">Find Missing Specifications</h3><p className="text-sm text-gray-500 mt-1">{specSearchPhone.brandName} {specSearchPhone.modelName} · preview and approve before database update</p></div><button disabled={specApplyLoading} onClick={() => setSpecSearchPhone(null)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50"><X className="w-5 h-5" /></button></div>
           <div className="p-5 space-y-4">
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">This searches the specifications dataset imported into your own MongoDB. Always check the model and variant before pressing Apply; nothing updates automatically.</div>
-            {specSearchLoading && <div className="py-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /><p className="text-sm text-gray-500 mt-3">Searching PhoneDock local dataset…</p></div>}
+            {specSearchLoading && <div className="py-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" /><p className="text-sm text-gray-500 mt-3">Searching SpecsDekh local dataset…</p></div>}
             {specSearchError && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{specSearchError}</div>}
             {!specSearchLoading && !selectedCandidate && specCandidates.length > 0 && <div><h4 className="text-sm font-semibold text-gray-700 mb-3">Choose the correct match</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{specCandidates.map(candidate => <button key={candidate.slug} onClick={() => chooseSpecCandidate(candidate)} className="text-left border border-gray-200 rounded-xl p-4 hover:border-blue-400 hover:bg-blue-50 transition-colors"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-900">{candidate.name}</span><span className={`text-xs px-2 py-1 rounded-full ${candidate.score >= 80 ? 'bg-green-100 text-green-700' : candidate.score >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{candidate.score}% match</span></div><p className="text-xs text-gray-500 mt-2 line-clamp-2">{candidate.specs.chipset || 'Chipset unavailable'} · {candidate.specs.display || 'Display unavailable'}</p></button>)}</div></div>}
             {selectedCandidate && editableSpecs && <div className="space-y-4"><div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold text-gray-900">Review: {selectedCandidate.name}</h4><p className="text-xs text-gray-500">Match confidence: {selectedCandidate.score}%</p></div><button onClick={() => { setSelectedCandidate(null); setEditableSpecs(null); }} className="text-sm text-blue-600 font-medium">Choose another</button></div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{([['display','Display'],['chipset','Chipset'],['ram','RAM'],['storage','Storage'],['battery','Battery'],['mainCamera','Main Camera'],['fiveG','5G']] as const).map(([key,label]) => <label key={key} className="text-sm text-gray-700"><span className="font-medium">{label}</span><textarea rows={key === 'mainCamera' || key === 'display' ? 3 : 2} value={editableSpecs[key]} onChange={e => setEditableSpecs(prev => prev ? { ...prev, [key]: e.target.value } : prev)} className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-blue-400" placeholder={`${label} not found`} /></label>)}</div><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100"><p className="text-xs text-gray-500">Applying creates the PhoneSpecs record from the reviewed local dataset match.</p><button onClick={applyFreeSpecs} disabled={specApplyLoading || !Object.values(editableSpecs).some(Boolean)} className="h-10 px-5 bg-green-600 text-white rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50">{specApplyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />} Apply reviewed specs</button></div></div>}
@@ -710,11 +716,15 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
           <StatCard label="Published" value={summary.totals.publishedPhones} icon={CheckCircle} color="text-green-600" />
           <StatCard label="Draft / Review" value={summary.totals.draftPhones} icon={AlertCircle} color="text-amber-600" />
           <StatCard label="Brands" value={summary.totals.totalBrands} icon={ShieldCheck} />
-          <StatCard label="Complete Specs" value={summary.specs.completeSpecs} icon={FileCheck} color="text-blue-600" sub={`${summary.specs.withSpecs} with specs doc`} />
+          <StatCard label="Complete Specs" value={summary.specs.completeSpecs} icon={FileCheck} color="text-blue-600" sub={`${summary.specs.withSpecs} of ${summary.specs.catalogPhones} with specs doc`} />
           <StatCard label="Missing Specs" value={summary.queues.missingSpecs} icon={Smartphone} color="text-red-600" />
           <StatCard label="Missing Images" value={summary.queues.missingImages} icon={Image} color="text-red-600" />
           <StatCard label="Missing Prices" value={summary.queues.missingPrices} icon={DollarSign} color="text-red-600" />
         </div>
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+        Missing-data counters cover the complete working catalog: Published + Draft/Review. Archived and soft-deleted records are excluded. Counts are read live from MongoDB and do not depend on a completed scan.
       </div>
 
       {/* Severity + Queue Rows */}
@@ -873,7 +883,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         setBulkAction('');
         fetchIssues(1);
         onRefresh();
-        alert(`Bulk action complete: ${result.succeeded} succeeded, ${result.failed} failed`);
+        toast({ title: 'Bulk action complete', description: `${result.succeeded} succeeded, ${result.failed} failed` });
       }
     } catch (e) { console.error(e); }
     finally { setActionLoading(false); }
@@ -890,43 +900,62 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       });
       const result = await res.json();
       if (!res.ok || result.success === false) {
-        alert(result.error || 'Auto-fix failed for this issue');
+        toast({ variant: 'destructive', title: 'Auto-fix failed', description: result.error || 'Auto-fix failed for this issue' });
       } else {
         fetchIssues();
         onRefresh();
       }
-    } catch (e) { console.error(e); alert('Auto-fix failed'); }
+    } catch (e) { console.error(e); toast({ variant: 'destructive', title: 'Auto-fix failed', description: 'The issue could not be fixed. Please try again.' }); }
     finally { setFixingId(null); }
   };
 
   const handleFixAll = async () => {
-    const confirmMsg = `This will auto-fix EVERY open issue matching the current filters (not just this page). Continue?`;
+    const confirmMsg = `This will auto-fix EVERY open issue matching the current filters in safe serverless batches. Continue?`;
     if (!window.confirm(confirmMsg)) return;
     setFixAllLoading(true);
+    let cursor: string | null = null;
+    let succeeded = 0;
+    let failed = 0;
+    let processed = 0;
     try {
-      const res = await fetch('/api/admin/data-quality/fix-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          severity: severityFilter || undefined,
-          issueType: defaultFilter?.issueType || undefined,
-          entityType: defaultFilter?.entityType || undefined,
-          search: search || undefined,
-          dryRun: false,
-        }),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        alert(`Fix all complete: ${result.succeeded} fixed, ${result.failed} failed, out of ${result.total} auto-fixable issues found.`);
-        fetchIssues(1);
-        onRefresh();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Fix all failed');
-      }
-    } catch (e) { console.error(e); alert('Fix all failed'); }
-    finally { setFixAllLoading(false); }
+      do {
+        const response: Response = await fetch('/api/admin/data-quality/fix-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            severity: severityFilter || undefined,
+            issueType: defaultFilter?.issueType || undefined,
+            entityType: defaultFilter?.entityType || undefined,
+            search: search || undefined,
+            dryRun: false,
+            cursor,
+          }),
+        });
+        const result = await readApiResponse<{
+          error?: string;
+          succeeded?: number;
+          failed?: number;
+          total?: number;
+          hasMore?: boolean;
+          nextCursor?: string | null;
+        }>(response).catch(() => null);
+        if (!response.ok || !result) throw new Error(result?.error || 'Fix all failed');
+        succeeded += result.succeeded || 0;
+        failed += result.failed || 0;
+        processed += result.total || 0;
+        cursor = result.hasMore ? (result.nextCursor ?? null) : null;
+      } while (cursor);
+
+      toast({ title: 'Fix all complete', description: `${succeeded} fixed, ${failed} failed, ${processed} processed.` });
+      fetchIssues(1);
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+      toast({ variant: 'destructive', title: 'Fix all failed', description: e instanceof Error ? e.message : 'Fix all failed' });
+    } finally {
+      setFixAllLoading(false);
+    }
   };
 
   const handleResolveIssue = async (issueId: string) => {
@@ -972,7 +1001,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         credentials: 'include',
         body: JSON.stringify({ entityIds }),
       });
-      if (res.ok) alert('Re-scan started');
+      if (res.ok) toast({ title: 'Re-scan started', description: 'Data Quality is scanning the selected record again.' });
     } catch (e) { console.error(e); }
   };
 
@@ -1265,7 +1294,7 @@ function DuplicatesTab({ onRefresh }: { onRefresh: () => void }) {
         onRefresh();
       } else {
         const data = await res.json();
-        alert(data.error || 'Merge failed');
+        toast({ variant: 'destructive', title: 'Merge failed', description: data.error || 'Merge failed' });
       }
     } catch (e) { console.error(e); }
     finally { setMerging(null); }

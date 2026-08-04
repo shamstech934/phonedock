@@ -1,17 +1,33 @@
 import mongoose, { Schema } from 'mongoose';
+import { PRICE_SOURCE_TYPES } from '@/lib/price-source-types';
 
 // ─── PriceSource ────────────────────────────────────────────────────────
 const PriceSourceSchema = new Schema({
   name: { type: String, required: true },
-  sourceType: { type: String, enum: ['retailer', 'marketplace', 'official'], default: 'retailer' },
+  sourceType: { type: String, enum: PRICE_SOURCE_TYPES, default: 'retailer' },
   enabled: { type: Boolean, default: true },
   trusted: { type: Boolean, default: false },
   baseUrl: { type: String, default: '' },
+  verificationUrl: { type: String, default: '' },
+  discoveryEnabled: { type: Boolean, default: false },
+  discoveryMode: { type: String, enum: ['manual', 'sitemap', 'catalog', 'feed', 'api'], default: 'manual' },
+  catalogUrls: { type: [String], default: [] },
+  sitemapUrls: { type: [String], default: [] },
+  feedUrl: { type: String, default: '' },
+  syncFrequency: { type: String, enum: ['manual', 'hourly', 'daily', 'weekly'], default: 'daily' },
+  lastDiscoveryAt: { type: Date, default: null },
+  lastDiscoveryCount: { type: Number, default: 0 },
+  productsFound: { type: Number, default: 0 },
+  productsAdded: { type: Number, default: 0 },
+  productsUpdated: { type: Number, default: 0 },
+  productsRemoved: { type: Number, default: 0 },
   allowedDomains: { type: [String], default: [] },
   priority: { type: Number, default: 0 },
   lastCheckedAt: { type: Date, default: null },
   lastSuccessAt: { type: Date, default: null },
   failureCount: { type: Number, default: 0 },
+  nextRetryAt: { type: Date, default: null },
+  lastError: { type: String, default: '' },
   status: { type: String, enum: ['active', 'paused', 'failed'], default: 'active' },
   notes: { type: String, default: '' },
 }, { timestamps: true });
@@ -19,6 +35,7 @@ const PriceSourceSchema = new Schema({
 PriceSourceSchema.index({ name: 1 }, { unique: true });
 PriceSourceSchema.index({ sourceType: 1 });
 PriceSourceSchema.index({ enabled: 1, status: 1 });
+PriceSourceSchema.index({ enabled: 1, status: 1, nextRetryAt: 1 });
 PriceSourceSchema.index({ priority: -1 });
 
 export const PriceSource = mongoose.models.PriceSource || mongoose.model('PriceSource', PriceSourceSchema);
@@ -40,12 +57,12 @@ const PhoneRetailListingSchema = new Schema({
   availability: { type: String, enum: ['available', 'unavailable', 'unknown'], default: 'unknown' },
   lastCheckedAt: { type: Date, default: null },
   lastChangedAt: { type: Date, default: null },
-  lastFinalUrl: { type: String, default: '' },
-  lastDetectedTitle: { type: String, default: '' },
-  lastExtractionMethod: { type: String, default: '' },
-  lastConfidence: { type: Number, default: 0 },
+  lastSuccessAt: { type: Date, default: null },
+  failureCount: { type: Number, default: 0 },
+  nextRetryAt: { type: Date, default: null },
   lastError: { type: String, default: '' },
-  consecutiveFailures: { type: Number, default: 0 },
+  extractionMethod: { type: String, enum: ['json-ld', 'meta', 'data-attribute', 'visible-text', ''], default: '' },
+  extractionConfidence: { type: Number, default: 0 },
   enabled: { type: Boolean, default: true },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected', 'failed'], default: 'pending' },
 }, { timestamps: true });
@@ -54,6 +71,9 @@ PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ verificationStatus: 1 });
+PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, lastCheckedAt: 1 });
+PhoneRetailListingSchema.index({ failureCount: -1, lastCheckedAt: 1 });
+PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, nextRetryAt: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
   unique: true,

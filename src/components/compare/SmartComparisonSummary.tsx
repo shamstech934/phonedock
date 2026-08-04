@@ -61,7 +61,7 @@ export function SmartComparisonSummary({ phones }: { phones: Phone[] }) {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-[11px] leading-5 text-gray-500">Scores use only available PhoneDock data. Estimated scores and unverified prices reduce confidence; always confirm current market price and full specifications before buying.</p>
+      <p className="mt-4 text-[11px] leading-5 text-gray-500">Scores use only available SpecsDekh data. Estimated scores and unverified prices reduce confidence; always confirm current market price and full specifications before buying.</p>
     </section>
   );
 }

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 // Lazy-load to avoid importing dotenv/dns at edge runtime
 // Validation is for scripts; the app just needs to connect or fail clearly.
 
-const MONGODB_URI = process.env.MONGODB_URI || '';
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URL || '';
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -89,7 +89,7 @@ async function connectWithRetry(
 
 export async function connectDB(): Promise<typeof mongoose> {
   if (!MONGODB_URI) {
-    throw new Error('MONGODB_URI environment variable is not defined');
+    throw new Error('MONGODB_URI environment variable is not defined (legacy MONGO_URL is also supported)');
   }
   if (cached.conn) {
     if (mongoose.connection.readyState === 1) return cached.conn;

@@ -6,7 +6,7 @@ import { Camera, Cpu, Battery, Monitor, Star, Calculator } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Rating Methodology',
-  description: 'Understand how PhoneDock calculates phone ratings — our scoring formula, category weights, and score breakdown.',
+  description: 'Understand how SpecsDekh calculates phone ratings — our scoring formula, category weights, and score breakdown.',
   alternates: { canonical: `${getBaseUrl()}/rating-methodology` },
 };
 
@@ -28,7 +28,7 @@ export default function RatingMethodologyPage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Overview</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Every phone on PhoneDock receives an overall rating from 0 to 10. This rating is calculated from five individual category scores, each weighted according to its importance for Pakistani consumers. Our methodology is designed to be transparent, consistent, and reflective of real-world user experience.
+                Every phone on SpecsDekh receives an overall rating from 0 to 10. This rating is calculated from five individual category scores, each weighted according to its importance for Pakistani consumers. Our methodology is designed to be transparent, consistent, and reflective of real-world user experience.
               </p>
             </section>
 

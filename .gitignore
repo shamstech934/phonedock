@@ -65,7 +65,3 @@ e2e-server.err
 e2e-server.out
 coverage/
 .npm-cache/
-
-# Accidentally extracted local delivery archives (never source code)
-/PhoneDock-unified-pipeline-pro-20260730-234256/
-/PhoneDock-price-source-table-fix-v2-20260731/

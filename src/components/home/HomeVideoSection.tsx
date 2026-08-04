@@ -39,7 +39,7 @@ function VideoThumbnail({ video, priority = false }: { video: HomeVideo; priorit
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-2xl backdrop-blur-md">
             <Play className="h-6 w-6 fill-current" aria-hidden="true" />
           </div>
-          <span className="text-xs font-semibold tracking-[0.18em] text-white/60">PHONEDOCK VIDEO</span>
+          <span className="text-xs font-semibold tracking-[0.18em] text-white/60">SPECSDEKH VIDEO</span>
         </div>
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
