@@ -391,12 +391,12 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     const safe = escapeRegex(q);
     const words = q.split(/\s+/).filter(Boolean);
-    const matchingBrands = await Brand.find({
+    const brandIds = await Brand.find({
       active: true,
       $or: [{ name: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }, ...words.map(word => ({ name: { $regex: `^${escapeRegex(word)}`, $options: 'i' } }))],
     }).select('_id name slug').limit(8).lean();
-    const brandIds = matchingBrands.map(brand => brand._id);
-    const brandWords = new Set(matchingBrands.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
+    const matchingBrandIds = brandIds.map(brand => brand._id);
+    const brandWords = new Set(brandIds.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
     const modelWords = words.filter(word => !brandWords.has(word.toLowerCase()));
     const modelAnd = modelWords.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } }));
 
@@ -406,15 +406,16 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       $or: [
         { modelName: { $regex: safe, $options: 'i' } },
         { slug: { $regex: safe, $options: 'i' } },
-        ...(brandIds.length ? [{ brandId: { $in: brandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
+        ...(matchingBrandIds.length ? [{ brandId: { $in: matchingBrandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
         ...(modelAnd.length ? [{ $and: modelAnd }] : []),
       ],
     };
 
     const phones = await Phone.find(queryFilter)
+      .maxTimeMS(5000)
       .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
       .sort(PHONE_NEWEST_SORT)
-      .limit(10)
+      .limit(12)
       .populate('brand', 'name slug')
       .lean();
 
