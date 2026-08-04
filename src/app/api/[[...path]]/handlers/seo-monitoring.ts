@@ -28,6 +28,7 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
     publishedWithSlug,
     publishedWithPrice,
     publishedPhoneIds,
+    publishedThumbnailIds,
     totalBrands,
     activeBrands,
     brandsWithPublishedPhones,
@@ -39,6 +40,10 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
     Phone.countDocuments({ status: 'published', slug: { $type: 'string', $ne: '' } }),
     Phone.countDocuments({ status: 'published', pricePKR: { $gt: 0 } }),
     Phone.distinct('_id', { status: 'published' }),
+    Phone.distinct('_id', {
+      status: 'published',
+      thumbnail: { $type: 'string', $nin: ['', null] },
+    }),
     Brand.countDocuments({}),
     Brand.countDocuments({ active: { $ne: false } }),
     Phone.distinct('brandId', { status: 'published', brandId: { $exists: true, $ne: null } }),
@@ -48,8 +53,18 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
       .select('brandId modelName slug pricePKR').populate('brandId', 'name').limit(8).lean(),
   ]);
 
-  const imagePhoneIds = await PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } });
-  const publishedWithImages = new Set(imagePhoneIds.map(String)).size;
+  // Public cards and detail pages use Phone.thumbnail as the primary image, while
+  // the gallery uses PhoneImage records. Treat either source as a valid image so
+  // SEO Monitoring reports the same reality visitors see on the website.
+  const imagePhoneIds = await PhoneImage.distinct('phoneId', {
+    phoneId: { $in: publishedPhoneIds },
+    status: { $ne: 'rejected' },
+    url: { $type: 'string', $nin: ['', null] },
+  });
+  const publishedWithImages = new Set([
+    ...publishedThumbnailIds.map(String),
+    ...imagePhoneIds.map(String),
+  ]).size;
   const eligiblePhones = Math.min(publishedPhones, publishedWithSlug, publishedWithPrice, publishedWithImages);
   const emptyBrands = Math.max(0, activeBrands - new Set(brandsWithPublishedPhones.map(String)).size);
 
@@ -82,7 +97,7 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
       key: 'phone-images',
       label: 'Published phone images',
       status: publishedWithImages === publishedPhones ? 'pass' : 'warning',
-      detail: `${publishedWithImages}/${publishedPhones} published phones have an image record.`,
+      detail: `${publishedWithImages}/${publishedPhones} published phones have a usable thumbnail or gallery image.`,
     },
     {
       key: 'phone-prices',
@@ -92,9 +107,11 @@ export async function handleSeoMonitoringGet(req: NextRequest): Promise<NextResp
     },
     {
       key: 'empty-brands',
-      label: 'Empty brand pages',
-      status: emptyBrands === 0 ? 'pass' : 'warning',
-      detail: `${emptyBrands} active brands currently have no published phone.`,
+      label: 'Hidden empty brand records',
+      status: emptyBrands === 0 ? 'pass' : 'info',
+      detail: emptyBrands === 0
+        ? 'Every active brand has at least one published phone.'
+        : `${emptyBrands} catalogue-only brand records have no published phone. They are hidden from the public Brands directory and brands sitemap.`,
     },
     {
       key: 'google-verification',
