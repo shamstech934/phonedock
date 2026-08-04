@@ -3,5 +3,6 @@
  */
 
 export function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+  const configured = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+  return configured.replace(/\/+$/, '');
 }

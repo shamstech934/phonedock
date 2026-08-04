@@ -4,6 +4,7 @@ import { getBaseUrl } from '@/lib/urls';
 import { escapeXml, formatDate, xmlResponse } from '@/lib/seo-sitemaps/xml';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET() {
   const base = getBaseUrl();

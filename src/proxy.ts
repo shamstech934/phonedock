@@ -35,6 +35,7 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
     pathname === '/robots.txt' ||
+    pathname.endsWith('-sitemap.xml') ||
     pathname === '/sitemap.xml' ||
     pathname.startsWith('/images/')
   );
@@ -152,6 +153,6 @@ export const config = {
   matcher: [
     // Apply request IDs and security routing consistently to all application
     // requests while excluding immutable Next.js assets.
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|robots\.txt|sitemap\.xml|.*-sitemap\.xml).*)',
   ],
 };

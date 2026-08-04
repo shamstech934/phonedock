@@ -4,6 +4,7 @@ import { getBaseUrl } from '@/lib/urls';
 import { escapeXml, xmlResponse } from '@/lib/seo-sitemaps/xml';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 function toAbsoluteImageUrl(value: unknown, base: string): string | null {
   const raw = String(value ?? '').trim();

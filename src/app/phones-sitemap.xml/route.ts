@@ -5,6 +5,7 @@ import { escapeXml, formatDate, xmlResponse } from '@/lib/seo-sitemaps/xml';
 import { SEO_SPEC_LANDINGS } from '@/lib/seo-growth';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET() {
   const base = getBaseUrl();
