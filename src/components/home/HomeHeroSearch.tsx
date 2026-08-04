@@ -7,6 +7,9 @@ import Image from 'next/image';
 import { Search, Smartphone, TrendingUp, Loader2 } from 'lucide-react';
 import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
+const autocompleteCache = new Map<string, { expiresAt: number; phones: AutocompleteResult[] }>();
+const AUTOCOMPLETE_CACHE_TTL = 5 * 60 * 1000;
+
 interface AutocompleteResult {
   id: string;
   slug: string;
@@ -24,6 +27,7 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,22 +48,38 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
       setShowDropdown(false);
       return;
     }
+    const normalized = value.trim().toLowerCase();
+    const cached = autocompleteCache.get(normalized);
+    if (cached && cached.expiresAt > Date.now()) {
+      setResults(cached.phones);
+      setShowDropdown(true);
+      setLoading(false);
+      return;
+    }
+
     setShowDropdown(true);
     setLoading(true);
+    const requestId = ++requestIdRef.current;
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value.trim())}`, { signal: controller.signal });
+        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value.trim())}`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' },
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        setResults(data.phones || []);
+        if (requestId !== requestIdRef.current) return;
+        const phones = (data.phones || []) as AutocompleteResult[];
+        autocompleteCache.set(normalized, { expiresAt: Date.now() + AUTOCOMPLETE_CACHE_TTL, phones });
+        setResults(phones);
       } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') setResults([]);
+        if (requestId === requestIdRef.current && err instanceof Error && err.name !== 'AbortError') setResults([]);
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) setLoading(false);
       }
-    }, 250);
+    }, 320);
   }, []);
 
   const submit = (event?: React.FormEvent<HTMLFormElement>) => {

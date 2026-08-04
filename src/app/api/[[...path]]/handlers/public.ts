@@ -376,81 +376,56 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       const bOrder = orderMap.get(`slug:${b.slug}`) ?? orderMap.get(`id:${bId}`) ?? Number.MAX_SAFE_INTEGER;
       return aOrder - bOrder;
     });
-    return cached({ phones: phonesWithSpecs }, 60, 300);
+    return cached({ phones: phonesWithSpecs }, 300, 1800);
   }
 
   // ---- /api/phones/autocomplete?q=... ----
   if (segments.length === 2 && segments[0] === 'phones' && segments[1] === 'autocomplete') {
-    // The limiter is MongoDB-backed, so the connection must exist before it is
-    // queried. Calling it first makes cold serverless requests fail closed.
     await connectDB();
     if (!await checkIpRateLimit(`autocomplete:${ip}`, 120, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
     }
     const url = new URL(req.url);
-    const q = (url.searchParams.get('q') || '').trim();
-    if (q.length < 2) return cached({ phones: [] }, 60, 180);
-    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const tokenMatchStage = tokens.length
-      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
-      : {};
-    const safe = escapeRegex(q);
+    const q = (url.searchParams.get('q') || '').trim().slice(0, 80);
+    if (q.length < 2) return cached({ phones: [] }, 300, 1800);
 
-    let phones: AutocompletePhone[];
-    try {
-      phones = await Phone.aggregate<AutocompletePhone>([
-        { $match: { active: true, status: 'published' } },
-        { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
-        { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-        { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
-        { $match: tokenMatchStage },
-        {
-          $addFields: {
-            _rank: {
-              $cond: [
-                { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
-                { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
-              ],
-            },
-          },
-        },
-        { $sort: { _rank: 1, releaseDate: -1, availableFrom: -1, announcedAt: -1, createdAt: -1, modelName: 1 } },
-        { $limit: 12 },
-        { $project: { slug: 1, modelName: 1, thumbnail: 1, pricePKR: 1, 'brand._id': 1, 'brand.name': 1, 'brand.slug': 1 } },
-      ]).option({ maxTimeMS: 5000 });
-    } catch {
-      // A bounded fallback keeps search usable when the aggregation exceeds the
-      // serverless time budget. It intentionally returns the same light shape.
-      const brandIds = await Brand.find({
-        $or: [
-          { name: { $regex: safe, $options: 'i' } },
-          { slug: { $regex: safe, $options: 'i' } },
-        ],
-      }).distinct('_id');
-      phones = await Phone.find({
-        active: true,
-        status: 'published',
-        $or: [
-          { modelName: { $regex: safe, $options: 'i' } },
-          { slug: { $regex: safe, $options: 'i' } },
-          ...(brandIds.length ? [{ brandId: { $in: brandIds } }] : []),
-        ],
-      })
-        .select('slug modelName thumbnail pricePKR brandId')
-        .sort(PHONE_NEWEST_SORT)
-        .limit(12)
-        .populate('brand')
-        .lean() as unknown as AutocompletePhone[];
-    }
+    const safe = escapeRegex(q);
+    const words = q.split(/\s+/).filter(Boolean);
+    const matchingBrands = await Brand.find({
+      active: true,
+      $or: [{ name: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }, ...words.map(word => ({ name: { $regex: `^${escapeRegex(word)}`, $options: 'i' } }))],
+    }).select('_id name slug').limit(8).lean();
+    const brandIds = matchingBrands.map(brand => brand._id);
+    const brandWords = new Set(matchingBrands.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
+    const modelWords = words.filter(word => !brandWords.has(word.toLowerCase()));
+    const modelAnd = modelWords.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } }));
+
+    const queryFilter: Record<string, unknown> = {
+      active: true,
+      status: 'published',
+      $or: [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+        ...(brandIds.length ? [{ brandId: { $in: brandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
+        ...(modelAnd.length ? [{ $and: modelAnd }] : []),
+      ],
+    };
+
+    const phones = await Phone.find(queryFilter)
+      .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
+      .sort(PHONE_NEWEST_SORT)
+      .limit(10)
+      .populate('brand', 'name slug')
+      .lean();
 
     return cached({ phones: phones.map(p => ({
       id: p._id?.toString(),
       slug: p.slug,
       modelName: p.modelName,
       thumbnail: p.thumbnail || '',
-      pricePKR: p.pricePKR,
+      pricePKR: p.pricePKR || 0,
       brand: p.brand ? { id: p.brand._id?.toString(), name: p.brand.name, slug: p.brand.slug } : null,
-    })) }, 60, 180);
+    })) }, 300, 1800);
   }
 
   // ---- /api/phones/:slug ----
@@ -634,57 +609,53 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
   // ---- /api/search ----
   if (segments.length === 1 && segments[0] === 'search') {
+    await connectDB();
     if (!await checkIpRateLimit(`search:${ip}`, 60, 60_000, RateLimit)) {
       return NextResponse.json({ error: 'Too many requests. Slow down.' }, { status: 429 });
     }
-    await connectDB();
     const url = new URL(req.url);
-    const q = (url.searchParams.get('q') || '').trim();
-    if (!q) return cached({ phones: [], brands: [], query: q }, 60, 180);
+    const q = (url.searchParams.get('q') || '').trim().slice(0, 100);
+    if (!q) return cached({ phones: [], brands: [], query: q }, 300, 1800);
+
     const safe = escapeRegex(q);
-    // Match every query word independently against "brand name + model name"
-    // combined — this is what makes "samsung s26" find "Samsung Galaxy S26
-    // Ultra 1TB" even though "galaxy" sits between the two matched words, and
-    // even though the brand name isn't part of modelName by itself.
-    const tokens = q.split(/\s+/).filter(Boolean).map(escapeRegex);
-    const tokenMatchStage = tokens.length
-      ? { $and: tokens.map(t => ({ searchText: { $regex: t, $options: 'i' } })) }
-      : {};
+    const words = q.split(/\s+/).filter(Boolean);
+    const brands = await Brand.find({ active: true, $or: [{ name: { $regex: safe, $options: 'i' } }, { slug: { $regex: safe, $options: 'i' } }] })
+      .select('name slug logo sortOrder')
+      .sort({ sortOrder: 1, name: 1 })
+      .limit(6)
+      .lean();
+    const broadBrandMatches = await Brand.find({ active: true, $or: words.map(word => ({ name: { $regex: `^${escapeRegex(word)}`, $options: 'i' } })) })
+      .select('_id name').limit(8).lean();
+    const brandIds = broadBrandMatches.map(brand => brand._id);
+    const brandWords = new Set(broadBrandMatches.flatMap(brand => String(brand.name || '').toLowerCase().split(/\s+/)));
+    const modelWords = words.filter(word => !brandWords.has(word.toLowerCase()));
+    const modelAnd = modelWords.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } }));
 
-    const phonesPromise = Phone.aggregate([
-      { $match: { active: true, status: 'published' } },
-      { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } },
-      { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } },
-      { $addFields: { searchText: { $concat: [{ $ifNull: ['$brand.name', ''] }, ' ', { $ifNull: ['$modelName', ''] }, ' ', { $ifNull: ['$slug', ''] }] } } },
-      { $match: tokenMatchStage },
-      {
-        $addFields: {
-          // Rank: whole query as an exact prefix of the combined text ranks highest,
-          // then whole-query-anywhere, then the individual-token matches above.
-          _rank: {
-            $cond: [
-              { $regexMatch: { input: '$searchText', regex: `^${safe}`, options: 'i' } }, 0,
-              { $cond: [{ $regexMatch: { input: '$searchText', regex: safe, options: 'i' } }, 1, 2] },
-            ],
-          },
-        },
-      },
-      { $sort: { _rank: 1, releaseDate: -1, availableFrom: -1, announcedAt: -1, createdAt: -1, modelName: 1 } },
-      { $limit: 20 },
-      { $project: { description: 0, pros: 0, cons: 0, reviewSummary: 0, reviewVerdict: 0, seoTitle: 0, seoDescription: 0, keywords: 0, sourceName: 0, sourceUrl: 0, searchText: 0, _rank: 0 } },
-    ]).option({ maxTimeMS: 3000 });
+    const phoneFilter: Record<string, unknown> = {
+      active: true,
+      status: 'published',
+      $or: [
+        { modelName: { $regex: safe, $options: 'i' } },
+        { slug: { $regex: safe, $options: 'i' } },
+        ...(brandIds.length ? [{ brandId: { $in: brandIds }, ...(modelAnd.length ? { $and: modelAnd } : {}) }] : []),
+        ...(modelAnd.length ? [{ $and: modelAnd }] : []),
+      ],
+    };
 
-    const brandPromise = Brand.aggregate([
-        { $match: { active: true, name: { $regex: safe, $options: 'i' } } },
-        { $sort: { sortOrder: 1 } },
-        { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$brandId', '$$brandId'] }, { active: true }, { status: 'published' }] } } }, { $count: 'count' }], as: '_count' } },
-        { $addFields: { _count: { $ifNull: [{ $arrayElemAt: ['$_count.count', 0] }, 0] } } },
-      ]).option({ maxTimeMS: 3000 });
+    const phones = await Phone.find(phoneFilter)
+      .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
+      .sort(PHONE_NEWEST_SORT)
+      .limit(20)
+      .populate('brand')
+      .lean();
 
-    const [phones, brandAgg] = await Promise.all([phonesPromise, brandPromise]);
+    const brandCounts = brands.length
+      ? await Phone.aggregate([{ $match: { active: true, status: 'published', brandId: { $in: brands.map(brand => brand._id) } } }, { $group: { _id: '$brandId', count: { $sum: 1 } } }])
+      : [];
+    const countMap = new Map(brandCounts.map(item => [String(item._id), Number(item.count || 0)]));
+    const serializedBrands = brands.map(brand => ({ ...brand, id: brand._id?.toString(), _count: { phones: countMap.get(String(brand._id)) || 0 } }));
 
-    const brands = (brandAgg as BrandAggResult[]).map(b => ({ ...b, id: b._id?.toString(), _count: { phones: b._count || 0 } }));
-    return cached({ phones: await attachListSpecs(phones), brands, query: q }, 60, 180);
+    return cached({ phones: await attachListSpecs(phones), brands: serializedBrands, query: q }, 300, 1800);
   }
 
   // ---- /api/videos ----

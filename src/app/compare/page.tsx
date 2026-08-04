@@ -6,7 +6,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2, Copy, Printer,
+  Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2, Copy, Printer, MonitorSmartphone, Wifi, Box,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -16,6 +16,10 @@ import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
 import type { Phone } from '@/components/shared/types';
 import { SmartComparisonSummary } from '@/components/compare/SmartComparisonSummary';
+
+const compareAutocompleteCache = new Map<string, { expiresAt: number; phones: Phone[] }>();
+const compareLookupCache = new Map<string, { expiresAt: number; phones: Phone[] }>();
+const CLIENT_CACHE_TTL = 5 * 60 * 1000;
 
 function CompareContent() {
   const searchParams = useSearchParams();
@@ -36,6 +40,7 @@ function CompareContent() {
   const [acError, setAcError] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
+  const [activeSpecCategory, setActiveSpecCategory] = useState('All');
   const acAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -69,7 +74,20 @@ function CompareContent() {
       setLoading(true);
     }
     const slugs = normalizeCompareValues(slugsParam);
-    fetch(`/api/phones/lookup?slugs=${encodeURIComponent(slugs.join(','))}`)
+    const lookupKey = slugs.join(',');
+    const cachedLookup = compareLookupCache.get(lookupKey);
+    if (cachedLookup && cachedLookup.expiresAt > Date.now()) {
+      const phones = cachedLookup.phones;
+      compareLookupCache.set(lookupKey, { expiresAt: Date.now() + CLIENT_CACHE_TTL, phones });
+      selectedRef.current = phones;
+      setSelected(phones);
+      setCompared(phones.length >= 2);
+      setLoading(false);
+      setRefreshing(false);
+      if (phones.length === 1) setPickerOpen(true);
+      return;
+    }
+    fetch(`/api/phones/lookup?slugs=${encodeURIComponent(lookupKey)}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -102,20 +120,30 @@ function CompareContent() {
   useEffect(() => {
     if (acAbortRef.current) acAbortRef.current.abort();
     if (!search || search.length < 2) { setAutocompleteResults([]); setAcError(false); return; }
+    const normalizedSearch = search.trim().toLowerCase();
+    const cachedSearch = compareAutocompleteCache.get(normalizedSearch);
+    if (cachedSearch && cachedSearch.expiresAt > Date.now()) {
+      const results = cachedSearch.phones.filter(p => !selected.some(s => s.id === p.id));
+      setAutocompleteResults(results);
+      setActiveResultIndex(results.length ? 0 : -1);
+      setAcLoading(false);
+      setAcError(false);
+      return;
+    }
     setAcLoading(true);
     setAcError(false);
     const timer = setTimeout(() => {
       const controller = new AbortController();
       acAbortRef.current = controller;
-      fetch(`/api/phones/autocomplete?q=${encodeURIComponent(search)}`, { signal: controller.signal })
+      fetch(`/api/phones/autocomplete?q=${encodeURIComponent(search.trim())}`, { signal: controller.signal, headers: { Accept: 'application/json' } })
         .then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           return r.json();
         })
         .then(data => {
-          const results: Phone[] = (data.phones || []).filter(
-            (p: Phone) => !selected.some(s => s.id === p.id)
-          );
+          const allResults: Phone[] = data.phones || [];
+          compareAutocompleteCache.set(normalizedSearch, { expiresAt: Date.now() + CLIENT_CACHE_TTL, phones: allResults });
+          const results = allResults.filter((p: Phone) => !selected.some(s => s.id === p.id));
           setAutocompleteResults(results);
           setActiveResultIndex(results.length ? 0 : -1);
           setAcLoading(false);
@@ -301,6 +329,20 @@ function CompareContent() {
     });
   };
 
+  const specCategories = [
+    { label: 'All', icon: GitCompare, rows: specRows.map(row => row.label) },
+    { label: 'Display', icon: MonitorSmartphone, rows: ['Display', 'Display Type', 'Resolution', 'Refresh Rate', 'Protection'] },
+    { label: 'Performance', icon: Cpu, rows: ['Chipset', 'CPU', 'GPU', 'RAM', 'RAM Type', 'Storage', 'Card Slot'] },
+    { label: 'Camera', icon: Camera, rows: ['Main Camera', 'Ultrawide', 'Telephoto', 'OIS', 'Video Recording', 'Selfie Camera', 'Selfie Video'] },
+    { label: 'Battery', icon: Battery, rows: ['Battery', 'Wired Charging', 'Wireless Charging', 'Reverse Charging'] },
+    { label: 'Body', icon: Box, rows: ['Weight', 'Dimensions', 'Build', 'IP Rating', 'SIM'] },
+    { label: 'Connectivity', icon: Wifi, rows: ['Network', '5G', 'WiFi', 'Bluetooth', 'NFC', 'USB', 'Fingerprint', 'OS', 'Colors'] },
+  ];
+
+  const categoryRows = activeSpecCategory === 'All'
+    ? specRows
+    : specRows.filter(row => specCategories.find(category => category.label === activeSpecCategory)?.rows.includes(row.label));
+
   const getFilteredMetrics = (m: typeof metrics) => {
     if (!onlyDifferences) return m;
     return m.filter(metric => {
@@ -309,7 +351,7 @@ function CompareContent() {
     });
   };
 
-  const filteredSpecRows = getFilteredSpecRows(specRows);
+  const filteredSpecRows = getFilteredSpecRows(categoryRows);
   const filteredMetrics = getFilteredMetrics(metrics);
 
   if (loading) {
@@ -323,31 +365,37 @@ function CompareContent() {
 
   return (
     <div className="site-shell py-4 sm:py-6 animate-fade-in space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">Compare Phones</h1>
+      <div className="rounded-3xl border border-blue-100 bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 px-5 py-6 text-white shadow-xl sm:px-7 sm:py-8">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-cyan-100"><GitCompare className="h-3.5 w-3.5" /> Modern side-by-side comparison</div>
+            <h1 className="font-display text-2xl sm:text-4xl font-extrabold">Compare Phones</h1>
+            <p className="mt-2 max-w-2xl text-sm text-blue-100/80">Compare prices, verified specifications and category winners without waiting for repeated page loads.</p>
+          </div>
         <div className="flex items-center gap-3">
           {refreshing && (
-            <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-xs font-medium text-blue-600">
+            <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-xs font-medium text-cyan-100">
               <span className="h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" aria-hidden="true" />
               Updating comparison…
             </span>
           )}
           {compared && (
             <>
-              <button onClick={shareComparison} className="text-sm font-semibold text-gray-700 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Share this comparison">
+              <button onClick={shareComparison} className="text-sm font-semibold text-white hover:text-white flex items-center gap-1.5 transition-colors bg-white/10 hover:bg-white/20 border border-white/15 px-3 py-2 rounded-lg" aria-label="Share this comparison">
                 <Share2 className="h-4 w-4" /> Share
               </button>
-              <button onClick={copyComparisonLink} className="text-sm font-semibold text-gray-700 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Copy comparison link">
+              <button onClick={copyComparisonLink} className="text-sm font-semibold text-white hover:text-white flex items-center gap-1.5 transition-colors bg-white/10 hover:bg-white/20 border border-white/15 px-3 py-2 rounded-lg" aria-label="Copy comparison link">
                 <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy link'}
               </button>
-              <button onClick={() => window.print()} className="hidden sm:flex text-sm font-semibold text-gray-700 hover:text-blue-600 items-center gap-1.5 transition-colors bg-white hover:bg-blue-50 border border-gray-200 px-3 py-2 rounded-lg" aria-label="Print comparison">
+              <button onClick={() => window.print()} className="hidden sm:flex text-sm font-semibold text-white hover:text-white items-center gap-1.5 transition-colors bg-white/10 hover:bg-white/20 border border-white/15 px-3 py-2 rounded-lg" aria-label="Print comparison">
                 <Printer className="h-4 w-4" /> Print
               </button>
-              <button onClick={openPicker} className="text-sm font-semibold text-blue-500 hover:text-blue-600 flex items-center gap-1.5 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg">
+              <button onClick={openPicker} className="text-sm font-semibold text-white hover:text-white flex items-center gap-1.5 transition-colors bg-cyan-500/80 hover:bg-cyan-400 px-3 py-2 rounded-lg">
                 Change Phones
               </button>
             </>
           )}
+        </div>
         </div>
       </div>
 
@@ -628,6 +676,19 @@ function CompareContent() {
               })}
               {filteredMetrics.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">All scores are identical</p>}
             </section>
+
+            {/* Fast category navigation */}
+            <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white p-2 shadow-sm" aria-label="Specification categories">
+              {specCategories.map(category => {
+                const Icon = category.icon;
+                const active = activeSpecCategory === category.label;
+                return (
+                  <button key={category.label} onClick={() => setActiveSpecCategory(category.label)} className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition ${active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'}`}>
+                    <Icon className="h-4 w-4" /> {category.label}
+                  </button>
+                );
+              })}
+            </nav>
 
             {/* Specifications Table */}
             <section className="card-premium overflow-hidden">
