@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" role="img" aria-label="realme logo"><rect x="34" y="21" width="232" height="58" rx="8" fill="#FFC915"/><text x="150" y="64" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="41" fill="#111827">realme</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="24" fill="#F5C518"/>
+  <text x="60" y="68" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="26" fill="#1D1D1F">realme</text>
+  <text x="60" y="92" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="500" font-size="10" fill="rgba(0,0,0,0.4)"> Dare to Leap</text>
+</svg>

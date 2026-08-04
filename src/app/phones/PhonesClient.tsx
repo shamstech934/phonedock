@@ -12,17 +12,15 @@ import { PhoneGrid } from '@/components/shared/PhoneGrid';
 import type { Phone, Brand } from '@/components/shared/types';
 import { PRICE_CATEGORIES, getPriceCategory } from '@/lib/price-categories';
 
-const DEFAULT_PER_PAGE = 20;
-const PAGE_SIZE_OPTIONS = [12, 20, 32];
+const PER_PAGE = 20;
 
 const PRICE_RANGES: { label: string; min: number; max: number }[] = [
   { label: 'All Prices', min: 0, max: 0 },
-  { label: '1 - 24,999', min: 1, max: 24999 },
-  { label: '25,000 - 49,999', min: 25000, max: 49999 },
-  { label: '50,000 - 99,999', min: 50000, max: 99999 },
-  { label: '100,000 - 149,999', min: 100000, max: 149999 },
-  { label: '150,000 - 249,999', min: 150000, max: 249999 },
-  { label: '250,000+', min: 250000, max: 0 },
+  { label: 'Under 20K', min: 0, max: 20000 },
+  { label: '20K - 40K', min: 20000, max: 40000 },
+  { label: '40K - 60K', min: 40000, max: 60000 },
+  { label: '60K - 100K', min: 60000, max: 100000 },
+  { label: 'Above 100K', min: 100000, max: 0 },
 ];
 
 const RAM_OPTIONS = ['All', '2', '3', '4', '6', '8', '12', '16'];
@@ -74,8 +72,6 @@ export default function PhonesClient({
   const nfcParam = searchParams.get('nfc') || 'all';
   const ptaParam = searchParams.get('pta') || 'all';
   const displayParam = searchParams.get('display') || 'all';
-  const directScreenMin = searchParams.get('screenMin') || '';
-  const directScreenMax = searchParams.get('screenMax') || '';
   const refreshParam = searchParams.get('refresh') || 'all';
   const cameraParam = searchParams.get('camera') || 'all';
   const batteryParam = searchParams.get('battery') || 'all';
@@ -84,9 +80,7 @@ export default function PhonesClient({
   const collectionParam = searchParams.get('collection') || '';
   const yearParam = searchParams.get('year') || 'all';
   const availabilityParam = searchParams.get('availability') || 'all';
-  const pageParam = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
-  const requestedPageSize = parseInt(searchParams.get('limit') || String(DEFAULT_PER_PAGE));
-  const perPage = PAGE_SIZE_OPTIONS.includes(requestedPageSize) ? requestedPageSize : DEFAULT_PER_PAGE;
+  const pageParam = parseInt(searchParams.get('page') || '1');
 
   const [search, setSearch] = useState(q);
 
@@ -102,7 +96,7 @@ export default function PhonesClient({
 
     const params = new URLSearchParams();
     params.set('page', String(pageParam));
-    params.set('limit', String(perPage));
+    params.set('limit', String(PER_PAGE));
 
     if (q) params.set('search', q);
     if (brandParam !== 'all') params.set('brand', brandParam);
@@ -121,16 +115,10 @@ export default function PhonesClient({
     }
 
     // RAM
-    if (ramParam !== 'All') {
-      params.set('ramMin', ramParam);
-      params.set('ramMax', ramParam);
-    }
+    if (ramParam !== 'All') params.set('ramMin', ramParam);
 
     // Storage
-    if (storageParam !== 'All') {
-      params.set('storageMin', storageParam);
-      params.set('storageMax', storageParam);
-    }
+    if (storageParam !== 'All') params.set('storageMin', storageParam);
 
     // Sort
     const sortMap: Record<string, string> = {
@@ -159,8 +147,6 @@ export default function PhonesClient({
     // NFC filter
     if (nfcParam !== 'all') params.set('nfc', nfcParam);
     if (displayParam !== 'all') params.set('displayType', displayParam);
-    if (directScreenMin) params.set('screenMin', directScreenMin);
-    if (directScreenMax) params.set('screenMax', directScreenMax);
     if (refreshParam !== 'all') params.set('refreshMin', refreshParam);
     if (cameraParam !== 'all') params.set('cameraMin', cameraParam);
     if (batteryParam !== 'all') params.set('batteryMin', batteryParam);
@@ -218,7 +204,7 @@ export default function PhonesClient({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [pageParam, perPage, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, directScreenMin, directScreenMax, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam, yearParam, availabilityParam]);
+  }, [pageParam, q, brandParam, priceParam, directPriceMin, directPriceMax, priceCategoryParam, ramParam, storageParam, sortParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, priceDropParam, collectionParam, yearParam, availabilityParam]);
 
   const updateParam = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -242,29 +228,16 @@ export default function PhonesClient({
     setSearch('');
   }, [router]);
 
-  useEffect(() => {
-    const normalized = search.trim();
-    if (normalized === q) return;
-    const timer = window.setTimeout(() => updateParam('q', normalized), 350);
-    return () => window.clearTimeout(timer);
-  }, [search, q, updateParam]);
-
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-
-  useEffect(() => {
-    if (!loading && total > 0 && pageParam > totalPages) {
-      updateParam('page', String(totalPages));
-    }
-  }, [loading, total, pageParam, totalPages, updateParam]);
-  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, directScreenMin, directScreenMax, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
+  const totalPages = Math.ceil(total / PER_PAGE);
+  const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
   const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 pt-6 sm:pt-8">
-        <div className="site-shell pb-8 animate-fade-in space-y-6">
+      <main className="flex-1 pt-24 sm:pt-28">
+        <div className="max-w-7xl mx-auto px-4 pb-6 animate-fade-in space-y-6">
           <div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
@@ -287,10 +260,7 @@ export default function PhonesClient({
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input aria-label="Search phones" placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); updateParam('q', ''); } }} className="glass-search w-full pl-10 pr-10 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
-                {search && (
-                  <button type="button" onClick={() => { setSearch(''); updateParam('q', ''); }} aria-label="Clear phone search" className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">&times;</button>
-                )}
+                <input placeholder="Search phones..." value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') updateParam('q', search); }} className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400" />
               </div>
               <div className="flex gap-2">
                 <select value={sortParam} onChange={e => updateParam('sort', e.target.value)} className="h-11 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
@@ -405,7 +375,7 @@ export default function PhonesClient({
             )}
           </div>
 
-          <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)] lg:items-start lg:gap-6">
+          <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
             <aside className="hidden lg:flex sticky top-24 max-h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.28)]" aria-label="Price categories">
               <div className="border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
                 <div className="flex items-center gap-3">
@@ -469,13 +439,7 @@ export default function PhonesClient({
                   <Button variant="outline" size="sm" className="rounded-xl" disabled={pageParam >= totalPages} onClick={() => updateParam('page', String(pageParam + 1))}>
                     Next <ChevronRight className="w-4 h-4" />
                   </Button>
-                  <label className="ml-3 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Show</span>
-                    <select aria-label="Phones per page" value={perPage} onChange={event => updateParam('limit', event.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700">
-                      {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
-                    </select>
-                  </label>
-                  <span className="text-xs text-muted-foreground ml-2">Page {pageParam} of {totalPages}</span>
+                  <span className="text-xs text-muted-foreground ml-3">Page {pageParam} of {totalPages}</span>
                 </div>
               )}
             </>

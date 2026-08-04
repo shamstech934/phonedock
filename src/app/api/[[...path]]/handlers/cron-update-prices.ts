@@ -5,29 +5,12 @@ import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/mode
 import { SystemState } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
 import { revalidatePricePages } from '@/lib/revalidate';
-import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { fetchWithValidatedRedirects, readResponseTextLimited, validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
-import { extractRetailPrice } from '@/lib/price-extraction';
-import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
+import { extractRetailPageSignals, isLikelySameRetailProduct } from '@/lib/price-extraction';
 
 const LOCK_KEY = 'cron_update_prices_lock';
-const LAST_RUN_KEY = 'price_tracker_last_run';
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-const MAX_RETRY_DELAY_MINUTES = 24 * 60;
-
-function getRetryState(currentFailureCount: number, message: string) {
-  const failureCount = Math.max(0, Number(currentFailureCount || 0)) + 1;
-  const retryDelayMinutes = Math.min(
-    MAX_RETRY_DELAY_MINUTES,
-    15 * (2 ** Math.min(failureCount - 1, 6)),
-  );
-  return {
-    failureCount,
-    nextRetryAt: new Date(Date.now() + retryDelayMinutes * 60_000),
-    lastError: message,
-  };
-}
 
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -81,11 +64,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   }
 
   // ── Process listings ──
-  const summary = { processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0 };
-  const runStartedAt = new Date();
+  const summary = { processed: 0, updated: 0, failed: 0, pending: 0 };
   const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
-  let runError = '';
-  let runMessage = ''; 
 
   // Load configurable settings
   const ptSettings = await getPriceTrackerSettings();
@@ -101,33 +81,21 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       .then((docs) => docs.map((d) => d._id));
 
     if (trustedSourceIds.length === 0) {
-      runMessage = 'No trusted sources enabled';
-      return NextResponse.json({ ...summary, message: runMessage });
+      return NextResponse.json({ ...summary, message: 'No trusted sources enabled' });
     }
 
     // Fetch eligible listings: enabled, verified, with a trusted source
-    // Process a bounded oldest-first slice per invocation. This keeps every
-    // serverless request predictable; later cron/manual runs continue with the
-    // remaining listings instead of attempting the entire catalog at once.
     const listings = await PhoneRetailListing.find({
       enabled: true,
       verificationStatus: 'verified',
       sourceId: { $in: trustedSourceIds },
-      $or: [
-        { nextRetryAt: null },
-        { nextRetryAt: { $exists: false } },
-        { nextRetryAt: { $lte: now } },
-      ],
     })
-      .sort({ lastCheckedAt: 1, _id: 1 })
-      .limit(Math.max(1, Math.min(BATCH_SIZE, 50)))
       .populate('sourceId')
       .populate('phoneId')
       .lean();
 
     if (listings.length === 0) {
-      runMessage = 'No eligible listings to process';
-      return NextResponse.json({ ...summary, message: runMessage });
+      return NextResponse.json({ ...summary, message: 'No eligible listings to process' });
     }
 
     const batches: (typeof listings)[number][][] = [];
@@ -140,15 +108,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const listing of batch) {
         summary.processed++;
         const listingId = listing._id;
-        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string } | null;
+        const phone = listing.phoneId as unknown as { _id: { toString(): string }; modelName?: string; manualLock?: boolean } | null;
         const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string } | null;
 
         if (!phone || !source) {
           summary.failed++;
-          const retry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'Phone or source reference is missing');
-          await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { ...retry, lastCheckedAt: new Date(), verificationStatus: retry.failureCount >= 3 ? 'failed' : 'verified' },
-          });
           continue;
         }
 
@@ -159,100 +123,68 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         let detectedPrice: number | null = null;
         let availability = 'unknown' as string;
-        let fetchError = false;
+        let fetchError = '';
+        let finalUrl = listing.productUrl;
+        let detectedTitle = '';
+        let extractionMethod = '';
+        let extractionConfidence = 0;
 
         // ── SSRF protection ──
         const sourceAllowedDomains = source?.allowedDomains || [];
+        if (sourceAllowedDomains.length === 0) {
+          fetchError = 'Trusted source has no allowed domains configured';
+        }
         const ssrfCheck = await validateUrlForFetch(listing.productUrl, sourceAllowedDomains);
-        if (!ssrfCheck.safe) {
+        if (!fetchError && !ssrfCheck.safe) {
           console.warn(`[cron:prices] SSRF blocked: ${listing.productUrl} — ${ssrfCheck.reason}`);
           summary.failed++;
-          const retry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), ssrfCheck.reason || 'Product URL failed safety validation');
-          await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { ...retry, lastCheckedAt: new Date(), verificationStatus: retry.failureCount >= 3 ? 'failed' : 'verified' },
-          });
           continue;
         }
 
         // Attempt to fetch the product URL
         try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 15000);
-          const response = await fetch(listing.productUrl, {
-            signal: controller.signal,
+          if (fetchError) throw new Error(fetchError);
+          const response = await fetchWithValidatedRedirects(listing.productUrl, {
+            allowedDomains: sourceAllowedDomains,
+            timeoutMs: 15000,
             headers: {
-              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'User-Agent': 'PhoneDock-PriceChecker/1.0 (compatible; bot)',
+              'Accept': 'text/html,application/xhtml+xml;q=0.9',
             },
-            redirect: 'follow',
           });
-          clearTimeout(timeout);
+          finalUrl = response.url || listing.productUrl;
 
           if (!response.ok) {
-            fetchError = true;
+            fetchError = `Retailer returned HTTP ${response.status}`;
           } else {
-            const html = await response.text();
-
-            const validation = validateRetailListingPage({
-              html,
-              phoneModel: phone.modelName || '',
-              brandName: phone.brandName || '',
-              expectedRam: (listing as unknown as { ram?: string }).ram || '',
-              expectedStorage: (listing as unknown as { storage?: string }).storage || '',
-              expectedPtaStatus: (listing as unknown as { ptaStatus?: string }).ptaStatus || phone.ptaStatus || '',
-            });
-
-            if (!validation.valid) {
-              await PhoneRetailListing.findByIdAndUpdate(listingId, {
-                $set: {
-                  sourceTitle: validation.title,
-                  verificationStatus: 'pending',
-                  availability: 'unknown',
-                  lastCheckedAt: new Date(),
-                },
-              });
-              summary.pending++;
-              console.warn(`[cron:prices] Listing moved to pending review: ${listing.productUrl} — ${validation.reasons.join('; ')}`);
-              continue;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+              throw new Error('Retailer response is not an HTML product page');
             }
-
-            if (validation.title) {
-              await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: { sourceTitle: validation.title } });
-            }
-
-            const extracted = extractRetailPrice(html);
-            detectedPrice = extracted?.price ?? null;
-            if (extracted) {
-              await PhoneRetailListing.findByIdAndUpdate(listingId, {
-                $set: {
-                  extractionMethod: extracted.method,
-                  extractionConfidence: extracted.confidence,
-                },
-              });
-            }
-
-            // Check availability
-            if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
-              availability = 'unavailable';
-            } else if (/add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(html)) {
-              availability = 'available';
+            const signals = extractRetailPageSignals(await readResponseTextLimited(response));
+            detectedTitle = signals.title;
+            detectedPrice = signals.price?.price ?? null;
+            availability = signals.availability;
+            extractionMethod = signals.price?.method || '';
+            extractionConfidence = signals.price?.confidence || 0;
+            const expectedTitle = String((listing as unknown as { sourceTitle?: string }).sourceTitle || phone.modelName || '').trim();
+            if (!isLikelySameRetailProduct(expectedTitle, detectedTitle)) {
+              throw new Error('Retailer page no longer matches the linked phone');
             }
           }
-        } catch {
-          fetchError = true;
+        } catch (error) {
+          fetchError = error instanceof Error ? error.message : 'Retailer request failed';
         }
 
         // ── Handle failed extraction ──
         if (fetchError) {
           summary.failed++;
-          const listingRetry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'Product page could not be fetched');
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { ...listingRetry, lastCheckedAt: new Date(), verificationStatus: listingRetry.failureCount >= 3 ? 'failed' : 'verified' },
+            $set: { lastError: fetchError, lastFinalUrl: finalUrl, lastDetectedTitle: detectedTitle },
+            $inc: { consecutiveFailures: 1 },
           });
-          const sourceDoc = await PriceSource.findById(source._id).select('failureCount').lean();
-          const sourceRetry = getRetryState(Number(sourceDoc?.failureCount || 0), 'Product page could not be fetched');
           await PriceSource.findByIdAndUpdate(source._id, {
-            $set: { ...sourceRetry, lastCheckedAt: new Date(), status: sourceRetry.failureCount >= 3 ? 'failed' : 'active' },
+            $inc: { failureCount: 1 },
           });
           continue;
         }
@@ -261,9 +193,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         if (availability === 'unavailable') {
           // Keep old price, just update listing availability
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { availability: 'unavailable', lastError: '', lastSuccessAt: new Date(), failureCount: 0 },
+            $set: {
+              availability: 'unavailable', lastFinalUrl: finalUrl,
+              lastDetectedTitle: detectedTitle, lastError: '', consecutiveFailures: 0,
+            },
           });
-          summary.unavailable++;
           continue;
         }
 
@@ -272,42 +206,24 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
 
           if (previousSourcePrice <= 0) {
-            // First successful detection from a trusted, verified listing.
-            // Apply it immediately unless the phone is manually locked, and
-            // create an auditable history row so public price history does not
-            // begin only after the second sync.
+            // First detection — just record the price, no change to compute
             await PhoneRetailListing.findByIdAndUpdate(listingId, {
               $set: {
                 currentSourcePrice: detectedPrice,
                 previousSourcePrice: 0,
                 availability: availability === 'unknown' ? 'available' : availability,
                 lastChangedAt: new Date(),
-                lastSuccessAt: new Date(),
-                failureCount: 0,
-                nextRetryAt: null,
+                lastFinalUrl: finalUrl,
+                lastDetectedTitle: detectedTitle,
+                lastExtractionMethod: extractionMethod,
+                lastConfidence: extractionConfidence,
                 lastError: '',
+                consecutiveFailures: 0,
               },
             });
-            if (phone.manualLock !== true) {
-              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, 0, source, 'correction');
-              if (slug) updatedSlugs.push(slug);
-            }
-            await PriceTrackerHistory.create({
-              phoneId: phone._id,
-              oldPrice: 0,
-              newPrice: detectedPrice,
-              difference: detectedPrice,
-              percentageChange: 0,
-              changeType: 'correction',
-              sourceType: 'retailer',
-              sourceId: source._id,
-              sourceUrl: listing.productUrl,
-              verificationStatus: 'confirmed',
-              capturedAt: new Date(),
-            });
-            summary.updated++;
+            // Update source health
             await PriceSource.findByIdAndUpdate(source._id, {
-              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
+              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
             });
             continue;
           }
@@ -323,10 +239,12 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               currentSourcePrice: detectedPrice,
               availability: availability === 'unknown' ? 'available' : availability,
               lastChangedAt: difference !== 0 ? new Date() : (listing as unknown as { lastChangedAt?: Date | null }).lastChangedAt,
-              lastSuccessAt: new Date(),
-              failureCount: 0,
-              nextRetryAt: null,
+              lastFinalUrl: finalUrl,
+              lastDetectedTitle: detectedTitle,
+              lastExtractionMethod: extractionMethod,
+              lastConfidence: extractionConfidence,
               lastError: '',
+              consecutiveFailures: 0,
             },
           });
 
@@ -334,9 +252,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           if (difference === 0) {
             // Update source health
             await PriceSource.findByIdAndUpdate(source._id, {
-              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
+              $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
             });
-            summary.unchanged++;
             continue;
           }
 
@@ -406,19 +323,17 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
           // Update source health
           await PriceSource.findByIdAndUpdate(source._id, {
-            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
+            $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0 },
           });
         } else {
           // Price extraction failed (but page loaded) — keep old price, increment failure
           summary.failed++;
-          const listingRetry = getRetryState(Number((listing as unknown as { failureCount?: number }).failureCount || 0), 'No reliable PKR price was detected on the product page');
-          await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { ...listingRetry, lastCheckedAt: new Date(), verificationStatus: listingRetry.failureCount >= 3 ? 'failed' : 'verified' },
-          });
-          const sourceDoc = await PriceSource.findById(source._id).select('failureCount').lean();
-          const sourceRetry = getRetryState(Number(sourceDoc?.failureCount || 0), 'No reliable PKR price was detected on the product page');
           await PriceSource.findByIdAndUpdate(source._id, {
-            $set: { ...sourceRetry, lastCheckedAt: new Date(), status: sourceRetry.failureCount >= 3 ? 'failed' : 'active' },
+            $inc: { failureCount: 1 },
+          });
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $set: { lastError: 'No valid PKR price found', lastFinalUrl: finalUrl, lastDetectedTitle: detectedTitle },
+            $inc: { consecutiveFailures: 1 },
           });
         }
       }
@@ -431,54 +346,15 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         revalidatePricePages(slug);
       }
     }
-  } catch (error) {
-    runError = error instanceof Error ? error.message : 'Unknown price sync failure';
-    throw error;
   } finally {
-    const finishedAt = new Date();
-    await Promise.all([
-      SystemState.findOneAndUpdate(
-        { key: LOCK_KEY },
-        { $set: { completed: false, completedAt: finishedAt } },
-      ),
-      SystemState.findOneAndUpdate(
-        { key: LAST_RUN_KEY },
-        {
-          $set: {
-            completed: !runError,
-            completedAt: finishedAt,
-            metadata: {
-              lastAttemptAt: finishedAt.toISOString(),
-              lastSuccessAt: runError ? null : finishedAt.toISOString(),
-              status: runError ? 'failed' : 'completed',
-              message: runError || runMessage || 'Price sync batch completed',
-              ...summary,
-            },
-          },
-        },
-        { upsert: true },
-      ),
-    ]);
+    // Always release the lock
+    await SystemState.findOneAndUpdate(
+      { key: LOCK_KEY },
+      { $set: { completed: false, completedAt: new Date() } },
+    );
   }
 
-  const eligibleRemaining = await PhoneRetailListing.countDocuments({
-    enabled: true,
-    verificationStatus: 'verified',
-    sourceId: { $in: await PriceSource.find({ enabled: true, trusted: true, status: 'active' }).distinct('_id') },
-    $or: [
-      { nextRetryAt: null },
-      { nextRetryAt: { $exists: false } },
-      { nextRetryAt: { $lte: new Date() } },
-    ],
-  });
-  return NextResponse.json({
-    ...summary,
-    batchLimit: Math.max(1, Math.min(BATCH_SIZE, 50)),
-    eligibleTotal: eligibleRemaining,
-    hasMore: eligibleRemaining > summary.processed,
-    startedAt: runStartedAt.toISOString(),
-    completedAt: new Date().toISOString(),
-  });
+  return NextResponse.json(summary);
 }
 
 /**

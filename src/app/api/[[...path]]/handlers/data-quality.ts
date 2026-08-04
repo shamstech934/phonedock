@@ -54,12 +54,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const { searchParams } = new URL(req.url);
     const includeHealth = searchParams.get('health') !== 'false';
 
-    const catalogScope = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
     const [totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands] = await Promise.all([
-      // Data Quality covers the complete working catalog, including draft/review
-      // records. Otherwise imported draft phones disappear from every missing-data
-      // counter and the dashboard misleadingly falls back to zero.
-      Phone.countDocuments(catalogScope),
+      Phone.countDocuments({ deletedAt: null }),
       Phone.countDocuments({ deletedAt: null, status: 'published' }),
       Phone.countDocuments({ deletedAt: null, status: { $in: ['draft', 'pending'] } }),
       Phone.countDocuments({ deletedAt: null, status: 'archived' }),
@@ -80,37 +76,30 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
-    const catalogPhoneIds = await Phone.find(catalogScope).distinct('_id');
+    const publishedPhoneIds = await Phone.find({ deletedAt: null, status: 'published' }).distinct('_id');
     const [phonesWithSpecs, phonesWithImages] = await Promise.all([
-      PhoneSpecs.distinct('phoneId', { phoneId: { $in: catalogPhoneIds } }),
-      PhoneImage.distinct('phoneId', { phoneId: { $in: catalogPhoneIds } }),
+      PhoneSpecs.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
+      PhoneImage.distinct('phoneId', { phoneId: { $in: publishedPhoneIds } }),
     ]);
 
     const specPhoneIdSet = new Set(phonesWithSpecs.map(id => id.toString()));
     const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
 
-    const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [catalogPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
-      Phone.find({ _id: { $in: catalogPhoneIds } })
-        .select('_id thumbnail pricePKR lastPriceCheckedAt')
+    const [publishedPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+      Phone.find({ _id: { $in: publishedPhoneIds } })
+        .select('_id thumbnail pricePKR')
         .lean(),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
       DataQualityIssue.countDocuments({ status: 'open', issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
-      Phone.countDocuments({ ...catalogScope, $or: [
-        { lastPriceCheckedAt: { $exists: false } },
-        { lastPriceCheckedAt: null },
-        { lastPriceCheckedAt: { $lt: staleBefore } },
-      ] }),
+      DataQualityIssue.countDocuments({ status: 'open', issueType: 'PHONE_STALE_PRICE' }),
     ]);
 
-    const missingSpecs = catalogPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
-    const missingImages = catalogPhoneRows.filter(phone => {
+    const missingSpecs = publishedPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
+    const missingImages = publishedPhoneRows.filter(phone => {
       const thumbnail = typeof phone.thumbnail === 'string' ? phone.thumbnail.trim() : '';
-      // A usable catalog entry needs both a primary thumbnail and at least one
-      // gallery record. Treat either missing side as an image-quality problem.
-      return !thumbnail || !imagePhoneIdSet.has(phone._id.toString());
+      return !thumbnail && !imagePhoneIdSet.has(phone._id.toString());
     }).length;
-    const missingPrices = catalogPhoneRows.filter(phone => {
+    const missingPrices = publishedPhoneRows.filter(phone => {
       const price = Number(phone.pricePKR || 0);
       return !Number.isFinite(price) || price <= 0;
     }).length;
@@ -120,24 +109,13 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     // Phones with complete specs (key fields filled)
     const keySpecPhones = await PhoneSpecs.find({
-      phoneId: { $in: catalogPhoneIds },
-      chipset: { $nin: ['', null] },
-      ram: { $nin: ['', null] },
-      storage: { $nin: ['', null] },
-    }).select('phoneId').lean();
-    const completeSpecs = new Set(keySpecPhones.map(s => String(s.phoneId))).size;
-
-    // Catalog reconciliation diagnostics: these numbers explain exactly why the
-    // admin inventory and linked-spec counts may differ after old imports.
-    const [rawPhoneDocuments, inactivePhones, softDeletedPhones, rawSpecsDocuments, allSpecPhoneIds] = await Promise.all([
-      Phone.countDocuments({}),
-      Phone.countDocuments({ active: { $ne: true } }),
-      Phone.countDocuments({ deletedAt: { $ne: null } }),
-      PhoneSpecs.countDocuments({}),
-      PhoneSpecs.distinct('phoneId'),
-    ]);
-    const existingPhoneIds = new Set((await Phone.distinct('_id')).map(id => String(id)));
-    const orphanSpecPhoneIds = allSpecPhoneIds.filter(id => !existingPhoneIds.has(String(id)));
+      $or: [
+        { chipset: { $ne: '' } },
+        { ram: { $ne: '' } },
+        { storage: { $ne: '' } },
+      ],
+    }).lean();
+    const completeSpecs = keySpecPhones.filter(s => s.chipset?.trim() && s.ram?.trim() && s.storage?.trim()).length;
 
     // Trend data
     const todayStart = new Date();
@@ -165,7 +143,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     return NextResponse.json({
       health,
       totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
-      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones, catalogPhones: totalPhones },
+      specs: { withSpecs: specsComplete, completeSpecs, publishedPhones },
       queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
       severity: { critical, high, medium, low, info, total: totalOpen },
       trends: { discoveredToday, fixedToday, newLast7Days },
@@ -174,13 +152,6 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         checkedAt: new Date().toISOString(),
         linkedSpecs: specPhoneIdSet.size,
         linkedImages: imagePhoneIdSet.size,
-        scope: 'published,draft,pending',
-        rawPhoneDocuments,
-        inactivePhones,
-        softDeletedPhones,
-        rawSpecsDocuments,
-        orphanSpecs: orphanSpecPhoneIds.length,
-        catalogDifference: Math.max(rawSpecsDocuments - rawPhoneDocuments, 0),
       },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', Pragma: 'no-cache', Expires: '0' } });
   }
@@ -201,7 +172,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       return NextResponse.json({ error: 'type must be specs, images, or prices' }, { status: 400 });
     }
     const q = (searchParams.get('q') || '').trim();
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     if (type === 'specs') {
@@ -209,10 +180,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       baseQuery._id = { $nin: withSpecs.map(id => new Types.ObjectId(id)) };
     } else if (type === 'images') {
       const withImages = await PhoneImage.distinct('phoneId');
-      baseQuery.$or = [
-        { thumbnail: '' },
-        { thumbnail: null },
-        { thumbnail: { $exists: false } },
+      baseQuery.$and = [
+        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
         { _id: { $nin: withImages.map(id => new Types.ObjectId(id)) } },
       ];
     } else {
@@ -249,7 +218,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       `/admin/phones/${row._id.toString()}/edit`,
     ]);
     const csv = '\uFEFF' + [header, ...csvRows].map(row => row.map(quote).join(',')).join('\n');
-    const filename = `specsdekh-missing-${type}-all.csv`;
+    const filename = `phonedock-missing-${type}-all.csv`;
 
     return new NextResponse(csv, {
       status: 200,
@@ -280,7 +249,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const limit = parseBoundedInt(searchParams.get('limit'), 50, { min: 1, max: 100 });
     const q = (searchParams.get('q') || '').trim();
 
-    const baseQuery: Record<string, unknown> = { deletedAt: null, status: { $in: ['published', 'draft', 'pending'] } };
+    const baseQuery: Record<string, unknown> = { deletedAt: null, status: 'published' };
     if (q) baseQuery.modelName = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
 
     let missingIds: Types.ObjectId[] | null = null;
@@ -291,10 +260,8 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     } else if (type === 'images') {
       const withImages = await PhoneImage.distinct('phoneId');
       missingIds = withImages.map(id => new Types.ObjectId(id));
-      baseQuery.$or = [
-        { thumbnail: '' },
-        { thumbnail: null },
-        { thumbnail: { $exists: false } },
+      baseQuery.$and = [
+        { $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }] },
         { _id: { $nin: missingIds } },
       ];
     } else {
@@ -659,7 +626,7 @@ function csvSafe(val: string): string {
 export async function handleDataQualityPost(req: NextRequest, segments: string[]): Promise<NextResponse | undefined> {
 
   // POST /api/admin/data-quality/spec-dataset/import
-  // Imports normalized rows into SpecsDekh's own MongoDB dataset. No runtime
+  // Imports normalized rows into PhoneDock's own MongoDB dataset. No runtime
   // dependency on third-party APIs is used after import.
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-dataset' && segments[3] === 'import') {
     const authResult = await getAdminFromRequest(req);
@@ -716,7 +683,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
   }
 
   // POST /api/admin/data-quality/spec-enrichment/search
-  // Searches SpecsDekh's local imported dataset only.
+  // Searches PhoneDock's local imported dataset only.
   if (segments.length >= 4 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'spec-enrichment' && segments[3] === 'search') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -747,7 +714,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       sourceName: row.sourceName || 'Imported dataset',
     })).filter(c => c.score >= 25).sort((a, b) => b.score - a.score).slice(0, 10);
     const datasetCount = await DeviceSpecDataset.countDocuments();
-    return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'SpecsDekh local dataset', datasetCount });
+    return NextResponse.json({ phone: { id: phoneId, brandName: phone.brandId?.name || '', modelName: phone.modelName }, candidates, provider: 'PhoneDock local dataset', datasetCount });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/batch-apply
@@ -814,14 +781,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const numbers = { ramGB: numeric(update.ram, /(\d+(?:\.\d+)?)\s*gb/i), storageGB: numeric(update.storage, /(\d+(?:\.\d+)?)\s*gb/i), batteryMAh: numeric(update.battery, /(\d+(?:\.\d+)?)\s*mah/i), mainCameraMP: numeric(update.mainCamera, /(\d+(?:\.\d+)?)\s*mp/i), screenSizeInch: numeric(update.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|\")/i) };
     Object.entries(numbers).forEach(([k,v]) => { if (v) update[k] = v; });
     await PhoneSpecs.updateOne({ phoneId }, { $set: update, $setOnInsert: { phoneId } }, { upsert: true });
-    phone.sourceName = clean(body.sourceName, 120) || 'SpecsDekh local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString()); await phone.save();
+    phone.sourceName = clean(body.sourceName, 120) || 'PhoneDock local dataset'; phone.sourceUrl = clean(body.sourceUrl, 1000); phone.lastVerifiedAt = new Date(); phone.dataConfidence = 'auto-imported'; phone.updatedBy = new Types.ObjectId(authResult.admin._id.toString()); await phone.save();
     try { await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_applied', details: `Applied reviewed local dataset specifications to ${phone.modelName}`, entityType: 'phone', entityId: phoneId }); } catch (e) { console.error('[ActivityLog]', e); }
     return NextResponse.json({ success: true, phoneId, updatedFields: Object.keys(update).filter(key => update[key] !== '' && update[key] != null) });
   }
 
   // POST /api/admin/data-quality/repair-import
   // Accepts both exported repair work packs (Phone ID) and the standard
-  // SpecsDekh import-ready CSV format (slug / brand + model). Rows are resolved
+  // PhoneDock import-ready CSV format (slug / brand + model). Rows are resolved
   // against existing phones before any write so a missing MongoDB ObjectId does
   // not incorrectly reject an otherwise valid reviewed CSV.
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && (segments[2] === 'repair-import' || segments[2] === 'repair-import-v2')) {
@@ -961,7 +928,7 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
           const update = { ...populated, ...Object.fromEntries(Object.entries(numeric).filter(([, value]) => value !== null)) };
           if (!dryRun) {
             specsOps.push({ updateOne: { filter: { phoneId: phone._id }, update: { $set: update, $setOnInsert: { phoneId: phone._id } }, upsert: true } });
-            phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { sourceName: clean(row.sourceName || row['Source Name'], 120) || 'SpecsDekh reviewed CSV', sourceUrl: clean(row.sourceUrl || row['Source URL'], 1000), lastVerifiedAt: new Date(), dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
+            phoneOps.push({ updateOne: { filter: { _id: phone._id }, update: { $set: { sourceName: clean(row.sourceName || row['Source Name'], 120) || 'PhoneDock reviewed CSV', sourceUrl: clean(row.sourceUrl || row['Source URL'], 1000), lastVerifiedAt: new Date(), dataConfidence: 'user-submitted', updatedBy: new Types.ObjectId(authResult.admin._id.toString()) } } } });
           }
         } else if (type === 'images') {
           const thumbnail = clean(row.thumbnailUrl || row['Thumbnail URL'] || row.thumbnail || row.imageUrl, 1500);
@@ -1119,10 +1086,9 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     }
   }
 
-  // POST /api/admin/data-quality/fix-all
-  // Processes a small cursor-based chunk per request. The admin UI keeps calling
-  // this endpoint until hasMore=false, avoiding Vercel timeouts while still
-  // fixing the complete filtered queue.
+  // POST /api/admin/data-quality/fix-all — fixes every OPEN, auto-fixable issue matching the
+  // current filters (not just the 50 issues loaded on the current admin page). Processes in
+  // batches to avoid request timeouts; safe to call repeatedly (idempotent).
   if (segments.length >= 3 && segments[0] === 'admin' && segments[1] === 'data-quality' && segments[2] === 'fix-all') {
     const authResult = await getAdminFromRequest(req);
     if (authResult.error) return authResult.error;
@@ -1130,12 +1096,14 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     if (permCheck) return permCheck;
 
     const body = await req.json().catch(() => ({}));
-    const { severity, issueType, entityType, search, dryRun, cursor } = body || {};
-    const CHUNK_SIZE = 25;
+    const { severity, issueType, entityType, search, dryRun } = body || {};
+    const BATCH_LIMIT = 2000; // hard ceiling per call to keep the request bounded
 
-    const autoFixableTypes = ALL_QUALITY_RULES
-      .filter(r => r.canAutoFix && typeof r.autoFix === 'function')
-      .map(r => r.ruleId);
+    // Only ever consider issues whose rule actually supports auto-fix — no point queuing the rest.
+    const autoFixableTypes = ALL_QUALITY_RULES.filter(r => r.canAutoFix && typeof r.autoFix === 'function').map(r => r.ruleId);
+    if (autoFixableTypes.length === 0) {
+      return NextResponse.json({ total: 0, succeeded: 0, failed: 0, skipped: 0, errors: [] });
+    }
     let allowedTypes = autoFixableTypes;
     if (issueType) {
       const requested = String(issueType).split(',').map((t: string) => t.trim()).filter(Boolean);
@@ -1145,7 +1113,6 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
     const query: Record<string, unknown> = { status: 'open', issueType: { $in: allowedTypes } };
     if (severity) query.severity = severity;
     if (entityType) query.entityType = entityType;
-    if (cursor && Types.ObjectId.isValid(String(cursor))) query._id = { $gt: new Types.ObjectId(String(cursor)) };
     if (search) {
       query.$or = [
         { entityId: { $regex: search, $options: 'i' } },
@@ -1153,15 +1120,11 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       ];
     }
 
-    const candidates = await DataQualityIssue.find(query)
-      .select('_id')
-      .sort({ _id: 1 })
-      .limit(CHUNK_SIZE)
-      .lean();
+    const candidates = await DataQualityIssue.find(query).select('_id').limit(BATCH_LIMIT).lean();
     const results = { total: candidates.length, succeeded: 0, failed: 0, errors: [] as string[] };
 
     for (const c of candidates) {
-      const issueId = c._id.toString();
+      const issueId = (c._id as { toString(): string }).toString();
       try {
         await executeAutoFix(issueId, authResult.admin._id.toString(), dryRun === true);
         results.succeeded++;
@@ -1171,22 +1134,17 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       }
     }
 
-    const nextCursor = candidates.length ? candidates[candidates.length - 1]._id.toString() : null;
-    const remainingQuery = { ...query } as Record<string, unknown>;
-    if (nextCursor) remainingQuery._id = { $gt: new Types.ObjectId(nextCursor) };
-    const hasMore = nextCursor ? await DataQualityIssue.exists(remainingQuery) : false;
-
     try {
       await ActivityLog.create({
         adminId: authResult.admin._id,
-        action: 'data_quality_fix_all_chunk',
-        details: `Fix-all chunk: ${results.succeeded} succeeded, ${results.failed} failed${dryRun ? ' (dry run)' : ''}`,
+        action: 'data_quality_fix_all',
+        details: `Fix-all matched ${results.total} issues: ${results.succeeded} succeeded, ${results.failed} failed${dryRun ? ' (dry run)' : ''}`,
         entityType: 'data_quality',
         entityId: '',
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json({ ...results, nextCursor, hasMore: Boolean(hasMore), chunkSize: CHUNK_SIZE }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(results, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   // POST /api/admin/data-quality/bulk-fix

@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -63,7 +62,7 @@ export default function AdminCollectorPage() {
       const res = await fetch('/api/collector/jobs/run-all', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       });
-      const data = await readApiResponse(res);
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to start collection');
       fetchData();
     } catch (e) {

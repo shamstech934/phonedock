@@ -6,7 +6,7 @@ import {
   connectDB, getAdminFromRequest, requirePermission, sanitizeCsvValue,
   MAX_UPLOAD_SIZE, MAX_UPLOAD_RECORDS, ALLOWED_EXTENSIONS, ALLOWED_MIME_TYPES,
 } from './helpers';
-import { importPhones, rollbackImport } from '@/lib/import/import-engine';
+import { importPhones } from '@/lib/import/import-engine';
 import { parseFile, detectFileType } from '@/lib/import/parsers';
 
 // ============ IMPORT GET ============
@@ -92,47 +92,11 @@ export async function handleImportPost(req: NextRequest, segments: string[]): Pr
   }
 
   // ---- /api/import/rollback ----
-  // Backward-compatible rollback for the legacy importer. New imports should use
-  // /api/admin/import-v2/jobs/:id/rollback, but old admin clients can still
-  // safely roll back phones created by a V1 import history record.
   if (segments.length === 2 && segments[0] === 'import' && segments[1] === 'rollback') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'imports:execute'); if (permCheck) return permCheck;
-
-    let body: Record<string, unknown>;
-    try {
-      body = await req.json() as Record<string, unknown>;
-    } catch {
-      return NextResponse.json({ success: false, error: 'A JSON body is required.' }, { status: 400 });
-    }
-
-    const historyId = typeof body.historyId === 'string'
-      ? body.historyId.trim()
-      : typeof body.id === 'string'
-        ? body.id.trim()
-        : '';
-
-    if (!historyId) {
-      return NextResponse.json({ success: false, error: 'historyId is required.' }, { status: 400 });
-    }
-
-    const result = await rollbackImport(historyId);
-    if (!result.success) {
-      const status = result.message.toLowerCase().includes('not found') ? 404 : 409;
-      return NextResponse.json({ success: false, error: result.message }, { status });
-    }
-
-    try {
-      await ActivityLog.create({
-        adminId: admin._id,
-        action: 'rollback_import',
-        details: result.message,
-        entityType: 'import',
-        entityId: historyId,
-      });
-    } catch (e) { console.error('[ActivityLog]', e); }
-
-    return NextResponse.json({ success: true, message: result.message });
+    const body = await req.json();
+    return NextResponse.json({ success: false, error: 'Rollback not yet implemented. Use /api/import/history to track imports.' }, { status: 501 });
   }
 
   return undefined;

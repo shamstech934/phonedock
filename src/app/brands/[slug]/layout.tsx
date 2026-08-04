@@ -1,10 +1,8 @@
 import type { Metadata } from 'next';
-import { Brand, Phone } from '@/lib/models';
-import { getSettings } from '@/lib/models/Settings';
-import { applySeoTemplate, buildPageMetadata } from '@/lib/seo';
+import { Brand } from '@/lib/models';
 import { connectDBSafe } from '@/lib/mongodb';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock.pk';
 
 export async function generateMetadata({
   params,
@@ -24,24 +22,24 @@ export async function generateMetadata({
 
   if (!brand) return { title: 'Brand Not Found' };
 
-  const [phoneCount, settings] = await Promise.all([
-    Phone.countDocuments({ brandId: brand._id, active: true, status: 'published' }),
-    getSettings().catch(() => null),
-  ]);
-  const year = new Date().getFullYear();
-  const title = applySeoTemplate(settings?.brandTitleTemplate || '{brand} Phones Price in Pakistan ({year})', { brand: brand.name, year });
+  const title = `${brand.name} Phones Price in Pakistan`;
   const description = brand.description
     ? String(brand.description).slice(0, 160)
     : `View all ${brand.name} phones with latest Pakistan prices, specifications, comparisons, and reviews.`;
 
-  return buildPageMetadata({
+  return {
     title,
     description,
-    path: `/brands/${brand.slug}`,
-    image: brand.logo || undefined,
-    noIndex: phoneCount === 0 && !settings?.indexEmptyBrands,
-    keywords: [`${brand.name} phones Pakistan`, `${brand.name} mobile price in Pakistan`, `${brand.name} latest phones`, `${brand.name} specs`],
-  });
+    alternates: { canonical: `${BASE_URL}/brands/${brand.slug}` },
+    openGraph: {
+      title,
+      description,
+      url: `${BASE_URL}/brands/${brand.slug}`,
+      type: 'website',
+      images: brand.logo ? [{ url: brand.logo, alt: `${brand.name} logo` }] : undefined,
+    },
+    twitter: { card: 'summary_large_image', title, description, images: brand.logo ? [brand.logo] : undefined },
+  };
 }
 
 export default function BrandSlugLayout({ children }: { children: React.ReactNode }) {

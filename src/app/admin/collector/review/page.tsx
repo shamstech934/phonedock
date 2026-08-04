@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Copy, Loader2, Filter, RotateCcw } from 'lucide-react';
@@ -50,7 +49,7 @@ export default function AdminCollectorReviewPage() {
     setBusy(true);
     try {
       const res = await fetch(`/api/collector/review/${id}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
-      const data = await readApiResponse(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Failed to ${action}`);
       setItems(prev => prev.filter(i => i.id !== id));
       setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
@@ -62,7 +61,7 @@ export default function AdminCollectorReviewPage() {
     setBusy(true);
     try {
       const res = await fetch(`/api/collector/review/${id}/repair`, { method: 'POST', credentials: 'include' });
-      const data = await readApiResponse(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Repair failed');
       if (!data.fixes?.length) { setError('No auto-fixable issues found on this item.'); return; }
       fetchItems();
@@ -76,7 +75,7 @@ export default function AdminCollectorReviewPage() {
     setBusy(true);
     try {
       const res = await fetch('/api/collector/review/bulk', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: targetIds, action }) });
-      const data = await readApiResponse(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Bulk ${action} failed`);
       if (data.errors?.length) setError(`${data.approved || data.rejected} succeeded, ${data.failed} failed: ${data.errors.slice(0, 3).join('; ')}`);
       setSelected(new Set());

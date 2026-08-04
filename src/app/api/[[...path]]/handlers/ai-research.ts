@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { Phone, PhoneSpecs, PhoneImage, PhonePrice, ActivityLog, AIResearchJob, AIResearchDraft } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
-import { getAIStatus, type EnrichmentType } from '@/lib/ai-enrichment';
-import { processAIResearchJob } from '@/lib/ai-research-worker';
+import { getAIStatus, generateEnrichmentSuggestions, type EnrichmentType } from '@/lib/ai-enrichment';
 import { parseBoundedInt } from '@/lib/http';
-import { getAIResearchPolicy } from '@/lib/ai-research-policy';
 
 const VALID_TYPES: EnrichmentType[] = ['specs', 'images', 'prices'];
 
@@ -20,7 +18,7 @@ export async function handleAiResearchGet(req: NextRequest, segments: string[]):
 
   // ---- /api/admin/ai-research/status ----
   if (segments.length === 3 && segments[2] === 'status') {
-    return NextResponse.json({ ...getAIStatus(), policy: getAIResearchPolicy() });
+    return NextResponse.json(getAIStatus());
   }
 
   // ---- /api/admin/ai-research/jobs ----
@@ -64,83 +62,65 @@ export async function handleAiResearchPost(req: NextRequest, segments: string[])
   const permCheck = requirePermission(admin, 'ai-research:execute'); if (permCheck) return permCheck;
   await connectDB();
 
-  // ---- /api/admin/ai-research/jobs (create a bounded queued job) ----
+  // ---- /api/admin/ai-research/jobs (create + run a job) ----
   if (segments.length === 3 && segments[2] === 'jobs') {
     const body = await req.json();
-    const policy = getAIResearchPolicy();
-    if (!policy.enabled) return NextResponse.json({ error: 'AI Research is disabled by AI_RESEARCH_MODE=off' }, { status: 409 });
     const type = String(body.type || '') as EnrichmentType;
-    const rawIds: string[] = Array.isArray(body.phoneIds) ? body.phoneIds : [];
-    const phoneIds = [...new Set(rawIds.filter(id => mongoose.isValidObjectId(id)).slice(0, policy.maxPhonesPerJob))];
-    const batchSize = Math.min(policy.batchSize, Math.max(1, Number(body.batchSize || policy.batchSize)));
+    const phoneIds: string[] = Array.isArray(body.phoneIds) ? body.phoneIds.slice(0, 10) : [];
     if (!VALID_TYPES.includes(type)) return NextResponse.json({ error: 'type must be one of specs, images, prices' }, { status: 400 });
-    if (phoneIds.length === 0) return NextResponse.json({ error: `phoneIds is required (max ${policy.maxPhonesPerJob} per job)` }, { status: 400 });
+    if (phoneIds.length === 0) return NextResponse.json({ error: 'phoneIds is required (max 10 per job)' }, { status: 400 });
 
     const status = getAIStatus();
     if (!status.configured[type]) {
       return NextResponse.json({ error: `AI enrichment for "${type}" is not configured. Set the required provider/API keys first.` }, { status: 409 });
     }
 
-    const existingIds = await Phone.find({ _id: { $in: phoneIds } }).distinct('_id');
-    if (existingIds.length === 0) return NextResponse.json({ error: 'No matching phones found' }, { status: 404 });
+    const phones = await Phone.find({ _id: { $in: phoneIds } }).populate('brand', 'name').lean();
+    if (phones.length === 0) return NextResponse.json({ error: 'No matching phones found' }, { status: 404 });
 
     const job = await AIResearchJob.create({
-      type,
-      status: 'queued',
-      mode: policy.mode === 'standard' ? 'standard' : 'lite',
-      phoneIds: existingIds,
-      total: existingIds.length,
-      batchSize,
-      cursor: 0,
-      processed: 0,
-      generated: 0,
-      skipped: 0,
-      failed: 0,
-      providerCalls: 0,
-      maxProviderCalls: policy.maxProviderCallsPerJob,
-      createdBy: admin._id,
+      type, status: 'running', phoneIds: phones.map(p => p._id), total: phones.length, createdBy: admin._id, startedAt: new Date(), lastRunAt: new Date(),
     });
 
-    try { await ActivityLog.create({ adminId: admin._id, action: 'ai_research_job_queued', details: `Queued ${type} research for ${existingIds.length} phone(s)`, entityType: 'phone' }); } catch (e) { console.error('[ActivityLog]', e); }
-    return NextResponse.json({ success: true, jobId: job._id, status: job.status, total: job.total, batchSize: job.batchSize, mode: job.mode, maxProviderCalls: job.maxProviderCalls });
-  }
+    const input = phones.map((p) => ({
+      id: String(p._id), brand: (p.brand as unknown as { name?: string } | null)?.name || '', model: p.modelName, slug: p.slug,
+    }));
 
-  // ---- /api/admin/ai-research/jobs/:id/run (one serverless-safe batch) ----
-  if (segments.length === 5 && segments[2] === 'jobs' && segments[4] === 'run') {
-    const job = await AIResearchJob.findById(segments[3]);
-    if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (job.status === 'cancelled') return NextResponse.json({ error: 'Job is cancelled' }, { status: 409 });
-    const result = await processAIResearchJob(String(job._id));
-    return NextResponse.json({
-      success: true,
-      jobId: result.job._id,
-      status: result.job.status,
-      total: result.job.total,
-      processed: result.job.processed,
-      generated: result.job.generated,
-      failed: result.job.failed,
-      skipped: result.job.skipped,
-      providerCalls: result.job.providerCalls,
-      maxProviderCalls: result.job.maxProviderCalls,
-      nextRunAfter: result.job.nextRunAfter,
-      cursor: result.job.cursor,
-      processedThisRun: result.processedThisRun,
-      generatedThisRun: result.generatedThisRun,
-      failuresThisRun: result.failuresThisRun,
-      skippedThisRun: result.skippedThisRun,
-      throttled: result.throttled,
-    }, { status: result.throttled ? 429 : 200 });
-  }
+    let generated = 0; const failures: Array<{ phoneId: mongoose.Types.ObjectId; message: string }> = [];
+    try {
+      // generateEnrichmentSuggestions already caps at 10 phones per call and throws per-phone
+      // context on failure; we still guard the whole call so one bad batch doesn't crash the job record.
+      const suggestions = await generateEnrichmentSuggestions(type, input);
+      for (const suggestion of suggestions) {
+        await AIResearchDraft.create({
+          phoneId: suggestion.phoneId, type, status: 'pending_review', jobId: job._id,
+          brand: suggestion.brand, model: suggestion.model, confidence: suggestion.confidence,
+          sourceNotes: suggestion.sourceNotes, sources: suggestion.sources || [], conflicts: suggestion.conflicts || [],
+          specs: suggestion.specs, images: suggestion.images, price: suggestion.price, createdBy: admin._id,
+        });
+        generated++;
+      }
+      // Any requested phone that didn't get a suggestion counts as a failure so the job total is honest.
+      const succeededIds = new Set(await AIResearchDraft.find({ jobId: job._id }).distinct('phoneId').then(ids => ids.map(String)));
+      for (const p of phones) {
+        if (!succeededIds.has(String(p._id))) failures.push({ phoneId: p._id, message: 'No usable data generated for this phone' });
+      }
+    } catch (err: unknown) {
+      // generateEnrichmentSuggestions throws on the first hard failure (missing sources, provider
+      // error, etc.) rather than silently returning partial/fabricated data — that's by design, so
+      // we record it as a job failure rather than pretending the batch succeeded.
+      const message = err instanceof Error ? err.message : 'AI enrichment failed';
+      for (const p of phones) failures.push({ phoneId: p._id, message });
+    }
 
-  // ---- /api/admin/ai-research/jobs/:id/cancel ----
-  if (segments.length === 5 && segments[2] === 'jobs' && segments[4] === 'cancel') {
-    const job = await AIResearchJob.findById(segments[3]);
-    if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
-    if (['completed', 'completed_with_errors', 'failed'].includes(job.status)) return NextResponse.json({ error: `Job already ${job.status}` }, { status: 409 });
-    job.status = 'cancelled';
-    job.completedAt = new Date();
-    await job.save();
-    return NextResponse.json({ success: true, jobId: job._id, status: job.status });
+    const finalStatus = failures.length === 0 ? 'completed' : (generated > 0 ? 'completed_with_errors' : 'failed');
+    await AIResearchJob.updateOne({ _id: job._id }, {
+      $set: { status: finalStatus, processed: phones.length, generated, failed: failures.length, failures, completedAt: new Date() },
+    });
+
+    try { await ActivityLog.create({ adminId: admin._id, action: 'ai_research_job', details: `AI research (${type}): ${generated} draft(s) generated, ${failures.length} failed, from ${phones.length} phone(s)`, entityType: 'phone' }); } catch (e) { console.error('[ActivityLog]', e); }
+
+    return NextResponse.json({ success: true, jobId: job._id, status: finalStatus, total: phones.length, generated, failed: failures.length, failures });
   }
 
   // ---- /api/admin/ai-research/drafts/:id/approve ----

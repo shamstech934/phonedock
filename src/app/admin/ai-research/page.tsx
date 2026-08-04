@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Sparkles, CheckCircle, XCircle, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
@@ -14,16 +13,6 @@ interface AIStatus {
   tavily: boolean;
   imageSearch: boolean;
   configured: { specs: boolean; images: boolean; prices: boolean };
-  policy: {
-    mode: 'off' | 'lite' | 'standard';
-    enabled: boolean;
-    maxPhonesPerJob: number;
-    batchSize: number;
-    maxProviderCallsPerJob: number;
-    cooldownSeconds: number;
-    draftFreshHours: number;
-    autoRun: boolean;
-  };
 }
 
 interface DraftPhone { modelName?: string; slug?: string; thumbnail?: string }
@@ -43,14 +32,6 @@ interface Draft {
   createdAt: string;
 }
 
-interface DraftsResponse { drafts: Draft[]; error?: string }
-interface PhoneLookupResponse { id?: string; _id?: string; error?: string }
-interface ResearchJobResponse {
-  jobId: string; total: number; status: string; processed?: number; generated?: number; skipped?: number; failed?: number;
-  providerCalls?: number; maxProviderCalls?: number; nextRunAfter?: string; throttled?: boolean; error?: string;
-}
-interface ReviewResponse { success?: boolean; error?: string }
-
 export default function AiResearchPage() {
   useAdmin();
   const [status, setStatus] = useState<AIStatus | null>(null);
@@ -68,8 +49,8 @@ export default function AiResearchPage() {
     setLoading(true);
     setError(null);
     Promise.all([
-      fetch('/api/admin/ai-research/status', { credentials: 'include' }).then(r => readApiResponse<AIStatus>(r)),
-      fetch('/api/admin/ai-research/drafts?status=pending_review&limit=30', { credentials: 'include' }).then(r => readApiResponse<DraftsResponse>(r)),
+      fetch('/api/admin/ai-research/status', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Status fetch failed'); return r.json(); }),
+      fetch('/api/admin/ai-research/drafts?status=pending_review&limit=30', { credentials: 'include' }).then(r => { if (!r.ok) throw new Error('Drafts fetch failed'); return r.json(); }),
     ]).then(([s, d]) => {
       setStatus(s);
       setDrafts(d.drafts || []);
@@ -85,50 +66,28 @@ export default function AiResearchPage() {
   const runJob = async () => {
     const slugs = slugsInput.split(',').map(s => s.trim()).filter(Boolean);
     if (slugs.length === 0) { setJobMessage('Enter at least one phone slug.'); return; }
-    const maxPhones = status?.policy?.maxPhonesPerJob || 5;
-    if (slugs.length > maxPhones) { setJobMessage(`Max ${maxPhones} phones per job in ${status?.policy?.mode || 'lite'} mode — split into multiple runs.`); return; }
+    if (slugs.length > 10) { setJobMessage('Max 10 phones per job — split into multiple runs.'); return; }
     setRunning(true);
     setJobMessage(null);
     try {
       // Resolve slugs to phone IDs via the public lookup endpoint used elsewhere in admin.
       const lookups = await Promise.all(slugs.map(slug =>
-        fetch(`/api/phones/${encodeURIComponent(slug)}`, { credentials: 'include' }).then(r => readApiResponse<PhoneLookupResponse>(r)).catch(() => null)
+        fetch(`/api/phones/${encodeURIComponent(slug)}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null)
       ));
       const phoneIds = lookups.map(p => p?.id || p?._id).filter(Boolean);
       if (phoneIds.length === 0) { setJobMessage('None of those slugs matched an existing phone.'); setRunning(false); return; }
 
       const res = await fetch('/api/admin/ai-research/jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ type, phoneIds, batchSize: status?.policy?.batchSize || 1 }),
+        body: JSON.stringify({ type, phoneIds }),
       });
-      const queued = await readApiResponse<ResearchJobResponse>(res);
-
-      let current = queued;
-      setJobMessage(`Queued ${queued.total} phone(s). Processing bounded batches…`);
-      for (let attempt = 0; attempt < 30 && ['queued', 'running'].includes(current.status); attempt++) {
-        const batchRes = await fetch(`/api/admin/ai-research/jobs/${queued.jobId}/run`, {
-          method: 'POST', credentials: 'include',
-        });
-        current = await readApiResponse<ResearchJobResponse>(batchRes);
-        if (batchRes.status === 429 && current.throttled) {
-          const waitMs = current.nextRunAfter
-            ? Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()))
-            : Math.max(1000, (status?.policy?.cooldownSeconds || 20) * 1000);
-          setJobMessage(`Lite-mode cooldown · continuing in ${Math.ceil(waitMs / 1000)}s…`);
-          await new Promise(resolve => setTimeout(resolve, waitMs));
-          continue;
-        }
-        setJobMessage(`Processed ${current.processed}/${current.total} · drafts ${current.generated} · skipped ${current.skipped || 0} · failed ${current.failed} · AI calls ${current.providerCalls || 0}/${current.maxProviderCalls || 0}`);
-        if (current.nextRunAfter && ['queued', 'running'].includes(current.status)) {
-          const waitMs = Math.max(1000, Math.min(30000, new Date(current.nextRunAfter).getTime() - Date.now()));
-          await new Promise(resolve => setTimeout(resolve, waitMs));
-        }
-      }
-      setJobMessage(`Finished: ${current.generated || 0} draft(s), ${current.failed || 0} failed, status ${current.status}.`);
+      const result = await res.json();
+      if (!res.ok) { setJobMessage(result.error || 'Job failed to start.'); setRunning(false); return; }
+      setJobMessage(`Done: ${result.generated} draft(s) generated, ${result.failed} failed, out of ${result.total} phone(s) requested.`);
       setSlugsInput('');
       fetchData();
-    } catch (error) {
-      setJobMessage(error instanceof Error ? error.message : 'Job failed — check your network and try again.');
+    } catch {
+      setJobMessage('Job failed — check your network and try again.');
     } finally { setRunning(false); }
   };
 
@@ -136,7 +95,7 @@ export default function AiResearchPage() {
     setReviewingId(id);
     try {
       const res = await fetch(`/api/admin/ai-research/drafts/${id}/${action}`, { method: 'POST', credentials: 'include' });
-      await readApiResponse<ReviewResponse>(res);
+      if (!res.ok) { const r = await res.json().catch(() => ({})); setError(r.error || `Failed to ${action} draft.`); return; }
       setDrafts(prev => prev.filter(d => d._id !== id));
     } catch {
       setError(`Failed to ${action} draft — check your network and try again.`);
@@ -165,10 +124,7 @@ export default function AiResearchPage() {
 
       {/* Provider status */}
       <div className="card-premium p-5">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <h3 className="font-bold text-sm text-gray-900">Provider Status</h3>
-          <Badge variant="secondary" className="text-[10px] capitalize">{status?.policy?.mode || 'lite'} mode</Badge>
-        </div>
+        <h3 className="font-bold text-sm text-gray-900 mb-3">Provider Status</h3>
         {status?.providerConfigured ? (
           <Badge className="bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200/50 mb-3">
             <CheckCircle className="w-3 h-3 mr-1" /> {status.providerName} connected
@@ -184,11 +140,6 @@ export default function AiResearchPage() {
             </div>
           ))}
         </div>
-        {status?.policy && (
-          <p className="text-[11px] text-muted-foreground mt-3">
-            Load protection: max {status.policy.maxPhonesPerJob} phones/job, {status.policy.batchSize} phone/batch, {status.policy.maxProviderCallsPerJob} provider calls/job, {status.policy.cooldownSeconds}s cooldown. Fresh pending drafts are reused for {status.policy.draftFreshHours} hours.
-          </p>
-        )}
         {!status?.providerConfigured && (
           <p className="text-[11px] text-muted-foreground mt-3">
             Set <code>AI_PROVIDER</code> plus its API key (OpenRouter or OpenAI), and <code>TAVILY_API_KEY</code> for research, in your environment variables to enable this.
@@ -208,12 +159,12 @@ export default function AiResearchPage() {
           <input
             value={slugsInput}
             onChange={e => setSlugsInput(e.target.value)}
-            placeholder={`phone-slug-1, phone-slug-2 (max ${status?.policy?.maxPhonesPerJob || 5})`}
+            placeholder="phone-slug-1, phone-slug-2 (max 10)"
             className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2"
           />
           <button
             onClick={runJob}
-            disabled={running || !status?.policy?.enabled || !status?.configured[type]}
+            disabled={running || !status?.configured[type]}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-violet-500 hover:bg-violet-600 disabled:opacity-50 rounded-lg transition-colors"
           >
             {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Run

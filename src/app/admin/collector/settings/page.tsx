@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useEffect, useState } from 'react';
 import { Info, Server } from 'lucide-react';

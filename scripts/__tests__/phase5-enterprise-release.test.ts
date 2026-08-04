@@ -7,7 +7,7 @@ const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 const pkg = JSON.parse(read("package.json")) as { version: string; engines?: { node?: string } };
 assert.equal(pkg.version, "1.0.0", "release metadata must use semantic version 1.0.0");
-assert.match(pkg.engines?.node || "", /22.*24|24.*22/, "production Node range must cover supported Node 22 and 24 LTS lines");
+assert.equal(pkg.engines?.node, ">=22.12.0 <23", "production Node range must stay pinned");
 
 for (const document of [
   "ARCHITECTURE.md",

@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = "SpecsDekh Pakistan — Smartphone prices, specs and reviews";
+export const alt = "PhoneDock Pakistan — Smartphone prices, specs and reviews";
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -22,7 +22,7 @@ export default function OpenGraphImage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 22, fontSize: 38, fontWeight: 700 }}>
           <div style={{ width: 68, height: 68, borderRadius: 18, background: '#facc15', color: '#07111f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>P</div>
-          SpecsDekh Pakistan
+          PhoneDock Pakistan
         </div>
         <div style={{ marginTop: 54, maxWidth: 980, fontSize: 72, lineHeight: 1.05, fontWeight: 800 }}>
           Find the right phone with real specs and smarter comparisons.

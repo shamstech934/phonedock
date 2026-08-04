@@ -1,5 +1,5 @@
 /**
- * Next.js Proxy — SpecsDekh Production
+ * Next.js Proxy — PhoneDock Production
  *
  * Responsibilities:
  *  1. Block unauthenticated /admin/* requests (redirect to /admin/login)
@@ -35,7 +35,6 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
     pathname === '/robots.txt' ||
-    pathname.endsWith('-sitemap.xml') ||
     pathname === '/sitemap.xml' ||
     pathname.startsWith('/images/')
   );
@@ -46,23 +45,6 @@ function isStaticAsset(pathname: string): boolean {
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
-
-  // Recover malformed nested admin authentication URLs from stale bookmarks
-  // or historical relative links, e.g. /compare/admin/login.
-  const nestedAdminAuthRoutes = [
-    '/admin/login',
-    '/admin/forgot-password',
-    '/admin/reset-password',
-    '/admin/first-setup',
-  ];
-  const recoveredAdminRoute = nestedAdminAuthRoutes.find(
-    (route) => pathname !== route && pathname.endsWith(route),
-  );
-  if (recoveredAdminRoute) {
-    const recoveredUrl = req.nextUrl.clone();
-    recoveredUrl.pathname = recoveredAdminRoute;
-    return NextResponse.redirect(recoveredUrl, 308);
-  }
 
   // Maintenance mode: block public pages (never admin, API, or static assets)
   // so an admin can still log in and turn it back off.
@@ -144,6 +126,6 @@ export const config = {
   matcher: [
     // Apply request IDs and security routing consistently to all application
     // requests while excluding immutable Next.js assets.
-    '/((?!_next/static|_next/image|favicon.ico|robots\.txt|sitemap\.xml|.*-sitemap\.xml).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };

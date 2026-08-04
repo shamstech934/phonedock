@@ -281,7 +281,7 @@ export async function handleAdminAuthPost(req: NextRequest, segments: string[]):
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: admin.email,
-          subject: 'SpecsDekh — Password Reset',
+          subject: 'PhoneDock — Password Reset',
           html: `<p>You requested a password reset.</p><p>Click <a href="${resetLink}">here</a> to reset your password. This link expires in 30 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
         });
       } catch (emailErr: unknown) {

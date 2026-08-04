@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';

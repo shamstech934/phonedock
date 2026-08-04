@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Affiliate destination is invalid' }, { status: 500 });
   }
 
-  url.searchParams.set('utm_source', 'specsdekh');
+  url.searchParams.set('utm_source', 'phonedock');
   url.searchParams.set('utm_medium', 'affiliate');
   url.searchParams.set('utm_campaign', slug);
   if (linkId && connection) {

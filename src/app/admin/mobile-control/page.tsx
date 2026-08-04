@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { AppWindow, BellRing, ExternalLink, Loader2, Save, ShieldAlert, Smartphone } from 'lucide-react';
@@ -32,7 +31,7 @@ type MobileSettings = {
 const defaults: MobileSettings = {
   enabled: true,
   maintenanceMode: false,
-  maintenanceTitle: 'SpecsDekh is being improved',
+  maintenanceTitle: 'PhoneDock is being improved',
   maintenanceMessage: 'Please check back shortly.',
   minimumVersion: '0.1.0',
   latestVersion: '0.1.0',
@@ -57,7 +56,7 @@ export default function MobileControlPage() {
 
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/settings', { credentials: 'include', cache: 'no-store' });
-    const payload = await readApiResponse(response).catch(() => null);
+    const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || 'Mobile settings could not load');
     const value = payload?.settings?.mobileApp || {};
     setForm({
@@ -82,7 +81,7 @@ export default function MobileControlPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobileApp: form }),
       });
-      const payload = await readApiResponse(response).catch(() => null);
+      const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error || 'Mobile settings could not be saved');
       setMessage('Mobile configuration published. App will receive it on its next refresh.');
       await load();

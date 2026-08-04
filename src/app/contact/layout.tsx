@@ -3,7 +3,7 @@ import { getBaseUrl } from '@/lib/urls';
 
 export const metadata: Metadata = {
   title: 'Contact Us',
-  description: 'Get in touch with the SpecsDekh team. Report errors, ask questions, or send suggestions about Pakistan\'s smartphone database.',
+  description: 'Get in touch with the PhoneDock team. Report errors, ask questions, or send suggestions about Pakistan\'s smartphone database.',
   alternates: { canonical: `${getBaseUrl()}/contact` },
 };
 

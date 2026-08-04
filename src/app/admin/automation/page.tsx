@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, Archive, CheckCircle2, Clock3, Play, RefreshCw, Tag, Zap } from 'lucide-react';
@@ -7,12 +6,6 @@ import { Activity, Archive, CheckCircle2, Clock3, Play, RefreshCw, Tag, Zap } fr
 interface AutomationStatus {
   lifecycle: Record<string, number>;
   lastRun: { at: string; details: string } | null;
-}
-
-interface AutomationRunResult {
-  durationMs?: number;
-  prices?: { updated?: number };
-  lifecycle?: { launched?: number };
 }
 
 export default function AutomationControlPage() {
@@ -23,7 +16,8 @@ export default function AutomationControlPage() {
 
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/automation', { credentials: 'include', cache: 'no-store' });
-    const payload = await readApiResponse<AutomationStatus>(response);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error || 'Automation status could not load');
     setStatus(payload);
   }, []);
 
@@ -33,7 +27,8 @@ export default function AutomationControlPage() {
     setRunning(true); setError(''); setMessage('');
     try {
       const response = await fetch('/api/admin/automation/run', { method: 'POST', credentials: 'include' });
-      const payload = await readApiResponse<AutomationRunResult>(response);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Pipeline failed');
       setMessage(`Pipeline complete in ${Math.round((payload.durationMs || 0) / 1000)}s · ${payload.prices?.updated || 0} prices updated · ${payload.lifecycle?.launched || 0} launches activated`);
       await load();
     } catch (reason) {

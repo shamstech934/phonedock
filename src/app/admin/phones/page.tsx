@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
@@ -8,7 +7,7 @@ import {
   Search, Star, Smartphone, Plus, Trash2, Edit, Eye,
   ChevronLeft, ChevronRight, Filter, ChevronDown, ChevronUp,
   CheckSquare, Square, AlertCircle, X, Smartphone as PhoneIcon,
-  TrendingUp, Sparkles, Shield, DollarSign, FileText, Download
+  TrendingUp, Sparkles, Shield, DollarSign, FileText
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -25,7 +24,7 @@ const SORT_OPTIONS = [
 
 const STATUS_FILTERS = [
   { value: '', label: 'All Status' }, { value: 'published', label: 'Published' },
-  { value: 'review', label: 'Draft / Review' }, { value: 'draft', label: 'Draft only' }, { value: 'pending', label: 'Pending only' },
+  { value: 'draft', label: 'Draft' }, { value: 'pending', label: 'Pending' },
   { value: 'archived', label: 'Archived' }, { value: 'upcoming', label: 'Upcoming' },
   { value: 'trending', label: 'Trending' }, { value: 'featured', label: 'Featured' },
 ];
@@ -38,12 +37,6 @@ const PTA_FILTERS = [
 interface PhoneStats {
   total: number; published: number; draft: number; upcoming: number;
   trending: number; featured: number; ptaApproved: number; avgPrice: number;
-}
-
-interface PhoneUpdateErrorPayload {
-  error?: string;
-  message?: string;
-  issues?: string[];
 }
 
 /* ─── Main Component ─── */
@@ -114,9 +107,8 @@ export default function AdminPhonesPage() {
     try {
       const params = buildParams();
       const res = await fetch(`/api/admin/phones?${params}`, { credentials: 'include' });
-      const d = await readApiResponse<{ phones?: Phone[]; total?: number; totalPages?: number; error?: string; message?: string }>(res).catch(() => null);
-      if (!res.ok) throw new Error(d?.error || d?.message || `Failed to fetch phones (HTTP ${res.status})`);
-      if (!d) throw new Error('Phones API returned an invalid response');
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
       setPhones(d.phones || []);
       setTotal(d.total || 0);
       setTotalPages(d.totalPages || 1);
@@ -130,7 +122,7 @@ export default function AdminPhonesPage() {
     try {
       const res = await fetch('/api/admin/phones/stats', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load phone statistics');
-      const d = await readApiResponse<PhoneStats & { error?: string }>(res);
+      const d = await res.json();
       setStats(d);
     } catch (error) { console.error('[AdminPhones] stats request failed', error); }
   }, []);
@@ -140,7 +132,7 @@ export default function AdminPhonesPage() {
     try {
       const res = await fetch('/api/admin/brands?limit=200', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to load brands');
-      const d = await readApiResponse<{ brands?: Brand[]; error?: string }>(res);
+      const d = await res.json();
       setBrands(d.brands || []);
     } catch (error) { setError(error instanceof Error ? error.message : 'Failed to load brands'); }
   }, []);
@@ -153,12 +145,8 @@ export default function AdminPhonesPage() {
     setDeleting(true);
     try {
       const r = await fetch(`/api/admin/phones/${deleteId}`, { method: 'DELETE', credentials: 'include' });
-      const payload = await readApiResponse<{ error?: string; message?: string }>(r).catch(() => null);
-      if (!r.ok) throw new Error(payload?.error || payload?.message || `Delete failed (HTTP ${r.status})`);
-      setPhones(prev => prev.filter(p => p.id !== deleteId));
-      setDeleteId(null);
-      await Promise.all([fetchStats(), fetchPhones()]);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Delete failed'); }
+      if (r.ok) { setPhones(prev => prev.filter(p => p.id !== deleteId)); setDeleteId(null); fetchStats(); setTotal(t => t - 1); }
+    } catch (e) { console.error('[deletePhone]', e); }
     setDeleting(false);
   };
 
@@ -191,9 +179,9 @@ export default function AdminPhonesPage() {
         responses
           .filter(response => !response.ok)
           .map(async response => {
-            const payload = await readApiResponse<PhoneUpdateErrorPayload>(response).catch(() => null);
-            const issues = Array.isArray(payload?.issues) ? payload.issues.join(', ') : '';
-            return issues || payload?.error || payload?.message || `Update failed (HTTP ${response.status})`;
+            const payload = await response.json().catch(() => ({}));
+            const issues = Array.isArray(payload.issues) ? payload.issues.join(', ') : '';
+            return issues || payload.error || `Update failed (HTTP ${response.status})`;
           }),
       );
       if (failures.length > 0) throw new Error([...new Set(failures)].join(' | '));
@@ -264,66 +252,6 @@ export default function AdminPhonesPage() {
 
   const startIdx = total > 0 ? (page - 1) * rowsPerPage + 1 : 0;
   const endIdx = Math.min(page * rowsPerPage, total);
-  const isPublishedPhone = (phone: Phone) => phone.status === 'published' || phone.published === true;
-  const displayPhoneStatus = (phone: Phone) => {
-    if (isPublishedPhone(phone)) return 'Published';
-    if (phone.status === 'pending' || phone.status === 'review') return 'Pending Review';
-    if (phone.status === 'archived') return 'Archived';
-    return 'Draft';
-  };
-
-  const applyStatFilter = (kind: 'all' | 'published' | 'review' | 'upcoming' | 'trending' | 'featured' | 'pta') => {
-    setStatusFilter('');
-    setPtaFilter('');
-    setFeaturedToggle(false);
-    setTrendingToggle(false);
-    if (kind === 'published') setStatusFilter('published');
-    else if (kind === 'review') setStatusFilter('review');
-    else if (kind === 'upcoming') setStatusFilter('upcoming');
-    else if (kind === 'trending') setTrendingToggle(true);
-    else if (kind === 'featured') setFeaturedToggle(true);
-    else if (kind === 'pta') setPtaFilter('approved');
-    setPage(1);
-  };
-
-  const exportPhonesCsv = async () => {
-    setError('');
-    try {
-      const params = new URLSearchParams(buildParams());
-      params.set('page', '1');
-      params.set('limit', '500');
-      const all: Phone[] = [];
-      let currentPage = 1;
-      let pages = 1;
-      do {
-        params.set('page', String(currentPage));
-        const response = await fetch(`/api/admin/phones?${params.toString()}`, { credentials: 'include' });
-        const payload = await readApiResponse<{ phones?: Phone[]; totalPages?: number; error?: string; message?: string }>(response).catch(() => null);
-        if (!response.ok) throw new Error(payload?.error || payload?.message || `Export failed (HTTP ${response.status})`);
-        all.push(...(payload?.phones || []));
-        pages = Math.max(1, payload?.totalPages || 1);
-        currentPage += 1;
-      } while (currentPage <= pages);
-
-      const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-      const rows = all.map(phone => [
-        phone.id, phone.brand?.name || phone.brandName || '', phone.modelName || phone.model || '', phone.slug,
-        phone.pricePKR || 0, phone.ptaStatus || 'Unknown', phone.overallRating || '',
-        phone.status || (phone.published ? 'published' : 'draft'), phone.featured ? 'true' : 'false',
-        phone.trending ? 'true' : 'false', phone.upcoming ? 'true' : 'false', phone.thumbnail || '',
-      ].map(quote).join(','));
-      const csv = ['id,brand,model,slug,pricePKR,ptaStatus,rating,status,featured,trending,upcoming,thumbnail', ...rows].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `specsdekh-phones-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : 'CSV export failed'); }
-  };
 
   // Error state
   if (error && !phones.length) {
@@ -359,9 +287,6 @@ export default function AdminPhonesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={exportPhonesCsv} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-            <Download className="w-4 h-4" /> <span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">Export</span>
-          </button>
           <button
             onClick={checkCleanupCount}
             disabled={cleanupLoading}
@@ -389,16 +314,16 @@ export default function AdminPhonesPage() {
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {[
-            { label: 'Total Phones', value: stats.total, icon: PhoneIcon, bg: 'bg-blue-50', color: 'text-blue-600', action: 'all' as const },
-            { label: 'Published', value: stats.published, icon: FileText, bg: 'bg-emerald-50', color: 'text-emerald-600', action: 'published' as const },
-            { label: 'Draft / Review', value: stats.draft, icon: Edit, bg: 'bg-gray-100', color: 'text-gray-500', action: 'review' as const },
-            { label: 'Upcoming', value: stats.upcoming, icon: Smartphone, bg: 'bg-purple-50', color: 'text-purple-600', action: 'upcoming' as const },
-            { label: 'Trending', value: stats.trending, icon: TrendingUp, bg: 'bg-cyan-50', color: 'text-cyan-600', action: 'trending' as const },
-            { label: 'Featured', value: stats.featured, icon: Sparkles, bg: 'bg-amber-50', color: 'text-amber-600', action: 'featured' as const },
-            { label: 'PTA Approved', value: stats.ptaApproved, icon: Shield, bg: 'bg-green-50', color: 'text-green-600', action: 'pta' as const },
-            { label: 'Avg Price', value: formatPrice(stats.avgPrice), icon: DollarSign, bg: 'bg-rose-50', color: 'text-rose-600', action: null },
+            { label: 'Total Phones', value: stats.total, icon: PhoneIcon, bg: 'bg-blue-50', color: 'text-blue-600' },
+            { label: 'Published', value: stats.published, icon: FileText, bg: 'bg-emerald-50', color: 'text-emerald-600' },
+            { label: 'Draft', value: stats.draft, icon: Edit, bg: 'bg-gray-100', color: 'text-gray-500' },
+            { label: 'Upcoming', value: stats.upcoming, icon: Smartphone, bg: 'bg-purple-50', color: 'text-purple-600' },
+            { label: 'Trending', value: stats.trending, icon: TrendingUp, bg: 'bg-cyan-50', color: 'text-cyan-600' },
+            { label: 'Featured', value: stats.featured, icon: Sparkles, bg: 'bg-amber-50', color: 'text-amber-600' },
+            { label: 'PTA Approved', value: stats.ptaApproved, icon: Shield, bg: 'bg-green-50', color: 'text-green-600' },
+            { label: 'Avg Price', value: formatPrice(stats.avgPrice), icon: DollarSign, bg: 'bg-rose-50', color: 'text-rose-600' },
           ].map(s => (
-            <button type="button" key={s.label} onClick={() => s.action && applyStatFilter(s.action)} disabled={!s.action} className={`card-premium p-3.5 text-left transition ${s.action ? 'hover:-translate-y-0.5 hover:border-blue-200 cursor-pointer' : 'cursor-default'}`}>
+            <div key={s.label} className="card-premium p-3.5">
               <div className="flex items-center justify-between mb-2">
                 <div className={`w-7 h-7 ${s.bg} rounded-lg flex items-center justify-center`}>
                   <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
@@ -406,7 +331,7 @@ export default function AdminPhonesPage() {
               </div>
               <p className="text-base font-bold text-gray-900">{s.value}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -561,11 +486,8 @@ export default function AdminPhonesPage() {
                       <td className="px-4 py-3"><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /><span className="font-semibold">{p.overallRating || '—'}</span></div></td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
-                          {isPublishedPhone(p) ? (
-                            <Badge className="bg-emerald-50 text-emerald-700 text-[10px] border-emerald-200/50">Published</Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-[10px]">{displayPhoneStatus(p)}</Badge>
-                          )}
+                          {p.published !== false && <Badge className="bg-emerald-50 text-emerald-700 text-[10px] border-emerald-200/50">Published</Badge>}
+                          {!p.published && p.status !== 'published' && <Badge variant="secondary" className="text-[10px]">{p.status || 'Draft'}</Badge>}
                           {p.featured && <Badge className="bg-amber-50 text-amber-700 text-[10px] border-amber-200/50">Featured</Badge>}
                           {p.trending && <Badge className="bg-blue-50 text-blue-700 text-[10px] border-blue-200/50">Trending</Badge>}
                           {p.upcoming && <Badge className="bg-purple-50 text-purple-700 text-[10px] border-purple-200/50">Upcoming</Badge>}

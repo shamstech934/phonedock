@@ -112,7 +112,7 @@ export default function BuyingAssistantPage() {
         <div className="mx-auto max-w-5xl">
           <section className="overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-6 shadow-sm sm:p-9 dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-blue-950">
             <div className="flex items-center gap-2 text-sm font-bold text-blue-700 dark:text-blue-300">
-              <Sparkles className="h-4 w-4" /> SpecsDekh Smart Buying Assistant
+              <Sparkles className="h-4 w-4" /> PhoneDock Smart Buying Assistant
             </div>
             <h1 className="mt-3 max-w-3xl text-3xl font-black tracking-tight text-slate-950 sm:text-4xl dark:text-white">
               Apna budget aur priorities batao — verified data se best phones dekho.
@@ -192,7 +192,7 @@ export default function BuyingAssistantPage() {
               <article key={item.phone.slug} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.phone.brand?.name || 'SpecsDekh pick'}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.phone.brand?.name || 'PhoneDock pick'}</p>
                     <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">{item.phone.modelName}</h2>
                     <p className="mt-2 font-black text-blue-600 dark:text-blue-400">{formatPrice(item.phone.pricePKR)}</p>
                   </div>

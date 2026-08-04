@@ -15,11 +15,7 @@ assert.ok(
   autocomplete.indexOf('await connectDB()') < autocomplete.indexOf('checkIpRateLimit'),
   'MongoDB must connect before the database-backed rate limiter runs',
 );
-assert.match(
-  autocomplete,
-  /maxTimeMS\s*(?:\(\s*5000\s*\)|:\s*5000)/,
-  'autocomplete query must have a realistic bounded time budget',
-);
+assert.match(autocomplete, /maxTimeMS: 5000/, 'autocomplete aggregation must have a realistic bounded time budget');
 assert.match(autocomplete, /const brandIds = await Brand\.find/, 'autocomplete must fall back to direct brand matching');
 assert.match(autocomplete, /\.limit\(12\)/, 'fallback results must remain bounded');
 assert.match(autocomplete, /modelName: \{ \$regex: safe/, 'fallback must search phone model names');

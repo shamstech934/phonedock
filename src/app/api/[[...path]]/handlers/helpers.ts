@@ -51,12 +51,8 @@ interface LeanAdminSession {
 export interface PhoneJson {
   id?: string;
   modelName?: string;
-  /** Legacy/API compatibility alias used by admin exports and older clients. */
-  model?: string;
   slug?: string;
   brandId?: string;
-  /** Flattened populated brand name returned by phoneToJSON. */
-  brandName?: string;
   brand?: { id?: string; name?: string; slug?: string; logo?: string };
   thumbnail?: string;
   pricePKR?: number;
@@ -85,14 +81,6 @@ export interface PhoneJson {
   reviewSummary?: string;
   reviewVerdict?: string;
   published?: boolean;
-  /** Canonical workflow status returned by phoneToJSON. */
-  status?: string;
-  /** Whether the record is active and not administratively disabled. */
-  active?: boolean;
-  deletedAt?: Date | string | null;
-  views?: number;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
   specs?: Record<string, string | number | null> | null;
   benchmarks?: Record<string, unknown>;
   images?: Array<{ id?: string; url?: string; altText?: string; sortOrder?: number }>;
@@ -137,11 +125,6 @@ interface RawPhoneObject {
   reviewSummary?: string;
   reviewVerdict?: string;
   status?: string;
-  active?: boolean;
-  deletedAt?: Date | string | null;
-  views?: number;
-  createdAt?: Date | string;
-  updatedAt?: Date | string;
   priceMode?: string;
   manualLock?: boolean;
   manualLockReason?: string;
@@ -384,8 +367,6 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     modelName: r.modelName,
     slug: r.slug,
     brandId: r.brandId?.toString(),
-    brandName: r.brand?.name || '',
-    model: r.modelName,
     brand: r.brand ? { id: r.brand._id?.toString(), name: r.brand.name, slug: r.brand.slug, logo: r.brand.logo || '' } : undefined,
     thumbnail: r.thumbnail || '',
     pricePKR: r.pricePKR || 0,
@@ -414,12 +395,6 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     reviewSummary: r.reviewSummary || '',
     reviewVerdict: r.reviewVerdict || '',
     published: r.status === 'published',
-    status: r.status || 'draft',
-    active: r.active !== false,
-    deletedAt: r.deletedAt || null,
-    views: r.views || 0,
-    createdAt: r.createdAt || '',
-    updatedAt: r.updatedAt || '',
     // Use the shared serializer for full specs (detail page path)
     specs: specs ? serializePhoneSpecs(specs) : undefined,
     benchmarks: benchmarks || undefined,

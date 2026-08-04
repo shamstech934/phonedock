@@ -15,6 +15,7 @@ import {
   isPrivateUrl,
   isDomainAllowed,
   validateUrlForFetch,
+  fetchWithValidatedRedirects,
 } from '../../src/lib/ssrf-guard';
 
 let passed = 0;
@@ -149,6 +150,43 @@ for (let i = 0; i < vfTests.length; i++) {
     console.log(`  ✗ ${vfNames[i]} — ${e.message}`);
   }
 }
+
+console.log('\n=== validated redirects ===');
+try {
+  const visited: string[] = [];
+  const response = await fetchWithValidatedRedirects('https://shop.example.com/start', {
+    allowedDomains: ['example.com'], resolver: publicDns,
+    fetcher: (async (url: string | URL | Request) => {
+      const value = String(url); visited.push(value);
+      return value.endsWith('/start')
+        ? new Response(null, { status: 302, headers: { location: '/product' } })
+        : new Response('<html>ok</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    }) as typeof fetch,
+  });
+  assert(response.status === 200 && visited.length === 2, 'Allowed same-domain redirect passes');
+} catch { assert(false, 'Allowed same-domain redirect passes'); }
+
+try {
+  let calls = 0;
+  await fetchWithValidatedRedirects('https://shop.example.com/start', {
+    allowedDomains: ['example.com'], resolver: publicDns,
+    fetcher: (async () => {
+      calls++;
+      return new Response(null, { status: 302, headers: { location: 'https://evil.test/steal' } });
+    }) as typeof fetch,
+  });
+  assert(false, 'Redirect escaping retailer allowlist is blocked');
+} catch {
+  assert(true, 'Redirect escaping retailer allowlist is blocked');
+}
+
+try {
+  await fetchWithValidatedRedirects('https://shop.example.com/start', {
+    allowedDomains: ['example.com'], resolver: publicDns, maxRedirects: 1,
+    fetcher: (async () => new Response(null, { status: 302, headers: { location: '/again' } })) as typeof fetch,
+  });
+  assert(false, 'Redirect loop limit is enforced');
+} catch { assert(true, 'Redirect loop limit is enforced'); }
 
 // ─── Summary ─────────────────────────────────────────────────
 

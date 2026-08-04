@@ -6,7 +6,7 @@ import { Smartphone, Target, Users, Mail, Globe, Heart } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'About Us',
-  description: 'Learn about SpecsDekh — Pakistan\'s most comprehensive smartphone database. Our mission, team, and commitment to helping Pakistanis find the perfect phone.',
+  description: 'Learn about PhoneDock — Pakistan\'s most comprehensive smartphone database. Our mission, team, and commitment to helping Pakistanis find the perfect phone.',
   alternates: { canonical: `${getBaseUrl()}/about` },
 };
 
@@ -20,7 +20,7 @@ export default function AboutPage() {
             <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
               <Smartphone className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">About SpecsDekh</h1>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">About PhoneDock</h1>
             <p className="text-sm text-muted-foreground mt-2 max-w-lg mx-auto">A growing smartphone database built to help Pakistani buyers compare available specifications, prices and features.</p>
           </div>
 
@@ -28,7 +28,7 @@ export default function AboutPage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Our Mission</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                SpecsDekh was founded with a simple yet powerful mission: to make smartphone shopping in Pakistan transparent, informed, and hassle-free. With hundreds of phones launching every year across dozens of brands, finding the right phone at the right price can be overwhelming. We exist to solve that problem.
+                PhoneDock was founded with a simple yet powerful mission: to make smartphone shopping in Pakistan transparent, informed, and hassle-free. With hundreds of phones launching every year across dozens of brands, finding the right phone at the right price can be overwhelming. We exist to solve that problem.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
                 We believe every Pakistani deserves access to accurate, up-to-date phone specifications, honest pricing information, and PTA compliance details — all in one place. Our database covers every major brand available in Pakistan, from Samsung and Apple to Xiaomi, Realme, Infinix, Tecno, OnePlus, and more.
@@ -54,7 +54,7 @@ export default function AboutPage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Our Team</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
-                SpecsDekh is run by a small team of smartphone enthusiasts, tech writers, and software engineers based in Pakistan. Our team combines deep knowledge of the mobile industry with a passion for building tools that genuinely help people.
+                PhoneDock is run by a small team of smartphone enthusiasts, tech writers, and software engineers based in Pakistan. Our team combines deep knowledge of the mobile industry with a passion for building tools that genuinely help people.
               </p>
               <p className="text-sm text-gray-600 leading-relaxed mt-3">
                 We independently test and review phones, maintain our database with daily updates, and work to ensure our pricing data reflects the real market conditions across Pakistan&apos;s major cities — from Karachi to Lahore, Islamabad to Peshawar.
@@ -70,7 +70,7 @@ export default function AboutPage() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Email</p>
-                    <p className="text-sm font-medium text-gray-900">info@specsdekh.com</p>
+                    <p className="text-sm font-medium text-gray-900">info@phonedock.pk</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -79,7 +79,7 @@ export default function AboutPage() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">For Business</p>
-                    <p className="text-sm font-medium text-gray-900">partnerships@specsdekh.com</p>
+                    <p className="text-sm font-medium text-gray-900">partnerships@phonedock.pk</p>
                   </div>
                 </div>
               </div>

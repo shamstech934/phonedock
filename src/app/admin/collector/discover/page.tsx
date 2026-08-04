@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState } from 'react';
 import { Search, Loader2, CheckCircle, ExternalLink } from 'lucide-react';
@@ -27,7 +26,7 @@ export default function AdminCollectorDiscoverPage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brand: brand.trim(), year: year.trim(), series: series.trim() }),
       });
-      const data = await readApiResponse(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Discovery failed');
       setResults(data.models || []);
       if (!data.models?.length) setError(data.message || 'No models found.');
@@ -46,7 +45,7 @@ export default function AdminCollectorDiscoverPage() {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brand: brand.trim(), models }),
       });
-      const data = await readApiResponse(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Staging failed');
       setStagedMessage(`${data.staged} model(s) added to the Review queue for further enrichment.`);
       setSelected(new Set());

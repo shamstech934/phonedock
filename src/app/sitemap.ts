@@ -3,7 +3,6 @@ import { connectDBSafe } from '@/lib/mongodb';
 import { Phone, Brand, News, UserReview } from '@/lib/models';
 
 import { getBaseUrl } from '@/lib/urls';
-import { SEO_SPEC_LANDINGS } from '@/lib/seo-growth';
 
 const BASE_URL = getBaseUrl();
 
@@ -30,11 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/best-value-phone`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly', priority: 0.8 },
     { url: `${BASE_URL}/price-ranges`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly', priority: 0.7 },
     { url: `${BASE_URL}/buying-guides`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly', priority: 0.8 },
-    { url: `${BASE_URL}/phone-finder`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly', priority: 0.8 },
-    { url: `${BASE_URL}/faq`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${BASE_URL}/about`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'monthly', priority: 0.4 },
     ...['gaming-phones','camera-phones','battery-phones','value-phones','pta-approved-phones'].map((slug) => ({ url: `${BASE_URL}/buying-guides/${slug}`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly' as const, priority: 0.8 })),
-    ...SEO_SPEC_LANDINGS.map((item) => ({ url: `${BASE_URL}/phones-by-spec/${item.type}/${item.value}`, lastModified: STATIC_LAST_MODIFIED, changeFrequency: 'weekly' as const, priority: 0.7 })),
   ];
 
   try {
@@ -43,15 +38,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const [phones, brands, newsArticles, reviewedPhoneIds] = await Promise.all([
       Phone.find({ active: true, status: 'published' }).select('_id slug updatedAt reviewSummary reviewVerdict pros cons').lean(),
-      Brand.aggregate([
-        { $match: { active: true } },
-        { $lookup: { from: 'phones', let: { brandId: '$_id' }, pipeline: [
-          { $match: { $expr: { $and: [ { $eq: ['$brandId', '$$brandId'] }, { $eq: ['$active', true] }, { $eq: ['$status', 'published'] } ] } } },
-          { $limit: 1 },
-        ], as: 'publishedPhones' } },
-        { $match: { 'publishedPhones.0': { $exists: true } } },
-        { $project: { slug: 1, updatedAt: 1 } },
-      ]),
+      Brand.find({ active: true }).select('slug updatedAt').lean(),
       News.find({ published: true, status: 'published' }).select('slug updatedAt').lean(),
       UserReview.distinct('phoneId', { status: 'approved' }),
     ]);

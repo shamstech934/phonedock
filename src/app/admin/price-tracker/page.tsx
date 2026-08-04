@@ -1,5 +1,4 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -7,11 +6,10 @@ import {
   XCircle, CheckCircle, RefreshCw, Plus, ChevronLeft,
   ChevronRight, X, BarChart3, Globe, ShieldCheck,
   Settings, DollarSign, Activity, AlertCircle,
-  History, Play, Pause, ToggleLeft, ToggleRight, Pencil, Trash2,
+  History, Play, Pause, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
-import { PRICE_SOURCE_TYPE_OPTIONS, getPriceSourceTypeLabel, normalizePriceSourceType, priceSourceSupportsAutomatedPriceTest, type PriceSourceType } from '@/lib/price-source-types';
 
 /* ═══════════════════════════════════════════════════════════
    TYPES
@@ -33,7 +31,6 @@ interface OverviewStats {
   enabledSources: number;
   readySources: number;
   pendingSourceGaps: number;
-  unlinkedPhones?: number;
 }
 
 interface PhonePrice {
@@ -54,32 +51,19 @@ interface PhonePrice {
 interface PriceSource {
   id: string;
   name: string;
-  type: PriceSourceType;
+  type: 'retailer' | 'marketplace' | 'official';
   status: 'active' | 'paused' | 'failed';
   trusted: boolean;
   priority: number;
   lastChecked: string | null;
   failures: number;
   baseUrl: string;
-  verificationUrl: string;
-  discoveryEnabled: boolean;
-  discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api';
-  catalogUrls: string[];
-  sitemapUrls: string[];
-  feedUrl: string;
-  syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly';
-  productsFound: number;
-  productsAdded: number;
-  productsUpdated: number;
-  productsRemoved: number;
   allowedDomains: string[];
   listingCount: number;
   enabledListings: number;
   verifiedListings: number;
   pendingListings: number;
   health: 'healthy' | 'setup' | 'paused' | 'attention' | 'no-listings';
-  enabled: boolean;
-  notes?: string;
 }
 
 interface PriceChange {
@@ -144,7 +128,11 @@ const TABS = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const SOURCE_TYPES = PRICE_SOURCE_TYPE_OPTIONS;
+const SOURCE_TYPES = [
+  { value: 'retailer', label: 'Retailer' },
+  { value: 'marketplace', label: 'Marketplace' },
+  { value: 'official', label: 'Official Store' },
+];
 
 const SORT_OPTIONS = [
   { value: 'name-az', label: 'Name A-Z' },
@@ -159,21 +147,6 @@ const SORT_OPTIONS = [
 /* ═══════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════ */
-
-function sourceTypeBadgeClass(type: PriceSourceType): string {
-  const classes: Record<PriceSourceType, string> = {
-    retailer: 'bg-blue-100 text-blue-700',
-    marketplace: 'bg-purple-100 text-purple-700',
-    official: 'bg-emerald-100 text-emerald-700',
-    official_brand: 'bg-green-100 text-green-700',
-    reference_site: 'bg-cyan-100 text-cyan-700',
-    distributor: 'bg-orange-100 text-orange-700',
-    api: 'bg-indigo-100 text-indigo-700',
-    rss_feed: 'bg-amber-100 text-amber-700',
-    manual: 'bg-slate-100 text-slate-700',
-  };
-  return classes[type];
-}
 
 function formatPKR(price: number): string {
   return `PKR ${price.toLocaleString('en-PK')}`;
@@ -237,16 +210,8 @@ export default function AdminPriceTrackerPage() {
   // ── Sources Tab ──
   const [sources, setSources] = useState<PriceSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
-  const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
-  const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
-  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; discoveryEnabled: boolean; discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api'; catalogUrls: string; sitemapUrls: string; feedUrl: string; syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly'; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', discoveryEnabled: false, discoveryMode: 'manual', catalogUrls: '', sitemapUrls: '', feedUrl: '', syncFrequency: 'daily', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
-  const [editSourceFieldErrors, setEditSourceFieldErrors] = useState<Record<string, string>>({});
-  const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [newSource, setNewSource] = useState({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
-  const [sourceTestModal, setSourceTestModal] = useState<PriceSource | null>(null);
-  const [sourceTestUrl, setSourceTestUrl] = useState('');
-  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null } | null>(null);
 
   // ── Price Changes Tab ──
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -283,11 +248,9 @@ export default function AdminPriceTrackerPage() {
   const [, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
-  const [cronConfigured, setCronConfigured] = useState(false);
-  const [cronSchedule, setCronSchedule] = useState('0 1 * * *');
 
   const responseError = async (response: Response, fallback: string) => {
-    const body = await readApiResponse(response).catch(() => ({})) as { error?: string };
+    const body = await response.json().catch(() => ({})) as { error?: string };
     return body.error || (response.status === 401 ? 'Authentication expired. Please sign in again.' : fallback);
   };
 
@@ -314,11 +277,11 @@ export default function AdminPriceTrackerPage() {
       if (!statsRes.ok) throw new Error(await responseError(statsRes, 'Failed to load price overview'));
       if (!changesRes.ok) throw new Error(await responseError(changesRes, 'Failed to load recent price changes'));
       if (statsRes.ok) {
-        const d = await readApiResponse(statsRes);
+        const d = await statsRes.json();
         setOverviewStats(d.stats || d);
       }
       if (changesRes.ok) {
-        const d = await readApiResponse(changesRes);
+        const d = await changesRes.json();
         setRecentChanges(d.changes || d.data || []);
       }
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price overview'); }
@@ -333,7 +296,7 @@ export default function AdminPriceTrackerPage() {
       if (phonesDebouncedSearch.length >= 2) params.set('search', phonesDebouncedSearch);
       if (phonesModeFilter !== 'all') params.set('mode', phonesModeFilter);
       const res = await fetch(`/api/admin/price-tracker/phones?${params}`, { credentials: 'include' });
-      const d = await readApiResponse(res);
+      const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
       setPhones(d.phones || d.data || []);
       setPhonesTotal(d.total || 0);
@@ -346,11 +309,11 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/sources', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price sources'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       const rows = d.sources || d.data || [];
       setSources(rows.map((source: Record<string, unknown>) => ({
         ...source,
-        type: normalizePriceSourceType(source.sourceType || source.type),
+        type: source.sourceType || source.type || 'retailer',
         lastChecked: source.lastCheckedAt || source.lastChecked || null,
         failures: source.failureCount ?? source.failures ?? 0,
       })) as PriceSource[]);
@@ -361,7 +324,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/match-queue?status=pending', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load source gaps'));
-      const data = await readApiResponse(res);
+      const data = await res.json();
       setMatchCandidates(data.candidates || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load source gaps');
@@ -375,7 +338,7 @@ export default function AdminPriceTrackerPage() {
       if (changesSourceType !== 'all') params.set('sourceType', changesSourceType);
       const res = await fetch(`/api/admin/price-tracker/changes?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price changes'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       setChanges(d.changes || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price changes'); }
   }, [changesFilter, changesSourceType]);
@@ -384,7 +347,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/pending', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load pending price reviews'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       setPending(d.pending || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load pending price reviews'); }
   }, []);
@@ -393,7 +356,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/phones?limit=200&fields=name,brand', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load phone options'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       setPhoneOptions(d.phones || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load phone options'); }
   }, []);
@@ -403,7 +366,7 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch(`/api/admin/price-tracker/history/${phoneId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price history'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       setPriceHistory(d.history || d.data || []);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price history'); }
   }, []);
@@ -413,10 +376,8 @@ export default function AdminPriceTrackerPage() {
     try {
       const res = await fetch('/api/admin/price-tracker/settings', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load price tracker settings'));
-      const d = await readApiResponse(res);
+      const d = await res.json();
       setSettings({ autoApproveThreshold: d.autoApproveThreshold ?? 2, reviewThreshold: d.reviewThreshold ?? 15, batchSize: d.batchSize ?? 10, checkFrequency: d.checkFrequency ?? 'daily' });
-      setCronConfigured(Boolean(d.cronConfigured));
-      setCronSchedule(typeof d.cronSchedule === 'string' && d.cronSchedule ? d.cronSchedule : '0 1 * * *');
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price tracker settings'); } finally { setSettingsLoading(false); }
   }, []);
 
@@ -437,10 +398,10 @@ export default function AdminPriceTrackerPage() {
       const response = await fetch('/api/admin/price-tracker/run-sync', {
         method: 'POST', credentials: 'include',
       });
-      const result = await readApiResponse(response);
+      const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Price sync failed');
-      setActionMessage(`Sync batch complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
-      await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchChanges(), fetchPending()]);
+      setActionMessage(`Sync complete: ${result.processed || 0} checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.`);
+      await fetchOverview();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Price sync failed');
     } finally {
@@ -448,31 +409,16 @@ export default function AdminPriceTrackerPage() {
     }
   }, [fetchOverview]);
 
-  const bootstrapPakistanSources = useCallback(async () => {
-    setActionLoading('bootstrap'); setError(''); setActionMessage('');
-    try {
-      const response = await fetch('/api/admin/price-tracker/bootstrap', { method: 'POST', credentials: 'include' });
-      const result = await readApiResponse(response);
-      if (!response.ok) throw new Error(result.error || 'Pakistan source setup failed');
-      setActionMessage(`Pakistan source setup complete: ${result.created || 0} created, ${result.refreshed || 0} refreshed. Test a real product URL before trusting each source.`);
-      await Promise.all([fetchOverview(), fetchSources()]);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Pakistan source setup failed');
-    } finally {
-      setActionLoading('');
-    }
-  }, [fetchOverview, fetchSources]);
-
   const autoLinkListings = useCallback(async () => {
     setActionLoading('auto-link'); setError(''); setActionMessage('');
     try {
       const response = await fetch('/api/admin/price-tracker/auto-link', {
         method: 'POST', credentials: 'include',
       });
-      const result = await readApiResponse(response);
+      const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Automatic linking failed');
       setActionMessage(`Catalog linked: ${result.linked} new, ${result.alreadyLinked} already ready, ${result.unmatched} need a supported retailer URL.`);
-      await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchMatchCandidates()]);
+      await fetchOverview();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Automatic linking failed');
     } finally {
@@ -529,7 +475,7 @@ export default function AdminPriceTrackerPage() {
           warrantyType: editForm.warrantyType,
         }),
       });
-      const d = await readApiResponse(res);
+      const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
       setEditPriceModal(false);
       setEditForm({ price: '', reason: '', ptaStatus: '', warrantyType: '' });
@@ -564,7 +510,7 @@ export default function AdminPriceTrackerPage() {
           warrantyType: listingForm.warrantyType,
         }),
       });
-      const d = await readApiResponse(res);
+      const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to add listing');
       setAddListingModal(false);
       setListingForm({ source: '', url: '', ram: '', storage: '', ptaStatus: '', warrantyType: '' });
@@ -583,14 +529,11 @@ export default function AdminPriceTrackerPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          name: newSource.name,
-          sourceType: newSource.type,
-          baseUrl: newSource.baseUrl,
+          ...newSource,
           allowedDomains: newSource.allowedDomains.split(',').map(s => s.trim()).filter(Boolean),
-          priority: newSource.priority,
         }),
       });
-      const d = await readApiResponse(res);
+      const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to add source');
       setShowAddSource(false);
       setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
@@ -610,163 +553,40 @@ export default function AdminPriceTrackerPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update source'); }
   };
 
-  const openEditSource = (source: PriceSource) => {
-    setEditingSource(source);
-    setEditSourceForm({
-      name: source.name,
-      type: source.type,
-      baseUrl: source.baseUrl || '',
-      verificationUrl: source.verificationUrl || '',
-      discoveryEnabled: Boolean(source.discoveryEnabled),
-      discoveryMode: source.discoveryMode || 'manual',
-      catalogUrls: (source.catalogUrls || []).join('\n'),
-      sitemapUrls: (source.sitemapUrls || []).join('\n'),
-      feedUrl: source.feedUrl || '',
-      syncFrequency: source.syncFrequency || 'daily',
-      allowedDomains: (source.allowedDomains || []).join(', '),
-      priority: source.priority || 1,
-      status: source.status,
-      trusted: source.trusted,
-      notes: source.notes || '',
-    });
-    setError('');
-    setEditSourceFieldErrors({});
-    setActionMessage('');
-  };
-
-  const handleUpdateSource = async () => {
-    if (!editingSource) return;
-    setActionLoading(`edit-${editingSource.id}`);
-    setError('');
-    setEditSourceFieldErrors({});
-    setActionMessage('');
-    try {
-      const allowedDomains = editSourceForm.allowedDomains
-        .split(',')
-        .map(domain => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, ''))
-        .filter(Boolean);
-      const verificationUrl = editSourceForm.verificationUrl.trim();
-      if (verificationUrl) {
-        let host = '';
-        try {
-          const parsed = new URL(verificationUrl);
-          if (parsed.protocol !== 'https:') throw new Error('Verification product URL must use HTTPS.');
-          host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-        } catch (urlError) {
-          const message = urlError instanceof Error ? urlError.message : 'Verification product URL is invalid.';
-          setEditSourceFieldErrors({ verificationUrl: message });
-          throw new Error(message);
-        }
-        if (allowedDomains.length > 0 && !allowedDomains.some(domain => host === domain || host.endsWith(`.${domain}`))) {
-          const message = `Verification URL must belong to ${allowedDomains.join(' or ')}. Current URL belongs to ${host}.`;
-          setEditSourceFieldErrors({ verificationUrl: message });
-          throw new Error(message);
-        }
-      }
-      const response = await fetch(`/api/admin/price-tracker/sources/${editingSource.id}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: editSourceForm.name.trim(),
-          sourceType: editSourceForm.type,
-          baseUrl: editSourceForm.baseUrl.trim(),
-          verificationUrl,
-          discoveryEnabled: editSourceForm.discoveryEnabled,
-          discoveryMode: editSourceForm.discoveryMode,
-          catalogUrls: editSourceForm.catalogUrls.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
-          sitemapUrls: editSourceForm.sitemapUrls.split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
-          feedUrl: editSourceForm.feedUrl.trim(),
-          syncFrequency: editSourceForm.syncFrequency,
-          allowedDomains,
-          priority: Number(editSourceForm.priority),
-          status: editSourceForm.status,
-          enabled: editSourceForm.status === 'active',
-          trusted: editSourceForm.trusted,
-          notes: editSourceForm.notes.trim(),
-        }),
-      });
-      if (!response.ok) throw new Error(await responseError(response, 'Failed to update source'));
-      setEditingSource(null);
-      setActionMessage(`${editSourceForm.name.trim()} updated successfully.`);
-      await fetchSources();
-      await fetchOverview();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Failed to update source';
-      setError(message);
-      if (/verification/i.test(message) || /domain/i.test(message)) {
-        setEditSourceFieldErrors(current => ({ ...current, verificationUrl: message }));
-      } else if (/base URL/i.test(message)) {
-        setEditSourceFieldErrors(current => ({ ...current, baseUrl: message }));
-      } else if (/name/i.test(message)) {
-        setEditSourceFieldErrors(current => ({ ...current, name: message }));
-      } else if (/priority/i.test(message)) {
-        setEditSourceFieldErrors(current => ({ ...current, priority: message }));
-      }
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const handleDeleteSource = async () => {
-    if (!deletingSource) return;
-    const needsTypedConfirmation = deletingSource.listingCount > 0;
-    if (needsTypedConfirmation && deleteConfirmText.trim() !== deletingSource.name) {
-      setError(`Type "${deletingSource.name}" to confirm deletion.`);
-      return;
-    }
-    setActionLoading(`delete-${deletingSource.id}`);
-    setError('');
-    setActionMessage('');
-    try {
-      const response = await fetch(`/api/admin/price-tracker/sources/${deletingSource.id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error(await responseError(response, 'Failed to delete source'));
-      const deletedName = deletingSource.name;
-      setDeletingSource(null);
-      setDeleteConfirmText('');
-      setActionMessage(`${deletedName} deleted successfully.`);
-      await fetchSources();
-      await fetchOverview();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to delete source');
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const openSourceTest = (source: PriceSource) => {
-    setSourceTestModal(source);
-    setSourceTestUrl(source.verificationUrl || '');
-    setSourceTestResult(null);
-    setError('');
-    setActionMessage('');
-  };
-
-  const handleTestAndTrustSource = async () => {
-    const source = sourceTestModal;
-    const productUrl = sourceTestUrl.trim();
-    if (!source || !productUrl) {
-      setError('Paste a real phone product page URL first.');
-      return;
-    }
-    setActionLoading(`test-${source.id}`); setError(''); setActionMessage(''); setSourceTestResult(null);
+  const handleTestAndTrustSource = async (source: PriceSource) => {
+    const productUrl = window.prompt(
+      `Paste one real ${source.name} phone product URL. PhoneDock will verify price extraction before trusting this source.`,
+      source.baseUrl,
+    );
+    if (!productUrl) return;
+    setActionLoading(`test-${source.id}`); setError(''); setActionMessage('');
     try {
       const testResponse = await fetch('/api/admin/price-tracker/test-source', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: productUrl, sourceId: source.id }),
+        body: JSON.stringify({ url: productUrl.trim(), sourceId: source.id }),
       });
-      const test = await readApiResponse(testResponse);
-      setSourceTestResult(test);
+      const test = await testResponse.json();
       if (!testResponse.ok) throw new Error(test.error || 'Source test failed');
       if (!test.safeToEnable) {
-        // Keep the detailed validation result inside the modal instead of
-        // replacing it with a generic page-level error.
-        return;
+        throw new Error(test.error || (test.reachable
+          ? 'Page opened, but a reliable PKR price was not detected. Do not trust this source yet.'
+          : 'Retailer page could not be reached. Check the URL or retailer access policy.'));
       }
+      const updateResponse = await fetch(`/api/admin/price-tracker/sources/${source.id}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trusted: true,
+          enabled: true,
+          status: 'active',
+          allowedDomains: source.allowedDomains.length > 0
+            ? source.allowedDomains
+            : [new URL(productUrl.trim()).hostname.replace(/^www\./, '')],
+        }),
+      });
+      const update = await updateResponse.json();
+      if (!updateResponse.ok) throw new Error(update.error || 'Could not trust source');
       setActionMessage(`${source.name} verified at PKR ${Number(test.detectedPrice).toLocaleString('en-PK')} and marked trusted.`);
       await fetchSources();
       await fetchOverview();
@@ -838,15 +658,6 @@ export default function AdminPriceTrackerPage() {
         <p className="text-sm text-gray-500 mt-0.5">Automatic multi-brand price checks, discounts and review safety</p>
       </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={bootstrapPakistanSources}
-            disabled={Boolean(actionLoading)}
-            className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            {actionLoading === 'bootstrap' ? 'Setting up...' : 'Setup Pakistan sources'}
-          </button>
           <button
             type="button"
             onClick={autoLinkListings}
@@ -925,14 +736,14 @@ export default function AdminPriceTrackerPage() {
                   <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all" style={{ width: `${Math.min(100, s.trackingCoveragePct)}%` }} />
                 </div>
                 <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-300">
-                  SpecsDekh checks only verified product pages from trusted domains. Add a retailer in Sources, test it, mark it trusted, then use Auto-link catalog. Daily Vercel cron handles every linked brand automatically.
+                  PhoneDock checks only verified product pages from trusted domains. Add a retailer in Sources, test it, mark it trusted, then use Auto-link catalog. Daily Vercel cron handles every linked brand automatically.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.readySources ?? 0}</p><p className="text-[10px] text-slate-300">Ready sources</p></div>
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xl font-black">{s.pendingReview}</p><p className="text-[10px] text-slate-300">Need approval</p></div>
                 <button onClick={() => setActiveTab('matches')} className="col-span-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">
-                  Review {s.unlinkedPhones ?? s.pendingSourceGaps ?? 0} unlinked phones
+                  Review {s.pendingSourceGaps || 0} source gaps
                 </button>
                 <button onClick={() => setActiveTab('sources')} className="col-span-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50">Configure sources</button>
               </div>
@@ -1080,7 +891,7 @@ export default function AdminPriceTrackerPage() {
         {/* Table */}
         {phones.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-sm text-gray-400">
-            No published phones matched the current filters.
+            No phones found. Start monitoring by adding phone listings.
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1223,7 +1034,7 @@ export default function AdminPriceTrackerPage() {
           <div><strong className="block text-slate-900">3. Link once, sync daily</strong>Imported phones carrying that retailer URL can be bulk-linked. After that, daily cron checks all brands.</div>
         </div>
         <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] text-slate-600">
-          Recommended source order: official brand store/API first, authorised retailer feed second, marketplace last. SpecsDekh cannot reliably invent product URLs; each tracked phone needs a genuine product page or feed record.
+          Recommended source order: official brand store/API first, authorised retailer feed second, marketplace last. PhoneDock cannot reliably invent product URLs; each tracked phone needs a genuine product page or feed record.
         </p>
       </div>
       {/* Add Source Button */}
@@ -1256,19 +1067,16 @@ export default function AdminPriceTrackerPage() {
               <label className="text-xs text-gray-500 font-medium mb-1 block">Type *</label>
               <select
                 value={newSource.type}
-                onChange={e => setNewSource(s => ({ ...s, type: normalizePriceSourceType(e.currentTarget.value) }))}
+                onChange={e => setNewSource(s => ({ ...s, type: e.target.value }))}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               >
                 {SOURCE_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
-              <p className="mt-1 text-[11px] leading-4 text-slate-400">
-                {SOURCE_TYPES.find(type => type.value === newSource.type)?.description}
-              </p>
             </div>
             <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">Base URL {newSource.type === 'manual' ? '(optional)' : '*'}</label>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">Base URL *</label>
               <input
                 type="text"
                 placeholder="https://www.daraz.pk"
@@ -1302,7 +1110,7 @@ export default function AdminPriceTrackerPage() {
           <div className="flex gap-2 mt-4">
             <button
               onClick={handleAddSource}
-              disabled={actionLoading === 'add-source' || !newSource.name || (newSource.type !== 'manual' && !newSource.baseUrl)}
+              disabled={actionLoading === 'add-source' || !newSource.name || !newSource.baseUrl}
               className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {actionLoading === 'add-source' ? 'Saving...' : 'Save Source'}
@@ -1345,12 +1153,16 @@ export default function AdminPriceTrackerPage() {
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{src.name}</p>
                       <p className={`mt-0.5 max-w-[180px] truncate text-[10px] ${src.allowedDomains.length ? 'text-gray-400' : 'font-medium text-amber-600'}`}>
-                        {src.allowedDomains.length ? src.allowedDomains.join(', ') : src.type === 'manual' ? 'Manual source' : 'No allowed domain'}
+                        {src.allowedDomains.length ? src.allowedDomains.join(', ') : 'No allowed domain'}
                       </p>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={sourceTypeBadgeClass(src.type)}>
-                        {getPriceSourceTypeLabel(src.type)}
+                      <Badge className={
+                        src.type === 'retailer' ? 'bg-blue-100 text-blue-700' :
+                        src.type === 'marketplace' ? 'bg-purple-100 text-purple-700' :
+                        'bg-green-100 text-green-700'
+                      }>
+                        {src.type}
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
@@ -1374,9 +1186,7 @@ export default function AdminPriceTrackerPage() {
                             src.health === 'attention' ? 'font-semibold text-red-600' :
                             'font-medium text-amber-600'
                           }>
-                            {src.type === 'manual' ? 'Manual source' :
-                             src.type === 'rss_feed' ? 'Feed source' :
-                             src.health === 'healthy' ? 'Ready' :
+                            {src.health === 'healthy' ? 'Ready' :
                              src.health === 'attention' ? 'Needs attention' :
                              src.health === 'setup' ? 'Test required' :
                              src.health === 'paused' ? 'Paused' : 'No verified links'}
@@ -1401,46 +1211,19 @@ export default function AdminPriceTrackerPage() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleToggleSource(src.id)}
-                          className={`p-1.5 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
-                          title={src.status === 'active' ? 'Pause source' : 'Activate source'}
-                          aria-label={src.status === 'active' ? `Pause ${src.name}` : `Activate ${src.name}`}
+                          className={`p-1 rounded-lg transition-colors ${src.status === 'active' ? 'text-yellow-500 hover:bg-yellow-50' : 'text-green-500 hover:bg-green-50'}`}
+                          title={src.status === 'active' ? 'Pause' : 'Activate'}
                         >
                           {src.status === 'active' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                         </button>
                         <button
                           type="button"
-                          onClick={() => openEditSource(src)}
+                          onClick={() => handleTestAndTrustSource(src)}
                           disabled={Boolean(actionLoading)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
-                          title="Edit source"
-                          aria-label={`Edit ${src.name}`}
+                          className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
                         >
-                          <Pencil className="w-3.5 h-3.5" /> Edit
+                          {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => { setDeletingSource(src); setDeleteConfirmText(''); setError(''); }}
-                          disabled={Boolean(actionLoading)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"
-                          title="Delete source"
-                          aria-label={`Delete ${src.name}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
-                        {priceSourceSupportsAutomatedPriceTest(src.type) ? (
-                          <button
-                            type="button"
-                            onClick={() => openSourceTest(src)}
-                            disabled={Boolean(actionLoading)}
-                            className="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {actionLoading === `test-${src.id}` ? 'Testing...' : src.trusted ? 'Retest' : 'Test & trust'}
-                          </button>
-                        ) : (
-                          <span className="px-2 py-1 text-[11px] font-medium text-slate-400">
-                            {src.type === 'manual' ? 'Manual review' : 'Feed validation'}
-                          </span>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -2032,27 +1815,15 @@ export default function AdminPriceTrackerPage() {
             <code className="text-xs text-gray-800 font-mono">0 1 * * * curl -s -H &quot;x-cron-secret: $CRON_SECRET&quot; https://your-domain.com/api/cron/update-prices</code>
           </div>
         </div>
-        <div className={`mt-3 flex items-start gap-2 rounded-lg border p-3 ${cronConfigured ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-          {cronConfigured ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
-          <div className="flex-1">
-            <p className={`text-xs font-semibold ${cronConfigured ? 'text-emerald-800' : 'text-amber-800'}`}>
-              {cronConfigured ? 'CRON_SECRET configured' : 'CRON_SECRET required'}
-            </p>
-            <p className={`mt-0.5 text-xs ${cronConfigured ? 'text-emerald-700' : 'text-amber-700'}`}>
-              {cronConfigured
-                ? `Protected price-sync endpoint is ready. Current schedule: ${cronSchedule}.`
-                : 'Add CRON_SECRET in Vercel Environment Variables, then redeploy. The secret value is never exposed here.'}
+        <div className="mt-3 flex items-start gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+          <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-medium text-yellow-700">CRON_SECRET Required</p>
+            <p className="text-xs text-yellow-600 mt-0.5">
+              The cron endpoint requires a <code className="font-mono bg-yellow-100 px-1 rounded">CRON_SECRET</code> environment variable.
+              Requests must include <code className="font-mono bg-yellow-100 px-1 rounded">x-cron-secret: YOUR_SECRET</code> header or <code className="font-mono bg-yellow-100 px-1 rounded">Authorization: Bearer YOUR_SECRET</code>.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={runPriceSync}
-            disabled={!cronConfigured || actionLoading === 'run-sync'}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${actionLoading === 'run-sync' ? 'animate-spin' : ''}`} />
-            {actionLoading === 'run-sync' ? 'Running…' : 'Run now'}
-          </button>
         </div>
       </div>
     </div>
@@ -2256,268 +2027,6 @@ export default function AdminPriceTrackerPage() {
     );
   };
 
-  const renderEditSourceModal = () => {
-    if (!editingSource) return null;
-    return (
-      <div className="fixed inset-0 z-[110] overflow-y-auto bg-black/50 p-4">
-        <div className="mx-auto my-4 flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-          <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-6 py-5">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Edit price source</h2>
-              <p className="mt-1 text-xs text-slate-500">Update retailer identity, domains, trust and availability.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setEditingSource(null); setError(''); }}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Close edit source"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="grid flex-1 gap-4 overflow-y-auto px-6 py-5 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Source name *</label>
-              <input
-                value={editSourceForm.name}
-                onChange={event => {
-                  const name = event.currentTarget.value;
-                  setEditSourceForm(current => ({ ...current, name }));
-                }}
-                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.name ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
-              />
-              {editSourceFieldErrors.name && <p className="mt-1 text-[11px] text-red-600">{editSourceFieldErrors.name}</p>}
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Source type</label>
-              <select
-                value={editSourceForm.type}
-                onChange={event => {
-                  const type = normalizePriceSourceType(event.currentTarget.value);
-                  setEditSourceForm(current => ({ ...current, type }));
-                }}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-              >
-                {SOURCE_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
-              </select>
-              <p className="mt-1 text-[11px] leading-4 text-slate-400">
-                {SOURCE_TYPES.find(type => type.value === editSourceForm.type)?.description}
-              </p>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-600">HTTPS base URL {editSourceForm.type === 'manual' ? '(optional)' : '*'}</label>
-              <input
-                type="url"
-                value={editSourceForm.baseUrl}
-                onChange={event => {
-                  const baseUrl = event.currentTarget.value;
-                  setEditSourceForm(current => ({ ...current, baseUrl }));
-                }}
-                placeholder="https://www.example.com"
-                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.baseUrl ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
-              />
-              {editSourceFieldErrors.baseUrl && <p className="mt-1 text-[11px] text-red-600">{editSourceFieldErrors.baseUrl}</p>}
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Verification product URL <span className="font-normal text-slate-400">(optional test only)</span></label>
-              <input
-                type="url"
-                value={editSourceForm.verificationUrl}
-                onChange={event => {
-                  const verificationUrl = event.currentTarget.value;
-                  setEditSourceForm(current => ({ ...current, verificationUrl }));
-                }}
-                placeholder="https://retailer.example/phones/real-phone-product-page"
-                className={`h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 ${editSourceFieldErrors.verificationUrl ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-blue-400 focus:ring-blue-500/20'}`}
-              />
-              {editSourceFieldErrors.verificationUrl ? <p className="mt-1 text-[11px] font-medium text-red-600">{editSourceFieldErrors.verificationUrl}</p> : <p className="mt-1 text-[11px] text-slate-400">Optional: use one real product page only to test extraction. Catalog discovery below handles multiple phones automatically.</p>}
-            </div>
-            <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div><p className="text-sm font-bold text-slate-900">Automatic catalog discovery</p><p className="mt-1 text-xs leading-5 text-slate-600">Configure the provider once. Product URLs can then be discovered from catalog, sitemap, feed or API sources instead of entering every phone manually.</p></div>
-                <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={editSourceForm.discoveryEnabled} onChange={event => setEditSourceForm(current => ({ ...current, discoveryEnabled: event.currentTarget.checked }))} className="h-4 w-4 rounded border-slate-300"/>Enabled</label>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Discovery mode</span><select value={editSourceForm.discoveryMode} onChange={event => setEditSourceForm(current => ({ ...current, discoveryMode: event.currentTarget.value as 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual links</option><option value="catalog">Catalog pages</option><option value="sitemap">XML sitemap</option><option value="feed">Product feed</option><option value="api">Provider API</option></select></label>
-                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Sync frequency</span><select value={editSourceForm.syncFrequency} onChange={event => setEditSourceForm(current => ({ ...current, syncFrequency: event.currentTarget.value as 'manual' | 'hourly' | 'daily' | 'weekly' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Catalog URLs</span><textarea rows={2} value={editSourceForm.catalogUrls} onChange={event => setEditSourceForm(current => ({ ...current, catalogUrls: event.currentTarget.value }))} placeholder="One catalog/category URL per line" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Sitemap URLs</span><textarea rows={2} value={editSourceForm.sitemapUrls} onChange={event => setEditSourceForm(current => ({ ...current, sitemapUrls: event.currentTarget.value }))} placeholder="https://example.com/product-sitemap.xml" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Feed or API URL</span><input type="url" value={editSourceForm.feedUrl} onChange={event => setEditSourceForm(current => ({ ...current, feedUrl: event.currentTarget.value }))} placeholder="https://example.com/products.json" className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/></label>
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Allowed domains</label>
-              <input
-                value={editSourceForm.allowedDomains}
-                onChange={event => {
-                  const allowedDomains = event.currentTarget.value;
-                  setEditSourceForm(current => ({ ...current, allowedDomains }));
-                }}
-                placeholder="priceoye.pk, example.com (comma-separated)"
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-              />
-              <p className="mt-1 text-[11px] text-slate-400">Use hostnames only. Protocol and www are cleaned automatically.</p>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Priority</label>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={editSourceForm.priority}
-                onChange={event => {
-                  const priority = Number(event.currentTarget.value);
-                  setEditSourceForm(current => ({ ...current, priority }));
-                }}
-                className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Status</label>
-              <select
-                value={editSourceForm.status}
-                onChange={event => {
-                  const status = event.currentTarget.value as 'active' | 'paused' | 'failed';
-                  setEditSourceForm(current => ({ ...current, status }));
-                }}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-              >
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-                <option value="failed">Failed</option>
-              </select>
-            </div>
-            <label className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={editSourceForm.trusted}
-                onChange={event => {
-                  const trusted = event.currentTarget.checked;
-                  setEditSourceForm(current => ({ ...current, trusted }));
-                }}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              <span>
-                <span className="block text-sm font-semibold text-slate-800">Trusted source</span>
-                <span className="block text-xs text-slate-500">Only enable after testing a real product page and confirming reliable PKR extraction.</span>
-              </span>
-            </label>
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Internal notes</label>
-              <textarea
-                rows={3}
-                maxLength={1000}
-                value={editSourceForm.notes}
-                onChange={event => {
-                  const notes = event.currentTarget.value;
-                  setEditSourceForm(current => ({ ...current, notes }));
-                }}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-                placeholder="Access policy, contact, feed details or known limitations"
-              />
-            </div>
-          </div>
-
-          {error && <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">
-            <button
-              type="button"
-              onClick={() => { setEditingSource(null); setError(''); }}
-              className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleUpdateSource}
-              disabled={!editSourceForm.name.trim() || !editSourceForm.baseUrl.trim() || actionLoading === `edit-${editingSource.id}`}
-              className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {actionLoading === `edit-${editingSource.id}` ? 'Saving...' : 'Save source'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderSourceTestModal = () => {
-    if (!sourceTestModal) return null;
-    const testing = actionLoading === `test-${sourceTestModal.id}`;
-    return (
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
-        <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
-          <div className="flex items-start justify-between gap-4">
-            <div><h2 className="text-base font-bold text-slate-900">Test & trust {sourceTestModal.name}</h2><p className="mt-1 text-xs text-slate-500">Verify one real product page and preview the detected PKR price.</p></div>
-            <button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
-          </div>
-          <label className="mt-5 mb-1 block text-xs font-semibold text-slate-600">Real phone product URL *</label>
-          <input type="url" value={sourceTestUrl} onChange={e => setSourceTestUrl(e.currentTarget.value)} placeholder="https://priceoye.pk/mobiles/brand-phone-model" className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
-          {sourceTestResult && <div className={`mt-4 rounded-xl border p-4 ${sourceTestResult.safeToEnable ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-            <div className="grid grid-cols-2 gap-3 text-xs"><span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong><span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong><span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong><span>Availability</span><strong>{sourceTestResult.availability}</strong><span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong><span>Confidence</span><strong>{Math.round(Math.max(0, Math.min(1, sourceTestResult.extractionConfidence || 0)) * 100)}%</strong></div>
-            {sourceTestResult.safeToEnable ? <p className="mt-3 text-xs font-semibold text-emerald-800">Reliable PKR price detected. This source is trusted and ready for tracking.</p> : sourceTestResult.error && <p className="mt-3 text-xs font-medium text-amber-800">{sourceTestResult.error}</p>}
-          </div>}
-          {error && <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4"><button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium">Cancel</button><button onClick={handleTestAndTrustSource} disabled={testing || !sourceTestUrl.trim()} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{testing ? 'Testing product page...' : sourceTestResult?.safeToEnable ? 'Retest source' : 'Test & trust'}</button></div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderDeleteSourceModal = () => {
-    if (!deletingSource) return null;
-    const hasListings = deletingSource.listingCount > 0;
-    return (
-      <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/50 p-4">
-        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-          <div className="flex items-start gap-3">
-            <div className="rounded-full bg-red-100 p-2 text-red-600"><Trash2 className="h-5 w-5" /></div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Delete {deletingSource.name}?</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                {hasListings
-                  ? `This will permanently delete the source and all ${deletingSource.listingCount} linked retailer listing${deletingSource.listingCount === 1 ? '' : 's'}.`
-                  : 'This source has no linked retailer listings and will be permanently removed.'}
-              </p>
-            </div>
-          </div>
-
-          {hasListings && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <label className="block text-xs font-semibold text-amber-900">Type <strong>{deletingSource.name}</strong> to confirm</label>
-              <input
-                value={deleteConfirmText}
-                onChange={event => setDeleteConfirmText(event.target.value)}
-                className="mt-2 h-10 w-full rounded-xl border border-amber-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-red-500/20"
-                autoFocus
-              />
-            </div>
-          )}
-          {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => { setDeletingSource(null); setDeleteConfirmText(''); setError(''); }}
-              className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteSource}
-              disabled={actionLoading === `delete-${deletingSource.id}` || (hasListings && deleteConfirmText.trim() !== deletingSource.name)}
-              className="h-10 rounded-xl bg-red-600 px-5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {actionLoading === `delete-${deletingSource.id}` ? 'Deleting...' : 'Delete permanently'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   /* ═══════════════════════════════════════════════════════════
      MAIN RENDER
      ═══════════════════════════════════════════════════════════ */
@@ -2527,7 +2036,7 @@ export default function AdminPriceTrackerPage() {
       {renderHeader()}
       {renderTabs()}
 
-      {error && !editPriceModal && !addListingModal && !editingSource && !deletingSource && (
+      {error && !editPriceModal && !addListingModal && (
         <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
@@ -2542,9 +2051,6 @@ export default function AdminPriceTrackerPage() {
 
       {renderEditPriceModal()}
       {renderAddListingModal()}
-      {renderEditSourceModal()}
-      {renderSourceTestModal()}
-      {renderDeleteSourceModal()}
     </div>
   );
 }

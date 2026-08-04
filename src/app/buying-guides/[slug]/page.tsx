@@ -22,27 +22,20 @@ const guides = {
 } as const;
 
 type GuideSlug = keyof typeof guides;
+export function generateStaticParams() { return Object.keys(guides).map(slug => ({ slug })); }
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params; const guide = guides[slug as GuideSlug]; if (!guide) return {};
-  return { title: `${guide.title} | SpecsDekh`, description: guide.intro, alternates: { canonical: `${BASE_URL}/buying-guides/${slug}` } };
+  return { title: `${guide.title} | PhoneDock`, description: guide.intro, alternates: { canonical: `${BASE_URL}/buying-guides/${slug}` } };
 }
 
 async function getPhones(slug: GuideSlug): Promise<PhoneType[]> {
-  try {
-    if (slug !== 'pta-approved-phones') return await getTopPhones(guides[slug].sort, 12);
-    await connectDB();
-    const docs = await Phone.find({ active: true, status: 'published', ptaApproved: true }).sort({ overallRating: -1 }).limit(12).populate('brand').lean();
-    return docs.map((p: any) => ({ ...p, id: p._id.toString(), brandId: p.brandId?.toString?.() || '', brand: p.brand ? { ...p.brand, id: p.brand._id?.toString?.() || '' } : undefined })) as PhoneType[];
-  } catch (error) {
-    console.error(`Buying guide data unavailable for ${slug}:`, error);
-    return [];
-  }
+  if (slug !== 'pta-approved-phones') return getTopPhones(guides[slug].sort, 12);
+  await connectDB();
+  const docs = await Phone.find({ active: true, status: 'published', ptaApproved: true }).sort({ overallRating: -1 }).limit(12).populate('brand').lean();
+  return docs.map((p: any) => ({ ...p, id: p._id.toString(), brandId: p.brandId?.toString?.() || '', brand: p.brand ? { ...p.brand, id: p.brand._id?.toString?.() || '' } : undefined })) as PhoneType[];
 }
 
-// Database-backed guides must render at request time. This prevents CI/build
-// failures when MongoDB Atlas is unavailable to an ephemeral build runner.
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const revalidate = 900;
 
 export default async function GuidePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params; const guide = guides[slug as GuideSlug]; if (!guide) notFound();

@@ -9,6 +9,7 @@ const handler = fs.readFileSync(path.join(root, 'src/app/api/[[...path]]/handler
 const homeContent = fs.readFileSync(path.join(root, 'src/app/HomeContent.tsx'), 'utf8');
 const heroShowcase = fs.readFileSync(path.join(root, 'src/components/shared/HeroPhoneShowcase.tsx'), 'utf8');
 const campaignBackground = fs.readFileSync(path.join(root, 'src/components/home/HeroCampaignBackground.tsx'), 'utf8');
+const discoveryPanel = fs.readFileSync(path.join(root, 'src/components/home/HomeDiscoveryPanel.tsx'), 'utf8');
 const globalCss = fs.readFileSync(path.join(root, 'src/app/globals.css'), 'utf8');
 
 assert.match(layout, /Homepage Builder', href: '\/admin\/homepage-builder'/, 'sidebar must open the Pro Builder');
@@ -28,7 +29,9 @@ assert.match(builder, /Design system/, 'builder must expose global design contro
 assert.match(builder, /Header & links/, 'builder must expose navigation controls');
 assert.match(builder, /Media library/, 'builder must expose media controls');
 assert.match(builder, /3D stage positioning/, 'builder must expose precise hero positioning');
-assert.match(builder, /release-year categories/, 'builder must expose release-year category controls');
+assert.match(builder, /Visible discovery tabs/, 'builder must expose unified discovery category controls');
+assert.match(builder, /Discovery panel title/, 'builder must expose discovery presentation controls');
+assert.match(builder, /View all button URL/, 'builder must expose the discovery destination');
 assert.match(builder, /uploadImage/, 'builder must support managed image uploads');
 assert.match(builder, /Seasonal background campaigns/, 'builder must expose scheduled seasonal hero campaigns');
 assert.match(builder, /1920 × 760 px/, 'hero media controls must show recommended desktop dimensions');
@@ -39,13 +42,21 @@ assert.match(handler, /slice\(0, 8\)/, 'campaign count must be bounded');
 assert.match(campaignBackground, /isCampaignActive/, 'seasonal hero must respect campaign schedule windows');
 assert.match(campaignBackground, /Math\.max\(4000, intervalMs\)/, 'background rotation must avoid aggressive performance-hostile intervals');
 assert.match(handler, /revalidatePath\('\/admin\/homepage-builder'\)/, 'settings update must revalidate the Pro Builder');
-assert.match(homeContent, /onlyWithPhones=\{cms\.showOnlyBrandsWithPhones !== false\}/, 'homepage brand visibility must remain configurable from Admin');
-assert.match(homeContent, /'Browse brand'/, 'zero-count homepage brand cards must use honest navigation text');
-assert.match(homeContent, /const PRIORITY_ORDER =/, 'homepage must retain deterministic priority ordering for major brands');
-assert.match(homeContent, /brandBySlug\.set/, 'database brands must be deduplicated by slug before rendering');
-assert.match(homeContent, /isolate flex flex-col gap-5/, 'price and year panels must use an isolated flex stack that cannot overlap');
+assert.doesNotMatch(homeContent, /brands\.filter\(b => \(b\._count\?\.phones \|\| 0\) > 0\)/, 'brand navigation must not disappear when public phone counts are temporarily zero');
+assert.match(homeContent, /'View brand'/, 'zero-count brands must retain useful navigation text');
+assert.match(homeContent, /CURATED_BRAND_DIRECTORY/, 'homepage must retain a curated brand directory when MongoDB returns only a partial brand list');
+assert.match(homeContent, /brandBySlug\.set/, 'database brands must merge into the curated directory instead of replacing it');
+assert.match(homeContent, /HomeDiscoveryPanel/, 'homepage must render the unified discovery panel');
+assert.match(discoveryPanel, /\/price-ranges/, 'price discovery must link to the working price-ranges page');
+for (const query of ['priceCategory', 'ram', 'storage', 'camera', 'battery', 'pta', 'year']) {
+  assert.match(discoveryPanel, new RegExp(`${query}=`), `discovery must provide a real ${query} filter link`);
+}
+assert.match(handler, /discoveryCategoryOrder/, 'discovery categories must be allowlisted server-side');
+assert.match(handler, /homepage\.discoveryViewAllUrl = safeHref/, 'discovery destination must be sanitized server-side');
+assert.match(layout, /AdminNavGroup/, 'admin navigation must be grouped into manageable sections');
+assert.match(layout, /openNavSections/, 'admin navigation groups must be collapsible');
 assert.match(homeContent, /renderOrderedSection\('latest'\)/, 'Latest Phones must fill the column below brands instead of leaving sidebar-height whitespace');
-assert.match(homeContent, /filter\(\(key\) => key !== 'latest' && key !== 'trending'\)/, 'Latest and Trending must not render twice after moving into the opening catalogue column');
+assert.match(homeContent, /filter\(key => key !== 'latest'\)/, 'Latest Phones must not render twice after moving into the brand column');
 assert.match(heroShowcase, /validImageIds/, 'hero must track only phone images that successfully load');
 assert.match(heroShowcase, /new window\.Image\(\)/, 'hero must preflight selected images before admitting their slides');
 assert.match(heroShowcase, /naturalWidth >= 80/, 'hero must reject tiny placeholder images that create empty-looking slides');

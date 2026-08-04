@@ -1,13 +1,11 @@
 'use client';
-import { readApiResponse } from '@/lib/client/api-response';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Layers, Plus, Pencil, Trash2, X, Save, Globe, AlignLeft, Hash, Eye, EyeOff, Search, Smartphone, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, BadgeCheck, WandSparkles, ImageOff } from 'lucide-react';
+import Image from 'next/image';
+import { Layers, Plus, Pencil, Trash2, X, Save, Globe, AlignLeft, Hash, Eye, EyeOff, Search, Smartphone, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
 import type { Brand } from '@/components/shared/types';
-import { BrandLogo } from '@/components/shared/BrandLogo';
-import { getRecommendedBrandLogo, hasRecommendedBrandLogo } from '@/lib/brand-logos';
 
 interface BrandForm {
   name: string;
@@ -54,8 +52,6 @@ export default function AdminBrandsPage() {
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [normalizingLogos, setNormalizingLogos] = useState(false);
-  const [logoMessage, setLogoMessage] = useState<string | null>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Debounced search
@@ -154,36 +150,6 @@ export default function AdminBrandsPage() {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
-  const normalizeVisibleLogos = async () => {
-    const candidates = brands
-      .map(brand => ({ brand, recommended: getRecommendedBrandLogo(brand.name, brand.slug) }))
-      .filter(({ brand, recommended }) => recommended && brand.logo !== recommended);
-    if (!candidates.length) {
-      setLogoMessage('All visible brands already use normalized logos.');
-      return;
-    }
-
-    setNormalizingLogos(true);
-    setLogoMessage(null);
-    let updated = 0;
-    for (const { brand, recommended } of candidates) {
-      try {
-        const response = await fetch(`/api/admin/brands/${brand.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ logo: recommended }),
-        });
-        if (response.ok) updated += 1;
-      } catch (error) {
-        console.error('[normalizeBrandLogo]', brand.slug, error);
-      }
-    }
-    setLogoMessage(`${updated} brand logo${updated === 1 ? '' : 's'} normalized on this page.`);
-    setNormalizingLogos(false);
-    refreshAfterMutation();
-  };
-
   if (loading && brands.length === 0) return <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-48 rounded-2xl" />)}</div>;
 
   const goToPage = (p: number) => {
@@ -207,14 +173,9 @@ export default function AdminBrandsPage() {
           <h1 className="text-xl font-extrabold text-gray-900">Manage Brands</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{pagination.total} brands total</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={normalizeVisibleLogos} disabled={normalizingLogos || loading} className="hidden items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50 sm:flex">
-            <WandSparkles className={`h-4 w-4 ${normalizingLogos ? 'animate-spin' : ''}`} /> {normalizingLogos ? 'Normalizing…' : 'Normalize logos'}
-          </button>
-          <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
-            <Plus className="w-4 h-4" /> Add Brand
-          </button>
-        </div>
+        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
+          <Plus className="w-4 h-4" /> Add Brand
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -235,21 +196,6 @@ export default function AdminBrandsPage() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Logo audit */}
-      <div className="card-premium flex flex-col gap-3 border border-blue-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><BadgeCheck className="h-5 w-5" /></div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Brand logo audit</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Public cards use normalized transparent marks. Use the button to save recommended local assets into the current brand records.</p>
-            {logoMessage && <p className="mt-1 text-xs font-semibold text-emerald-600">{logoMessage}</p>}
-          </div>
-        </div>
-        <button onClick={normalizeVisibleLogos} disabled={normalizingLogos || loading} className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 sm:hidden">
-          <WandSparkles className={`h-4 w-4 ${normalizingLogos ? 'animate-spin' : ''}`} /> {normalizingLogos ? 'Normalizing…' : 'Normalize visible logos'}
-        </button>
       </div>
 
       {/* Search + Filters */}
@@ -316,19 +262,16 @@ export default function AdminBrandsPage() {
             <div key={brand.id} className="card-premium p-5 hover:shadow-md hover:shadow-black/5 transition-all duration-300 group">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <BrandLogo name={brand.name} slug={brand.slug} logo={brand.logo} size={56} />
+                  <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden">
+                    {brand.logo ? (
+                      <Image src={brand.logo} alt={brand.name} width={40} height={40} className="object-contain p-1" unoptimized />
+                    ) : (
+                      <Layers className="w-6 h-6 text-gray-300" />
+                    )}
+                  </div>
                   <div>
                     <h3 className="font-bold text-sm text-gray-900">{brand.name}</h3>
                     <p className="text-[11px] text-muted-foreground font-mono">{brand.slug}</p>
-                    <div className="mt-1 flex items-center gap-1">
-                      {hasRecommendedBrandLogo(brand.name, brand.slug) ? (
-                        <Badge className="border-emerald-200/70 bg-emerald-50 text-[9px] text-emerald-700">Normalized mark</Badge>
-                      ) : brand.logo ? (
-                        <Badge className="border-blue-200/70 bg-blue-50 text-[9px] text-blue-700">Custom logo</Badge>
-                      ) : (
-                        <Badge className="border-amber-200/70 bg-amber-50 text-[9px] text-amber-700"><ImageOff className="mr-1 h-2.5 w-2.5" /> Missing</Badge>
-                      )}
-                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -397,7 +340,13 @@ export default function AdminBrandsPage() {
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5">Brand Logo</label>
                 <div className="flex items-center gap-3">
-                  <BrandLogo name={form.name || 'Brand'} slug={form.name} logo={form.logo} size={64} />
+                  <div className="w-16 h-16 rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center shrink-0 overflow-hidden">
+                    {form.logo ? (
+                      <Image src={form.logo} alt="Logo preview" width={48} height={48} className="object-contain p-1" unoptimized />
+                    ) : (
+                      <Layers className="w-6 h-6 text-gray-300" />
+                    )}
+                  </div>
                   <div className="flex-1">
                     <input
                       type="text"
@@ -406,12 +355,7 @@ export default function AdminBrandsPage() {
                       placeholder="Paste logo URL (e.g. /brands/samsung.png or https://...)"
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                     />
-                    <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-[10px] text-muted-foreground">Use a local transparent SVG/PNG or an external URL.</p>
-                      {getRecommendedBrandLogo(form.name, form.name) && (
-                        <button type="button" onClick={() => updateField('logo', getRecommendedBrandLogo(form.name, form.name))} className="text-[10px] font-semibold text-blue-600 hover:text-blue-700">Use recommended logo</button>
-                      )}
-                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">Use local path like /brands/name.png or any external URL</p>
                   </div>
                 </div>
               </div>

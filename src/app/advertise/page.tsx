@@ -5,7 +5,7 @@ import { Footer } from '@/components/shared/Footer';
 import { Megaphone, Eye, MousePointer, Star, BarChart3, Mail, CheckCircle } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Advertise with SpecsDekh',
+  title: 'Advertise with PhoneDock',
   description: 'Advertise your phone brand or retail store on Pakistan\'s #1 smartphone database. Reach millions of phone buyers.',
   alternates: { canonical: `${getBaseUrl()}/advertise` },
 };
@@ -20,15 +20,15 @@ export default function AdvertisePage() {
             <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/20">
               <Megaphone className="w-7 h-7 text-white" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">Advertise with SpecsDekh</h1>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 font-display">Advertise with PhoneDock</h1>
             <p className="text-sm text-muted-foreground mt-2">Reach smartphone buyers exploring phones in Pakistan</p>
           </div>
 
           <div className="space-y-5 animate-fade-in">
             <section className="card-premium p-6">
-              <h2 className="font-bold text-lg text-gray-900 mb-3">Why SpecsDekh?</h2>
+              <h2 className="font-bold text-lg text-gray-900 mb-3">Why PhoneDock?</h2>
               <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                SpecsDekh is Pakistan&apos;s most comprehensive smartphone database, visited by hundreds of thousands of phone buyers every month. Our audience is highly targeted — people actively researching phones, comparing specs, and ready to make a purchase decision.
+                PhoneDock is Pakistan&apos;s most comprehensive smartphone database, visited by hundreds of thousands of phone buyers every month. Our audience is highly targeted — people actively researching phones, comparing specs, and ready to make a purchase decision.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
@@ -57,7 +57,7 @@ export default function AdvertisePage() {
                   },
                   {
                     title: 'Banner Advertising',
-                    desc: 'Display banner ads across SpecsDekh in high-visibility positions including header, sidebar, and in-feed placements.',
+                    desc: 'Display banner ads across PhoneDock in high-visibility positions including header, sidebar, and in-feed placements.',
                     highlights: ['Multiple size options', 'Contextual targeting by brand/price', 'Impression and click tracking'],
                   },
                   {
@@ -89,7 +89,7 @@ export default function AdvertisePage() {
             <section className="card-premium p-6">
               <h2 className="font-bold text-lg text-gray-900 mb-3">Get in Touch</h2>
               <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                Interested in advertising with SpecsDekh? We&apos;d love to discuss how we can help you reach your target audience. Contact our partnerships team for custom packages, pricing, and availability.
+                Interested in advertising with PhoneDock? We&apos;d love to discuss how we can help you reach your target audience. Contact our partnerships team for custom packages, pricing, and availability.
               </p>
               <div className="flex items-center gap-3 p-4 bg-blue-50/50 rounded-xl border border-blue-100/50">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
@@ -97,7 +97,7 @@ export default function AdvertisePage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Partnerships Email</p>
-                  <p className="text-sm font-semibold text-gray-900">partnerships@specsdekh.com</p>
+                  <p className="text-sm font-semibold text-gray-900">partnerships@phonedock.pk</p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Please enter a short phone-buying question.' }, { status: 400, headers });
   const intent = parseBuyingIntent(parsed.data.query);
   const connection = await connectDBSafe();
-  if (!connection) return NextResponse.json({ intent, results: [], warnings: ['Recommendation data is temporarily unavailable. No phone or specification has been fabricated.'], provider: 'specsdekh-rule-engine', modelVersion: 'recommendation-v2', externalAIUsed: false }, { headers });
+  if (!connection) return NextResponse.json({ intent, results: [], warnings: ['Recommendation data is temporarily unavailable. No phone or specification has been fabricated.'], provider: 'phonedock-rule-engine', modelVersion: 'recommendation-v2', externalAIUsed: false }, { headers });
   const filter: Record<string, unknown> = { active: true, status: 'published', pricePKR: { $gt: 0 } };
   if (intent.budgetMax) filter.pricePKR = { $gt: 0, $lte: intent.budgetMax };
   if (intent.ptaRequired) filter.ptaApproved = true;
@@ -31,5 +31,5 @@ export async function POST(req: NextRequest) {
   const candidates: RecommendationCandidate[] = phones.map(phone => ({ id: String(phone._id), slug: phone.slug, modelName: phone.modelName, pricePKR: phone.pricePKR, ptaApproved: phone.ptaApproved, cameraScore: phone.cameraScore, performanceScore: phone.performanceScore, batteryScore: phone.batteryScore, displayScore: phone.displayScore, valueScore: phone.valueScore, overallRating: phone.overallRating, lastVerifiedAt: phone.lastVerifiedAt, dataConfidence: phone.dataConfidence, brandName: brandMap.get(String(phone.brandId))?.name, brandSlug: brandMap.get(String(phone.brandId))?.slug, specs: specsMap.get(String(phone._id)) }));
   const results = recommendPhones(candidates, intent, 6).map(result => ({ ...result, phone: { ...result.phone, brand: brandMap.get(String(phones.find(item => String(item._id) === result.phone.id)?.brandId)), href: `/phones/${result.phone.slug}` } }));
   const warnings = [intent.condition ? 'New/used inventory condition is not yet verified, so it was not used as a filter.' : '', results.length === 0 ? 'No verified phones matched the requested filters.' : ''].filter(Boolean);
-  return NextResponse.json({ intent, results, warnings, provider: 'specsdekh-rule-engine', modelVersion: 'recommendation-v2', externalAIUsed: false }, { headers });
+  return NextResponse.json({ intent, results, warnings, provider: 'phonedock-rule-engine', modelVersion: 'recommendation-v2', externalAIUsed: false }, { headers });
 }
