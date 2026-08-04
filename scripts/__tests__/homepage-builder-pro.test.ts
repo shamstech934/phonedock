@@ -45,7 +45,7 @@ assert.match(homeContent, /const PRIORITY_ORDER =/, 'homepage must retain determ
 assert.match(homeContent, /brandBySlug\.set/, 'database brands must be deduplicated by slug before rendering');
 assert.match(homeContent, /isolate flex flex-col gap-5/, 'price and year panels must use an isolated flex stack that cannot overlap');
 assert.match(homeContent, /renderOrderedSection\('latest'\)/, 'Latest Phones must fill the column below brands instead of leaving sidebar-height whitespace');
-assert.match(homeContent, /filter\(key => key !== 'latest'\)/, 'Latest Phones must not render twice after moving into the brand column');
+assert.match(homeContent, /filter\(\(key\) => key !== 'latest' && key !== 'trending'\)/, 'Latest and Trending must not render twice after moving into the opening catalogue column');
 assert.match(heroShowcase, /validImageIds/, 'hero must track only phone images that successfully load');
 assert.match(heroShowcase, /new window\.Image\(\)/, 'hero must preflight selected images before admitting their slides');
 assert.match(heroShowcase, /naturalWidth >= 80/, 'hero must reject tiny placeholder images that create empty-looking slides');

@@ -679,10 +679,9 @@ export default function HomeContent({ homeData, heroPhones, siteSettings }: { ho
 
             <div className="min-w-0 space-y-7 sm:space-y-9" data-testid="homepage-full-width-phone-sections">
               {sectionOrder
-                .filter(key => key !== 'latest')
-                .filter(key => key !== 'trending')
-                .filter(key => ['camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
-                .map(key => <div key={key} className="homepage-wide-phone-section">{renderOrderedSection(key)}</div>)}
+                .filter((key) => key !== 'latest' && key !== 'trending')
+                .filter((key) => ['camera', 'gaming', 'battery', 'budget', 'flagship', 'upcoming'].includes(key))
+                .map((key) => <div key={key} className="homepage-wide-phone-section">{renderOrderedSection(key)}</div>)}
 
               {priceDropPhones.length > 0 && (
                 <PhoneSection phones={priceDropPhones} title="Latest Price Drops" icon={BadgeDollarSign} link="/phones?priceDrop=true" linkText="View Price Drops" tone="fuchsia" cardCount={8} gridClassName="home-wide-grid" />
