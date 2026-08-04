@@ -9,7 +9,6 @@ import {
   Search, X, Check, Trophy, Camera, Cpu, Battery, Tag, GitCompare, Shield, Plus, Share2, Copy, Printer, MonitorSmartphone, Wifi, Box,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import { formatPrice } from '@/components/shared/formatPrice';
@@ -34,14 +33,14 @@ function CompareContent() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [onlyDifferences, setOnlyDifferences] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [autocompleteResults, setAutocompleteResults] = useState<Phone[]>([]);
   const [acLoading, setAcLoading] = useState(false);
   const [acError, setAcError] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
   const [activeSpecCategory, setActiveSpecCategory] = useState('All');
-  const [activeSlotIndex, setActiveSlotIndex] = useState<number | null>(null);
+  const [activeSlotIndex, setActiveSlotIndex] = useState<number | null>(0);
+  const [slotQueries, setSlotQueries] = useState<Record<number, string>>({ 0: '', 1: '' });
   const slotSectionRef = useRef<HTMLDivElement | null>(null);
   const acAbortRef = useRef<AbortController | null>(null);
 
@@ -158,7 +157,7 @@ function CompareContent() {
             setAcLoading(false);
           }
         });
-    }, 300);
+    }, 140);
     return () => { clearTimeout(timer); if (acAbortRef.current) acAbortRef.current.abort(); };
   }, [search, selected]);
 
@@ -209,8 +208,7 @@ function CompareContent() {
     setSelected(next);
     setCompared(next.length >= MIN_COMPARE_PHONES);
     if (next.length >= 2) {
-      setPickerOpen(false);
-      updateURL(next);
+        updateURL(next);
     } else {
       updateURL(next);
     }
@@ -235,7 +233,6 @@ function CompareContent() {
     const nextSlot = Math.min(selected.length, MAX_COMPARE_PHONES - 1);
     setActiveSlotIndex(nextSlot);
     setSearch('');
-    setPickerOpen(false);
     window.setTimeout(() => slotSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   };
 
@@ -248,14 +245,14 @@ function CompareContent() {
     selectedRef.current = next;
     setSelected(next);
     setCompared(next.length >= MIN_COMPARE_PHONES);
-    setActiveSlotIndex(null);
+    setActiveSlotIndex(Math.min(slotIndex + 1, MAX_COMPARE_PHONES - 1));
+    setSlotQueries(current => ({ ...current, [slotIndex]: '', [Math.min(slotIndex + 1, MAX_COMPARE_PHONES - 1)]: current[Math.min(slotIndex + 1, MAX_COMPARE_PHONES - 1)] || '' }));
     setSearch('');
     setAutocompleteResults([]);
     updateURL(next);
   };
 
   const closePicker = () => {
-    setPickerOpen(false);
     setSearch('');
     setAutocompleteResults([]);
   };
@@ -411,7 +408,7 @@ function CompareContent() {
                 <Printer className="h-4 w-4" /> Print
               </button>
               <button onClick={openPicker} className="text-sm font-semibold text-white hover:text-white flex items-center gap-1.5 transition-colors bg-cyan-500/80 hover:bg-cyan-400 px-3 py-2 rounded-lg">
-                Change Phones
+                Edit phones
               </button>
             </>
           )}
@@ -443,7 +440,7 @@ function CompareContent() {
                       <p className="mt-1 text-xs font-semibold text-blue-600">{formatPrice(phone.pricePKR)}</p>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <button onClick={() => { setActiveSlotIndex(slotIndex); setSearch(''); }} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-100">Change</button>
+                      <button onClick={() => { setActiveSlotIndex(slotIndex); const nextQuery = slotQueries[slotIndex] || ''; setSearch(nextQuery); }} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-100">Change</button>
                       <button onClick={() => removePhone(phone.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label={`Remove ${phone.modelName}`}><X className="h-4 w-4" /></button>
                     </div>
                   </div>
@@ -453,10 +450,10 @@ function CompareContent() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
-                        value={isActive ? search : ''}
-                        onFocus={() => { setActiveSlotIndex(slotIndex); setSearch(''); }}
-                        onChange={event => { setActiveSlotIndex(slotIndex); setSearch(event.target.value); }}
-                        placeholder="Type brand or model..."
+                        value={slotQueries[slotIndex] || ''}
+                        onFocus={() => { setActiveSlotIndex(slotIndex); setSearch(slotQueries[slotIndex] || ''); }}
+                        onChange={event => { const value = event.target.value; setActiveSlotIndex(slotIndex); setSlotQueries(current => ({ ...current, [slotIndex]: value })); setSearch(value); }}
+                        placeholder={slotIndex === 0 ? 'Search first phone...' : slotIndex === 1 ? 'Search second phone...' : `Search phone ${slotIndex + 1}...`}
                         className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                       />
                     </div>
@@ -471,7 +468,7 @@ function CompareContent() {
                         <SafePhoneImage src={result.thumbnail} alt={result.modelName} width={38} height={38} className="h-10 w-10 rounded-lg bg-slate-50 object-contain p-1" />
                         <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{result.modelName}</span><span className="block text-xs text-slate-500">{result.brand?.name} · {formatPrice(result.pricePKR)}</span></span>
                       </button>
-                    )) : !acLoading ? <p className="py-5 text-center text-xs text-slate-500">No matching phones found</p> : null}
+                    )) : !acLoading ? <div className="py-4 text-center"><p className="text-xs font-semibold text-slate-600">No exact match found</p><p className="mt-1 text-[11px] text-slate-400">Try fewer words, for example “S26”, “Ultra” or “Samsung”.</p></div> : null}
                   </div>
                 )}
               </div>
@@ -505,137 +502,7 @@ function CompareContent() {
         </div>
       )}
 
-      {/* Phone Picker Dialog */}
-      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="p-4 sm:p-5 pb-0">
-            <DialogTitle>Search & Add Phones</DialogTitle>
-            <DialogDescription>Select {MIN_COMPARE_PHONES} to {MAX_COMPARE_PHONES} phones to compare. Type at least 2 characters to search.</DialogDescription>
-          </DialogHeader>
-          <div className="px-4 sm:px-5 pt-3">
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                placeholder="Type phone name or brand..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={event => {
-                  if (!autocompleteResults.length) return;
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    setActiveResultIndex(index => Math.min(index + 1, autocompleteResults.length - 1));
-                  } else if (event.key === 'ArrowUp') {
-                    event.preventDefault();
-                    setActiveResultIndex(index => Math.max(index - 1, 0));
-                  } else if (event.key === 'Enter' && activeResultIndex >= 0) {
-                    event.preventDefault();
-                    const phone = autocompleteResults[activeResultIndex];
-                    if (phone) togglePhone(phone);
-                  } else if (event.key === 'Escape') {
-                    closePicker();
-                  }
-                }}
-                className="glass-search w-full pl-10 pr-4 h-11 rounded-xl text-sm outline-none placeholder:text-gray-400"
-                aria-label="Search phones to compare"
-                aria-activedescendant={activeResultIndex >= 0 ? `compare-result-${activeResultIndex}` : undefined}
-              />
-            </div>
-          </div>
-
-          {/* Already selected in picker */}
-          {selected.length > 0 && (
-            <div className="px-4 sm:px-5 pt-3">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Selected ({selected.length}/{MAX_COMPARE_PHONES})</p>
-              <div className="flex flex-wrap gap-2">
-                {selected.map(p => (
-                  <div key={p.id} className="flex items-center gap-1.5 bg-blue-50 text-blue-700 rounded-lg px-2.5 py-1.5 text-xs font-medium">
-                    <SafePhoneImage src={p.thumbnail} alt={p.modelName} width={16} height={16} className="w-4 h-4 rounded" />
-                    <span className="max-w-[100px] truncate">{p.modelName}</span>
-                    <button onClick={() => removePhone(p.id)} className="ml-0.5 w-7 h-7 rounded-full hover:bg-blue-200 flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label={`Remove ${p.modelName}`}>
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Search results */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-5 pt-2 pb-2">
-            {!canAddComparePhone(selected.length) && (
-              <div className="text-center py-8">
-                <p className="text-sm text-amber-600 font-medium">Maximum {MAX_COMPARE_PHONES} phones allowed</p>
-                <p className="text-xs text-muted-foreground mt-1">Remove a phone to add a different one</p>
-              </div>
-            )}
-            {canAddComparePhone(selected.length) && acLoading && (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs text-gray-400 ml-2">Searching...</span>
-              </div>
-            )}
-            {canAddComparePhone(selected.length) && !acLoading && acError && (
-              <div className="text-center py-6">
-                <p className="text-sm text-red-500">Search failed. Please try again.</p>
-              </div>
-            )}
-            {canAddComparePhone(selected.length) && !acLoading && search.length >= 2 && autocompleteResults.length === 0 && !acError && (
-              <div className="text-center py-8 text-sm text-muted-foreground">No phones found matching &ldquo;{search}&rdquo;</div>
-            )}
-            {canAddComparePhone(selected.length) && !acLoading && search.length < 2 && (
-              <div className="text-center py-8 text-sm text-muted-foreground">Type at least 2 characters to search</div>
-            )}
-            <div className="divide-y divide-gray-50 rounded-xl border border-gray-100 overflow-hidden">
-              {autocompleteResults.slice(0, 20).map((p, resultIndex) => {
-                const isSelected = selected.some(s => s.id === p.id);
-                const isDisabled = isSelected || !canAddComparePhone(selected.length);
-                return (
-                  <button
-                    key={p.id}
-                    id={`compare-result-${resultIndex}`}
-                    onMouseEnter={() => setActiveResultIndex(resultIndex)}
-                    onClick={() => {
-                      if (isDisabled) return;
-                      togglePhone(p);
-                      if (selected.length + 1 >= MIN_COMPARE_PHONES && selected.length + 1 <= MAX_COMPARE_PHONES) {
-                        // Stay in picker so user can add more
-                        setSearch('');
-                        setAutocompleteResults([]);
-                      }
-                    }}
-                    disabled={isDisabled}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${activeResultIndex === resultIndex ? 'bg-blue-50' : 'hover:bg-[#F8FAFC]'}`}
-                  >
-                    <SafePhoneImage src={p.thumbnail} alt={p.modelName} width={36} height={36} className="w-9 h-9 rounded-lg bg-[#F8FAFC] p-0.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate text-gray-900">{p.modelName}</p>
-                      <p className="text-xs text-muted-foreground">{p.brand?.name} &middot; {formatPrice(p.pricePKR)}</p>
-                    </div>
-                    {isSelected && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Picker footer */}
-          <div className="border-t border-gray-100 p-4 sm:p-5 flex items-center justify-between gap-3 bg-gray-50/50">
-            <span className="text-xs text-muted-foreground">{selected.length}/{MAX_COMPARE_PHONES} phones selected</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={closePicker}>Cancel</Button>
-              {selected.length >= MIN_COMPARE_PHONES && (
-                <Button size="sm" onClick={() => {
-                  setCompared(true);
-                  closePicker();
-                  updateURL(selected);
-                }}>
-                  <GitCompare className="w-3.5 h-3.5 mr-1" /> Compare {selected.length} Phones
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal picker removed: every phone now has its own inline search slot. */}
 
       {/* Empty state — show inline picker when no phones and no dialog */}
       {false && selected.length === 0 && !loading && (
@@ -703,7 +570,13 @@ function CompareContent() {
                   <h2 className="font-bold text-gray-900">Specifications Comparison</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">Swipe horizontally on mobile to view every phone.</p>
                 </div>
-                <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-600">{comparePhones.length} phones</span>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <input type="checkbox" checked={onlyDifferences} onChange={e => setOnlyDifferences(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600" />
+                    Differences only
+                  </label>
+                  <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-600">{comparePhones.length} phones</span>
+                </div>
               </div>
               <div className="overflow-x-auto relative after:absolute after:top-0 after:right-0 after:bottom-0 after:w-8 after:bg-gradient-to-l after:from-white after:to-transparent after:pointer-events-none">
                 <table className="w-full text-sm" style={{ minWidth: `${Math.max(500, (comparePhones.length + 1) * 170)}px` }}>
@@ -811,10 +684,6 @@ function CompareContent() {
                   <h2 className="font-bold text-gray-900">Score Comparison</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">Higher score is better. Winners are marked automatically.</p>
                 </div>
-                <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground cursor-pointer rounded-xl border border-gray-200 px-3 hover:bg-gray-50">
-                  <input type="checkbox" checked={onlyDifferences} onChange={e => setOnlyDifferences(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-500" />
-                  Only show differences
-                </label>
               </div>
               {filteredMetrics.map(metric => {
                 const scores = comparePhones.map(p => ({ phone: p, score: metric.get(p) }));

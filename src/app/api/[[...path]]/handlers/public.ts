@@ -411,13 +411,36 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       ],
     };
 
-    const phones = await Phone.find(queryFilter)
+    let phones = await Phone.find(queryFilter)
       .maxTimeMS(5000)
       .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
       .sort(PHONE_NEWEST_SORT)
       .limit(12)
       .populate('brand', 'name slug')
       .lean();
+
+    // Forgiving fallback: when an over-specific query has no exact result
+    // (for example "samsung s26 ultra" while only S26 Plus is available),
+    // return the closest published models instead of an empty picker.
+    if (!phones.length && words.length > 1) {
+      const relaxedTokens = modelWords.length ? modelWords : words;
+      const relaxedFilter: Record<string, unknown> = {
+        active: true,
+        status: 'published',
+        $or: [
+          ...relaxedTokens.map(word => ({ modelName: { $regex: escapeRegex(word), $options: 'i' } })),
+          ...relaxedTokens.map(word => ({ slug: { $regex: escapeRegex(word), $options: 'i' } })),
+          ...(matchingBrandIds.length ? [{ brandId: { $in: matchingBrandIds } }] : []),
+        ],
+      };
+      phones = await Phone.find(relaxedFilter)
+        .maxTimeMS(5000)
+        .select('slug modelName thumbnail pricePKR brandId releaseDate availableFrom announcedAt createdAt')
+        .sort(PHONE_NEWEST_SORT)
+        .limit(12)
+        .populate('brand', 'name slug')
+        .lean();
+    }
 
     return cached({ phones: phones.map(p => ({
       id: p._id?.toString(),
