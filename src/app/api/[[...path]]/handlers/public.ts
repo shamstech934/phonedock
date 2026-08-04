@@ -12,6 +12,8 @@ import { normalizePhoneSpecs, normalizedToSerialized } from '@/lib/normalize-spe
 import { verifyUnsubscribeToken } from '@/lib/unsubscribe-token';
 import { getPublicPhoneFilter } from '@/lib/phone-publication';
 import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
+import { getSettings } from '@/lib/models/Settings';
+import { normalizePublicPriceRanges } from '@/lib/public-price-ranges';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -810,20 +812,24 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   // ---- /api/price-ranges ----
   if (segments.length === 1 && segments[0] === 'price-ranges') {
     await connectDB();
-    const ranges = [
-      { label: 'Under 20,000 PKR', slug: 'under-20000', min: 0, max: 20000 },
-      { label: '20K - 40K PKR', slug: '20000-40000', min: 20000, max: 40000 },
-      { label: '40K - 60K PKR', slug: '40000-60000', min: 40000, max: 60000 },
-      { label: '60K - 100K PKR', slug: '60000-100000', min: 60000, max: 100000 },
-      { label: 'Above 100K PKR', slug: 'above-100000', min: 100000, max: Infinity },
-    ];
+    const settings = await getSettings();
+    const configuredRanges = settings.homepage && typeof settings.homepage === 'object'
+      ? (settings.homepage as Record<string, unknown>).priceRanges
+      : undefined;
+    const ranges = normalizePublicPriceRanges(configuredRanges);
     const counts = await Promise.all(
-      ranges.map(r => Phone.countDocuments({
-        active: true, status: 'published',
-        pricePKR: r.max === Infinity ? { $gte: r.min, $gt: 0 } : { $gte: r.min, $lte: r.max, $gt: 0 },
+      ranges.map(range => Phone.countDocuments({
+        active: true,
+        status: 'published',
+        pricePKR: range.max === null
+          ? { $gte: range.min }
+          : { $gte: range.min, $lte: range.max },
       }))
     );
-    return cached({ ranges: ranges.map((r, i) => ({ ...r, count: counts[i] })) }, 300, 600);
+    return cached({
+      ranges: ranges.map((range, index) => ({ ...range, count: counts[index] })),
+      source: 'website-settings',
+    }, 300, 600);
   }
 
   // ---- /api/reviews (public user reviews) ----

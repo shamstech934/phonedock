@@ -17,11 +17,12 @@ const PAGE_SIZE_OPTIONS = [12, 20, 32];
 
 const PRICE_RANGES: { label: string; min: number; max: number }[] = [
   { label: 'All Prices', min: 0, max: 0 },
-  { label: 'Under 20K', min: 0, max: 20000 },
-  { label: '20K - 40K', min: 20000, max: 40000 },
-  { label: '40K - 60K', min: 40000, max: 60000 },
-  { label: '60K - 100K', min: 60000, max: 100000 },
-  { label: 'Above 100K', min: 100000, max: 0 },
+  { label: '1 - 24,999', min: 1, max: 24999 },
+  { label: '25,000 - 49,999', min: 25000, max: 49999 },
+  { label: '50,000 - 99,999', min: 50000, max: 99999 },
+  { label: '100,000 - 149,999', min: 100000, max: 149999 },
+  { label: '150,000 - 249,999', min: 150000, max: 249999 },
+  { label: '250,000+', min: 250000, max: 0 },
 ];
 
 const RAM_OPTIONS = ['All', '2', '3', '4', '6', '8', '12', '16'];
