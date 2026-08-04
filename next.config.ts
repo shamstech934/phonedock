@@ -51,9 +51,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
     cpus: 2,
   },
-  // Host redirects are intentionally not defined in application code.
-  // Vercel must own the single www -> apex redirect at the domain layer;
-  // defining it here as well can create a redirect chain for Googlebot.
   async headers() {
     return [
       ...[
