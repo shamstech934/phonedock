@@ -53,6 +53,22 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      ...[
+        '/sitemap.xml',
+        '/phones-sitemap.xml',
+        '/brands-sitemap.xml',
+        '/news-sitemap.xml',
+        '/reviews-sitemap.xml',
+        '/image-sitemap.xml',
+        '/video-sitemap.xml',
+      ].map((source) => ({
+        source,
+        headers: [
+          { key: 'Content-Type', value: 'application/xml; charset=utf-8' },
+          { key: 'Cache-Control', value: 'public, s-maxage=3600, stale-while-revalidate=86400' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      })),
       {
         source: '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)',
         headers: [
