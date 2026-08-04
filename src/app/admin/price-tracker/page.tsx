@@ -2336,14 +2336,32 @@ export default function AdminPriceTrackerPage() {
             <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
               <div className="flex items-start justify-between gap-4">
                 <div><p className="text-sm font-bold text-slate-900">Automatic catalog discovery</p><p className="mt-1 text-xs leading-5 text-slate-600">Configure the provider once. Product URLs can then be discovered from catalog, sitemap, feed or API sources instead of entering every phone manually.</p></div>
-                <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={editSourceForm.discoveryEnabled} onChange={event => setEditSourceForm(current => ({ ...current, discoveryEnabled: event.currentTarget.checked }))} className="h-4 w-4 rounded border-slate-300"/>Enabled</label>
+                <label className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={editSourceForm.discoveryEnabled} onChange={event => {
+                  const discoveryEnabled = event.currentTarget.checked;
+                  setEditSourceForm(current => ({ ...current, discoveryEnabled }));
+                }} className="h-4 w-4 rounded border-slate-300"/>Enabled</label>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Discovery mode</span><select value={editSourceForm.discoveryMode} onChange={event => setEditSourceForm(current => ({ ...current, discoveryMode: event.currentTarget.value as 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual links</option><option value="catalog">Catalog pages</option><option value="sitemap">XML sitemap</option><option value="feed">Product feed</option><option value="api">Provider API</option></select></label>
-                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Sync frequency</span><select value={editSourceForm.syncFrequency} onChange={event => setEditSourceForm(current => ({ ...current, syncFrequency: event.currentTarget.value as 'manual' | 'hourly' | 'daily' | 'weekly' }))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Catalog URLs</span><textarea rows={2} value={editSourceForm.catalogUrls} onChange={event => setEditSourceForm(current => ({ ...current, catalogUrls: event.currentTarget.value }))} placeholder="One catalog/category URL per line" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Sitemap URLs</span><textarea rows={2} value={editSourceForm.sitemapUrls} onChange={event => setEditSourceForm(current => ({ ...current, sitemapUrls: event.currentTarget.value }))} placeholder="https://example.com/product-sitemap.xml" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
-                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Feed or API URL</span><input type="url" value={editSourceForm.feedUrl} onChange={event => setEditSourceForm(current => ({ ...current, feedUrl: event.currentTarget.value }))} placeholder="https://example.com/products.json" className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/></label>
+                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Discovery mode</span><select value={editSourceForm.discoveryMode} onChange={event => {
+                  const discoveryMode = event.currentTarget.value as 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api';
+                  setEditSourceForm(current => ({ ...current, discoveryMode }));
+                }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual links</option><option value="catalog">Catalog pages</option><option value="sitemap">XML sitemap</option><option value="feed">Product feed</option><option value="api">Provider API</option></select></label>
+                <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">Sync frequency</span><select value={editSourceForm.syncFrequency} onChange={event => {
+                  const syncFrequency = event.currentTarget.value as 'manual' | 'hourly' | 'daily' | 'weekly';
+                  setEditSourceForm(current => ({ ...current, syncFrequency }));
+                }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="manual">Manual</option><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Catalog URLs</span><textarea rows={2} value={editSourceForm.catalogUrls} onChange={event => {
+                  const catalogUrls = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, catalogUrls }));
+                }} placeholder="One catalog/category URL per line" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Sitemap URLs</span><textarea rows={2} value={editSourceForm.sitemapUrls} onChange={event => {
+                  const sitemapUrls = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, sitemapUrls }));
+                }} placeholder="https://example.com/product-sitemap.xml" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"/></label>
+                <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-semibold text-slate-600">Feed or API URL</span><input type="url" value={editSourceForm.feedUrl} onChange={event => {
+                  const feedUrl = event.currentTarget.value;
+                  setEditSourceForm(current => ({ ...current, feedUrl }));
+                }} placeholder="https://example.com/products.json" className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"/></label>
               </div>
             </div>
             <div className="sm:col-span-2">
