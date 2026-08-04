@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Shield, ShieldX, BadgeCheck, Star, TrendingDown, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor, Heart, Archive, Radio, PackageX } from 'lucide-react';
+import { Shield, Star, TrendingUp, Clock, Zap, Layers, Cpu, Battery, ChevronRight, GitCompare, Eye, Monitor, Heart, Archive, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatPrice } from '@/components/shared/formatPrice';
 import { SafePhoneImage } from '@/components/shared/SafePhoneImage';
@@ -46,11 +46,6 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
   const discountPercent = phone.originalPricePKR > phone.pricePKR && phone.pricePKR > 0
     ? Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)
     : 0;
-  const normalizedPta = String(phone.ptaStatus || '').toLowerCase().replace(/[\s-]+/g, '_');
-  const isNonPta = !phone.ptaApproved && ['non_pta', 'not_approved', 'unapproved'].includes(normalizedPta);
-  const hasVerifiedPrice = Boolean(phone.priceVerified || phone.lastVerifiedAt || phone.lastPriceCheckedAt);
-  const hasPriceDrop = Number(phone.priceChange || 0) < 0 || Number(phone.percentageChange || 0) < 0;
-  const isOutOfStock = phone.inStock === false || lifecycle === 'out_of_stock' || lifecycle === 'unavailable';
 
   const handleQuickView = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -73,7 +68,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
 
   return (
     <>
-      <article data-testid="phone-card" className="phone-card glass-shine group flex min-h-[438px] overflow-hidden sm:min-h-[470px]">
+      <article data-testid="phone-card" className="phone-card glass-shine group flex h-[440px] min-h-0 overflow-hidden sm:h-[472px]">
         <div className="flex h-full min-w-0 flex-1 flex-col p-3 sm:p-4">
           <Link
             href={`/phones/${phone.slug}`}
@@ -82,24 +77,19 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             data-testid="phone-card-link"
             className="flex min-h-0 flex-1 cursor-pointer flex-col rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2"
           >
-          <div data-testid="phone-card-image" className="phone-card-media relative mb-3 flex h-[210px] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60 sm:h-[230px]">
+          <div data-testid="phone-card-image" className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-white to-slate-50 ring-1 ring-slate-200/60">
             <SafePhoneImage
               src={phone.thumbnail}
               alt={phone.modelName}
               width={200}
               height={200}
-              className="h-full w-full p-2.5 transition-transform duration-500 ease-out group-hover:scale-[1.025] sm:p-3"
-              fallbackLabel="Image unavailable"
+              className="p-4 transition-transform duration-500 ease-out group-hover:scale-[1.035]"
             />
-            {phone.ptaApproved ? (
-              <Badge className="absolute left-2 top-2 z-[2] border border-emerald-200/70 bg-white/95 text-[10px] font-semibold text-emerald-700 shadow-sm backdrop-blur-md">
-                <Shield className="mr-0.5 h-3 w-3" /> PTA Approved
+            {phone.ptaApproved && (
+              <Badge className="absolute top-2 left-2 text-[10px] bg-white/80 backdrop-blur-md text-emerald-700 border border-emerald-200/50 font-medium shadow-sm">
+                <Shield className="w-3 h-3 mr-0.5" /> PTA
               </Badge>
-            ) : isNonPta ? (
-              <Badge className="absolute left-2 top-2 z-[2] border border-rose-200/70 bg-white/95 text-[10px] font-semibold text-rose-700 shadow-sm backdrop-blur-md">
-                <ShieldX className="mr-0.5 h-3 w-3" /> Non-PTA
-              </Badge>
-            ) : null}
+            )}
             {formattedCategoryScore && categoryLabel && (
               <Badge data-testid="category-score" className={`absolute right-2 top-2 z-[2] border-0 text-[10px] font-semibold text-white shadow-sm ${categoryScoreClassName}`}>
                 {categoryLabel} {formattedCategoryScore}
@@ -131,18 +121,6 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
               </Badge>
             )}
           </div>
-          {(hasPriceDrop || isOutOfStock || hasVerifiedPrice) && (
-            <div className="mb-2 flex min-h-5 flex-wrap items-center gap-1" aria-label="Phone market status">
-              {isOutOfStock ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600"><PackageX className="h-2.5 w-2.5" /> Out of stock</span>
-              ) : hasPriceDrop ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700"><TrendingDown className="h-2.5 w-2.5" /> Price drop</span>
-              ) : null}
-              {hasVerifiedPrice && !isDiscontinued && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-bold text-blue-700"><BadgeCheck className="h-2.5 w-2.5" /> Verified price</span>
-              )}
-            </div>
-          )}
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex h-5 items-center justify-between">
               <p className="text-xs text-muted-foreground font-medium">{phone.brand?.name}</p>
@@ -160,27 +138,27 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             <div data-testid="phone-card-specs" className="grid h-16 min-h-16 max-h-16 grid-cols-2 grid-rows-3 content-start gap-1.5 overflow-hidden pt-1">
               {phone.specs?.ram && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Zap className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.ram}>{phone.specs.ram}</span>
+                  <Zap className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.ram}</span>
                 </span>
               )}
               {phone.specs?.storage && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Layers className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.storage}>{phone.specs.storage}</span>
+                  <Layers className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.storage}</span>
                 </span>
               )}
               {displaySize && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Monitor className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={displaySize}>{displaySize}</span>
+                  <Monitor className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{displaySize}</span>
                 </span>
               )}
               {phone.specs?.chipset && (
                 <span className="hidden min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground sm:flex">
-                  <Cpu className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.chipset}>{phone.specs.chipset}</span>
+                  <Cpu className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.chipset}</span>
                 </span>
               )}
               {phone.specs?.battery && (
                 <span className="flex min-w-0 items-center gap-0.5 overflow-hidden rounded-md bg-gray-50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Battery className="h-2.5 w-2.5 shrink-0" /><span className="truncate" title={phone.specs.battery}>{phone.specs.battery}</span>
+                  <Battery className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{phone.specs.battery}</span>
                 </span>
               )}
             </div>

@@ -21,8 +21,6 @@ export interface ProviderConfig {
   mappingRules?: Record<string, string>; // provider field → our field
   defaultValues?: Record<string, unknown>;
   enabled: boolean;
-  parserId?: string;             // auto, generic, samsung, or future plugin id
-  maxProductPages?: number;      // bounded product-detail requests per run
 }
 
 // ---- Normalized Phone Spec (what every provider must return) ----
@@ -151,9 +149,6 @@ export interface NormalizedPhone {
   // Media
   images?: string[];
   thumbnail?: string;
-
-  // Source traceability for collector review/import provenance
-  sourceUrl?: string;
 
   // Pakistan-specific (never auto-populated from global sources)
   pakistanPrice?: number;

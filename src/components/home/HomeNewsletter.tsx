@@ -79,7 +79,7 @@ export function HomeNewsletter() {
                 <BellRing className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">SpecsDekh Update Alerts</h3>
+                <h3 className="text-base font-bold text-white">PhoneDock Update Alerts</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-300">Join with your email. Unsubscribe whenever you want.</p>
               </div>
             </div>
@@ -110,7 +110,7 @@ export function HomeNewsletter() {
                     onClick={subscribe}
                     disabled={loading}
                     className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                    aria-label="Subscribe to SpecsDekh update alerts"
+                    aria-label="Subscribe to PhoneDock update alerts"
                   >
                     {loading ? 'Subscribing…' : 'Subscribe'}
                     {!loading && <ChevronRight className="h-4 w-4" aria-hidden="true" />}

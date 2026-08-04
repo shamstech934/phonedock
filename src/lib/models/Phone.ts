@@ -164,8 +164,6 @@ PhoneSchema.index({ active: 1, status: 1, featured: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, trending: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, upcoming: 1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, availabilityStatus: 1, releaseDate: -1 });
-PhoneSchema.index({ active: 1, status: 1, releaseDate: -1, availableFrom: -1, pakistanLaunchAt: -1, announcedAt: -1, createdAt: -1 });
-PhoneSchema.index({ brandId: 1, active: 1, status: 1, releaseDate: -1, createdAt: -1 });
 PhoneSchema.index({ active: 1, status: 1, cameraScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });

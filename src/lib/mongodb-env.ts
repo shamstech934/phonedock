@@ -1,5 +1,5 @@
 /**
- * Shared MongoDB Environment & Connection Utilities — SpecsDekh
+ * Shared MongoDB Environment & Connection Utilities — PhoneDock
  *
  * Used by: application (mongodb.ts), CLI scripts, db:check, tests
  *

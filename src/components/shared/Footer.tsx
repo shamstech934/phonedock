@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
+import { Smartphone, Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
 
 const FOOTER_BRANDS = ['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'];
 
@@ -32,13 +31,15 @@ export function Footer() {
   return (
     <footer className="bg-[#0F172A] text-gray-400 mt-auto relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="site-shell py-12 sm:py-16 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 py-12 sm:py-16 relative z-10">
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 mb-10">
           <div className="col-span-2 sm:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <Image src="/logo.svg" alt="SpecsDekh" width={32} height={32} className="h-8 w-8 rounded-xl object-contain shadow-lg shadow-blue-500/20" />
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <Smartphone className="w-5 h-5 text-white" />
+              </div>
               <span className="font-display font-extrabold text-lg text-white">
-                {settings.siteName ? settings.siteName : <>Specs<span className="text-blue-400">Dekh</span></>}
+                {settings.siteName ? settings.siteName : <>Phone<span className="text-blue-400">Dock</span></>}
               </span>
             </Link>
             <p className="text-sm leading-relaxed text-gray-400">{settings.footerText || 'A growing smartphone database for Pakistan. Compare available specs and prices before buying.'}</p>
@@ -113,7 +114,7 @@ export function Footer() {
         </div>
         <div className="divider-glass mb-6" />
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-gray-400">
-          <p>&copy; {new Date().getFullYear()} {settings.siteName || 'SpecsDekh'}. All rights reserved. Made for Pakistan.</p>
+          <p>&copy; {new Date().getFullYear()} {settings.siteName || 'PhoneDock'}. All rights reserved. Made for Pakistan.</p>
           <p className="text-cyan-300 font-medium">Phone prices may vary. Check with retailers.</p>
           {process.env.NEXT_PUBLIC_BUILD_ID && (
             <p className="text-gray-700 text-[10px]">Build: {process.env.NEXT_PUBLIC_BUILD_ID}</p>

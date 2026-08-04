@@ -283,9 +283,9 @@ export function suggestSEO(phone: NormalizedPhone): { title: string; description
   const specsStr = specs.length > 0 ? ` (${specs.join(', ')})` : '';
   const priceStr = phone.pakistanPrice ? ` Price in Pakistan ${phone.pakistanPrice.toLocaleString()} PKR` : '';
 
-  const title = `${brand} ${model} - Full Specs & Price${specsStr ? ` | ${specs.slice(0, 2).join(', ')}` : ''} | SpecsDekh`;
+  const title = `${brand} ${model} - Full Specs & Price${specsStr ? ` | ${specs.slice(0, 2).join(', ')}` : ''} | PhoneDock`;
 
-  const description = `${brand} ${model} complete specifications${specsStr ? `: ${specs.join(', ')}` : ''}.${priceStr ? ` ${brand} ${model} price in Pakistan is ${(phone.pakistanPrice ?? 0).toLocaleString()} PKR.` : ''} Compare specs, read reviews, and find the best deals on SpecsDekh.`;
+  const description = `${brand} ${model} complete specifications${specsStr ? `: ${specs.join(', ')}` : ''}.${priceStr ? ` ${brand} ${model} price in Pakistan is ${(phone.pakistanPrice ?? 0).toLocaleString()} PKR.` : ''} Compare specs, read reviews, and find the best deals on PhoneDock.`;
 
   const keywords = [
     `${brand} ${model}`, `${model} price in Pakistan`, `${model} specs`,

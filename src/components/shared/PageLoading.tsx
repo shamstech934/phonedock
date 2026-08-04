@@ -9,7 +9,7 @@ export function PageLoading(_props: PageLoadingProps) {
       className="relative flex min-h-[52vh] items-center justify-center px-4 py-16"
       aria-busy="true"
       aria-live="polite"
-      aria-label="Loading SpecsDekh content"
+      aria-label="Loading PhoneDock content"
     >
       <div className="fixed inset-x-0 top-[72px] z-40 h-0.5 overflow-hidden bg-slate-200/70 dark:bg-slate-800/80">
         <span className="phonedock-route-progress block h-full w-1/3 rounded-full bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-400" />
@@ -23,7 +23,7 @@ export function PageLoading(_props: PageLoadingProps) {
         </div>
 
         <p className="mt-5 text-base font-semibold text-slate-900 dark:text-slate-100">
-          Loading SpecsDekh
+          Loading PhoneDock
         </p>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Finding the latest phone data…
@@ -36,7 +36,7 @@ export function PageLoading(_props: PageLoadingProps) {
         </div>
       </div>
 
-      <span className="sr-only">Loading SpecsDekh content…</span>
+      <span className="sr-only">Loading PhoneDock content…</span>
     </main>
   );
 }

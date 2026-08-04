@@ -7,9 +7,6 @@ import Image from 'next/image';
 import { Search, Smartphone, TrendingUp, Loader2 } from 'lucide-react';
 import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
 
-const autocompleteCache = new Map<string, { expiresAt: number; phones: AutocompleteResult[] }>();
-const AUTOCOMPLETE_CACHE_TTL = 5 * 60 * 1000;
-
 interface AutocompleteResult {
   id: string;
   slug: string;
@@ -27,7 +24,6 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const requestIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,38 +44,22 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
       setShowDropdown(false);
       return;
     }
-    const normalized = value.trim().toLowerCase();
-    const cached = autocompleteCache.get(normalized);
-    if (cached && cached.expiresAt > Date.now()) {
-      setResults(cached.phones);
-      setShowDropdown(true);
-      setLoading(false);
-      return;
-    }
-
     setShowDropdown(true);
     setLoading(true);
-    const requestId = ++requestIdRef.current;
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value.trim())}`, {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        });
+        const res = await fetch(`/api/phones/autocomplete?q=${encodeURIComponent(value.trim())}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (requestId !== requestIdRef.current) return;
-        const phones = (data.phones || []) as AutocompleteResult[];
-        autocompleteCache.set(normalized, { expiresAt: Date.now() + AUTOCOMPLETE_CACHE_TTL, phones });
-        setResults(phones);
+        setResults(data.phones || []);
       } catch (err) {
-        if (requestId === requestIdRef.current && err instanceof Error && err.name !== 'AbortError') setResults([]);
+        if (err instanceof Error && err.name !== 'AbortError') setResults([]);
       } finally {
-        if (requestId === requestIdRef.current) setLoading(false);
+        setLoading(false);
       }
-    }, 160);
+    }, 250);
   }, []);
 
   const submit = (event?: React.FormEvent<HTMLFormElement>) => {
@@ -120,13 +100,9 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
 
         {showDropdown && (
           <div className="absolute left-0 right-0 sm:right-auto sm:w-[26rem] top-full mt-2 rounded-xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 shadow-2xl overflow-hidden z-50">
-            {loading && results.length === 0 ? (
-              <div className="space-y-2 p-3" aria-label="Searching phones">
-                {[0, 1, 2].map(item => <div key={item} className="h-12 animate-pulse rounded-lg bg-gray-100 dark:bg-slate-800" />)}
-              </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-6 text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Searching...</div>
             ) : results.length > 0 ? (
-              <>
-              {loading && <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-[11px] text-gray-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating results…</div>}
               <ul className="max-h-80 overflow-y-auto py-1">
                 {results.map(r => (
                   <li key={r.id}>
@@ -146,7 +122,6 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
                   </li>
                 ))}
               </ul>
-              </>
             ) : (
               <p className="text-sm text-gray-500 text-center py-6">No phones found</p>
             )}

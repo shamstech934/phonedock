@@ -15,10 +15,6 @@
     {
       "path": "/api/cron/collector-sync",
       "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/continuous-monitoring",
-      "schedule": "30 3 * * *"
     }
   ]
 }

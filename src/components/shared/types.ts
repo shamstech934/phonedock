@@ -104,21 +104,9 @@ export interface Phone {
   slug: string;
   brandId: string;
   brand?: Brand;
-  brandName?: string;
-  model?: string;
   thumbnail: string;
   pricePKR: number;
   originalPricePKR: number;
-  currentPrice?: number;
-  previousPrice?: number;
-  lowestPrice?: number;
-  highestPrice?: number;
-  priceChange?: number;
-  percentageChange?: number;
-  lastPriceCheckedAt?: string;
-  lastVerifiedAt?: string;
-  priceVerified?: boolean;
-  inStock?: boolean;
   description: string;
   overallRating: number;
   cameraScore: number;
@@ -153,9 +141,7 @@ export interface Phone {
   manualLockReason?: string;
   sourceUrl?: string;
   published?: boolean;
-  status?: 'published' | 'draft' | 'pending' | 'archived' | string;
-  active?: boolean;
-  deletedAt?: string | null;
+  status?: string;
   views?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -200,8 +186,6 @@ export interface HomeData {
   bestGaming: Phone[];
   bestBattery: Phone[];
   upcoming: Phone[];
-  catalog: Phone[];
-  releaseYears: number[];
   news: NewsItem[];
   videos: HomeVideo[];
   priceCategories: {

@@ -10,7 +10,7 @@ type Props = { title: string; text?: string; url?: string; compact?: boolean };
 export function PhoneShareMenu({ title, text, url, compact = false }: Props) {
   const [copied, setCopied] = useState(false);
   const getUrl = () => url || (typeof window !== 'undefined' ? window.location.href : '');
-  const shareText = text || `${title} full specifications, price and review on SpecsDekh`;
+  const shareText = text || `${title} full specifications, price and review on PhoneDock`;
   const encoded = () => ({ u: encodeURIComponent(getUrl()), t: encodeURIComponent(shareText) });
   const open = (target: string) => window.open(target, '_blank', 'noopener,noreferrer,width=720,height=640');
   const copy = async () => {

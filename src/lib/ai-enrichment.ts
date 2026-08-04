@@ -119,7 +119,7 @@ async function synthesize(type: EnrichmentType, phone: EnrichmentPhoneInput, sou
   if (!config) throw new Error(`AI provider is not configured. Set AI_PROVIDER and its API key.`);
   const evidence = sources.map((source, index) => ({ id: index + 1, ...source }));
   const system = [
-    'You are SpecsDekh Research Engine. Produce review-only smartphone enrichment drafts from supplied evidence only.',
+    'You are PhoneDock Research Engine. Produce review-only smartphone enrichment drafts from supplied evidence only.',
     'Never use unstated memory. Never guess. Empty fields are better than invented values.',
     'Prefer official manufacturer sources, then reputable retailers for Pakistan prices.',
     'When sources disagree, keep the most authoritative value and list the conflict.',
@@ -129,8 +129,8 @@ async function synthesize(type: EnrichmentType, phone: EnrichmentPhoneInput, sou
   ].join(' ');
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
   if (config.provider === 'openrouter') {
-    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
-    headers['X-Title'] = 'SpecsDekh';
+    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock-pi.vercel.app';
+    headers['X-Title'] = 'PhoneDock';
   }
   const requestBody: Record<string, unknown> = {
     model: config.model,
@@ -205,8 +205,8 @@ export async function discoverPhoneModels(brand: string, year?: string, series?:
   ].join(' ');
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` };
   if (config.provider === 'openrouter') {
-    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
-    headers['X-Title'] = 'SpecsDekh';
+    headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_BASE_URL || 'https://phonedock-pi.vercel.app';
+    headers['X-Title'] = 'PhoneDock';
   }
   const requestBody: Record<string, unknown> = {
     model: config.model, temperature: 0,

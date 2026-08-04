@@ -195,3 +195,63 @@ export async function validateUrlForFetch(
 
   return { safe: true };
 }
+
+export interface SafeFetchOptions {
+  allowedDomains?: string[];
+  timeoutMs?: number;
+  maxRedirects?: number;
+  headers?: HeadersInit;
+  fetcher?: typeof fetch;
+  resolver?: DnsResolver;
+}
+
+/**
+ * Fetch an external URL without handing redirect control to the runtime.
+ * Every hop is revalidated to prevent a public URL redirecting to an internal
+ * host or escaping the configured retailer allowlist.
+ */
+export async function fetchWithValidatedRedirects(
+  input: string,
+  options: SafeFetchOptions = {},
+): Promise<Response> {
+  const allowedDomains = options.allowedDomains || [];
+  const timeoutMs = Math.min(30_000, Math.max(1_000, options.timeoutMs || 15_000));
+  const maxRedirects = Math.min(5, Math.max(0, options.maxRedirects ?? 3));
+  const fetcher = options.fetcher || fetch;
+  let currentUrl = input;
+
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+    const validation = await validateUrlForFetch(currentUrl, allowedDomains, options.resolver);
+    if (!validation.safe) throw new Error(validation.reason || 'Unsafe external URL');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetcher(currentUrl, {
+        method: 'GET',
+        headers: options.headers,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get('location');
+    if (!location) throw new Error('Retailer returned a redirect without a destination');
+    if (redirectCount >= maxRedirects) throw new Error('Retailer redirected too many times');
+    currentUrl = new URL(location, currentUrl).toString();
+  }
+
+  throw new Error('Retailer redirect validation failed');
+}
+
+export async function readResponseTextLimited(response: Response, maxBytes = 2_000_000): Promise<string> {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > maxBytes) throw new Error('Retailer response is too large');
+  const text = await response.text();
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new Error('Retailer response is too large');
+  return text;
+}

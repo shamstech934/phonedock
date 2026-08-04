@@ -15,7 +15,7 @@ export { SyncJob } from './SyncJob';
 export { Video } from './Video';
 export { Settings, getSettings } from './Settings';
 export { SystemState } from './SystemState';
-export { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from './PriceTracker';
+export { PriceSource, PhoneRetailListing, PriceTrackerHistory } from './PriceTracker';
 export { DataQualityIssue, ScanJob } from './DataQuality';export { User } from './User';
 export { Wishlist, Favorite, RecentlyViewed, CompareHistory, Notification } from './UserFeatures';
 export { AffiliateLink, AffiliateClick, ContactRequest } from './Commercial';
@@ -25,14 +25,3 @@ export { AffiliateLink, AffiliateClick, ContactRequest } from './Commercial';
 export { DeviceSpecDataset } from './DeviceSpecDataset';
 export { AIResearchJob } from './AIResearchJob';
 export { AIResearchDraft } from './AIResearchDraft';
-
-export { LaunchCandidate } from './LaunchCandidate';
-
-export { MonitoringRun } from './MonitoringRun';
-
-export { PakistanMarketSignal } from './PakistanMarketSignal';
-export { ImageIntelligenceSignal } from './ImageIntelligenceSignal';
-
-export { SpecsIntelligenceSignal } from './SpecsIntelligenceSignal';
-export { PriceIntelligenceSignal } from './PriceIntelligenceSignal';
-export { YouTubeIntelligenceSignal } from './YouTubeIntelligenceSignal';

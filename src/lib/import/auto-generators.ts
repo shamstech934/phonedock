@@ -76,7 +76,7 @@ export function generateSEO(phone: RawPhoneRecord): { seoTitle: string; seoDescr
   const specs = [ram, storage].filter(Boolean).join(', ');
   const specsStr = specs ? ` (${specs})` : '';
 
-  const seoTitle = `${brand} ${model} - Full Specs${priceStr} | SpecsDekh`.trim();
+  const seoTitle = `${brand} ${model} - Full Specs${priceStr} | PhoneDock`.trim();
 
   let seoDescription = `Get the latest ${brand} ${model} complete specifications, features, and reviews.`;
   if (price > 0) {
@@ -85,7 +85,7 @@ export function generateSEO(phone: RawPhoneRecord): { seoTitle: string; seoDescr
   if (specs) {
     seoDescription += ` Key specs: ${specs}.`;
   }
-  seoDescription += ' Compare and buy at the best price on SpecsDekh.';
+  seoDescription += ' Compare and buy at the best price on PhoneDock.';
 
   const keywordsArr = [
     `${brand} ${model}`,

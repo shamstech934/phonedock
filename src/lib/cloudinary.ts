@@ -1,4 +1,4 @@
-// Cloudinary Image Upload Utility for SpecsDekh
+// Cloudinary Image Upload Utility for PhoneDock
 // Environment variables needed:
 //   NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME - Your Cloudinary cloud name
 //   CLOUDINARY_UPLOAD_PRESET - Unsigned upload preset name (create in Cloudinary Dashboard > Settings > Upload)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import Image from 'next/image';
 import { Smartphone } from 'lucide-react';
 
@@ -13,7 +13,6 @@ interface SafePhoneImageProps {
   className?: string;
   fallbackClassName?: string;
   priority?: boolean;
-  fallbackLabel?: string;
 }
 
 // Track failed URLs at module level to prevent repeated retries
@@ -26,7 +25,7 @@ const ALLOWED_HOSTS = new Set([
   'images.unsplash.com',
   'upload.wikimedia.org',
   'i.ytimg.com',
-  'specsdekh.com',
+  'phonedock.pk',
   'localhost',
 ]);
 
@@ -64,7 +63,6 @@ export function SafePhoneImage({
   className = '',
   fallbackClassName,
   priority = false,
-  fallbackLabel,
 }: SafePhoneImageProps) {
   const [broken, setBroken] = useState(() => {
     if (!src) return true;
@@ -72,11 +70,6 @@ export function SafePhoneImage({
     const normalized = normalizeSrc(src);
     return !normalized;
   });
-
-  useEffect(() => {
-    const normalized = normalizeSrc(src || '');
-    setBroken(!normalized || (!!src && failedUrls.has(src)));
-  }, [src]);
 
   const isBlank = !src || failedUrls.has(src) || !normalizeSrc(src || '');
   const effectiveSrc = isBlank ? undefined : normalizeSrc(src || '');
@@ -103,18 +96,14 @@ export function SafePhoneImage({
   if (broken || !effectiveSrc) {
     return (
       <div
-        className={`flex flex-col items-center justify-center gap-2 bg-[#F8FAFC] ${fallbackClassName || className}`}
+        className={`flex items-center justify-center bg-[#F8FAFC] ${fallbackClassName || className}`}
         style={!width || !height ? undefined : { width: iconSize.w, height: iconSize.h }}
-        role="img"
-        aria-label={fallbackLabel || `${alt} image unavailable`}
+        aria-hidden="true"
       >
         <Smartphone
           className="text-gray-300"
-          style={{ width: Math.max(iconSize.w * 0.42, 16), height: Math.max(iconSize.h * 0.42, 16) }}
+          style={{ width: Math.max(iconSize.w * 0.5, 16), height: Math.max(iconSize.h * 0.5, 16) }}
         />
-        {fallbackLabel && (
-          <span className="px-2 text-center text-[10px] font-semibold text-slate-400">{fallbackLabel}</span>
-        )}
       </div>
     );
   }

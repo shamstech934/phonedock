@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 22.x (deployment default); package compatibility also covers Node.js 24.x LTS
+- Node.js `>=22.12.0 <23`
 - npm with lockfile support
 - MongoDB replica set for transaction-dependent workflows
 

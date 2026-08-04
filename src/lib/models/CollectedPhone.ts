@@ -167,7 +167,6 @@ CollectedPhoneSchema.index({ status: 1 });
 CollectedPhoneSchema.index({ slug: 1 });
 CollectedPhoneSchema.index({ brandName: 1, model: 1 });
 CollectedPhoneSchema.index({ sourceId: 1 });
-CollectedPhoneSchema.index({ sourceId: 1, providerRecordId: 1, status: 1 });
 CollectedPhoneSchema.index({ jobId: 1 });
 CollectedPhoneSchema.index({ createdAt: -1 });
 CollectedPhoneSchema.index({ 'duplicateMatches.confidence': -1 });

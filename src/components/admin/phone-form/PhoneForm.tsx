@@ -29,7 +29,6 @@ export default function PhoneForm({
   const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [linkedVideos, setLinkedVideos] = useState<Array<{ id: string; youtubeId: string; title: string; thumbnailUrl: string }>>([]);
 
   // ── Field updater helper ──
@@ -329,7 +328,6 @@ export default function PhoneForm({
 
     setSaving(true);
     setError(null);
-    setSaveWarning(null);
 
     try {
       const url = isEditMode
@@ -430,22 +428,14 @@ export default function PhoneForm({
         body: JSON.stringify(payload),
       });
 
-      const responseBody: { error?: string; issues?: unknown; warnings?: unknown; status?: string } = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const details = Array.isArray(responseBody?.issues) ? responseBody.issues.join('; ') : '';
+        const body = await res.text();
         throw new Error(
-          `Save failed (HTTP ${res.status}): ${details || responseBody?.error || res.statusText}`,
+          `Save failed (HTTP ${res.status}): ${body || res.statusText}`,
         );
       }
 
-      const warnings = Array.isArray(responseBody?.warnings) ? responseBody.warnings.filter(Boolean) : [];
-      if (warnings.length > 0) {
-        setSaveWarning(`Saved as draft because: ${warnings.join('; ')}`);
-        // Keep the editor open so the admin can add the missing publication fields.
-        setForm(current => ({ ...current, status: 'draft' }));
-      } else {
-        onSave();
-      }
+      onSave();
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : 'Failed to save phone data',
@@ -525,21 +515,6 @@ export default function PhoneForm({
           </button>
         </div>
       </div>
-
-      {saveWarning && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <div className="flex items-center justify-between gap-4">
-            <span>{saveWarning}</span>
-            <button
-              type="button"
-              onClick={() => setSaveWarning(null)}
-              className="font-medium text-amber-700 hover:text-amber-900"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Error Banner ── */}
       {error && (

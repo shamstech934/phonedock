@@ -5,6 +5,12 @@ export interface ExtractedPrice {
   confidence: number;
 }
 
+export interface RetailPageSignals {
+  title: string;
+  price: ExtractedPrice | null;
+  availability: 'available' | 'unavailable' | 'unknown';
+}
+
 const MIN_PKR_PRICE = 1_000;
 const MAX_PKR_PRICE = 5_000_000;
 
@@ -79,4 +85,64 @@ export function extractRetailPrice(html: string): ExtractedPrice | null {
   return visiblePrice
     ? { price: visiblePrice, currency: 'PKR', method: 'visible-text', confidence: 0.72 }
     : null;
+}
+
+function decodeBasicEntities(value: string): string {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function extractRetailPageSignals(html: string): RetailPageSignals {
+  const productNames: string[] = [];
+  for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const visit = (value: unknown, depth = 0): void => {
+        if (depth > 8 || value == null || typeof value !== 'object') return;
+        if (Array.isArray(value)) return value.forEach(item => visit(item, depth + 1));
+        const record = value as Record<string, unknown>;
+        if (String(record['@type'] || '').toLowerCase().includes('product') && typeof record.name === 'string') {
+          productNames.push(record.name);
+        }
+        Object.values(record).forEach(item => visit(item, depth + 1));
+      };
+      visit(JSON.parse(match[1]));
+    } catch {
+      // Malformed JSON-LD must not stop safer HTML fallbacks.
+    }
+  }
+  const ogTitle = html.match(/<meta[^>]+(?:property|name)=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1]
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']og:title["']/i)?.[1];
+  const htmlTitle = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const title = decodeBasicEntities(productNames[0] || ogTitle || htmlTitle || '').slice(0, 240);
+  const unavailable = /out\s*of\s*stock|currently\s*unavailable|sold\s*out|itemprop=["']availability["'][^>]+OutOfStock/i.test(html);
+  const available = /add\s*to\s*cart|buy\s*now|in\s*stock|itemprop=["']availability["'][^>]+InStock/i.test(html);
+  return {
+    title,
+    price: extractRetailPrice(html),
+    availability: unavailable ? 'unavailable' : available ? 'available' : 'unknown',
+  };
+}
+
+function comparableTokens(value: string): string[] {
+  return value.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(token => token.length >= 2 && !['mobile', 'phone', 'smartphone', 'official', 'price', 'pakistan', 'with', 'and'].includes(token));
+}
+
+/** Prevent a stale/redirected listing from updating the wrong phone. */
+export function isLikelySameRetailProduct(expectedName: string, observedTitle: string): boolean {
+  const expected = comparableTokens(expectedName);
+  const observed = new Set(comparableTokens(observedTitle));
+  if (!expected.length || !observed.size) return false;
+  const distinctive = expected.filter(token => /\d/.test(token));
+  if (distinctive.length && !distinctive.every(token => observed.has(token))) return false;
+  const matched = expected.filter(token => observed.has(token)).length;
+  return matched >= Math.min(2, expected.length) && matched / expected.length >= 0.6;
 }

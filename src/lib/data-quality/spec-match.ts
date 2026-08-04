@@ -104,7 +104,7 @@ export async function matchAndApplySpecsForPhone(phone: any, threshold: number, 
     if (!dryRun) {
       await PhoneSpecs.updateOne({ phoneId: phone._id }, { $set: update, $setOnInsert: { phoneId: phone._id } }, { upsert: true });
       await Phone.updateOne({ _id: phone._id }, { $set: {
-        sourceName: clean(source.sourceName, 120) || 'SpecsDekh local dataset', sourceUrl: clean(source.sourceUrl, 1000),
+        sourceName: clean(source.sourceName, 120) || 'PhoneDock local dataset', sourceUrl: clean(source.sourceUrl, 1000),
         lastVerifiedAt: new Date(), dataConfidence: 'auto-imported', updatedBy: new Types.ObjectId(adminId),
       } });
     }

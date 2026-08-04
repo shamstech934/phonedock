@@ -17,7 +17,7 @@ interface TopPhonesClientPageProps {
   description?: string;
   badgeField?: string;
   badgeLabel?: string;
-  /** Apply SpecsDekh's category-specific weighted ranking instead of raw field order. */
+  /** Apply PhoneDock's category-specific weighted ranking instead of raw field order. */
   rankingCategory?: RankingCategory;
   /** Custom API endpoint (default: /api/top-phones?sort=...&limit=20) */
   apiEndpoint?: string;
