@@ -5,7 +5,9 @@ import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'Phones by Price Range in Pakistan',
@@ -29,7 +31,7 @@ interface PriceRange {
 
 async function getPriceRanges(): Promise<PriceRange[]> {
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/price-ranges`, {
+    const res = await fetch(`${BASE_URL}/api/price-ranges`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return [];
@@ -63,7 +65,7 @@ export default async function PriceRangesPage() {
           </div>
 
           {ranges.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {ranges.map((range, index) => (
                 <Link
                   key={range.slug}

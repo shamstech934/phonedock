@@ -51,6 +51,16 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
     cpus: 2,
   },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.specsdekh.com' }],
+        destination: 'https://specsdekh.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       ...[
@@ -66,7 +76,6 @@ const nextConfig: NextConfig = {
         headers: [
           { key: 'Content-Type', value: 'application/xml; charset=utf-8' },
           { key: 'Cache-Control', value: 'public, s-maxage=3600, stale-while-revalidate=86400' },
-          { key: 'X-Robots-Tag', value: 'noindex' },
         ],
       })),
       {

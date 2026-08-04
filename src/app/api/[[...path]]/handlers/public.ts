@@ -811,16 +811,21 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   if (segments.length === 1 && segments[0] === 'price-ranges') {
     await connectDB();
     const ranges = [
-      { label: 'Under 20,000 PKR', slug: 'under-20000', min: 0, max: 20000 },
-      { label: '20K - 40K PKR', slug: '20000-40000', min: 20000, max: 40000 },
-      { label: '40K - 60K PKR', slug: '40000-60000', min: 40000, max: 60000 },
-      { label: '60K - 100K PKR', slug: '60000-100000', min: 60000, max: 100000 },
-      { label: 'Above 100K PKR', slug: 'above-100000', min: 100000, max: Infinity },
+      { label: 'Under 25,000 PKR', slug: 'under-25000', min: 0, max: 25000 },
+      { label: '25K - 50K PKR', slug: '25000-50000', min: 25000, max: 50000 },
+      { label: '50K - 100K PKR', slug: '50000-100000', min: 50000, max: 100000 },
+      { label: '100K - 150K PKR', slug: '100000-150000', min: 100000, max: 150000 },
+      { label: '150K - 250K PKR', slug: '150000-250000', min: 150000, max: 250000 },
+      { label: 'Above 250K PKR', slug: 'above-250000', min: 250000, max: Infinity },
     ];
     const counts = await Promise.all(
       ranges.map(r => Phone.countDocuments({
         active: true, status: 'published',
-        pricePKR: r.max === Infinity ? { $gte: r.min, $gt: 0 } : { $gte: r.min, $lte: r.max, $gt: 0 },
+        pricePKR: r.max === Infinity
+          ? { $gt: r.min }
+          : r.min === 0
+            ? { $gt: 0, $lte: r.max }
+            : { $gt: r.min, $lte: r.max },
       }))
     );
     return cached({ ranges: ranges.map((r, i) => ({ ...r, count: counts[i] })) }, 300, 600);

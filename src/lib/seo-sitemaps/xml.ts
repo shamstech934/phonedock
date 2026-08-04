@@ -13,7 +13,6 @@ export function xmlResponse(body: string): Response {
     headers: {
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
-      'X-Robots-Tag': 'noindex',
     },
   });
 }

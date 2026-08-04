@@ -47,15 +47,6 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
 
-  // Canonical host redirect: keep one public URL for SEO, cookies, and sharing.
-  if (req.nextUrl.hostname.toLowerCase() === 'www.specsdekh.com') {
-    const canonicalUrl = req.nextUrl.clone();
-    canonicalUrl.hostname = 'specsdekh.com';
-    canonicalUrl.protocol = 'https:';
-    canonicalUrl.port = '';
-    return NextResponse.redirect(canonicalUrl, 308);
-  }
-
   // Recover malformed nested admin authentication URLs from stale bookmarks
   // or historical relative links, e.g. /compare/admin/login.
   const nestedAdminAuthRoutes = [
