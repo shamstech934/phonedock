@@ -5,6 +5,18 @@ import { escapeXml, xmlResponse } from '@/lib/seo-sitemaps/xml';
 
 export const dynamic = 'force-dynamic';
 
+function toAbsoluteImageUrl(value: unknown, base: string): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return null;
+  try {
+    const url = new URL(raw, `${base}/`);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   const base = getBaseUrl();
   const rows: string[] = [];
@@ -16,11 +28,15 @@ export async function GET() {
         Brand.find({ active: true, logo: { $nin: ['', null] } }).select('slug name logo').lean(),
       ]);
       for (const phone of phones) {
+        const imageUrl = toAbsoluteImageUrl(phone.thumbnail, base);
+        if (!imageUrl) continue;
         const brand = phone.brandId as unknown as { name?: string } | null;
-        rows.push(`  <url>\n    <loc>${escapeXml(`${base}/phones/${phone.slug}`)}</loc>\n    <image:image><image:loc>${escapeXml(phone.thumbnail)}</image:loc><image:title>${escapeXml(`${brand?.name || ''} ${phone.modelName}`.trim())}</image:title><image:caption>${escapeXml(`${phone.modelName} official phone image`)}</image:caption></image:image>\n  </url>`);
+        rows.push(`  <url>\n    <loc>${escapeXml(`${base}/phones/${phone.slug}`)}</loc>\n    <image:image><image:loc>${escapeXml(imageUrl)}</image:loc><image:title>${escapeXml(`${brand?.name || ''} ${phone.modelName}`.trim())}</image:title><image:caption>${escapeXml(`${phone.modelName} official phone image`)}</image:caption></image:image>\n  </url>`);
       }
       for (const brand of brands) {
-        rows.push(`  <url>\n    <loc>${escapeXml(`${base}/brands/${brand.slug}`)}</loc>\n    <image:image><image:loc>${escapeXml(brand.logo)}</image:loc><image:title>${escapeXml(`${brand.name} logo`)}</image:title></image:image>\n  </url>`);
+        const imageUrl = toAbsoluteImageUrl(brand.logo, base);
+        if (!imageUrl) continue;
+        rows.push(`  <url>\n    <loc>${escapeXml(`${base}/brands/${brand.slug}`)}</loc>\n    <image:image><image:loc>${escapeXml(imageUrl)}</image:loc><image:title>${escapeXml(`${brand.name} logo`)}</image:title></image:image>\n  </url>`);
       }
     }
   } catch (error) { console.error('image sitemap fallback:', error); }
