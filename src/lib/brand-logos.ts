@@ -16,3 +16,15 @@ export const OFFICIAL_LOGOS: Record<string, string> = {
   nothing: 'https://upload.wikimedia.org/wikipedia/commons/3/30/Nothing.svg',
   'google pixel': 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg',
 };
+
+function normalizeBrandKey(value?: string): string {
+  return String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+export function resolveBrandLogo(name: string, slug?: string, customLogo?: string): string {
+  const configured = String(customLogo || '').trim();
+  if (configured) return configured;
+  const slugKey = normalizeBrandKey(slug);
+  const nameKey = normalizeBrandKey(name);
+  return OFFICIAL_LOGOS[slugKey] || OFFICIAL_LOGOS[nameKey] || '';
+}

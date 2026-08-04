@@ -33,10 +33,12 @@ if (missingPackages.length > 0) {
 }
 
 const requiredTools = [
-  ['TypeScript', 'typescript/bin/tsc'],
-  ['ESLint', 'eslint/bin/eslint.js'],
-  ['TSX', 'tsx/dist/cli.mjs'],
-  ['Next.js', 'next/dist/bin/next'],
+  // Public package entry points work across Windows and Linux. ESLint 9 and
+  // TSX intentionally block their private CLI paths via package exports.
+  ['TypeScript', 'typescript'],
+  ['ESLint', 'eslint'],
+  ['TSX', 'tsx'],
+  ['Next.js', 'next'],
 ];
 const missingTools = requiredTools
   .filter(([, modulePath]) => {

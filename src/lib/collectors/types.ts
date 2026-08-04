@@ -149,6 +149,8 @@ export interface NormalizedPhone {
   // Media
   images?: string[];
   thumbnail?: string;
+  /** Original product page used for provenance and later verification. */
+  sourceUrl?: string;
 
   // Pakistan-specific (never auto-populated from global sources)
   pakistanPrice?: number;
