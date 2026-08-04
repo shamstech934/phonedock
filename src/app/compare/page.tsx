@@ -41,6 +41,8 @@ function CompareContent() {
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [copied, setCopied] = useState(false);
   const [activeSpecCategory, setActiveSpecCategory] = useState('All');
+  const [activeSlotIndex, setActiveSlotIndex] = useState<number | null>(null);
+  const slotSectionRef = useRef<HTMLDivElement | null>(null);
   const acAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -84,7 +86,7 @@ function CompareContent() {
       setCompared(phones.length >= 2);
       setLoading(false);
       setRefreshing(false);
-      if (phones.length === 1) setPickerOpen(true);
+      if (phones.length === 1) setActiveSlotIndex(1);
       return;
     }
     fetch(`/api/phones/lookup?slugs=${encodeURIComponent(lookupKey)}`)
@@ -103,7 +105,7 @@ function CompareContent() {
       if (phones.length >= 2) {
         setCompared(true);
       } else if (phones.length > 0) {
-        setPickerOpen(true);
+        setActiveSlotIndex(1);
       }
       setLoading(false);
       setRefreshing(false);
@@ -230,8 +232,26 @@ function CompareContent() {
   };
 
   const openPicker = () => {
+    const nextSlot = Math.min(selected.length, MAX_COMPARE_PHONES - 1);
+    setActiveSlotIndex(nextSlot);
     setSearch('');
-    setPickerOpen(true);
+    setPickerOpen(false);
+    window.setTimeout(() => slotSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
+
+  const selectPhoneForSlot = (phone: Phone, slotIndex: number) => {
+    if (selected.some((item, index) => item.id === phone.id && index !== slotIndex)) return;
+    const next = [...selected];
+    if (slotIndex < next.length) next[slotIndex] = phone;
+    else if (canAddComparePhone(next.length)) next.push(phone);
+    else return;
+    selectedRef.current = next;
+    setSelected(next);
+    setCompared(next.length >= MIN_COMPARE_PHONES);
+    setActiveSlotIndex(null);
+    setSearch('');
+    setAutocompleteResults([]);
+    updateURL(next);
   };
 
   const closePicker = () => {
@@ -365,11 +385,11 @@ function CompareContent() {
 
   return (
     <div className="site-shell py-4 sm:py-6 animate-fade-in space-y-6">
-      <div className="rounded-3xl border border-blue-100 bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 px-5 py-6 text-white shadow-xl sm:px-7 sm:py-8">
+      <div className="rounded-3xl border border-blue-100 bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 px-5 py-4 text-white shadow-xl sm:px-6 sm:py-5">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-cyan-100"><GitCompare className="h-3.5 w-3.5" /> Modern side-by-side comparison</div>
-            <h1 className="font-display text-2xl sm:text-4xl font-extrabold">Compare Phones</h1>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold">Compare Phones</h1>
             <p className="mt-2 max-w-2xl text-sm text-blue-100/80">Compare prices, verified specifications and category winners without waiting for repeated page loads.</p>
           </div>
         <div className="flex items-center gap-3">
@@ -399,8 +419,69 @@ function CompareContent() {
         </div>
       </div>
 
-      {/* Prominent Phone Management Bar (always visible when phones selected) */}
-      {selected.length > 0 && (
+      {/* Inline phone search slots: visible immediately for first-time visitors */}
+      <section ref={slotSectionRef} className="rounded-3xl border border-slate-200/80 bg-white/95 p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">Choose phones side by side</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Start with two phones. A new search box appears automatically whenever you add another phone.</p>
+          </div>
+          {selected.length > 0 && <button onClick={clearAll} className="text-xs font-semibold text-red-500 hover:text-red-600">Clear all</button>}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: Math.min(MAX_COMPARE_PHONES, Math.max(MIN_COMPARE_PHONES, selected.length + (canAddComparePhone(selected.length) ? 1 : 0))) }).map((_, slotIndex) => {
+            const phone = selected[slotIndex];
+            const isActive = activeSlotIndex === slotIndex;
+            return (
+              <div key={slotIndex} className="relative min-w-0">
+                {phone ? (
+                  <div className="flex min-h-[88px] items-center gap-3 rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50/60 p-3">
+                    <SafePhoneImage src={phone.thumbnail} alt={phone.modelName} width={58} height={58} className="h-14 w-14 shrink-0 rounded-xl bg-white object-contain p-1 shadow-sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Phone {slotIndex + 1}</p>
+                      <Link href={`/phones/${phone.slug}`} className="block truncate text-sm font-bold text-slate-900 hover:text-blue-600">{phone.modelName}</Link>
+                      <p className="mt-1 text-xs font-semibold text-blue-600">{formatPrice(phone.pricePKR)}</p>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => { setActiveSlotIndex(slotIndex); setSearch(''); }} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-100">Change</button>
+                      <button onClick={() => removePhone(phone.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label={`Remove ${phone.modelName}`}><X className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`rounded-2xl border bg-slate-50/80 p-3 transition ${isActive ? 'border-blue-400 ring-2 ring-blue-100' : 'border-dashed border-slate-300 hover:border-blue-300'}`}>
+                    <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Search phone {slotIndex + 1}</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={isActive ? search : ''}
+                        onFocus={() => { setActiveSlotIndex(slotIndex); setSearch(''); }}
+                        onChange={event => { setActiveSlotIndex(slotIndex); setSearch(event.target.value); }}
+                        placeholder="Type brand or model..."
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  </div>
+                )}
+                {isActive && search.trim().length >= 2 && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-2xl">
+                    {acLoading && autocompleteResults.length === 0 ? (
+                      <div className="flex items-center justify-center gap-2 py-5 text-xs text-slate-500"><span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" /> Finding phones…</div>
+                    ) : autocompleteResults.length ? autocompleteResults.slice(0, 10).map(result => (
+                      <button key={result.id} onClick={() => selectPhoneForSlot(result, slotIndex)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-blue-50">
+                        <SafePhoneImage src={result.thumbnail} alt={result.modelName} width={38} height={38} className="h-10 w-10 rounded-lg bg-slate-50 object-contain p-1" />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{result.modelName}</span><span className="block text-xs text-slate-500">{result.brand?.name} · {formatPrice(result.pricePKR)}</span></span>
+                      </button>
+                    )) : !acLoading ? <p className="py-5 text-center text-xs text-slate-500">No matching phones found</p> : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Compact management bar for selected phones */}
+      {false && selected.length > 0 && (
         <div className="card-premium p-3 sm:p-4 sticky top-16 z-30 supports-[backdrop-filter]:bg-white/90 backdrop-blur-xl shadow-sm">
           <div className="flex items-center gap-2 flex-wrap">
             {selected.map(p => (
@@ -557,7 +638,7 @@ function CompareContent() {
       </Dialog>
 
       {/* Empty state — show inline picker when no phones and no dialog */}
-      {selected.length === 0 && !loading && (
+      {false && selected.length === 0 && !loading && (
         <div className="text-center py-16">
           <GitCompare className="w-14 h-14 mx-auto mb-4 text-gray-300" />
           <h2 className="text-lg font-bold text-gray-900 mb-2">Select phones to compare</h2>
@@ -572,7 +653,7 @@ function CompareContent() {
       )}
 
       {/* Instruction for 1 phone */}
-      {selected.length === MIN_COMPARE_PHONES - 1 && !compared && (
+      {false && selected.length === MIN_COMPARE_PHONES - 1 && !compared && (
         <div className="text-center py-10 card-premium p-6">
           <p className="text-sm text-muted-foreground">Add at least one more phone to compare.</p>
           <Button className="rounded-xl mt-3" onClick={openPicker}>
@@ -600,81 +681,6 @@ function CompareContent() {
                   </Link>
                 ))}
               </div>
-            </section>
-
-            {/* Category Winners */}
-            <section className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-blue-500" /> Category Winners</h2>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {catData.map(cat => {
-                  const winner = getWinner(cat.key);
-                  return (
-                    <div key={cat.label} className={`bg-gradient-to-br ${cat.gradient} rounded-2xl p-4 text-white relative overflow-hidden shadow-sm ring-1 ring-white/20 transition-transform duration-200 hover:-translate-y-0.5`}>
-                      <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-xl" />
-                      <div className="relative z-10">
-                        <div className="flex items-center gap-2 mb-3"><cat.icon className="w-5 h-5" /><span className="text-sm font-semibold">{cat.label}</span></div>
-                        {winner ? (
-                          <>
-                            <Link href={`/phones/${winner.slug}`} className="font-bold text-sm leading-snug hover:underline">{winner.modelName}</Link>
-                            <p className="text-xs text-white/70 mt-1">{winner.brand?.name}</p>
-                            <p className="text-2xl font-extrabold mt-2">{winner[cat.key] || 0}<span className="text-sm font-medium text-white/70">/100</span></p>
-                            {winner.compareScoresEstimated && <p className="mt-1 text-[10px] font-medium text-white/70">Estimated from available specs</p>}
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-sm text-white/80">No data</p>
-                            <p className="text-xs text-white/50 mt-1">Scores not available</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <SmartComparisonSummary phones={comparePhones} />
-
-            {/* Score Comparison */}
-            <section className="card-premium p-4 sm:p-6 space-y-5">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <h2 className="font-bold text-gray-900">Score Comparison</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">Higher score is better. Winners are marked automatically.</p>
-                </div>
-                <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground cursor-pointer rounded-xl border border-gray-200 px-3 hover:bg-gray-50">
-                  <input type="checkbox" checked={onlyDifferences} onChange={e => setOnlyDifferences(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-500" />
-                  Only show differences
-                </label>
-              </div>
-              {filteredMetrics.map(metric => {
-                const scores = comparePhones.map(p => ({ phone: p, score: metric.get(p) }));
-                const maxScore = Math.max(...scores.map(s => s.score));
-                const hasNonZero = scores.some(s => s.score > 0);
-                const winnerIds = hasNonZero
-                  ? scores.filter(s => s.score === maxScore && maxScore > 0).map(s => s.phone.id)
-                  : [];
-                return (
-                  <div key={metric.label}>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{metric.label}</p>
-                    <div className="space-y-2">
-                      {scores.map(s => (
-                        <div key={s.phone.id} className="flex items-center gap-3">
-                          <span className="text-xs font-medium text-gray-600 w-28 sm:w-40 truncate shrink-0">{s.phone.modelName}</span>
-                          <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all duration-700 ${winnerIds.includes(s.phone.id) ? 'bg-blue-500' : 'bg-gradient-to-r from-blue-400 to-cyan-400'}`} style={{ width: `${Math.max(hasNonZero ? s.score : 0, 2)}%` }} />
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0 w-16 justify-end">
-                            {winnerIds.includes(s.phone.id) && <Trophy className="w-3.5 h-3.5 text-blue-500" />}
-                            <span className={`text-xs font-bold ${winnerIds.includes(s.phone.id) ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score > 0 ? Math.round(s.score) : '—'}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredMetrics.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">All scores are identical</p>}
             </section>
 
             {/* Fast category navigation */}
@@ -763,6 +769,84 @@ function CompareContent() {
               </div>
               {filteredSpecRows.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">All specifications are identical</p>}
             </section>
+
+            {/* Compact scores and verdict come after specifications */}
+            {/* Category Winners */}
+            <section className="space-y-3">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Trophy className="w-5 h-5 text-blue-500" /> Category Winners</h2>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {catData.map(cat => {
+                  const winner = getWinner(cat.key);
+                  return (
+                    <div key={cat.label} className={`bg-gradient-to-br ${cat.gradient} rounded-xl p-3 text-white relative overflow-hidden shadow-sm ring-1 ring-white/20 transition-transform duration-200 hover:-translate-y-0.5`}>
+                      <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-xl" />
+                      <div className="relative z-10">
+                        <div className="flex items-center gap-2 mb-1.5"><cat.icon className="w-5 h-5" /><span className="text-sm font-semibold">{cat.label}</span></div>
+                        {winner ? (
+                          <>
+                            <Link href={`/phones/${winner.slug}`} className="font-bold text-sm leading-snug hover:underline">{winner.modelName}</Link>
+                            <p className="text-xs text-white/70 mt-1">{winner.brand?.name}</p>
+                            <p className="text-lg font-extrabold mt-1">{winner[cat.key] || 0}<span className="text-sm font-medium text-white/70">/100</span></p>
+                            {winner.compareScoresEstimated && <p className="mt-1 text-[10px] font-medium text-white/70">Estimated from available specs</p>}
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm text-white/80">No data</p>
+                            <p className="text-xs text-white/50 mt-1">Scores not available</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <SmartComparisonSummary phones={comparePhones} />
+
+            {/* Score Comparison */}
+            <section className="card-premium p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h2 className="font-bold text-gray-900">Score Comparison</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Higher score is better. Winners are marked automatically.</p>
+                </div>
+                <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground cursor-pointer rounded-xl border border-gray-200 px-3 hover:bg-gray-50">
+                  <input type="checkbox" checked={onlyDifferences} onChange={e => setOnlyDifferences(e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-blue-500" />
+                  Only show differences
+                </label>
+              </div>
+              {filteredMetrics.map(metric => {
+                const scores = comparePhones.map(p => ({ phone: p, score: metric.get(p) }));
+                const maxScore = Math.max(...scores.map(s => s.score));
+                const hasNonZero = scores.some(s => s.score > 0);
+                const winnerIds = hasNonZero
+                  ? scores.filter(s => s.score === maxScore && maxScore > 0).map(s => s.phone.id)
+                  : [];
+                return (
+                  <div key={metric.label}>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{metric.label}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {scores.map(s => (
+                        <div key={s.phone.id} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+                          <span className="text-xs font-medium text-gray-600 w-24 truncate shrink-0">{s.phone.modelName}</span>
+                          <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-700 ${winnerIds.includes(s.phone.id) ? 'bg-blue-500' : 'bg-gradient-to-r from-blue-400 to-cyan-400'}`} style={{ width: `${Math.max(hasNonZero ? s.score : 0, 2)}%` }} />
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 w-16 justify-end">
+                            {winnerIds.includes(s.phone.id) && <Trophy className="w-3.5 h-3.5 text-blue-500" />}
+                            <span className={`text-xs font-bold ${winnerIds.includes(s.phone.id) ? 'text-blue-600' : 'text-muted-foreground'}`}>{s.score > 0 ? Math.round(s.score) : '—'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {filteredMetrics.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">All scores are identical</p>}
+            </section>
+
+
           </>
         )
       )}

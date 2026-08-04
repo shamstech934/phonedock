@@ -79,7 +79,7 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
       } finally {
         if (requestId === requestIdRef.current) setLoading(false);
       }
-    }, 320);
+    }, 160);
   }, []);
 
   const submit = (event?: React.FormEvent<HTMLFormElement>) => {
@@ -120,9 +120,13 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
 
         {showDropdown && (
           <div className="absolute left-0 right-0 sm:right-auto sm:w-[26rem] top-full mt-2 rounded-xl bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 shadow-2xl overflow-hidden z-50">
-            {loading ? (
-              <div className="flex items-center justify-center py-6 text-gray-400"><Loader2 className="w-4 h-4 animate-spin mr-2" /> Searching...</div>
+            {loading && results.length === 0 ? (
+              <div className="space-y-2 p-3" aria-label="Searching phones">
+                {[0, 1, 2].map(item => <div key={item} className="h-12 animate-pulse rounded-lg bg-gray-100 dark:bg-slate-800" />)}
+              </div>
             ) : results.length > 0 ? (
+              <>
+              {loading && <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 text-[11px] text-gray-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating results…</div>}
               <ul className="max-h-80 overflow-y-auto py-1">
                 {results.map(r => (
                   <li key={r.id}>
@@ -142,6 +146,7 @@ export function HomeHeroSearch({ placeholder = 'Phone name, brand...', cta1Text 
                   </li>
                 ))}
               </ul>
+              </>
             ) : (
               <p className="text-sm text-gray-500 text-center py-6">No phones found</p>
             )}
