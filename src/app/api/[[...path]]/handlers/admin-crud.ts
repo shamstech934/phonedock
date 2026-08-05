@@ -2489,6 +2489,8 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       };
     }
     const settings = await Settings.findOneAndUpdate({}, { $set: update }, { new: true, upsert: true, runValidators: true }).lean();
+    const { invalidateSettingsCache } = await import('@/lib/models/Settings');
+    invalidateSettingsCache();
     // Make CMS changes visible immediately instead of waiting for the homepage cache window.
     const { revalidatePath } = await import('next/cache');
     revalidatePath('/');

@@ -8,6 +8,7 @@ import { Search, Smartphone, Shield, Sun, Moon, Menu, X, Home, Layers, GitCompar
 import { useTheme } from 'next-themes';
 import { useUser } from '@/lib/useUser';
 import { parseSmartSearch, smartSearchToPhonesUrl } from '@/lib/search/parse-smart-search';
+import { getPublicSettings } from '@/lib/public-settings-client';
 
 interface AutocompleteResult {
   id: string;
@@ -57,9 +58,20 @@ export function Header() {
 
   // Load site branding (logo/name) from CMS settings — cached for 5 min server-side.
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.settings) setSiteSettings({ siteName: d.settings.siteName, logo: d.settings.logo, navigation: d.settings.homepage?.navigation }); })
+    getPublicSettings()
+      .then(settings => {
+        if (!settings) return;
+        const homepage = settings.homepage && typeof settings.homepage === 'object'
+          ? settings.homepage as Record<string, unknown>
+          : {};
+        setSiteSettings({
+          siteName: typeof settings.siteName === 'string' ? settings.siteName : undefined,
+          logo: typeof settings.logo === 'string' ? settings.logo : undefined,
+          navigation: Array.isArray(homepage.navigation)
+            ? homepage.navigation as HeaderSiteSettings['navigation']
+            : undefined,
+        });
+      })
       .catch(() => { /* keep defaults on failure */ });
   }, []);
 

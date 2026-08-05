@@ -3,6 +3,7 @@
 import Script from 'next/script';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { getPublicSettings } from '@/lib/public-settings-client';
 
 const CONSENT_KEY = 'phonedock_cookie_consent_v1';
 const GA_ID_PATTERN = /^G-[A-Z0-9]+$/i;
@@ -35,9 +36,8 @@ export function GrowthScripts() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/settings', { cache: 'no-store' })
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => setCmsGaId(normaliseGaId(data?.settings?.googleAnalyticsId)))
+    getPublicSettings()
+      .then(settings => setCmsGaId(normaliseGaId(settings?.googleAnalyticsId)))
       .catch(() => {
         // The public environment variable remains a safe fallback.
       });

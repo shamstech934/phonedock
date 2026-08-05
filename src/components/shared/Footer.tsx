@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Star, Play, Shield, BarChart3, Facebook, Twitter, Instagram, Youtube, Mail } from 'lucide-react';
+import { getPublicSettings } from '@/lib/public-settings-client';
 
 const FOOTER_BRANDS = ['Samsung', 'Apple', 'Xiaomi', 'OnePlus', 'Vivo', 'Oppo'];
 
@@ -16,9 +17,8 @@ export function Footer() {
   const [settings, setSettings] = useState<FooterSiteSettings>({});
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.settings) setSettings(d.settings); })
+    getPublicSettings()
+      .then(data => { if (data) setSettings(data as FooterSiteSettings); })
       .catch(() => { /* keep defaults on failure */ });
   }, []);
 

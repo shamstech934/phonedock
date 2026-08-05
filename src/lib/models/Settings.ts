@@ -110,8 +110,19 @@ const SettingsSchema = new Schema<ISettings>({
 // Singleton: only one document
 export const Settings = (mongoose.models.Settings as mongoose.Model<ISettings>) || mongoose.model<ISettings>('Settings', SettingsSchema);
 
-// Helper: get settings, create defaults if not exist
-export async function getSettings(): Promise<ISettings> {
+type SettingsCache = {
+  value?: ISettings;
+  expiresAt: number;
+  inFlight?: Promise<ISettings>;
+};
+
+const SETTINGS_CACHE_TTL_MS = 60_000;
+const globalSettingsCache = globalThis as typeof globalThis & {
+  __specsDekhSettingsCache?: SettingsCache;
+};
+
+// Helper: load settings, create defaults if not present.
+async function loadSettings(): Promise<ISettings> {
   await connectDB();
   let settings: ISettings | null = await Settings.findOne().lean() as ISettings | null;
   if (!settings) {
@@ -159,4 +170,35 @@ export async function getSettings(): Promise<ISettings> {
   }
 
   return settings as ISettings;
+}
+
+/**
+ * Metadata, layout and page data can request the same singleton during one
+ * render. A short process cache removes duplicate MongoDB work and shares an
+ * in-flight cold read, while keeping CMS/maintenance changes responsive.
+ */
+export async function getSettings(): Promise<ISettings> {
+  const now = Date.now();
+  const cache = globalSettingsCache.__specsDekhSettingsCache;
+  if (cache?.value && cache.expiresAt > now) return cache.value;
+  if (cache?.inFlight) return cache.inFlight;
+
+  const nextCache: SettingsCache = cache || { expiresAt: 0 };
+  const request = loadSettings()
+    .then(settings => {
+      nextCache.value = settings;
+      nextCache.expiresAt = Date.now() + SETTINGS_CACHE_TTL_MS;
+      return settings;
+    })
+    .finally(() => {
+      nextCache.inFlight = undefined;
+    });
+
+  nextCache.inFlight = request;
+  globalSettingsCache.__specsDekhSettingsCache = nextCache;
+  return request;
+}
+
+export function invalidateSettingsCache(): void {
+  globalSettingsCache.__specsDekhSettingsCache = undefined;
 }

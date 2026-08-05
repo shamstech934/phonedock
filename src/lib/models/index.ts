@@ -13,7 +13,7 @@ export { CollectedPhone } from './CollectedPhone';
 export { CollectorJob } from './CollectorJob';
 export { SyncJob } from './SyncJob';
 export { Video } from './Video';
-export { Settings, getSettings } from './Settings';
+export { Settings, getSettings, invalidateSettingsCache } from './Settings';
 export { SystemState } from './SystemState';
 export { PriceSource, PhoneRetailListing, PriceTrackerHistory, PriceMatchCandidate } from './PriceTracker';
 export { DataQualityIssue, ScanJob } from './DataQuality';export { User } from './User';

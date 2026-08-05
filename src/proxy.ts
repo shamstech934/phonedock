@@ -142,8 +142,10 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Apply request IDs and security routing consistently to all application
-    // requests while excluding immutable Next.js assets.
-    '/((?!_next/static|_next/image|favicon.ico|robots\.txt|sitemap\.xml|.*-sitemap\.xml).*)',
+    // Public document requests still pass through maintenance mode, but APIs
+    // and files served from /public must not pay for an extra Proxy invocation.
+    // Admin API protection is included explicitly below.
+    '/((?!api(?:/|$)|_next(?:/|$)|favicon\.ico$|robots\.txt$|sitemap\.xml$|.*-sitemap\.xml$|.*\.[^/]+$).*)',
+    '/api/admin/:path*',
   ],
 };
