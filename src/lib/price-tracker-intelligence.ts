@@ -17,6 +17,30 @@ export interface PriceState {
   qualifiesForPriceDropTrend: boolean;
 }
 
+export interface VerifiedOfferCandidate {
+  listingId: string;
+  sourceId: string;
+  sourceName?: string;
+  sourceType?: string;
+  sourcePriority?: number;
+  price: number;
+  ptaStatus?: string;
+  availability?: string;
+  enabled?: boolean;
+  trusted?: boolean;
+  sourceEnabled?: boolean;
+  sourceStatus?: string;
+  verificationStatus?: string;
+}
+
+export interface BestOfferSelection {
+  best: VerifiedOfferCandidate | null;
+  bestPta: VerifiedOfferCandidate | null;
+  bestNonPta: VerifiedOfferCandidate | null;
+  eligibleCount: number;
+  rejectedCount: number;
+}
+
 function positiveNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -88,3 +112,68 @@ export function buildVerifiedPriceState(input: PriceStateInput): PriceState {
   };
 }
 
+const SOURCE_TYPE_RANK: Record<string, number> = {
+  official: 8,
+  official_brand: 7,
+  api: 6,
+  distributor: 5,
+  retailer: 4,
+  marketplace: 3,
+  reference_site: 2,
+  manual: 1,
+};
+
+function sortOffers(a: VerifiedOfferCandidate, b: VerifiedOfferCandidate): number {
+  if (a.price !== b.price) return a.price - b.price;
+  const priorityDifference = Number(b.sourcePriority || 0) - Number(a.sourcePriority || 0);
+  if (priorityDifference !== 0) return priorityDifference;
+  return (SOURCE_TYPE_RANK[b.sourceType || ''] || 0) - (SOURCE_TYPE_RANK[a.sourceType || ''] || 0);
+}
+
+function pickLowest(offers: VerifiedOfferCandidate[]): VerifiedOfferCandidate | null {
+  return offers.length > 0 ? [...offers].sort(sortOffers)[0] : null;
+}
+
+/**
+ * Selects a deterministic public offer from trusted, verified listing data.
+ * Explicit PTA and Non-PTA offers are kept in separate buckets. A configured
+ * preferred source wins within the compatible set; otherwise the lowest safe
+ * verified price wins with source priority used as a deterministic tie-break.
+ */
+export function selectBestVerifiedOffer(input: {
+  offers: VerifiedOfferCandidate[];
+  phoneStatus?: unknown;
+  phoneApproved?: boolean;
+  preferredSourceId?: string;
+}): BestOfferSelection {
+  const eligible = input.offers.filter((offer) => (
+    offer.enabled !== false
+    && offer.trusted === true
+    && offer.sourceEnabled !== false
+    && (offer.sourceStatus || 'active') === 'active'
+    && (offer.verificationStatus || 'pending') === 'verified'
+    && (offer.availability || 'unknown') !== 'unavailable'
+    && positiveNumber(offer.price) > 0
+  ));
+
+  const bestPta = pickLowest(eligible.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'pta-approved'));
+  const bestNonPta = pickLowest(eligible.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'non-pta'));
+  const compatible = eligible.filter((offer) => isPtaPriceCompatible({
+    phoneStatus: input.phoneStatus,
+    phoneApproved: input.phoneApproved,
+    listingStatus: offer.ptaStatus,
+  }));
+  const preferred = String(input.preferredSourceId || '');
+  const preferredOffers = preferred
+    ? compatible.filter((offer) => offer.sourceId === preferred)
+    : [];
+  const pool = preferredOffers.length > 0 ? preferredOffers : compatible;
+
+  return {
+    best: pickLowest(pool),
+    bestPta,
+    bestNonPta,
+    eligibleCount: eligible.length,
+    rejectedCount: Math.max(0, input.offers.length - eligible.length),
+  };
+}

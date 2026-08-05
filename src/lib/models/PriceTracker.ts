@@ -54,6 +54,8 @@ const PhoneRetailListingSchema = new Schema({
   warrantyType: { type: String, default: '' },
   currentSourcePrice: { type: Number, default: 0 },
   previousSourcePrice: { type: Number, default: 0 },
+  pendingSourcePrice: { type: Number, default: 0 },
+  pendingDetectedAt: { type: Date, default: null },
   availability: { type: String, enum: ['available', 'unavailable', 'unknown'], default: 'unknown' },
   lastCheckedAt: { type: Date, default: null },
   lastChangedAt: { type: Date, default: null },
@@ -69,6 +71,7 @@ const PhoneRetailListingSchema = new Schema({
 
 PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
+PhoneRetailListingSchema.index({ phoneId: 1, verificationStatus: 1, availability: 1, currentSourcePrice: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ verificationStatus: 1 });
 PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, lastCheckedAt: 1 });

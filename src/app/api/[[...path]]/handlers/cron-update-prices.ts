@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
-import { Phone, PriceHistory } from '@/lib/models';
+import { Phone } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { SystemState } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
@@ -9,7 +9,8 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
-import { buildVerifiedPriceState, isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
+import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
+import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -283,10 +284,20 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         // ── Handle unavailable ──
         if (availability === 'unavailable') {
-          // Keep old price, just update listing availability
+          // Keep this source's last observed price for audit, but remove the
+          // unavailable offer from canonical best-price selection immediately.
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: { availability: 'unavailable', lastError: '', lastSuccessAt: new Date(), failureCount: 0 },
+            $set: {
+              availability: 'unavailable',
+              pendingSourcePrice: 0,
+              pendingDetectedAt: null,
+              lastError: '',
+              lastSuccessAt: new Date(),
+              failureCount: 0,
+            },
           });
+          const bestOffer = await recomputeBestPriceForPhone(phone._id.toString());
+          if (bestOffer.slug) updatedSlugs.push(bestOffer.slug);
           summary.unavailable++;
           continue;
         }
@@ -304,6 +315,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               $set: {
                 currentSourcePrice: detectedPrice,
                 previousSourcePrice: 0,
+                pendingSourcePrice: 0,
+                pendingDetectedAt: null,
                 availability: availability === 'unknown' ? 'available' : availability,
                 lastChangedAt: new Date(),
                 lastSuccessAt: new Date(),
@@ -312,10 +325,8 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
                 lastError: '',
               },
             });
-            if (phone.manualLock !== true) {
-              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, 0, source, 'correction');
-              if (slug) updatedSlugs.push(slug);
-            }
+            const bestOffer = await recomputeBestPriceForPhone(phone._id.toString());
+            if (bestOffer.slug) updatedSlugs.push(bestOffer.slug);
             await PriceTrackerHistory.create({
               phoneId: phone._id,
               oldPrice: 0,
@@ -340,22 +351,20 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           const pctChange = Math.abs(Math.round((difference / previousSourcePrice) * 10000) / 100);
           const changeType = difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'unchanged';
 
-          // Update the listing
-          await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: {
-              previousSourcePrice: previousSourcePrice,
-              currentSourcePrice: detectedPrice,
-              availability: availability === 'unknown' ? 'available' : availability,
-              lastChangedAt: difference !== 0 ? new Date() : (listing as unknown as { lastChangedAt?: Date | null }).lastChangedAt,
-              lastSuccessAt: new Date(),
-              failureCount: 0,
-              nextRetryAt: null,
-              lastError: '',
-            },
-          });
-
           // Only process actual changes
           if (difference === 0) {
+            await PhoneRetailListing.findByIdAndUpdate(listingId, {
+              $set: {
+                currentSourcePrice: detectedPrice,
+                pendingSourcePrice: 0,
+                pendingDetectedAt: null,
+                availability: availability === 'unknown' ? 'available' : availability,
+                lastSuccessAt: new Date(),
+                failureCount: 0,
+                nextRetryAt: null,
+                lastError: '',
+              },
+            });
             // Update source health
             await PriceSource.findByIdAndUpdate(source._id, {
               $set: { lastCheckedAt: new Date(), lastSuccessAt: new Date(), status: 'active', failureCount: 0, nextRetryAt: null, lastError: '' },
@@ -365,14 +374,40 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           }
 
           // Determine action based on change percentage
-          const isManualLock = phone?.manualLock === true;
+          const autoApproved = pctChange <= REVIEW_THRESHOLD;
+          if (autoApproved) {
+            await PhoneRetailListing.findByIdAndUpdate(listingId, {
+              $set: {
+                previousSourcePrice,
+                currentSourcePrice: detectedPrice,
+                pendingSourcePrice: 0,
+                pendingDetectedAt: null,
+                availability: availability === 'unknown' ? 'available' : availability,
+                lastChangedAt: new Date(),
+                lastSuccessAt: new Date(),
+                failureCount: 0,
+                nextRetryAt: null,
+                lastError: '',
+              },
+            });
+            const bestOffer = await recomputeBestPriceForPhone(phone._id.toString());
+            if (bestOffer.slug) updatedSlugs.push(bestOffer.slug);
+          } else {
+            await PhoneRetailListing.findByIdAndUpdate(listingId, {
+              $set: {
+                pendingSourcePrice: detectedPrice,
+                pendingDetectedAt: new Date(),
+                availability: availability === 'unknown' ? 'available' : availability,
+                lastSuccessAt: new Date(),
+                failureCount: 0,
+                nextRetryAt: null,
+                lastError: 'Price change is waiting for administrator review.',
+              },
+            });
+          }
 
           if (pctChange < AUTO_APPROVE_THRESHOLD) {
             // Auto-approve: change < 2%
-            if (!isManualLock) {
-              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, previousSourcePrice, source, changeType);
-              if (slug) updatedSlugs.push(slug);
-            }
             // Always record history
             await PriceTrackerHistory.create({
               phoneId: phone._id,
@@ -390,10 +425,6 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             summary.updated++;
           } else if (pctChange <= REVIEW_THRESHOLD) {
             // Auto-approve but log: change 2-15%
-            if (!isManualLock) {
-              const slug = await applyPriceToPhone(phone._id.toString(), detectedPrice, previousSourcePrice, source, changeType);
-              if (slug) updatedSlugs.push(slug);
-            }
             await PriceTrackerHistory.create({
               phoneId: phone._id,
               oldPrice: previousSourcePrice,
@@ -532,62 +563,3 @@ export async function handleAdminRunPriceSync(req: NextRequest): Promise<NextRes
 }
 
 // ── Helper: apply detected price to Phone document ──
-async function applyPriceToPhone(
-  phoneId: string,
-  newPrice: number,
-  _oldPrice: number,
-  source: { _id: { toString(): string }; name?: string },
-  _changeType: string,
-): Promise<string | null> {
-  const phone = await Phone.findById(phoneId);
-  if (!phone) return null;
-
-  const currentPhonePrice = (phone as unknown as { currentPrice?: number; pricePKR?: number }).currentPrice
-    || (phone as unknown as { pricePKR?: number }).pricePKR
-    || 0;
-  const state = buildVerifiedPriceState({
-    currentPrice: currentPhonePrice,
-    nextPrice: newPrice,
-    originalPrice: (phone as unknown as { originalPricePKR?: number }).originalPricePKR,
-  });
-
-  const updates: Record<string, unknown> = {
-    currentPrice: newPrice,
-    previousPrice: state.previousPrice,
-    originalPricePKR: state.originalPrice,
-    priceChange: state.difference,
-    percentageChange: state.percentageChange,
-    lastPriceChangedAt: new Date(),
-    lastPriceCheckedAt: new Date(),
-    priceMode: 'automatic',
-    pricePKR: newPrice,
-  };
-
-  if (state.qualifiesForPriceDropTrend) {
-    updates.trending = true;
-    updates.trendingReason = 'price_drop';
-    updates.trendingUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  } else if (
-    state.direction === 'increase'
-    && (phone as unknown as { trendingReason?: string }).trendingReason === 'price_drop'
-  ) {
-    updates.trending = false;
-    updates.trendingReason = '';
-    updates.trendingUntil = null;
-  }
-
-  const lowest = (phone as unknown as { lowestPrice?: number }).lowestPrice || 0;
-  const highest = (phone as unknown as { highestPrice?: number }).highestPrice || 0;
-  if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
-  if (newPrice > highest) updates.highestPrice = newPrice;
-
-  await Phone.findByIdAndUpdate(phoneId, { $set: updates });
-
-  // Legacy PriceHistory
-  try {
-    await PriceHistory.create({ phoneId, storeName: source.name || null, price: newPrice });
-  } catch (e) { console.error('[PriceHistory]', e); }
-
-  // Return slug for cache revalidation
-  return (phone as unknown as { slug?: string }).slug || null;
-}

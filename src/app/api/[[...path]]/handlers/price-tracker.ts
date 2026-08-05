@@ -11,6 +11,7 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
+import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -55,7 +56,7 @@ interface LeanListingDoc {
   _id: Types.ObjectId;
   sourceId?: { _id: Types.ObjectId; name: string; sourceType: string; baseUrl: string; allowedDomains: string[] } | null;
   productUrl: string; ram: string; storage: string; ptaStatus: string; warrantyType: string;
-  currentSourcePrice: number; previousSourcePrice: number; availability: string;
+  currentSourcePrice: number; previousSourcePrice: number; pendingSourcePrice: number; pendingDetectedAt: Date | null; availability: string;
   lastCheckedAt: Date | null; lastChangedAt: Date | null; enabled: boolean; verificationStatus: string;
 }
 
@@ -519,6 +520,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         warrantyType: l.warrantyType || '',
         currentSourcePrice: l.currentSourcePrice || 0,
         previousSourcePrice: l.previousSourcePrice || 0,
+        pendingSourcePrice: l.pendingSourcePrice || 0,
+        pendingDetectedAt: l.pendingDetectedAt || null,
         availability: l.availability || 'unknown',
         lastCheckedAt: l.lastCheckedAt || null,
         lastChangedAt: l.lastChangedAt || null,
@@ -1232,7 +1235,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
       const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60_000);
       const failureReason = validationError;
-      const healthUpdate = safeToEnable
+      const healthUpdate: {
+        $set: Record<string, unknown>;
+        $inc?: Record<string, number>;
+      } = safeToEnable
         ? {
             $set: {
               lastCheckedAt: new Date(),
@@ -1253,9 +1259,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
             $inc: { failureCount: 1 },
           };
       if (safeToEnable) {
-        (healthUpdate as any).$set.verificationUrl = url;
-        (healthUpdate as any).$set.trusted = true;
-        (healthUpdate as any).$set.enabled = true;
+        healthUpdate.$set.verificationUrl = url;
+        healthUpdate.$set.trusted = true;
+        healthUpdate.$set.enabled = true;
       }
       await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
         console.error('[price-tracker:test-source:health]', error);
@@ -1297,26 +1303,21 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await history.save();
 
     if (action === 'approve') {
-      const phone = await Phone.findById(history.phoneId);
-      if (phone && history.newPrice > 0) {
-        const oldPrice = phone.currentPrice || 0;
-        if (oldPrice !== history.newPrice) {
-          const difference = history.newPrice - oldPrice;
-          const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
-          const updates: Record<string, unknown> = {
-            currentPrice: history.newPrice, previousPrice: oldPrice,
-            priceChange: difference, percentageChange,
-            lastPriceChangedAt: new Date(), lastPriceCheckedAt: new Date(),
-            pricePKR: history.newPrice,
-          };
-          const lowest = phone.lowestPrice || 0;
-          const highest = phone.highestPrice || 0;
-          if (history.newPrice < lowest || lowest === 0) updates.lowestPrice = history.newPrice;
-          if (history.newPrice > highest) updates.highestPrice = history.newPrice;
-          await Phone.findByIdAndUpdate(history.phoneId, { $set: updates });
-          try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: history.newPrice }); } catch (e) { console.error('[PriceHistory]', e); }
-        }
-      }
+      await resolvePendingRetailOffer({
+        phoneId: history.phoneId.toString(),
+        sourceId: history.sourceId?.toString(),
+        sourceUrl: history.sourceUrl,
+        newPrice: history.newPrice,
+        approved: true,
+      });
+    } else {
+      await resolvePendingRetailOffer({
+        phoneId: history.phoneId.toString(),
+        sourceId: history.sourceId?.toString(),
+        sourceUrl: history.sourceUrl,
+        newPrice: history.newPrice,
+        approved: false,
+      });
     }
 
     try {
@@ -1357,38 +1358,14 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     history.approvedByAdminId = admin._id;
     await history.save();
 
-    // Apply the price change to the Phone if not already applied
+    await resolvePendingRetailOffer({
+      phoneId: history.phoneId.toString(),
+      sourceId: history.sourceId?.toString(),
+      sourceUrl: history.sourceUrl,
+      newPrice: history.newPrice,
+      approved: true,
+    });
     const phone = await Phone.findById(history.phoneId);
-    if (phone && history.newPrice > 0) {
-      const oldPrice = phone.currentPrice || 0;
-      // Only apply if the price hasn't already been updated to this value
-      if (oldPrice !== history.newPrice) {
-        const difference = history.newPrice - oldPrice;
-        const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
-
-        const updates: Record<string, unknown> = {
-          currentPrice: history.newPrice,
-          previousPrice: oldPrice,
-          priceChange: difference,
-          percentageChange: percentageChange,
-          lastPriceChangedAt: new Date(),
-          lastPriceCheckedAt: new Date(),
-          pricePKR: history.newPrice,
-        };
-
-        const lowest = phone.lowestPrice || 0;
-        const highest = phone.highestPrice || 0;
-        if (history.newPrice < lowest || lowest === 0) updates.lowestPrice = history.newPrice;
-        if (history.newPrice > highest) updates.highestPrice = history.newPrice;
-
-        await Phone.findByIdAndUpdate(history.phoneId, { $set: updates });
-
-        // Legacy PriceHistory
-        try {
-          await PriceHistory.create({ phoneId: phone._id, storeName: null, price: history.newPrice });
-        } catch (e) { console.error('[PriceHistory]', e); }
-      }
-    }
 
     try {
       const phoneDoc = (phone || await Phone.findById(history.phoneId).select('modelName').lean()) as { modelName?: string } | null;
@@ -1425,6 +1402,13 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     history.verificationStatus = 'rejected';
     history.approvedByAdminId = admin._id;
     await history.save();
+    await resolvePendingRetailOffer({
+      phoneId: history.phoneId.toString(),
+      sourceId: history.sourceId?.toString(),
+      sourceUrl: history.sourceUrl,
+      newPrice: history.newPrice,
+      approved: false,
+    });
 
     try {
       const phoneDoc = await Phone.findById(history.phoneId).select('modelName').lean() as LeanPhoneMini | null;

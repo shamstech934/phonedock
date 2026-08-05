@@ -72,6 +72,12 @@ export interface IPhone extends Document {
   manualLock: boolean;
   manualLockReason: string;
   preferredPriceSourceId: Types.ObjectId | null;
+  bestPriceSourceId: Types.ObjectId | null;
+  bestPriceListingId: Types.ObjectId | null;
+  bestPriceSelectedAt: Date | null;
+  verifiedOfferCount: number;
+  bestPtaPricePKR: number;
+  bestNonPtaPricePKR: number;
 }
 
 export interface IPhoneModel extends Model<IPhone> {
@@ -138,6 +144,12 @@ const PhoneSchema = new Schema<IPhone>({
   manualLock: { type: Boolean, default: false },
   manualLockReason: { type: String, default: '' },
   preferredPriceSourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource' },
+  bestPriceSourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource', default: null },
+  bestPriceListingId: { type: Schema.Types.ObjectId, ref: 'PhoneRetailListing', default: null },
+  bestPriceSelectedAt: { type: Date, default: null },
+  verifiedOfferCount: { type: Number, default: 0 },
+  bestPtaPricePKR: { type: Number, default: 0 },
+  bestNonPtaPricePKR: { type: Number, default: 0 },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -175,6 +187,7 @@ PhoneSchema.index({ active: 1, status: 1, performanceScore: -1 });
 PhoneSchema.index({ active: 1, status: 1, batteryScore: -1 });
 PhoneSchema.index({ brandId: 1, status: 1 });
 PhoneSchema.index({ active: 1, status: 1, pricePKR: 1 });
+PhoneSchema.index({ bestPriceSourceId: 1, bestPriceSelectedAt: -1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
 PhoneSchema.index({ trending: 1, trendingReason: 1, trendingUntil: 1 });
