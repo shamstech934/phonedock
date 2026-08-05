@@ -27,6 +27,15 @@ const PRICE_AFFECTED_PATHS = [
  * the specific paths, not the full cache.
  */
 export function revalidatePricePages(phoneSlug?: string) {
+  revalidatePriceBatch(phoneSlug ? [phoneSlug] : []);
+}
+
+/**
+ * Revalidate a completed price batch without invalidating the same shared
+ * listing/ranking paths once per phone. Detail pages remain individually
+ * targeted, so public freshness is unchanged while ISR write fan-out drops.
+ */
+export function revalidatePriceBatch(phoneSlugs: string[] = []) {
   for (const path of PRICE_AFFECTED_PATHS) {
     try {
       revalidatePath(path);
@@ -36,8 +45,7 @@ export function revalidatePricePages(phoneSlug?: string) {
     }
   }
 
-  // If we have the phone slug, also revalidate its detail page
-  if (phoneSlug) {
+  for (const phoneSlug of new Set(phoneSlugs.filter(Boolean))) {
     try {
       revalidatePath(`/phones/${phoneSlug}`);
     } catch (e) {

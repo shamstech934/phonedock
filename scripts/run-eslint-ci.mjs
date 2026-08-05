@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
+import path from 'node:path';
 
 /**
  * Durable CI lint runner.
@@ -13,8 +14,11 @@ import process from 'node:process';
  * TypeScript and the production build remain hard release gates. Lint findings
  * are reported in full but do not block deployment; fatal ESLint failures still do.
  */
-const executable = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-const result = spawnSync(executable, ['eslint', '.'], {
+// Execute the installed CLI with the current Node runtime. Calling npx.cmd
+// directly can fail with spawnSync EINVAL on Windows and adds unnecessary
+// package-resolution work in CI.
+const eslintCli = path.join(process.cwd(), 'node_modules', 'eslint', 'bin', 'eslint.js');
+const result = spawnSync(process.execPath, [eslintCli, '.'], {
   stdio: 'inherit',
   env: process.env,
   shell: false,

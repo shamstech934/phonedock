@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   DataQualityIssue,
   LaunchCandidate,
@@ -8,8 +9,15 @@ import {
   PhoneRetailListing,
   PriceSource,
   PriceTrackerHistory,
+  SystemState,
 } from '@/lib/models';
 import { syncRumourFeeds } from '@/lib/rumour-sync';
+import {
+  buildMonitoringPhoneMetricsPipeline,
+  EMPTY_MONITORING_PHONE_METRICS,
+  MONITORING_PHONE_FILTER,
+  type MonitoringPhoneMetrics,
+} from '@/lib/continuous-monitoring-query';
 
 type Trigger = 'manual' | 'cron';
 type TrackerStatus = 'healthy' | 'attention' | 'critical' | 'not_configured';
@@ -48,19 +56,72 @@ function tracker(
   return { key, title, status, count, total, details, actionUrl, metrics };
 }
 
-function isPositive(value: unknown): boolean {
-  const number = Number(value || 0);
-  return Number.isFinite(number) && number > 0;
+const MONITORING_LOCK_KEY = 'continuous_monitoring_lock';
+const MONITORING_LOCK_TTL_MS = 30 * 60 * 1000;
+
+async function acquireMonitoringLock(now: Date): Promise<string | null> {
+  const token = randomUUID();
+  const staleBefore = new Date(now.getTime() - MONITORING_LOCK_TTL_MS);
+  try {
+    await SystemState.findOneAndUpdate(
+      {
+        key: MONITORING_LOCK_KEY,
+        $or: [
+          { completed: false },
+          { completedAt: null },
+          { completedAt: { $lt: staleBefore } },
+        ],
+      },
+      {
+        $set: {
+          completed: true,
+          completedAt: now,
+          metadata: { token, startedAt: now.toISOString() },
+        },
+      },
+      { upsert: true, new: true },
+    );
+    return token;
+  } catch (error: unknown) {
+    if ((error as { code?: number }).code === 11000) return null;
+    throw error;
+  }
+}
+
+async function releaseMonitoringLock(token: string): Promise<void> {
+  await SystemState.findOneAndUpdate(
+    { key: MONITORING_LOCK_KEY, 'metadata.token': token },
+    {
+      $set: {
+        completed: false,
+        completedAt: new Date(),
+        metadata: {},
+      },
+    },
+  );
 }
 
 export async function runContinuousMonitoring(options: RunOptions) {
   const startedAt = new Date();
-  const run = await MonitoringRun.create({
-    trigger: options.trigger,
-    status: 'running',
-    startedAt,
-    createdBy: options.createdBy || null,
-  });
+  const lockToken = await acquireMonitoringLock(startedAt);
+  if (!lockToken) {
+    const activeRun = await MonitoringRun.findOne({ status: 'running' }).sort({ startedAt: -1 });
+    if (activeRun) return activeRun.toObject();
+    throw new Error('Continuous monitoring is already running');
+  }
+
+  let run;
+  try {
+    run = await MonitoringRun.create({
+      trigger: options.trigger,
+      status: 'running',
+      startedAt,
+      createdBy: options.createdBy || null,
+    });
+  } catch (error) {
+    await releaseMonitoringLock(lockToken);
+    throw error;
+  }
 
   const errors: string[] = [];
   let feedSummary = { feeds: 0, scanned: 0, imported: 0, candidates: 0, skipped: 0, errors: [] as string[] };
@@ -81,13 +142,11 @@ export async function runContinuousMonitoring(options: RunOptions) {
     const staleDraftCutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const staleSpecsCutoff = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000);
     const stalePriceCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const phoneFilter = { deletedAt: null };
-
     const [
       pendingLaunchCandidates,
       staleDraftPhones,
       openDataQualityIssues,
-      phoneRows,
+      phoneMetricRows,
       priceSourceCount,
       trustedPriceSourceCount,
       listingCount,
@@ -96,13 +155,16 @@ export async function runContinuousMonitoring(options: RunOptions) {
       staleListingCount,
       priceDropsToday,
       priceIncreasesToday,
+      verifiedListingPhoneIds,
     ] = await Promise.all([
       LaunchCandidate.countDocuments({ status: 'pending' }),
-      Phone.countDocuments({ ...phoneFilter, status: { $in: ['draft', 'pending'] }, updatedAt: { $lt: staleDraftCutoff } }),
+      Phone.countDocuments({ ...MONITORING_PHONE_FILTER, status: { $in: ['draft', 'pending'] }, updatedAt: { $lt: staleDraftCutoff } }),
       DataQualityIssue.countDocuments({ status: { $in: ['open', 'needs_review'] } }),
-      Phone.find(phoneFilter)
-        .select('_id status pricePKR originalPricePKR ptaApproved ptaStatus upcoming availabilityStatus announcedAt expectedLaunchAt pakistanLaunchAt discontinuedAt thumbnail lastVerifiedAt')
-        .lean(),
+      Phone.aggregate<MonitoringPhoneMetrics>(buildMonitoringPhoneMetricsPipeline({
+        phoneSpecsCollection: PhoneSpecs.collection.name,
+        phoneImagesCollection: PhoneImage.collection.name,
+        staleSpecsCutoff,
+      })),
       PriceSource.countDocuments({ enabled: true }),
       PriceSource.countDocuments({ enabled: true, trusted: true, status: 'active' }),
       PhoneRetailListing.countDocuments({ enabled: true }),
@@ -111,53 +173,27 @@ export async function runContinuousMonitoring(options: RunOptions) {
       PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'verified', $or: [{ lastCheckedAt: null }, { lastCheckedAt: { $lt: stalePriceCutoff } }] }),
       PriceTrackerHistory.countDocuments({ changeType: 'decrease', capturedAt: { $gte: todayStart }, verificationStatus: { $ne: 'rejected' } }),
       PriceTrackerHistory.countDocuments({ changeType: 'increase', capturedAt: { $gte: todayStart }, verificationStatus: { $ne: 'rejected' } }),
+      PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified' }),
     ]);
 
-    const ids = phoneRows.map((phone: any) => phone._id);
-    const [specRows, imageRows] = await Promise.all([
-      PhoneSpecs.find({ phoneId: { $in: ids } }).select('phoneId updatedAt chipset ram storage display battery mainCamera').lean(),
-      PhoneImage.find({ phoneId: { $in: ids }, status: { $ne: 'rejected' } }).select('phoneId verified url').lean(),
-    ]);
-
-    const specMap = new Map(specRows.map((row: any) => [String(row.phoneId), row]));
-    const imageGroups = new Map<string, any[]>();
-    for (const image of imageRows as any[]) {
-      const key = String(image.phoneId);
-      const list = imageGroups.get(key) || [];
-      list.push(image);
-      imageGroups.set(key, list);
-    }
-
-    const totalPhones = phoneRows.length;
-    const publishedPhones = phoneRows.filter((phone: any) => phone.status === 'published').length;
-    const missingSpecs = phoneRows.filter((phone: any) => !specMap.has(String(phone._id))).length;
-    const incompleteSpecs = phoneRows.filter((phone: any) => {
-      const spec = specMap.get(String(phone._id));
-      if (!spec) return false;
-      return ![spec.chipset, spec.ram, spec.storage, spec.display, spec.battery, spec.mainCamera].every((value) => String(value || '').trim());
-    }).length;
-    const staleSpecs = phoneRows.filter((phone: any) => {
-      const spec = specMap.get(String(phone._id));
-      return spec?.updatedAt && new Date(spec.updatedAt) < staleSpecsCutoff;
-    }).length;
-
-    const missingImages = phoneRows.filter((phone: any) => {
-      const thumbnail = String(phone.thumbnail || '').trim();
-      return !thumbnail && !(imageGroups.get(String(phone._id)) || []).length;
-    }).length;
-    const unverifiedImages = phoneRows.filter((phone: any) => {
-      const images = imageGroups.get(String(phone._id)) || [];
-      return images.length > 0 && !images.some((image) => image.verified === true);
-    }).length;
-
-    const missingPrices = phoneRows.filter((phone: any) => !isPositive(phone.pricePKR)).length;
-    const discountedPhones = phoneRows.filter((phone: any) => isPositive(phone.pricePKR) && Number(phone.originalPricePKR || 0) > Number(phone.pricePKR || 0)).length;
-    const upcomingPhones = phoneRows.filter((phone: any) => phone.upcoming === true || ['rumored', 'announced', 'coming_soon'].includes(String(phone.availabilityStatus || ''))).length;
-    const discontinuedPhones = phoneRows.filter((phone: any) => phone.availabilityStatus === 'discontinued' || Boolean(String(phone.discontinuedAt || '').trim())).length;
-    const ptaApprovedPhones = phoneRows.filter((phone: any) => phone.ptaApproved === true || /approved/i.test(String(phone.ptaStatus || ''))).length;
-    const nonPtaPhones = phoneRows.filter((phone: any) => /non.?pta|not.?approved|unapproved/i.test(String(phone.ptaStatus || ''))).length;
+    const phoneMetrics = phoneMetricRows[0] || EMPTY_MONITORING_PHONE_METRICS;
+    const {
+      totalPhones,
+      publishedPhones,
+      missingSpecs,
+      incompleteSpecs,
+      staleSpecs,
+      missingImages,
+      unverifiedImages,
+      missingPrices,
+      discountedPhones,
+      upcomingPhones,
+      discontinuedPhones,
+      ptaApprovedPhones,
+      nonPtaPhones,
+    } = phoneMetrics;
     const unknownPtaPhones = Math.max(totalPhones - ptaApprovedPhones - nonPtaPhones, 0);
-    const unlinkedPricePhones = Math.max(publishedPhones - new Set((await PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified' })).map(String)).size, 0);
+    const unlinkedPricePhones = Math.max(publishedPhones - new Set(verifiedListingPhoneIds.map(String)).size, 0);
 
     const trackers: TrackerSnapshot[] = [
       tracker(
@@ -293,6 +329,13 @@ export async function runContinuousMonitoring(options: RunOptions) {
     run.alerts = alerts;
     run.errors = errors.slice(0, 25);
     await run.save();
+    console.info('[continuous-monitoring] completed', {
+      trigger: options.trigger,
+      durationMs: run.durationMs,
+      phoneMetricsQueryCount: 1,
+      phoneDocumentsLoaded: 0,
+      totalPhones,
+    });
     return run.toObject();
   } catch (error) {
     const completedAt = new Date();
@@ -302,5 +345,9 @@ export async function runContinuousMonitoring(options: RunOptions) {
     run.errors = [error instanceof Error ? error.message : 'Monitoring run failed'];
     await run.save();
     throw error;
+  } finally {
+    await releaseMonitoringLock(lockToken).catch((error) => {
+      console.error('[continuous-monitoring] failed to release lock', error);
+    });
   }
 }

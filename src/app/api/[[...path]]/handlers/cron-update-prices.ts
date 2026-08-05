@@ -4,7 +4,7 @@ import { Phone } from '@/lib/models';
 import { PriceSource, PhoneRetailListing, PriceTrackerHistory } from '@/lib/models/PriceTracker';
 import { SystemState } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
-import { revalidatePricePages } from '@/lib/revalidate';
+import { revalidatePriceBatch } from '@/lib/revalidate';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
@@ -482,9 +482,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     if (updatedSlugs.length > 0) {
       // Deduplicate slugs
       const uniqueSlugs = [...new Set(updatedSlugs)];
-      for (const slug of uniqueSlugs) {
-        revalidatePricePages(slug);
-      }
+      revalidatePriceBatch(uniqueSlugs);
     }
   } catch (error) {
     runError = error instanceof Error ? error.message : 'Unknown price sync failure';

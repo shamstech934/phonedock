@@ -1,0 +1,34 @@
+PhoneDock Vercel CPU Optimization PATCH
+=======================================
+
+This is a compact patch, not a full project ZIP.
+
+How to apply
+------------
+1. Make a backup of your current GitHub project folder.
+2. Extract this ZIP.
+3. Copy all extracted files into the ROOT of the current PhoneDock project.
+4. Allow Windows to merge folders and replace the matching files.
+5. Do not copy the files into src/src or another nested project folder.
+6. Commit and push the changed files with GitHub Desktop.
+
+What it changes
+---------------
+- Moves continuous Phone/spec/image metrics into one projected MongoDB aggregation.
+- Preserves the existing deletedAt:null monitoring scope and PTA regex behavior.
+- Adds a token-protected distributed lock to prevent overlapping monitoring runs.
+- Batches price cache revalidation so shared paths are refreshed once per price run.
+- Adds monitoring performance regression coverage.
+- Makes the lint launcher work reliably on Windows without npx.cmd.
+
+Files included
+--------------
+- package.json
+- scripts/run-eslint-ci.mjs
+- scripts/__tests__/continuous-monitoring-performance.test.ts
+- src/lib/continuous-monitoring.ts
+- src/lib/continuous-monitoring-query.ts
+- src/lib/revalidate.ts
+- src/app/api/[[...path]]/handlers/cron-update-prices.ts
+
+No database migration and no new environment variable are required.
