@@ -1,24 +1,65 @@
-PhoneDock Invocation Optimization Patch - 2026-08-06
-
-INSTALL
-1. Extract this ZIP.
-2. Copy all extracted files/folders into the PhoneDock project root (the folder containing package.json).
-3. Merge folders and replace the listed files when Windows asks.
-4. Do not copy the extracted src folder inside the project's existing src folder as src/src.
-5. Commit/push normally; Vercel requires no new environment variable or database migration.
+PhoneDock Automatic Price Tracking - PATCH v1 (06 Aug 2026)
+================================================================
 
 WHAT THIS PATCH DOES
-- Stops Proxy/Middleware from running for public API requests and static/public files.
-- Keeps public page maintenance-mode checks and /api/admin authentication protection.
-- Deduplicates Header, Footer and GrowthScripts /api/settings requests into one browser request.
-- Coalesces concurrent server settings reads and caches them for 60 seconds per warm process.
-- Invalidates the local settings cache immediately after an admin CMS settings save.
+--------------------
+1. The existing daily price cron now discovers due catalog/sitemap/feed URLs.
+2. Product URLs are matched only to active, published PhoneDock phones.
+3. Only high-confidence matches enter automatic verification.
+4. Every product page is protected by the existing SSRF/domain allowlist checks.
+5. The page title, phone model, PTA variant and PKR price are verified before tracking starts.
+6. Verified listings continue through the existing price/history/discount/trending pipeline.
+7. Suspicious price changes still go to Pending Review; they are not published blindly.
+8. Work is bounded to 2 source discoveries and 8 pending page verifications per run to protect Vercel CPU.
 
-VERIFIED
+FILES IN THIS PATCH
+-------------------
+- src/lib/price-catalog-sync.ts (new)
+- src/lib/models/PriceTracker.ts
+- src/app/api/[[...path]]/handlers/cron-update-prices.ts
+- src/app/admin/price-tracker/page.tsx
+- scripts/__tests__/price-auto-tracking.test.ts (new)
+- package.json
+
+HOW TO INSTALL
+--------------
+1. Keep a backup of the current project.
+2. Open the folder containing your project's package.json.
+3. Extract this ZIP directly into that folder.
+4. Choose Merge/Replace when Windows asks.
+5. Important: the result must be src/lib/... and NOT src/src/lib/...
+6. Commit/push the changed files to GitHub and let Vercel deploy.
+
+ONE-TIME SOURCE SETUP IN ADMIN
+------------------------------
+For each legal/approved retailer source:
+1. Price Tracker > Sources > Edit.
+2. Keep the exact HTTPS base URL and allowed domain.
+3. Test & trust the source using one real product page with a visible PKR price.
+4. Enable Automatic catalog discovery.
+5. Choose Sitemap, Catalog, Feed or API (do not choose Manual Links for automatic discovery).
+6. Add the real sitemap/category/feed URL and choose Daily.
+7. Save source.
+
+HOW TO RUN
+----------
+- Click Price Tracker > Run sync now for the first run.
+- The message now shows: catalog links added, auto-verified links, prices checked and prices updated.
+- If a source has many products, run it again later; each run is intentionally bounded.
+- Vercel cron repeats the same process automatically after deployment.
+
+IMPORTANT SAFETY
+----------------
+- A brand/category homepage without individual product links cannot provide safe automatic prices.
+- A source that blocks bots or hides prices in JavaScript may remain pending/failed.
+- Do not trust a source unless you have permission to monitor it.
+- PTA and Non-PTA variants are never mixed automatically.
+- No database migration or new environment variable is required.
+
+VERIFICATION COMPLETED
+----------------------
 - npm run typecheck: PASS
-- npm run lint: PASS (existing non-blocking repository findings remain)
+- npm run test:price-auto-tracking: PASS
 - npm test: PASS
-- npm run build: PASS (94/94 static pages generated)
-
-ROLLBACK
-Restore the replaced files from your previous ZIP/commit if needed. No database rollback is required.
+- npm run build: PASS (94/94 pages; local MONGODB_URI warning uses the existing safe fallback)
+- npm run lint: completed; repository still has 1 pre-existing brands-page finding and existing warnings. No finding in the new price-catalog-sync file.

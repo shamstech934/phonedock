@@ -11,6 +11,7 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
+import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -83,7 +84,10 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   }
 
   // ── Process listings ──
-  const summary = { processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0 };
+  const summary = {
+    processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0,
+    discoverySources: 0, discoveredUrls: 0, discoveredListings: 0, autoVerifiedListings: 0,
+  };
   const runStartedAt = new Date();
   const updatedSlugs: string[] = []; // Collect slugs for batch revalidation
   let runError = '';
@@ -102,6 +106,16 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       { trending: true, trendingReason: 'price_drop', trendingUntil: { $lte: now } },
       { $set: { trending: false, trendingReason: '', trendingUntil: null } },
     );
+
+    // Complete the automatic chain before the normal price batch: discover
+    // due catalog pages, safely match them to published phones, then promote
+    // only product pages whose identity and PKR price can be verified.
+    const discovery = await discoverDuePriceListings(now);
+    summary.discoverySources = discovery.sourcesChecked;
+    summary.discoveredUrls = discovery.urlsFound;
+    summary.discoveredListings = discovery.listingsAdded;
+    const verification = await verifyPendingCatalogListings(now);
+    summary.autoVerifiedListings = verification.verified;
 
     // Get all enabled+trusted sources
     const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' })

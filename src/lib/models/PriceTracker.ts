@@ -37,6 +37,7 @@ PriceSourceSchema.index({ sourceType: 1 });
 PriceSourceSchema.index({ enabled: 1, status: 1 });
 PriceSourceSchema.index({ enabled: 1, status: 1, nextRetryAt: 1 });
 PriceSourceSchema.index({ priority: -1 });
+PriceSourceSchema.index({ enabled: 1, trusted: 1, status: 1, discoveryEnabled: 1, syncFrequency: 1, lastDiscoveryAt: 1 });
 
 export const PriceSource = mongoose.models.PriceSource || mongoose.model('PriceSource', PriceSourceSchema);
 
@@ -83,6 +84,7 @@ PhoneRetailListingSchema.index({ failureCount: -1, lastCheckedAt: 1 });
 PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, nextRetryAt: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
 PhoneRetailListingSchema.index({ collectorRecordId: 1 });
+PhoneRetailListingSchema.index({ verificationStatus: 1, discoveryOrigin: 1, matchStrategy: 1, matchConfidence: 1, lastCheckedAt: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
   unique: true,
   partialFilterExpression: { productUrl: { $type: 'string', $gt: '' } },
