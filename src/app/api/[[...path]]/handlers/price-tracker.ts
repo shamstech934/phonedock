@@ -12,6 +12,7 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
+import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -606,9 +607,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
   }
 
   // ---- /api/admin/price-tracker/auto-link ----
-  // Converts already imported, source-backed phone records into verified
-  // tracker listings in one operation. A URL is linked only when its hostname
-  // belongs to an enabled, trusted source allowlist.
+  // Converts source-backed records into pending tracker listings. A URL is
+  // linked only when its hostname belongs to an enabled, trusted allowlist;
+  // the scheduled checker must verify the page before its price can go live.
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'auto-link') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
     const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
@@ -628,9 +629,23 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       );
     }
 
+    // Older auto-link versions could mark a listing verified before a page was
+    // ever checked. Repair only clearly untested rows; genuine checked rows are
+    // left untouched.
+    const repairResult = await PhoneRetailListing.updateMany(
+      {
+        enabled: true,
+        verificationStatus: 'verified',
+        lastCheckedAt: null,
+        extractionMethod: '',
+      },
+      { $set: { verificationStatus: 'pending', currentSourcePrice: 0 } },
+    );
+
     const phones = await Phone.find({ active: true, status: 'published' })
       .select('_id modelName slug sourceUrl')
       .lean();
+    const collectorBridge = await bridgeCollectedPricesToTracker();
 
     let discovered = 0;
     let discoveryLinked = 0;
@@ -652,7 +667,15 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         if (!phone) { discoveryUnmatched++; continue; }
         const update = await PhoneRetailListing.updateOne(
           { sourceId: source._id, productUrl },
-          { $setOnInsert: { phoneId: phone._id, sourceTitle: phone.modelName, enabled: true, verificationStatus: 'pending' } },
+          { $setOnInsert: {
+            phoneId: phone._id,
+            sourceTitle: phone.modelName,
+            enabled: true,
+            verificationStatus: 'pending',
+            discoveryOrigin: 'catalog',
+            matchStrategy: 'url_model',
+            matchConfidence: 80,
+          } },
           { upsert: true },
         );
         if (update.upsertedCount) { discoveryLinked++; sourceAdded++; }
@@ -723,8 +746,16 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         } else {
           await PhoneRetailListing.create({
             phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl, sourceTitle: candidate.storeName || phone.modelName,
-            currentSourcePrice: candidate.price > 0 ? candidate.price : 0, ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType,
-            enabled: true, verificationStatus: 'verified',
+            currentSourcePrice: 0,
+            pendingSourcePrice: candidate.price > 0 ? candidate.price : 0,
+            pendingDetectedAt: candidate.price > 0 ? new Date() : null,
+            ptaStatus: candidate.ptaStatus,
+            warrantyType: candidate.warrantyType,
+            enabled: true,
+            verificationStatus: 'pending',
+            discoveryOrigin: candidate.storeName ? 'legacy' : 'phone',
+            matchStrategy: 'manual',
+            matchConfidence: candidate.storeName ? 90 : 85,
           });
           linked++; phoneLinked = true;
         }
@@ -757,6 +788,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       discoveryLinked,
       discoveryUnmatched,
       discoveryErrors: discoveryErrors.slice(0, 10),
+      repairedUntestedListings: repairResult.modifiedCount,
+      collectorBridge,
     });
   }
 

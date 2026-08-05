@@ -1,47 +1,36 @@
-PhoneDock Price Intelligence - Phase 2 PATCH
-=============================================
+PhoneDock Phase 3 - Collector to Price Tracker Bridge
+=====================================================
 
-IMPORTANT
----------
-This is a small incremental patch, not a complete project ZIP.
-It is made for the current PhoneDock project after the Phase 1 price-intelligence patch.
+IMPORTANT: This is a small PATCH, not a complete project.
 
-HOW TO INSTALL
---------------
-1. Keep a backup of the current working project.
-2. Open the local GitHub Desktop repository folder that contains package.json.
-3. Open this PATCH ZIP and copy all its contents into that repository root.
-4. Choose Replace files when Windows asks. Do not delete the project folder first.
-5. Do not replace or delete .env files, public uploads, MongoDB data, or Vercel variables.
-6. In GitHub Desktop, review the changed files, commit, and push to main.
-7. Wait for Vercel deployment and then run one Price Tracker sync from admin.
+Install:
+1. Open the ZIP.
+2. Copy everything inside it.
+3. Paste into the root of your CURRENT GitHub project (the folder containing package.json).
+4. Choose Replace when Windows asks about the included files.
+5. Do not delete or replace your complete project folder.
+6. Commit and push through GitHub Desktop, then let Vercel deploy.
 
-WHAT THIS PATCH DOES
---------------------
-- Compares all enabled, trusted and verified retailer offers for each phone.
-- Keeps PTA and Non-PTA best prices separate.
-- Selects the lowest compatible verified offer as the public canonical price.
-- Respects an administrator-selected preferred price source when configured.
-- Prevents untrusted, unavailable and pending-review prices from becoming public.
-- Keeps suspicious large changes pending without overwriting the last verified price.
-- Recomputes the best offer after approval, rejection, price changes, and unavailability.
-- Stores best source/listing metadata and verified offer counts on Phone records.
-- Preserves manual price lock behavior.
-- Creates real discount and temporary price-drop trending state only from verified changes.
+What this patch does:
+- Collector jobs automatically queue exact product records for Price Tracker review.
+- Only approved, imported, or high-confidence exact-slug phone matches auto-link.
+- Fuzzy matches never auto-link.
+- Collected prices remain pending until the genuine retailer product page is verified.
+- Untrusted domains create a source-gap review item instead of changing a live price.
+- Older untested auto-linked listings are repaired back to pending.
+- Collector jobs save price candidate, queued, source-gap, and skipped counters.
+- Approved collector imports retain their original source URL.
 
-DATABASE
---------
-No destructive migration is required. New Mongoose fields are additive and receive safe defaults.
+After deployment:
+1. Run a Collector sync, or open Price Tracker and click Auto-link catalog.
+2. Review Pending Review / Source Gaps.
+3. Run price sync only after trusted sources have genuine product URLs.
 
-VERIFICATION COMPLETED
-----------------------
+Verification performed before packaging:
 - npm run typecheck: PASS
-- focused ESLint on all changed files: PASS (0 errors, 0 warnings)
-- focused price-intelligence tests: PASS
+- changed-file ESLint: PASS (0 warnings)
 - npm test: PASS
 - npm run build: PASS
 
-NOTE
-----
-Automatic tracking still requires genuine product pages or approved retailer feeds.
-PhoneDock does not invent product URLs or prices. Only trusted and verified offers can affect public prices.
+Known existing project issue (not introduced by this patch):
+- Full-project direct ESLint reports the pre-existing React try/catch error in src/app/brands/page.tsx and legacy warnings. Changed files are clean.

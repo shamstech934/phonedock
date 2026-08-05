@@ -6,6 +6,7 @@ import { NormalizedPhone, ProviderConfig, ProviderType, ConflictInfo } from './t
 import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCategory, suggestSEO, buildFieldProvenance, scoreCollectedPhone } from './services';
 import { createHash } from 'node:crypto';
 import { generateSlug } from '@/lib/import/validators';
+import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 
 const MAX_COLLECT_PER_JOB = 2000;
 // Vercel serverless: limit pages per invocation to stay within timeout.
@@ -198,8 +199,23 @@ export async function startJob(jobId: string): Promise<void> {
     const finalJob = await CollectorJob.findById(jobId);
     const hasFailures = (finalJob?.failureCount || 0) > 0;
     const status = hasFailures ? 'partially_completed' : 'completed';
+    let priceBridge = { candidates: 0, queued: 0, sourceGaps: 0, skipped: 0 };
+    try {
+      priceBridge = await bridgeCollectedPricesToTracker({ jobId });
+    } catch (error) {
+      const message = `Price bridge skipped: ${sanitizeCollectorError(error)}`;
+      await CollectorJob.updateOne({ _id: jobId }, { $push: { warningLog: message }, $inc: { warningCount: 1 } });
+    }
     await CollectorJob.updateOne({ _id: jobId }, {
-      $set: { status, completedAt: new Date(), duration: Date.now() - (finalJob?.startedAt?.getTime() || Date.now()) },
+      $set: {
+        status,
+        completedAt: new Date(),
+        duration: Date.now() - (finalJob?.startedAt?.getTime() || Date.now()),
+        priceCandidates: priceBridge.candidates,
+        priceListingsQueued: priceBridge.queued,
+        priceSourceGaps: priceBridge.sourceGaps,
+        priceBridgeSkipped: priceBridge.skipped,
+      },
     });
 
     await ActivityLog.create({
@@ -324,6 +340,7 @@ export async function approveAndImport(draftId: string, adminEdits?: Record<stri
     seoTitle: draft.suggestedSeoTitle || '',
     seoDescription: draft.suggestedSeoDescription || '',
     keywords: draft.suggestedKeywords || '',
+    sourceUrl: draft.sourceUrl || '',
     // Approval imports the record for an editorial pass. Publishing stays an
     // explicit admin action so incomplete collector data cannot leak publicly.
     status: 'draft',
@@ -413,7 +430,7 @@ export async function approveAndImport(draftId: string, adminEdits?: Record<stri
 
   // Update draft status
   await CollectedPhone.updateOne({ _id: draftId }, {
-    $set: { status: 'imported', importedPhoneId: phoneId },
+    $set: { status: 'imported', importedPhoneId: phoneId, approvedPhoneId: phoneId },
   });
 
   await ActivityLog.create({

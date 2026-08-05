@@ -67,6 +67,10 @@ const PhoneRetailListingSchema = new Schema({
   extractionConfidence: { type: Number, default: 0 },
   enabled: { type: Boolean, default: true },
   verificationStatus: { type: String, enum: ['pending', 'verified', 'rejected', 'failed'], default: 'pending' },
+  discoveryOrigin: { type: String, enum: ['manual', 'collector', 'catalog', 'legacy', 'phone'], default: 'manual' },
+  collectorRecordId: { type: Schema.Types.ObjectId, ref: 'CollectedPhone', default: null },
+  matchStrategy: { type: String, enum: ['manual', 'direct_approval', 'imported', 'exact_duplicate', 'url_model'], default: 'manual' },
+  matchConfidence: { type: Number, default: 0, min: 0, max: 100 },
 }, { timestamps: true });
 
 PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
@@ -78,6 +82,7 @@ PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, lastCheckedA
 PhoneRetailListingSchema.index({ failureCount: -1, lastCheckedAt: 1 });
 PhoneRetailListingSchema.index({ enabled: 1, verificationStatus: 1, nextRetryAt: 1 });
 PhoneRetailListingSchema.index({ externalProductId: 1 });
+PhoneRetailListingSchema.index({ collectorRecordId: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, productUrl: 1 }, {
   unique: true,
   partialFilterExpression: { productUrl: { $type: 'string', $gt: '' } },
