@@ -21,6 +21,8 @@ export interface IPhone extends Document {
   ptaApproved: boolean;
   featured: boolean;
   trending: boolean;
+  trendingReason: string;
+  trendingUntil: Date | null;
   upcoming: boolean;
   availabilityStatus: string;
   announcedAt: string;
@@ -87,6 +89,8 @@ const PhoneSchema = new Schema<IPhone>({
   ptaApproved: { type: Boolean, default: false },
   featured: { type: Boolean, default: false },
   trending: { type: Boolean, default: false },
+  trendingReason: { type: String, enum: ['', 'manual', 'price_drop', 'engagement'], default: '' },
+  trendingUntil: { type: Date, default: null },
   upcoming: { type: Boolean, default: false },
   availabilityStatus: { type: String, enum: ['rumored', 'announced', 'coming_soon', 'available', 'limited', 'discontinued', 'cancelled'], default: 'available', index: true },
   announcedAt: { type: String, default: '' },
@@ -173,6 +177,7 @@ PhoneSchema.index({ brandId: 1, status: 1 });
 PhoneSchema.index({ active: 1, status: 1, pricePKR: 1 });
 PhoneSchema.index({ pricePKR: 1 });
 PhoneSchema.index({ trending: 1 });
+PhoneSchema.index({ trending: 1, trendingReason: 1, trendingUntil: 1 });
 PhoneSchema.index({ featured: 1 });
 PhoneSchema.index({ modelName: 'text', description: 'text', keywords: 'text' });
 // Score-based sort indexes for top-phones ranking pages

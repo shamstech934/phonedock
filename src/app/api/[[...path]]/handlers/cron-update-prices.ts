@@ -9,6 +9,7 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
+import { buildVerifiedPriceState, isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -94,6 +95,13 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
   const BATCH_SIZE = ptSettings.batchSize;
 
   try {
+    // Price-drop trending is intentionally temporary. Manual/engagement
+    // trending flags are never touched by this cleanup.
+    await Phone.updateMany(
+      { trending: true, trendingReason: 'price_drop', trendingUntil: { $lte: now } },
+      { $set: { trending: false, trendingReason: '', trendingUntil: null } },
+    );
+
     // Get all enabled+trusted sources
     const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' })
       .select('_id')
@@ -140,7 +148,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const listing of batch) {
         summary.processed++;
         const listingId = listing._id;
-        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string } | null;
+        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string; ptaApproved?: boolean } | null;
         const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string } | null;
 
         if (!phone || !source) {
@@ -149,6 +157,22 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           await PhoneRetailListing.findByIdAndUpdate(listingId, {
             $set: { ...retry, lastCheckedAt: new Date(), verificationStatus: retry.failureCount >= 3 ? 'failed' : 'verified' },
           });
+          continue;
+        }
+
+        if (!isPtaPriceCompatible({
+          phoneStatus: phone.ptaStatus,
+          phoneApproved: phone.ptaApproved,
+          listingStatus: (listing as unknown as { ptaStatus?: string }).ptaStatus,
+        })) {
+          await PhoneRetailListing.findByIdAndUpdate(listingId, {
+            $set: {
+              verificationStatus: 'pending',
+              lastCheckedAt: new Date(),
+              lastError: 'PTA and Non-PTA price variants cannot be mixed automatically.',
+            },
+          });
+          summary.pending++;
           continue;
         }
 
@@ -518,20 +542,39 @@ async function applyPriceToPhone(
   const phone = await Phone.findById(phoneId);
   if (!phone) return null;
 
-  const currentPhonePrice = (phone as unknown as { currentPrice?: number }).currentPrice || 0;
-  const difference = newPrice - currentPhonePrice;
-  const pctChange = currentPhonePrice > 0 ? Math.round((difference / currentPhonePrice) * 10000) / 100 : 0;
+  const currentPhonePrice = (phone as unknown as { currentPrice?: number; pricePKR?: number }).currentPrice
+    || (phone as unknown as { pricePKR?: number }).pricePKR
+    || 0;
+  const state = buildVerifiedPriceState({
+    currentPrice: currentPhonePrice,
+    nextPrice: newPrice,
+    originalPrice: (phone as unknown as { originalPricePKR?: number }).originalPricePKR,
+  });
 
   const updates: Record<string, unknown> = {
     currentPrice: newPrice,
-    previousPrice: currentPhonePrice,
-    priceChange: difference,
-    percentageChange: pctChange,
+    previousPrice: state.previousPrice,
+    originalPricePKR: state.originalPrice,
+    priceChange: state.difference,
+    percentageChange: state.percentageChange,
     lastPriceChangedAt: new Date(),
     lastPriceCheckedAt: new Date(),
     priceMode: 'automatic',
     pricePKR: newPrice,
   };
+
+  if (state.qualifiesForPriceDropTrend) {
+    updates.trending = true;
+    updates.trendingReason = 'price_drop';
+    updates.trendingUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  } else if (
+    state.direction === 'increase'
+    && (phone as unknown as { trendingReason?: string }).trendingReason === 'price_drop'
+  ) {
+    updates.trending = false;
+    updates.trendingReason = '';
+    updates.trendingUntil = null;
+  }
 
   const lowest = (phone as unknown as { lowestPrice?: number }).lowestPrice || 0;
   const highest = (phone as unknown as { highestPrice?: number }).highestPrice || 0;
