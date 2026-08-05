@@ -471,7 +471,7 @@ export default function AdminPriceTrackerPage() {
       });
       const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Automatic linking failed');
-      setActionMessage(`Catalog linked: ${result.linked} new, ${result.alreadyLinked} already ready, ${result.unmatched} need a supported retailer URL.`);
+      setActionMessage(`Catalog discovery: ${result.discovered || 0} product links found, ${result.discoveryLinked || 0} safely matched for review. Existing imports: ${result.linked || 0} new, ${result.alreadyLinked || 0} already linked. ${result.discoveryUnmatched || 0} discovered links need review or better phone data.`);
       await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchMatchCandidates()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Automatic linking failed');

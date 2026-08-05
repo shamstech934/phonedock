@@ -10,6 +10,7 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
+import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -615,7 +616,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       trusted: true,
       status: 'active',
       allowedDomains: { $exists: true, $ne: [] },
-    }).select('_id name allowedDomains').lean();
+    }).select('_id name allowedDomains discoveryEnabled discoveryMode catalogUrls sitemapUrls feedUrl').lean() as unknown as LeanSourceDoc[];
 
     if (!sources.length) {
       return NextResponse.json(
@@ -625,8 +626,42 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     }
 
     const phones = await Phone.find({ active: true, status: 'published' })
-      .select('_id modelName sourceUrl')
+      .select('_id modelName slug sourceUrl')
       .lean();
+
+    let discovered = 0;
+    let discoveryLinked = 0;
+    let discoveryUnmatched = 0;
+    const discoveryErrors: string[] = [];
+    for (const source of sources.filter(item => item.discoveryEnabled && item.discoveryMode !== 'manual')) {
+      const result = await discoverCatalogProductUrls({
+        mode: source.discoveryMode || 'manual',
+        catalogUrls: source.catalogUrls,
+        sitemapUrls: source.sitemapUrls,
+        feedUrl: source.feedUrl,
+        allowedDomains: source.allowedDomains || [],
+      });
+      discovered += result.urls.length;
+      discoveryErrors.push(...result.errors.map(error => `${source.name}: ${error}`));
+      let sourceAdded = 0;
+      for (const productUrl of result.urls) {
+        const phone = matchProductUrlToPhone(productUrl, phones);
+        if (!phone) { discoveryUnmatched++; continue; }
+        const update = await PhoneRetailListing.updateOne(
+          { sourceId: source._id, productUrl },
+          { $setOnInsert: { phoneId: phone._id, sourceTitle: phone.modelName, enabled: true, verificationStatus: 'pending' } },
+          { upsert: true },
+        );
+        if (update.upsertedCount) { discoveryLinked++; sourceAdded++; }
+      }
+      await PriceSource.updateOne({ _id: source._id }, {
+        $set: {
+          lastDiscoveryAt: new Date(), lastDiscoveryCount: result.urls.length,
+          productsFound: result.urls.length, productsAdded: sourceAdded,
+          lastError: result.errors.join('; ').slice(0, 1000),
+        },
+      });
+    }
     const legacyPriceRows = await PhonePrice.find({
       phoneId: { $in: phones.map(phone => phone._id) },
       $or: [{ url: { $type: 'string', $ne: '' } }, { sourceUrl: { $type: 'string', $ne: '' } }],
@@ -715,6 +750,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       rejectedHomepageUrls,
       eligibleProductUrls: Math.max(0, phones.length - missingProductUrls - rejectedHomepageUrls),
       unmatchedExamples: examples,
+      discovered,
+      discoveryLinked,
+      discoveryUnmatched,
+      discoveryErrors: discoveryErrors.slice(0, 10),
     });
   }
 
