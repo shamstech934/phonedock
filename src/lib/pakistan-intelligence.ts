@@ -22,7 +22,7 @@ function daysSince(value: unknown): number | null {
 }
 
 export async function scanPakistanMarket(options?: { limit?: number }) {
-  const limit = Math.min(500, Math.max(10, Number(options?.limit || 150)));
+  const limit = Math.min(150, Math.max(10, Number(options?.limit || 25)));
   const phones = await Phone.find({ deletedAt: null, active: true })
     .select('_id modelName slug pricePKR currentPrice ptaStatus ptaApproved availabilityStatus pakistanLaunchAt lastVerifiedAt status')
     .sort({ updatedAt: -1 })
@@ -47,6 +47,8 @@ export async function scanPakistanMarket(options?: { limit?: number }) {
   let opened = 0;
   let resolved = 0;
   const now = new Date();
+  const signalUpserts: any[] = [];
+  const resolutionUpdates: any[] = [];
 
   for (const phone of phones as any[]) {
     const phoneListings = (byPhone.get(String(phone._id)) || []).filter((listing: any) => {
@@ -140,19 +142,27 @@ export async function scanPakistanMarket(options?: { limit?: number }) {
 
     const activeTypes = new Set(signals.map(signal => signal.type));
     for (const signal of signals) {
-      await PakistanMarketSignal.findOneAndUpdate(
-        { phoneId: phone._id, type: signal.type },
-        { $set: { ...signal, status: 'open', lastSeenAt: now, resolvedAt: null, resolvedBy: null }, $setOnInsert: { detectedAt: now } },
-        { upsert: true, new: true },
-      );
+      signalUpserts.push({
+        updateOne: {
+          filter: { phoneId: phone._id, type: signal.type },
+          update: { $set: { ...signal, status: 'open', lastSeenAt: now, resolvedAt: null, resolvedBy: null }, $setOnInsert: { detectedAt: now } },
+          upsert: true,
+        },
+      });
       opened += 1;
     }
+    resolutionUpdates.push({
+      updateMany: {
+        filter: { phoneId: phone._id, status: 'open', type: { $nin: Array.from(activeTypes) } },
+        update: { $set: { status: 'resolved', resolvedAt: now, resolutionNotes: 'Condition cleared by Pakistan Intelligence scan.' } },
+      },
+    });
+  }
 
-    const resolution = await PakistanMarketSignal.updateMany(
-      { phoneId: phone._id, status: 'open', type: { $nin: Array.from(activeTypes) } },
-      { $set: { status: 'resolved', resolvedAt: now, resolutionNotes: 'Condition cleared by Pakistan Intelligence scan.' } },
-    );
-    resolved += Number(resolution.modifiedCount || 0);
+  if (signalUpserts.length > 0) await PakistanMarketSignal.bulkWrite(signalUpserts, { ordered: false });
+  if (resolutionUpdates.length > 0) {
+    const resolutionResult = await PakistanMarketSignal.bulkWrite(resolutionUpdates, { ordered: false });
+    resolved = Number(resolutionResult.modifiedCount || 0);
   }
 
   return { scannedPhones: phones.length, signalsSeen: opened, autoResolved: resolved, limit };

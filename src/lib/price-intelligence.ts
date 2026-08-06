@@ -29,8 +29,8 @@ type SignalInput = {
   evidence?: unknown;
 };
 
-export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } = {}) {
-  const safeLimit = Math.min(1000, Math.max(1, Number.isFinite(limit) ? limit : 500));
+export async function scanPriceIntelligence({ limit = 25 }: { limit?: number } = {}) {
+  const safeLimit = Math.min(50, Math.max(1, Number.isFinite(limit) ? limit : 25));
   const phones = await Phone.find({ deletedAt: null, active: { $ne: false }, status: 'published' })
     .select('_id modelName slug pricePKR currentPrice manualLock')
     .sort({ updatedAt: -1 })
@@ -64,7 +64,8 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
   let verifiedListings = 0;
   let trustedListings = 0;
   const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const operations: Array<ReturnType<typeof PriceIntelligenceSignal.findOneAndUpdate>> = [];
+  const signalWrites: any[] = [];
+  const now = new Date();
 
   for (const phone of phones) {
     const phoneListings = listingsByPhone.get(String(phone._id)) || [];
@@ -152,22 +153,35 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
     }
 
     const activeTypes = signals.map((signal) => signal.type);
-    await PriceIntelligenceSignal.updateMany(
-      { phoneId: phone._id, status: 'open', type: { $nin: activeTypes } },
-      { $set: { status: 'resolved', resolvedAt: new Date(), resolutionNotes: 'Condition no longer detected.' } },
-    );
+    signalWrites.push({
+      updateMany: {
+        filter: {
+          phoneId: phone._id,
+          status: 'open',
+          ...(activeTypes.length ? { type: { $nin: activeTypes } } : {}),
+        },
+        update: { $set: { status: 'resolved', resolvedAt: now, resolutionNotes: 'Condition no longer detected.' } },
+      },
+    });
 
     for (const signal of signals) {
-      operations.push(PriceIntelligenceSignal.findOneAndUpdate(
-        { phoneId: phone._id, type: signal.type },
-        { $set: { ...signal, status: 'open', lastSeenAt: new Date() }, $setOnInsert: { detectedAt: new Date() } },
-        { upsert: true, new: true },
-      ));
+      signalWrites.push({
+        updateOne: {
+          filter: { phoneId: phone._id, type: signal.type },
+          update: {
+            $set: { ...signal, status: 'open', lastSeenAt: now, resolvedAt: null, resolvedBy: null, resolutionNotes: '' },
+            $setOnInsert: { detectedAt: now },
+          },
+          upsert: true,
+        },
+      });
       opened++;
     }
   }
 
-  await Promise.all(operations);
+  if (signalWrites.length) {
+    await PriceIntelligenceSignal.bulkWrite(signalWrites, { ordered: false });
+  }
 
   return {
     scanned: phones.length,
