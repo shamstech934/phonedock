@@ -49,6 +49,8 @@ interface PhonePrice {
   source: string;
   lastUpdated: string;
   status: 'active' | 'inactive';
+  linked?: boolean;
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | 'failed' | 'unlinked';
 }
 
 interface PriceSource {
@@ -290,6 +292,7 @@ export default function AdminPriceTrackerPage() {
   // ── General ──
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [actionLoading, setActionLoading] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
@@ -302,8 +305,13 @@ export default function AdminPriceTrackerPage() {
   const [cronSchedule, setCronSchedule] = useState('0 1 * * *');
 
   const responseError = async (response: Response, fallback: string) => {
-    const body = await readApiResponse(response).catch(() => ({})) as { error?: string };
-    return body.error || (response.status === 401 ? 'Authentication expired. Please sign in again.' : fallback);
+    try {
+      const body = await readApiResponse(response) as { error?: string };
+      return body.error || fallback;
+    } catch (cause) {
+      if (cause instanceof Error && cause.message) return cause.message;
+      return response.status === 401 ? 'Authentication expired. Please sign in again.' : fallback;
+    }
   };
 
   /* ── Debounced search for phones ── */
@@ -809,7 +817,8 @@ export default function AdminPriceTrackerPage() {
 
   const handleToggleTracking = async (phoneId: string) => {
     setActionLoading(`toggle-phone-${phoneId}`);
-    setError('');
+    setActionError('');
+    setActionMessage('');
     try {
       const res = await fetch(`/api/admin/price-tracker/phones/${phoneId}/toggle`, {
         method: 'POST', credentials: 'include',
@@ -819,7 +828,7 @@ export default function AdminPriceTrackerPage() {
       setActionMessage(`Phone switched to ${result.mode || 'updated'} price tracking.`);
       await Promise.all([fetchPhones(), fetchOverview()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update phone tracking');
+      setActionError(e instanceof Error ? e.message : 'Failed to update phone tracking');
     } finally {
       setActionLoading('');
     }
@@ -827,7 +836,7 @@ export default function AdminPriceTrackerPage() {
 
   const handleEnableEligibleTracking = async () => {
     setActionLoading('enable-eligible');
-    setError('');
+    setActionError('');
     setActionMessage('');
     try {
       const res = await fetch('/api/admin/price-tracker/phones/enable-eligible', {
@@ -841,7 +850,7 @@ export default function AdminPriceTrackerPage() {
       );
       await Promise.all([fetchPhones(), fetchOverview()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to enable linked phones');
+      setActionError(e instanceof Error ? e.message : 'Failed to enable linked phones');
     } finally {
       setActionLoading('');
     }
@@ -913,6 +922,7 @@ export default function AdminPriceTrackerPage() {
         </div>
       </div>
       {actionMessage && <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800">{actionMessage}</div>}
+      {actionError && <div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">{actionError}</div>}
     </div>
   );
 
@@ -923,7 +933,7 @@ export default function AdminPriceTrackerPage() {
         return (
           <button
             key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setError(''); }}
+            onClick={() => { setActiveTab(tab.id); setError(''); setActionError(''); }}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-all duration-200 shrink-0 ${
               isActive
                 ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
@@ -1202,16 +1212,20 @@ export default function AdminPriceTrackerPage() {
                           <button onClick={() => openViewHistory(p)} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">History</button>
                           <button
                             onClick={() => handleToggleTracking(p.phoneId)}
-                            disabled={Boolean(actionLoading)}
+                            disabled={Boolean(actionLoading) || (p.mode !== 'automatic' && p.verificationStatus !== 'verified')}
                             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            title={p.mode === 'automatic' ? 'Switch to manual' : 'Enable auto-tracking'}
+                            title={p.mode === 'automatic'
+                              ? 'Switch to manual'
+                              : p.verificationStatus === 'verified'
+                                ? 'Enable auto-tracking'
+                                : 'A verified product link from a trusted source is required'}
                           >
                             {actionLoading === `toggle-phone-${p.phoneId}`
                               ? <RefreshCw className="h-4 w-4 animate-spin" />
                               : p.mode === 'automatic'
                                 ? <ToggleRight className="h-4 w-4 text-blue-500" />
                                 : <ToggleLeft className="h-4 w-4" />}
-                            {p.mode === 'automatic' ? 'Auto' : 'Enable'}
+                            {p.mode === 'automatic' ? 'Auto' : p.verificationStatus === 'verified' ? 'Enable' : 'Link required'}
                           </button>
                         </div>
                       </td>

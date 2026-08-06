@@ -34,12 +34,14 @@ assert.match(rankings, /availabilityStatus:/, 'ranking cards must receive lifecy
 assert.match(priceTrackerAdmin, /function formatPercentChange\(percentChange: unknown\)/, 'legacy price records need a null-safe percentage formatter');
 assert.doesNotMatch(priceTrackerAdmin, /\.percentChange\.toFixed\(/, 'missing percentage data must never crash the Price Tracker page');
 assert.match(priceTrackerApi, /filter\.changeType = \{ \$in: \['increase', 'decrease'\] \}/, 'baseline price detections must not appear as market changes');
-assert.match(priceTrackerApi, /p\.priceMode === 'automatic' && Boolean\(listing\)/, 'admin tracker mode must respect the stored priceMode');
+assert.match(priceTrackerApi, /p\.priceMode === 'automatic' && listing\?\.verificationStatus === 'verified'/, 'admin tracker mode must require a verified listing');
 assert.match(priceTrackerApi, /priceMode: nextMode/, 'individual tracking toggle must persist priceMode');
-assert.match(priceTrackerApi, /Auto-tracking needs a linked product page from an enabled trusted source/, 'unlinked phones need an actionable automation error');
+assert.match(priceTrackerApi, /Auto-tracking needs a verified product page from an enabled trusted source/, 'unverified phones need an actionable automation error');
 assert.match(priceTrackerApi, /phones\/enable-eligible/, 'bulk linked-phone automation endpoint must exist');
 assert.match(priceTrackerApi, /manualLock: \{ \$ne: true \}/, 'bulk automation must preserve explicit manual locks');
 assert.match(priceTrackerAdmin, /Enable linked phones/, 'admin must expose the bulk automatic tracking action');
+assert.match(priceTrackerAdmin, /const \[actionError, setActionError\]/, 'action errors must not replace the whole phone catalog');
+assert.match(priceTrackerAdmin, /Link required/, 'unverified listings must explain why automatic tracking is unavailable');
 for (const alias of ['percentChange:', 'source:', 'status:', 'date:']) {
   assert.match(priceTrackerApi, new RegExp(alias), `admin Price Tracker response must expose the ${alias} UI alias`);
 }

@@ -258,9 +258,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       .populate('sourceId', 'name sourceType')
       .lean();
     const listingByPhone = new Map<string, typeof listingRows[number]>();
+    const verificationRank: Record<string, number> = { verified: 4, pending: 3, failed: 2, rejected: 1 };
     for (const listing of listingRows) {
       const key = String(listing.phoneId);
-      if (!listingByPhone.has(key)) listingByPhone.set(key, listing);
+      const current = listingByPhone.get(key);
+      if (!current || (verificationRank[String(listing.verificationStatus)] || 0) > (verificationRank[String(current.verificationStatus)] || 0)) {
+        listingByPhone.set(key, listing);
+      }
     }
 
     return NextResponse.json({
@@ -272,7 +276,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         // A linked retailer row alone must not silently change the mode shown
         // in the admin. priceMode is the operator's explicit choice; the
         // listing only makes that choice executable by the sync worker.
-        const automatic = p.priceMode === 'automatic' && Boolean(listing) && p.manualLock !== true;
+        const automatic = p.priceMode === 'automatic' && listing?.verificationStatus === 'verified' && p.manualLock !== true;
         return {
           id: p._id.toString(),
           phoneId: p._id.toString(),
@@ -1570,11 +1574,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const eligibleListing = await PhoneRetailListing.exists({
         phoneId,
         enabled: true,
+        verificationStatus: 'verified',
         sourceId: { $in: trustedSourceIds },
       });
       if (!eligibleListing) {
         return NextResponse.json({
-          error: 'Auto-tracking needs a linked product page from an enabled trusted source. Run Auto-link catalog, then Run sync now, and try again.',
+          error: 'Auto-tracking needs a verified product page from an enabled trusted source. Run Auto-link catalog, then Run sync now to verify it, and try again.',
         }, { status: 409 });
       }
     }
@@ -1619,6 +1624,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       ? await PhoneRetailListing.distinct('phoneId', {
           sourceId: { $in: trustedSourceIds },
           enabled: true,
+          verificationStatus: 'verified',
         })
       : [];
     const eligiblePublished = await Phone.countDocuments({
