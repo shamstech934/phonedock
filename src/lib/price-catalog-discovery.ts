@@ -1,4 +1,5 @@
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 const MAX_INPUT_URLS = 12;
 const MAX_DISCOVERED_URLS = 500;
@@ -75,17 +76,12 @@ export function isProbableProductUrl(value: string): boolean {
 async function fetchText(url: string, allowedDomains: string[]): Promise<string> {
   const validation = await validateUrlForFetch(url, allowedDomains);
   if (!validation.safe) throw new Error(validation.reason || 'Unsafe URL');
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { 'User-Agent': 'PhoneDock-PriceTracker/1.0 (+https://specsdekh.com)' },
+  const fetched = await fetchRetailProductPage(url, {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    maxBytes: MAX_RESPONSE_BYTES,
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const contentLength = Number(response.headers.get('content-length') || 0);
-  if (contentLength > MAX_RESPONSE_BYTES) throw new Error('Response exceeds 3 MB limit');
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) throw new Error('Response exceeds 3 MB limit');
-  return text;
+  if (!fetched.ok) throw new Error(fetched.error);
+  return fetched.html;
 }
 
 function uniqueAllowedProductUrls(values: string[], allowedDomains: string[]): string[] {

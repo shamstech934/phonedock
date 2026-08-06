@@ -13,6 +13,7 @@ import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
+import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -1146,19 +1147,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const safety = await validateUrlForFetch(productUrl, source.allowedDomains || []);
       if (safety.safe) {
         try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 12_000);
-          const response = await fetch(productUrl, {
-            signal: controller.signal,
-            redirect: 'follow',
-            headers: {
-              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
-          });
-          clearTimeout(timeout);
-          if (response.ok) {
-            const html = await response.text();
+          const fetched = await fetchRetailProductPage(productUrl);
+          if (fetched.ok) {
+            const html = fetched.html;
             const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; ptaStatus?: string };
             const validation = validateRetailListingPage({
               html,
@@ -1185,7 +1176,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
               verificationMessage = validation.reasons.join('; ') || 'No reliable PKR price was detected.';
             }
           } else {
-            verificationMessage = `Retailer returned HTTP ${response.status}.`;
+            verificationMessage = fetched.error;
           }
         } catch (error) {
           verificationMessage = error instanceof Error ? error.message : 'Product page verification failed.';
@@ -1265,24 +1256,25 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     let extractionMethod: string | null = null;
     let extractionConfidence = 0;
     let testError = '';
+    let httpStatus: number | null = null;
+    let finalUrl = url;
+    let responsePreview = '';
+    let failureType: string | null = null;
+    let responseContentType = '';
+    let fetchDurationMs = 0;
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        redirect: 'follow',
-      });
-      clearTimeout(timeout);
+      const fetched = await fetchRetailProductPage(url);
+      reachable = fetched.reachable;
+      httpStatus = fetched.status;
+      finalUrl = fetched.finalUrl;
+      responsePreview = fetched.bodyPreview;
+      failureType = fetched.failureType;
+      responseContentType = fetched.contentType;
+      fetchDurationMs = fetched.durationMs;
 
-      reachable = response.ok;
-
-      if (response.ok) {
-        const html = await response.text();
+      if (fetched.ok) {
+        const html = fetched.html;
 
         // Extract title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -1301,6 +1293,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         } else if (/add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(html)) {
           availability = 'available';
         }
+      } else {
+        testError = fetched.error;
       }
     } catch (error) {
       reachable = false;
@@ -1399,6 +1393,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       safeToEnable,
       extractionMethod,
       extractionConfidence,
+      httpStatus,
+      finalUrl,
+      responsePreview,
+      failureType,
+      responseContentType,
+      fetchDurationMs,
       error: safeToEnable ? null : validationError,
     });
   }

@@ -12,6 +12,7 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
+import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -215,22 +216,18 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         // Attempt to fetch the product URL
         try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 15000);
-          const response = await fetch(listing.productUrl, {
-            signal: controller.signal,
-            headers: {
-              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
-            redirect: 'follow',
-          });
-          clearTimeout(timeout);
+          const fetched = await fetchRetailProductPage(listing.productUrl);
 
-          if (!response.ok) {
+          if (!fetched.ok) {
             fetchError = true;
+            console.warn(`[cron:prices] Fetch failed: ${listing.productUrl} — ${fetched.error}`, {
+              status: fetched.status,
+              finalUrl: fetched.finalUrl,
+              failureType: fetched.failureType,
+              preview: fetched.bodyPreview,
+            });
           } else {
-            const html = await response.text();
+            const html = fetched.html;
 
             const validation = validateRetailListingPage({
               html,

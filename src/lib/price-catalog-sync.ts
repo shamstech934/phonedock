@@ -5,6 +5,7 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 const MAX_SOURCES_PER_RUN = 2;
 const MAX_PENDING_VERIFICATIONS_PER_RUN = 8;
@@ -208,21 +209,14 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
         failure = safety.reason || 'Product URL failed safety validation.';
       } else {
         try {
-          const response = await fetch(listing.productUrl, {
-            redirect: 'follow',
-            signal: AbortSignal.timeout(RETAIL_FETCH_TIMEOUT_MS),
-            headers: {
-              'User-Agent': 'PhoneDock-PriceTracker/1.0 (+https://specsdekh.com)',
-              Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-            },
+          const fetched = await fetchRetailProductPage(listing.productUrl, {
+            timeoutMs: RETAIL_FETCH_TIMEOUT_MS,
+            maxBytes: MAX_RETAIL_PAGE_BYTES,
           });
-          const contentLength = Number(response.headers.get('content-length') || 0);
-          if (!response.ok) failure = `Retailer returned HTTP ${response.status}.`;
-          else if (contentLength > MAX_RETAIL_PAGE_BYTES) failure = 'Retail product page exceeds 3 MB limit.';
+          if (!fetched.ok) failure = fetched.error;
           else {
-            const html = await response.text();
-            if (html.length > MAX_RETAIL_PAGE_BYTES) failure = 'Retail product page exceeds 3 MB limit.';
-            else {
+            const html = fetched.html;
+            {
               const pageValidation = validateRetailListingPage({
                 html,
                 phoneModel: phone.modelName || '',
