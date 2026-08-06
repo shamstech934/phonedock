@@ -25,6 +25,10 @@ interface SummaryData {
   specs: { withSpecs: number; completeSpecs: number; publishedPhones: number; catalogPhones: number };
   queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number };
   severity: { critical: number; high: number; medium: number; low: number; info: number; total: number };
+  issueCounts: {
+    duplicates: number; orphans: number; stalePrices: number; importWarnings: number;
+    lowConfidence: number; priceIssues: number; brandIssues: number;
+  };
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
 
@@ -274,13 +278,11 @@ export default function DataQualityPage() {
       {/* Tabs */}
       <div className="flex overflow-x-auto gap-1 pb-1 border-b border-gray-100">
         {TABS.map(tab => {
-          const count = tab.issueTypeFilter
-            ? summary?.queues?.[getQueueCountKey(tab.issueTypeFilter)] || 0
-            : tab.id === 'issues' ? summary?.severity?.total || 0
-            : tab.id === 'orphans' ? summary?.queues?.orphans || 0
-            : tab.id === 'import-warnings' ? summary?.queues?.failedImports || 0
-            : tab.id === 'stale-prices' ? summary?.queues?.stalePrices || 0
-            : 0;
+          // Live queue tabs use source-collection diagnostics. Issue-backed tabs
+          // use persisted DataQualityIssue counts. Never substitute an unrelated
+          // queue count for a multi-type tab, otherwise 99+ can appear beside an
+          // empty issue list.
+          const count = getTabCount(tab.id, summary);
 
           const isActive = activeTab === tab.id;
           return (
@@ -305,34 +307,38 @@ export default function DataQualityPage() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
-      {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
+      {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('issues', summary)} />}
       {activeTab === 'missing-specs' && <LiveQueueTab key={`specs-${refreshNonce}`} type="specs" />}
       {activeTab === 'missing-images' && <LiveQueueTab key={`images-${refreshNonce}`} type="images" />}
       {activeTab === 'missing-prices' && <LiveQueueTab key={`prices-${refreshNonce}`} type="prices" />}
-      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
-      {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
-      {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ entityType: 'import' }} />}
-      {activeTab === 'low-confidence' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'IMPORT_LOW_CONFIDENCE' }} />}
-      {activeTab === 'price-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' }} />}
-      {activeTab === 'brand-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO' }} />}
+      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('orphans', summary)} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
+      {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('stale-prices', summary)} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
+      {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('import-warnings', summary)} defaultFilter={{ entityType: 'import' }} />}
+      {activeTab === 'low-confidence' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('low-confidence', summary)} defaultFilter={{ issueType: 'IMPORT_LOW_CONFIDENCE' }} />}
+      {activeTab === 'price-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('price-issues', summary)} defaultFilter={{ issueType: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' }} />}
+      {activeTab === 'brand-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('brand-issues', summary)} defaultFilter={{ issueType: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO,BRAND_MISSING_SLUG' }} />}
       {activeTab === 'duplicates' && <DuplicatesTab onRefresh={fetchSummary} />}
       {activeTab === 'scan-history' && <ScanHistoryTab />}
     </div>
   );
 }
 
-function getQueueCountKey(issueType: string): keyof NonNullable<SummaryData['queues']> {
-  const map: Record<string, keyof NonNullable<SummaryData['queues']>> = {
-    'PHONE_MISSING_SPECS': 'missingSpecs',
-    'PHONE_MISSING_PRIMARY_IMAGE': 'missingImages',
-    'PHONE_MISSING_PRICE': 'missingPrices',
-    'PHONE_DUPLICATE_SLUG': 'duplicates',
-    'PHONE_DUPLICATE_NORMALIZED': 'duplicates',
-    'PHONE_STALE_PRICE': 'stalePrices',
-    'ORPHAN_SPECS': 'orphans',
-    'IMPORT_LOW_CONFIDENCE': 'missingSpecs',
-  };
-  return map[issueType] || 'missingSpecs';
+function getTabCount(tabId: TabId, summary: SummaryData | null): number {
+  if (!summary) return 0;
+  switch (tabId) {
+    case 'issues': return summary.severity.total || 0;
+    case 'missing-specs': return summary.queues.missingSpecs || 0;
+    case 'missing-images': return summary.queues.missingImages || 0;
+    case 'missing-prices': return summary.queues.missingPrices || 0;
+    case 'duplicates': return summary.issueCounts?.duplicates || 0;
+    case 'orphans': return summary.issueCounts?.orphans || 0;
+    case 'stale-prices': return summary.issueCounts?.stalePrices || 0;
+    case 'import-warnings': return summary.issueCounts?.importWarnings || 0;
+    case 'low-confidence': return summary.issueCounts?.lowConfidence || 0;
+    case 'price-issues': return summary.issueCounts?.priceIssues || 0;
+    case 'brand-issues': return summary.issueCounts?.brandIssues || 0;
+    default: return 0;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -830,9 +836,10 @@ function StatCard({ label, value, icon: Icon, color = 'text-gray-600', sub }: { 
 // ISSUES TAB (reusable for all queues)
 // ═══════════════════════════════════════════════════════════════════
 
-function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData | null; onRefresh: () => void; defaultFilter?: Record<string, any> }) {
+function IssuesTab({ summary, onRefresh, defaultFilter, expectedCount = 0 }: { summary: SummaryData | null; onRefresh: () => void; defaultFilter?: Record<string, any>; expectedCount?: number }) {
   const [issues, setIssues] = useState<DataQualityIssue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [issuesError, setIssuesError] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
@@ -847,6 +854,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
 
   const fetchIssues = useCallback(async (p: number = page) => {
     setLoading(true);
+    setIssuesError('');
     try {
       const params = new URLSearchParams({ page: String(p), limit: '50', status: statusFilter });
       if (search) params.set('search', search);
@@ -854,15 +862,18 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
       if (defaultFilter?.issueType) params.set('issueType', defaultFilter.issueType);
       if (defaultFilter?.entityType) params.set('entityType', defaultFilter.entityType);
 
-      const res = await fetch(`/api/admin/data-quality/issues?${params}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setIssues(data.issues || []);
-        setTotal(data.total);
-        setPage(data.page);
-      }
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      const res = await fetch(`/api/admin/data-quality/issues?${params}`, { credentials: 'include', cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || `Unable to load issues (${res.status})`);
+      setIssues(data?.issues || []);
+      setTotal(Number(data?.total || 0));
+      setPage(Number(data?.page || p));
+    } catch (e) {
+      console.error(e);
+      setIssues([]);
+      setTotal(0);
+      setIssuesError(e instanceof Error ? e.message : 'Unable to load data quality issues');
+    } finally { setLoading(false); }
   }, [page, search, severityFilter, statusFilter, defaultFilter]);
 
   useEffect(() => { fetchIssues(); }, [fetchIssues]);
@@ -1085,13 +1096,34 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
         </div>
       )}
 
+      {issuesError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {issuesError}
+        </div>
+      )}
+
       {/* Issues List */}
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 bg-gray-50 rounded-xl animate-pulse" />)}</div>
       ) : issues.length === 0 ? (
         <div className="text-center py-16">
-          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No issues found</p>
+          {issuesError ? (
+            <>
+              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+              <p className="text-gray-700 text-sm font-medium">Issue list could not be loaded</p>
+            </>
+          ) : expectedCount > 0 ? (
+            <>
+              <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+              <p className="text-gray-700 text-sm font-medium">{expectedCount.toLocaleString()} issue records are expected, but this filtered page returned none.</p>
+              <p className="text-gray-500 text-xs mt-1">Refresh the page or run a full scan to rebuild the issue index.</p>
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No issues found</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

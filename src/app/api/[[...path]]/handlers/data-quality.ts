@@ -77,6 +77,28 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
 
     const totalOpen = critical + high + medium + low + info;
 
+    // Persisted issue counts used by issue-backed tabs. Keep these counts
+    // separate from live catalog diagnostics so a tab badge always matches
+    // the exact query rendered by that tab.
+    const openIssueMatch = { status: 'open' };
+    const [
+      duplicateIssues,
+      orphanIssues,
+      stalePriceIssues,
+      importWarningIssues,
+      lowConfidenceIssues,
+      priceIssues,
+      brandIssues,
+    ] = await Promise.all([
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: { $in: ['PHONE_DUPLICATE_SLUG', 'PHONE_DUPLICATE_NORMALIZED', 'BRAND_DUPLICATE_NORMALIZED', 'SPECS_DUPLICATE'] } }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: { $in: ['ORPHAN_SPECS', 'ORPHAN_IMAGE', 'ORPHAN_PRICE', 'ORPHAN_BENCHMARK'] } }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: 'PHONE_STALE_PRICE' }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, entityType: 'import' }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: 'IMPORT_LOW_CONFIDENCE' }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: { $in: ['PRICE_OUTLIER', 'PRICE_MISMATCH', 'PRICE_STALE_TRACKED', 'PRICE_SOURCE_INACTIVE'] } }),
+      DataQualityIssue.countDocuments({ ...openIssueMatch, issueType: { $in: ['BRAND_DUPLICATE_NORMALIZED', 'BRAND_MISSING_LOGO', 'BRAND_MISSING_SLUG'] } }),
+    ]);
+
     // Live catalog completeness counts. These must be computed from the source
     // collections, not from DataQualityIssue, because the issue table can be empty
     // before a scan finishes (or when a large serverless scan times out).
@@ -168,6 +190,15 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       specs: { withSpecs: specsComplete, completeSpecs, publishedPhones, catalogPhones: totalPhones },
       queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
       severity: { critical, high, medium, low, info, total: totalOpen },
+      issueCounts: {
+        duplicates: duplicateIssues,
+        orphans: orphanIssues,
+        stalePrices: stalePriceIssues,
+        importWarnings: importWarningIssues,
+        lowConfidence: lowConfidenceIssues,
+        priceIssues,
+        brandIssues,
+      },
       trends: { discoveredToday, fixedToday, newLast7Days },
       database: {
         connected: true,
