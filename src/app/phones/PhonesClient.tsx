@@ -34,6 +34,17 @@ const BATTERY_OPTIONS = ['all', '4500', '5000', '6000'];
 const CHIPSET_OPTIONS = ['all', 'Snapdragon', 'Dimensity', 'Exynos', 'Apple', 'Helio', 'Unisoc'];
 const YEAR_OPTIONS = Array.from({ length: 12 }, (_, index) => String(new Date().getFullYear() - index));
 
+type MarketTab = 'all' | 'latest' | 'price-drops' | 'rumoured' | 'coming-soon' | 'discontinued';
+
+const MARKET_TABS: { key: MarketTab; label: string; activeClass: string }[] = [
+  { key: 'all', label: 'All Phones', activeClass: 'border-blue-600 bg-blue-600 text-white' },
+  { key: 'latest', label: 'Latest', activeClass: 'border-cyan-600 bg-cyan-600 text-white' },
+  { key: 'price-drops', label: 'Price Drops', activeClass: 'border-emerald-600 bg-emerald-600 text-white' },
+  { key: 'rumoured', label: 'Rumoured', activeClass: 'border-violet-600 bg-violet-600 text-white' },
+  { key: 'coming-soon', label: 'Coming Soon', activeClass: 'border-amber-500 bg-amber-500 text-slate-950' },
+  { key: 'discontinued', label: 'Discontinued', activeClass: 'border-slate-700 bg-slate-700 text-white' },
+];
+
 interface PhonesClientProps {
   initialPhones: Phone[];
   initialBrands: Brand[];
@@ -237,6 +248,23 @@ export default function PhonesClient({
     router.push(`/phones?${params.toString()}`);
   }, [router, searchParams]);
 
+  const updateMarketTab = useCallback((tab: MarketTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('collection');
+    params.delete('availability');
+    params.delete('priceDrop');
+    params.set('page', '1');
+
+    if (tab === 'latest') params.set('collection', 'latest');
+    if (tab === 'price-drops') params.set('priceDrop', 'true');
+    if (tab === 'rumoured') params.set('availability', 'rumored');
+    if (tab === 'coming-soon') params.set('availability', 'upcoming');
+    if (tab === 'discontinued') params.set('availability', 'discontinued');
+
+    const query = params.toString();
+    router.push(query ? `/phones?${query}` : '/phones');
+  }, [router, searchParams]);
+
   const clearAll = useCallback(() => {
     router.push('/phones');
     setSearch('');
@@ -258,7 +286,33 @@ export default function PhonesClient({
   }, [loading, total, pageParam, totalPages, updateParam]);
   const activeFilterCount = [brandParam, priceParam, directPriceMin ? 'priceMin' : '', directPriceMax ? 'priceMax' : '', priceCategoryParam, ramParam, storageParam, fiveGParam, nfcParam, ptaParam, displayParam, directScreenMin, directScreenMax, refreshParam, cameraParam, batteryParam, chipsetParam, yearParam, availabilityParam, q ? 'search' : '', priceDropParam ? 'priceDrop' : '', collectionParam ? 'collection' : ''].filter(f => f && f !== 'all' && f !== 'All').length;
 
-  const pageTitle = collectionParam === 'latest' ? 'Latest Phones' : collectionParam === 'trending' ? 'Trending Phones' : collectionParam === 'featured' ? 'Featured Phones' : collectionParam === 'upcoming' ? 'Upcoming Phones' : 'All Phones';
+  const activeMarketTab: MarketTab = priceDropParam === 'true'
+    ? 'price-drops'
+    : availabilityParam === 'rumored'
+      ? 'rumoured'
+      : availabilityParam === 'upcoming' || availabilityParam === 'coming_soon' || collectionParam === 'upcoming'
+        ? 'coming-soon'
+        : availabilityParam === 'discontinued'
+          ? 'discontinued'
+          : collectionParam === 'latest'
+            ? 'latest'
+            : 'all';
+
+  const pageTitle = activeMarketTab === 'latest'
+    ? 'Latest Phones'
+    : activeMarketTab === 'price-drops'
+      ? 'Phone Price Drops'
+      : activeMarketTab === 'rumoured'
+        ? 'Rumoured Phones'
+        : activeMarketTab === 'coming-soon'
+          ? 'Coming Soon Phones'
+          : activeMarketTab === 'discontinued'
+            ? 'Discontinued Phones'
+            : collectionParam === 'trending'
+              ? 'Trending Phones'
+              : collectionParam === 'featured'
+                ? 'Featured Phones'
+                : 'All Phones';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -269,6 +323,26 @@ export default function PhonesClient({
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-gray-900">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1">{total} phone{total !== 1 ? 's' : ''} found{activeFilterCount > 0 ? ` (${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''} active)` : ''}</p>
           </div>
+
+          <nav aria-label="Browse phones by market status" className="-mx-1 overflow-x-auto px-1 pb-1">
+            <div role="tablist" aria-label="Phone market status" className="flex min-w-max gap-2">
+              {MARKET_TABS.map(tab => {
+                const active = activeMarketTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => updateMarketTab(tab.key)}
+                    className={`h-10 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${active ? tab.activeClass : 'border-white/90 bg-white/80 text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
 
           {loadError && (
             <div role="alert" className="flex items-start justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

@@ -7,6 +7,8 @@ const serializer = readFileSync('src/app/api/[[...path]]/handlers/helpers.ts', '
 const rankings = readFileSync('src/lib/get-top-phones.ts', 'utf8');
 const priceTrackerAdmin = readFileSync('src/app/admin/price-tracker/page.tsx', 'utf8');
 const priceTrackerApi = readFileSync('src/app/api/[[...path]]/handlers/price-tracker.ts', 'utf8');
+const phonesPage = readFileSync('src/app/phones/PhonesClient.tsx', 'utf8');
+const publicListings = readFileSync('src/lib/fetch-public-listings.ts', 'utf8');
 
 for (const field of ['currentPrice', 'previousPrice', 'priceChange', 'percentageChange', 'lastPriceCheckedAt', 'lastVerifiedAt']) {
   assert.match(serializer, new RegExp(`${field}: r\\.${field}`), `public serializer must expose ${field}`);
@@ -35,5 +37,12 @@ assert.match(priceTrackerApi, /filter\.changeType = \{ \$in: \['increase', 'decr
 for (const alias of ['percentChange:', 'source:', 'status:', 'date:']) {
   assert.match(priceTrackerApi, new RegExp(alias), `admin Price Tracker response must expose the ${alias} UI alias`);
 }
+
+for (const label of ['All Phones', 'Latest', 'Price Drops', 'Rumoured', 'Coming Soon', 'Discontinued']) {
+  assert.match(phonesPage, new RegExp(`label: '${label}'`), `main phones page must expose the ${label} market tab`);
+}
+assert.match(phonesPage, /params\.set\('priceDrop', 'true'\)/, 'Price Drops tab must activate automatic discount filtering');
+assert.match(phonesPage, /params\.set\('availability', 'upcoming'\)/, 'Coming Soon tab must include the combined upcoming lifecycle');
+assert.match(publicListings, /\['announced', 'coming_soon'\]/, 'upcoming listing must include announced and coming-soon phones');
 
 console.log('phone card market status and lifecycle tabs: all assertions passed');

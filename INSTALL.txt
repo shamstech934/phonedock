@@ -16,6 +16,10 @@ Is patch mein:
 - Price tracker ka current/previous price cards tak pohanchta hai
 - Existing Trending, PTA, Non-PTA, Coming Soon, Rumoured aur Discontinued badges preserved
 - Brand page tabs: All, Available / Latest, Rumoured, Coming Soon, Discontinued
+- Main /phones page par global tabs: All Phones, Latest, Price Drops, Rumoured, Coming Soon, Discontinued
+- Price Drops tab sirf genuine tracked old/new price discount walay phones filter karta hai
+- Coming Soon tab announced, coming_soon aur legacy upcoming records ko safely include karta hai
+- Tabs hamesha nazar aate hain; jis lifecycle ka database count zero ho us mein fake phone show nahi hota
 - Old ?status=upcoming links backward-compatible
 - Ranking cards ko bhi price/lifecycle tracker fields milti hain
 - Regression test included

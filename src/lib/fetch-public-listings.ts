@@ -134,6 +134,13 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   if (/^\d{4}$/.test(params.year || '')) filter.releaseDate = { $regex: `^${params.year}` };
   if (params.availability === 'available') {
     andFilters.push({ $or: [{ availabilityStatus: 'available' }, { availabilityStatus: { $exists: false }, upcoming: { $ne: true } }] });
+  } else if (params.availability === 'upcoming') {
+    andFilters.push({
+      $or: [
+        { availabilityStatus: { $in: ['announced', 'coming_soon'] } },
+        { availabilityStatus: { $exists: false }, upcoming: true },
+      ],
+    });
   } else if (params.availability === 'coming_soon') {
     andFilters.push({ $or: [{ availabilityStatus: 'coming_soon' }, { availabilityStatus: { $exists: false }, upcoming: true }] });
   } else if (params.availability) {
