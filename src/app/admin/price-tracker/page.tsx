@@ -244,6 +244,7 @@ export default function AdminPriceTrackerPage() {
   // ── Phones Tab ──
   const [phones, setPhones] = useState<PhonePrice[]>([]);
   const [phonesTotal, setPhonesTotal] = useState(0);
+  const [phoneModeTotals, setPhoneModeTotals] = useState({ manual: 0, automatic: 0 });
   const [phonesPage, setPhonesPage] = useState(1);
   const [phonesSearch, setPhonesSearch] = useState('');
   const [phonesDebouncedSearch, setPhonesDebouncedSearch] = useState('');
@@ -360,6 +361,10 @@ export default function AdminPriceTrackerPage() {
       if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
       setPhones(d.phones || d.data || []);
       setPhonesTotal(d.total || 0);
+      setPhoneModeTotals({
+        manual: Number(d.modeTotals?.manual || 0),
+        automatic: Number(d.modeTotals?.automatic || 0),
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load phones');
     } finally { setLoading(false); }
@@ -843,12 +848,22 @@ export default function AdminPriceTrackerPage() {
         method: 'POST', credentials: 'include',
       });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to enable linked phones'));
-      const result = await readApiResponse(res) as { eligible?: number; enabled?: number; skippedLocked?: number };
-      setActionMessage(
-        `${result.enabled || 0} linked phones enabled for automatic tracking. ` +
-        `${result.skippedLocked || 0} manually locked phones were preserved.`,
-      );
-      await Promise.all([fetchPhones(), fetchOverview()]);
+      const result = await readApiResponse(res) as { eligible?: number; enabled?: number; alreadyEnabled?: number; skippedLocked?: number };
+      const eligible = Number(result.eligible || 0);
+      const enabled = Number(result.enabled || 0);
+      const alreadyEnabled = Number(result.alreadyEnabled || 0);
+      const skippedLocked = Number(result.skippedLocked || 0);
+      if (eligible === 0) {
+        setActionMessage('No verified phone links are ready yet. Run Auto-link catalog, then Run sync now to verify product pages.');
+      } else if (enabled === 0) {
+        setActionMessage(`${alreadyEnabled} verified linked phone${alreadyEnabled === 1 ? ' was' : 's were'} already enabled. No changes were needed.${skippedLocked ? ` ${skippedLocked} manual lock${skippedLocked === 1 ? ' was' : 's were'} preserved.` : ''}`);
+      } else {
+        setActionMessage(`${enabled} verified linked phone${enabled === 1 ? ' was' : 's were'} enabled for automatic tracking.${alreadyEnabled ? ` ${alreadyEnabled} already enabled.` : ''}${skippedLocked ? ` ${skippedLocked} manual lock${skippedLocked === 1 ? ' was' : 's were'} preserved.` : ''}`);
+      }
+      // The mutation has completed, so release the action button immediately.
+      // Slow dashboard refresh queries must not leave it stuck on “Enabling…”.
+      setActionLoading('');
+      void Promise.allSettled([fetchPhones(), fetchOverview()]);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Failed to enable linked phones');
     } finally {
@@ -1077,8 +1092,8 @@ export default function AdminPriceTrackerPage() {
       </div>
     );
 
-    const manualCount = phones.filter(p => p.mode === 'manual').length;
-    const autoCount = phones.filter(p => p.mode === 'automatic').length;
+    const manualCount = phoneModeTotals.manual;
+    const autoCount = phoneModeTotals.automatic;
 
     return (
       <div>
@@ -1089,11 +1104,11 @@ export default function AdminPriceTrackerPage() {
             <p className="text-sm font-bold text-gray-900">{phonesTotal}</p>
           </div>
           <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
-            <p className="text-xs text-gray-500">Manual</p>
+            <p className="text-xs text-gray-500">Manual (all)</p>
             <p className="text-sm font-bold text-blue-600">{manualCount}</p>
           </div>
           <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
-            <p className="text-xs text-gray-500">Automatic</p>
+            <p className="text-xs text-gray-500">Automatic (all)</p>
             <p className="text-sm font-bold text-purple-600">{autoCount}</p>
           </div>
         </div>
@@ -1101,7 +1116,7 @@ export default function AdminPriceTrackerPage() {
         <div className="mb-4 flex flex-col gap-2 rounded-xl border border-blue-100 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-gray-900">Automatic tracking</p>
-            <p className="text-xs text-gray-600">Only phones linked to an enabled trusted source will be enabled. Manual locks stay unchanged.</p>
+            <p className="text-xs text-gray-600">Only phones with a verified product page on an enabled trusted source will be enabled. Manual locks stay unchanged.</p>
           </div>
           <button
             type="button"
@@ -1110,7 +1125,7 @@ export default function AdminPriceTrackerPage() {
             className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw className={`h-4 w-4 ${actionLoading === 'enable-eligible' ? 'animate-spin' : ''}`} />
-            {actionLoading === 'enable-eligible' ? 'Enabling...' : 'Enable linked phones'}
+            {actionLoading === 'enable-eligible' ? 'Enabling...' : 'Enable verified phones'}
           </button>
         </div>
 

@@ -223,7 +223,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const mode = url.searchParams.get('mode') || 'all';
     const sort = url.searchParams.get('sort') || 'name-az';
 
-    const filter: Record<string, unknown> = { active: true, status: 'published' };
+    const basePhoneFilter: Record<string, unknown> = { active: true, status: 'published' };
+    const filter: Record<string, unknown> = { ...basePhoneFilter };
     if (mode === 'manual') filter.priceMode = { $ne: 'automatic' };
     else if (mode === 'automatic') filter.priceMode = 'automatic';
 
@@ -247,9 +248,17 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     else if (sort === 'change-asc') sortObj = { percentageChange: -1 };
     else if (sort === 'updated') sortObj = { lastPriceCheckedAt: -1, modelName: 1 };
 
-    const [phones, total] = await Promise.all([
+    const [phones, total, automaticTotal, manualTotal] = await Promise.all([
       Phone.find(filter).sort(sortObj).skip(skip).limit(limit).populate('brand').lean(),
       Phone.countDocuments(filter),
+      Phone.countDocuments({ ...basePhoneFilter, priceMode: 'automatic', manualLock: { $ne: true } }),
+      Phone.countDocuments({
+        ...basePhoneFilter,
+        $or: [
+          { priceMode: { $ne: 'automatic' } },
+          { manualLock: true },
+        ],
+      }),
     ]);
 
     const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
@@ -300,6 +309,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         };
       }),
       total,
+      modeTotals: { manual: manualTotal, automatic: automaticTotal },
       page,
       limit,
       totalPages: Math.ceil(total / limit),
@@ -1638,6 +1648,13 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       status: 'published',
       manualLock: true,
     });
+    const alreadyEnabled = await Phone.countDocuments({
+      _id: { $in: eligiblePhoneIds },
+      active: true,
+      status: 'published',
+      manualLock: { $ne: true },
+      priceMode: 'automatic',
+    });
     const result = await Phone.updateMany({
       _id: { $in: eligiblePhoneIds },
       active: true,
@@ -1659,6 +1676,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       success: true,
       eligible: eligiblePublished,
       enabled: result.modifiedCount,
+      alreadyEnabled,
       skippedLocked,
     });
   }

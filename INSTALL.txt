@@ -20,6 +20,9 @@ WHAT THIS FIXES
 - Automatic mode is enabled only when a verified product listing exists.
 - If verification is missing, the row remains visible and shows "Link required".
 - The API explains that Auto-link catalog and Run sync now must verify the product link first.
+- The bulk button no longer stays stuck on "Enabling..." while dashboard data refreshes.
+- Manual/Automatic counters now represent the full published catalog, not only the visible 20-row page.
+- A zero-result bulk run now distinguishes "already enabled" from "no verified links".
 
 VERIFIED LOCALLY
 - npm run typecheck: PASS

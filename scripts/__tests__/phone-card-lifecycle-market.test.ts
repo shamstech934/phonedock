@@ -39,7 +39,10 @@ assert.match(priceTrackerApi, /priceMode: nextMode/, 'individual tracking toggle
 assert.match(priceTrackerApi, /Auto-tracking needs a verified product page from an enabled trusted source/, 'unverified phones need an actionable automation error');
 assert.match(priceTrackerApi, /phones\/enable-eligible/, 'bulk linked-phone automation endpoint must exist');
 assert.match(priceTrackerApi, /manualLock: \{ \$ne: true \}/, 'bulk automation must preserve explicit manual locks');
-assert.match(priceTrackerAdmin, /Enable linked phones/, 'admin must expose the bulk automatic tracking action');
+assert.match(priceTrackerApi, /modeTotals: \{ manual: manualTotal, automatic: automaticTotal \}/, 'phone mode totals must cover the full published catalog');
+assert.match(priceTrackerApi, /alreadyEnabled/, 'bulk automation must distinguish already-enabled phones');
+assert.match(priceTrackerAdmin, /Enable verified phones/, 'admin must expose the verified bulk automatic tracking action');
+assert.match(priceTrackerAdmin, /setActionLoading\(''\);[\s\S]*Promise\.allSettled/, 'slow refresh queries must not leave bulk automation stuck loading');
 assert.match(priceTrackerAdmin, /const \[actionError, setActionError\]/, 'action errors must not replace the whole phone catalog');
 assert.match(priceTrackerAdmin, /Link required/, 'unverified listings must explain why automatic tracking is unavailable');
 for (const alias of ['percentChange:', 'source:', 'status:', 'date:']) {
