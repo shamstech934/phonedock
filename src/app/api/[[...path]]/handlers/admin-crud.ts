@@ -544,13 +544,99 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     await connectDB();
     const phone = await Phone.findById(segments[2]).populate('brand').lean();
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const [specs, benchmarks, images, prices] = await Promise.all([
+    const [specs, benchmarks, images, prices, retailListings, collectedPhone] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
-      PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      PhonePrice.find({ phoneId: phone._id }).limit(50).lean(),
+      PhoneImage.find({ phoneId: phone._id, status: { $ne: 'rejected' } }).sort({ sortOrder: 1 }).lean(),
+      PhonePrice.find({ phoneId: phone._id }).sort({ inStock: -1, price: 1 }).limit(50).lean(),
+      PhoneRetailListing.find({ phoneId: phone._id, enabled: true })
+        .populate('sourceId', 'name trusted enabled status')
+        .sort({ verificationStatus: 1, availability: 1, currentSourcePrice: 1 })
+        .limit(50)
+        .lean(),
+      CollectedPhone.findOne({ approvedPhoneId: phone._id })
+        .sort({ updatedAt: -1 })
+        .select('thumbnail images pakistanPrice pakistanMarketPrice suggestedSeoTitle suggestedSeoDescription sourceName sourceUrl')
+        .lean(),
     ]);
-    return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
+
+    const serialized = phoneToJSON(phone, specs, benchmarks, images, prices);
+    const rawPhone = phone as Record<string, unknown>;
+    const asPositiveNumber = (value: unknown): number => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+
+    const legacyPrices = prices
+      .filter((entry) => entry.inStock !== false)
+      .map((entry) => asPositiveNumber(entry.price))
+      .filter((value) => value > 0);
+    const verifiedRetailPrices = retailListings
+      .filter((entry) => entry.verificationStatus === 'verified' && entry.availability === 'available')
+      .map((entry) => asPositiveNumber(entry.currentSourcePrice))
+      .filter((value) => value > 0);
+    const collected = collectedPhone as Record<string, unknown> | null;
+    const effectivePrice = [
+      rawPhone.pricePKR,
+      rawPhone.currentPrice,
+      rawPhone.bestPtaPricePKR,
+      ...legacyPrices,
+      ...verifiedRetailPrices,
+      collected?.pakistanMarketPrice,
+      collected?.pakistanPrice,
+    ].map(asPositiveNumber).find((value) => value > 0) || 0;
+
+    const collectedImages = Array.isArray(collected?.images)
+      ? (collected?.images as unknown[]).map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const effectiveThumbnail = String(
+      serialized.thumbnail
+      || images[0]?.url
+      || collected?.thumbnail
+      || collectedImages[0]
+      || '',
+    );
+
+    const effectiveImages = serialized.images.length > 0
+      ? serialized.images
+      : Array.from(new Set([effectiveThumbnail, ...collectedImages].filter(Boolean))).map((url, index) => ({
+          id: `prefill-${index}`,
+          url,
+          altText: `${serialized.brandName || ''} ${serialized.modelName || ''} image`.trim(),
+          sortOrder: index,
+        }));
+
+    const effectivePrices = serialized.prices.length > 0
+      ? serialized.prices
+      : retailListings
+          .filter((entry) => asPositiveNumber(entry.currentSourcePrice) > 0)
+          .map((entry) => {
+            const source = entry.sourceId as unknown as { name?: string } | null;
+            return {
+              id: entry._id?.toString(),
+              storeName: source?.name || entry.sourceTitle || 'Retail source',
+              price: asPositiveNumber(entry.currentSourcePrice),
+              url: entry.productUrl || '',
+              inStock: entry.availability === 'available',
+            };
+          });
+
+    return NextResponse.json({
+      ...serialized,
+      pricePKR: effectivePrice,
+      pakistaniPricePKR: effectivePrice,
+      currentPrice: effectivePrice,
+      thumbnail: effectiveThumbnail,
+      thumbnailUrl: effectiveThumbnail,
+      images: effectiveImages,
+      prices: effectivePrices,
+      seoTitle: serialized.seoTitle || String(collected?.suggestedSeoTitle || ''),
+      seoDescription: serialized.seoDescription || String(collected?.suggestedSeoDescription || ''),
+      prefillSources: {
+        price: effectivePrice > 0 && asPositiveNumber(rawPhone.pricePKR) <= 0 ? 'fallback' : 'phone',
+        thumbnail: effectiveThumbnail && !serialized.thumbnail ? 'fallback' : 'phone',
+      },
+    });
   }
 
   // ---- /api/admin/brands/stats ----
