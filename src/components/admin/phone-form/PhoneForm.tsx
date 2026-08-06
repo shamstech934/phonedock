@@ -261,9 +261,9 @@ export default function PhoneForm({
           cons: data.cons ?? '',
           reviewSummary: data.reviewSummary ?? data.review_summary ?? '',
           reviewVerdict: data.reviewVerdict ?? data.review_verdict ?? '',
-          seoTitle: data.seoTitle ?? data.seo_title ?? seoDefaults.title,
-          seoDescription: data.seoDescription ?? data.seo_description ?? seoDefaults.description,
-          keywords: data.keywords ?? seoDefaults.keywords,
+          seoTitle: String(data.seoTitle ?? data.seo_title ?? '').trim() || seoDefaults.title,
+          seoDescription: String(data.seoDescription ?? data.seo_description ?? '').trim() || seoDefaults.description,
+          keywords: String(data.keywords ?? '').trim() || seoDefaults.keywords,
           // Numeric filter fields
           ramGB: toNumberOrEmpty(data.specs?.ramGB ?? data.ramGB ?? data.ram_gb)
             || extractFirstNumber(data.specs?.ram ?? data.ram, /(\d+(?:\.\d+)?)\s*GB/i),
