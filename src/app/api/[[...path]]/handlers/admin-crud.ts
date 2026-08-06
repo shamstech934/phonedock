@@ -556,7 +556,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
         .lean(),
       CollectedPhone.findOne({ approvedPhoneId: phone._id })
         .sort({ updatedAt: -1 })
-        .select('thumbnail images pakistanPrice pakistanMarketPrice suggestedSeoTitle suggestedSeoDescription sourceName sourceUrl')
+        .select('thumbnail images benchmarks pakistanPrice pakistanMarketPrice suggestedSeoTitle suggestedSeoDescription sourceName sourceUrl')
         .lean(),
     ]);
 
@@ -600,6 +600,28 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const serializedImages = serialized.images ?? [];
     const serializedPrices = serialized.prices ?? [];
 
+    const rawBenchmarks = (serialized.benchmarks || {}) as Record<string, unknown>;
+    const collectedBenchmarks = collected?.benchmarks && typeof collected.benchmarks === 'object'
+      ? collected.benchmarks as Record<string, unknown>
+      : {};
+    const firstMeaningful = (...values: unknown[]): unknown => values.find((value) => {
+      if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+    const effectiveBenchmarks = {
+      ...rawBenchmarks,
+      antutu: firstMeaningful(rawBenchmarks.antutu, rawPhone.antutuScore, rawPhone.antutu_score, collectedBenchmarks.antutu) || 0,
+      geekbenchSingle: firstMeaningful(rawBenchmarks.geekbenchSingle, rawPhone.geekbenchSingle, rawPhone.geekbench_single, collectedBenchmarks.geekbenchSingle) || 0,
+      geekbenchMulti: firstMeaningful(rawBenchmarks.geekbenchMulti, rawPhone.geekbenchMulti, rawPhone.geekbench_multi, collectedBenchmarks.geekbenchMulti) || 0,
+      gamingScore: firstMeaningful(rawBenchmarks.gamingScore, rawPhone.gamingScore, rawPhone.gaming_score, collectedBenchmarks.gamingScore) || 0,
+      pubgFps: firstMeaningful(rawBenchmarks.pubgFps, rawPhone.pubgFPS, rawPhone.pubg_fps, collectedBenchmarks.pubgFps) || '',
+      codMobileFps: firstMeaningful(rawBenchmarks.codMobileFps, rawPhone.codMobileFPS, rawPhone.cod_mobile_fps, collectedBenchmarks.codMobileFps) || '',
+      genshinFps: firstMeaningful(rawBenchmarks.genshinFps, rawPhone.genshinFPS, rawPhone.genshin_fps, collectedBenchmarks.genshinFps) || '',
+      videoPlayback: firstMeaningful(rawBenchmarks.videoPlayback, rawPhone.videoPlayback, rawPhone.video_playback, collectedBenchmarks.videoPlayback) || '',
+      gamingBattery: firstMeaningful(rawBenchmarks.gamingBattery, rawPhone.gamingBattery, rawPhone.gaming_battery, collectedBenchmarks.gamingBattery) || '',
+      browsingBattery: firstMeaningful(rawBenchmarks.browsingBattery, rawPhone.browsingBattery, rawPhone.browsing_battery, collectedBenchmarks.browsingBattery) || '',
+    };
+
     const effectiveImages = serializedImages.length > 0
       ? serializedImages
       : Array.from(new Set([effectiveThumbnail, ...collectedImages].filter(Boolean))).map((url, index) => ({
@@ -633,6 +655,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       thumbnailUrl: effectiveThumbnail,
       images: effectiveImages,
       prices: effectivePrices,
+      benchmarks: effectiveBenchmarks,
       seoTitle: serialized.seoTitle || String(collected?.suggestedSeoTitle || ''),
       seoDescription: serialized.seoDescription || String(collected?.suggestedSeoDescription || ''),
       prefillSources: {
