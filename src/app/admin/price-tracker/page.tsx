@@ -1380,7 +1380,7 @@ export default function AdminPriceTrackerPage() {
                 type="text"
                 placeholder="e.g. Daraz"
                 value={newSource.name}
-                onChange={e => setNewSource(s => ({ ...s, name: e.target.value }))}
+                onChange={event => { const name = event.currentTarget.value; setNewSource(current => ({ ...current, name })); }}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               />
             </div>
@@ -1388,7 +1388,7 @@ export default function AdminPriceTrackerPage() {
               <label className="text-xs text-gray-500 font-medium mb-1 block">Type *</label>
               <select
                 value={newSource.type}
-                onChange={e => setNewSource(s => ({ ...s, type: normalizePriceSourceType(e.currentTarget.value) }))}
+                onChange={event => { const type = normalizePriceSourceType(event.currentTarget.value); setNewSource(current => ({ ...current, type })); }}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               >
                 {SOURCE_TYPES.map(t => (
@@ -1405,7 +1405,7 @@ export default function AdminPriceTrackerPage() {
                 type="text"
                 placeholder="https://www.daraz.pk"
                 value={newSource.baseUrl}
-                onChange={e => setNewSource(s => ({ ...s, baseUrl: e.target.value }))}
+                onChange={event => { const baseUrl = event.currentTarget.value; setNewSource(current => ({ ...current, baseUrl })); }}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               />
             </div>
@@ -1415,7 +1415,7 @@ export default function AdminPriceTrackerPage() {
                 type="text"
                 placeholder="daraz.pk, mytech.pk (comma-separated)"
                 value={newSource.allowedDomains}
-                onChange={e => setNewSource(s => ({ ...s, allowedDomains: e.target.value }))}
+                onChange={event => { const allowedDomains = event.currentTarget.value; setNewSource(current => ({ ...current, allowedDomains })); }}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               />
             </div>
@@ -1426,7 +1426,7 @@ export default function AdminPriceTrackerPage() {
                 min={1}
                 max={100}
                 value={newSource.priority}
-                onChange={e => setNewSource(s => ({ ...s, priority: Number(e.target.value) }))}
+                onChange={event => { const priority = Number(event.currentTarget.value); setNewSource(current => ({ ...current, priority })); }}
                 className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               />
             </div>
