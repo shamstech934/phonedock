@@ -21,12 +21,18 @@ Is patch mein:
 - Regression test included
 - Price Tracker ke legacy/missing percentChange records ab admin page ko crash nahi karte
 - Missing percentage ya invalid numeric value par safe dash show hota hai
+- Pehli detected price baseline hai; usay fake Price Increase list mein nahi dikhaya jata
+- Recent Price Changes mein sirf valid old/new price wali genuine increase/decrease entries aati hain
+- Price change ka source, date, status aur percentage API aur admin UI mein correctly map hota hai
+- Baseline record per-phone History mein audit ke liye preserved rehta hai
 
 Verified commands:
 - npm run typecheck: PASS
 - npm run lint: PASS
 - npm test: PASS
 - npm run build: PASS
+- npm run test:price-auto-tracking: PASS
+- price-tracker-intelligence.test.ts: PASS
 
 Build note:
 Local build mein MONGODB_URI na hone ki homepage fallback warning aayi, magar build exit code 0 raha.

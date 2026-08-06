@@ -390,9 +390,16 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const changeType = url.searchParams.get('changeType');
     const sourceType = url.searchParams.get('sourceType');
 
-    const filter: { changeType?: string; sourceType?: string } = {};
+    const filter: Record<string, unknown> = {};
     if (changeType && ['increase', 'decrease', 'unchanged', 'correction'].includes(changeType)) {
       filter.changeType = changeType;
+    } else {
+      // A first successful source detection is a baseline/correction (0 -> price),
+      // not a market movement. Keep it in per-phone history for auditing, but do
+      // not present it as a Recent Price Change or distort increase/drop reports.
+      filter.changeType = { $in: ['increase', 'decrease'] };
+      filter.oldPrice = { $gt: 0 };
+      filter.newPrice = { $gt: 0 };
     }
     if (sourceType && ['manual', 'retailer', 'correction'].includes(sourceType)) {
       filter.sourceType = sourceType;
@@ -415,12 +422,16 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         newPrice: c.newPrice || 0,
         difference: c.difference || 0,
         percentageChange: c.percentageChange || 0,
+        percentChange: c.percentageChange || 0,
         changeType: c.changeType || 'unchanged',
         sourceType: c.sourceType || 'manual',
         sourceName: c.sourceId?.name || '',
+        source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         verificationStatus: c.verificationStatus || 'confirmed',
+        status: c.verificationStatus || 'confirmed',
         capturedAt: c.capturedAt || c.createdAt || null,
+        date: c.capturedAt || c.createdAt || null,
         changedBy: c.changedByAdminId ? { name: c.changedByAdminId?.name, email: c.changedByAdminId?.email } : undefined,
       })),
       total, page, limit, totalPages: Math.ceil(total / limit),
@@ -452,11 +463,14 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         newPrice: c.newPrice || 0,
         difference: c.difference || 0,
         percentageChange: c.percentageChange || 0,
+        percentChange: c.percentageChange || 0,
         changeType: c.changeType || 'unchanged',
         sourceType: c.sourceType || 'manual',
         sourceName: c.sourceId?.name || '',
+        source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         capturedAt: c.capturedAt || c.createdAt || null,
+        date: c.capturedAt || c.createdAt || null,
       })),
     });
   }
@@ -483,12 +497,16 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         newPrice: h.newPrice || 0,
         difference: h.difference || 0,
         percentageChange: h.percentageChange || 0,
+        percentChange: h.percentageChange || 0,
         changeType: h.changeType || 'unchanged',
         sourceType: h.sourceType || 'manual',
         sourceName: h.sourceId?.name || '',
+        source: h.sourceId?.name || '',
         sourceUrl: h.sourceUrl || '',
         verificationStatus: h.verificationStatus || 'confirmed',
+        status: h.verificationStatus || 'confirmed',
         capturedAt: h.capturedAt || h.createdAt || null,
+        date: h.capturedAt || h.createdAt || null,
         changedBy: h.changedByAdminId ? { name: h.changedByAdminId?.name, email: h.changedByAdminId?.email } : undefined,
       })),
     });
