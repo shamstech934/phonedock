@@ -13,7 +13,7 @@ import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
-import { fetchRetailProductPage } from '@/lib/retailer-fetch';
+import { fetchRetailerPage } from '@/lib/retailer-fetch';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -34,6 +34,7 @@ interface LeanSourceDoc {
   lastDiscoveryAt?: Date | null; productsFound?: number; productsAdded?: number; productsUpdated?: number; productsRemoved?: number;
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
   failureCount: number; nextRetryAt: Date | null; lastError: string; status: string; notes: string;
+  accessMode?: string; automaticFetchEnabled?: boolean; lastHttpStatus?: number | null; lastFailureType?: string; lastFetchDurationMs?: number; lastFinalUrl?: string; lastResponsePreview?: string;
 }
 
 interface LeanPopulatedPhone {
@@ -359,13 +360,15 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         const coverage = statsBySource.get(id);
         const health = !s.enabled || s.status === 'paused'
           ? 'paused'
-          : !s.trusted
-            ? 'setup'
-            : s.failureCount >= 3 || s.status === 'failed'
-              ? 'attention'
-              : (coverage?.verified || 0) === 0
-                ? 'no-listings'
-                : 'healthy';
+          : s.accessMode === 'challenge_blocked' || s.automaticFetchEnabled === false
+            ? 'blocked'
+            : !s.trusted
+              ? 'setup'
+              : s.failureCount >= 3 || s.status === 'failed'
+                ? 'attention'
+                : (coverage?.verified || 0) === 0
+                  ? 'no-listings'
+                  : 'healthy';
         return {
         id,
         name: s.name,
@@ -394,6 +397,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         lastError: s.lastError || '',
         status: s.status || 'active',
         notes: s.notes || '',
+        accessMode: s.accessMode || 'direct',
+        automaticFetchEnabled: s.automaticFetchEnabled !== false,
+        lastHttpStatus: s.lastHttpStatus ?? null,
+        lastFailureType: s.lastFailureType || '',
+        lastFetchDurationMs: s.lastFetchDurationMs || 0,
+        lastFinalUrl: s.lastFinalUrl || '',
+        lastResponsePreview: s.lastResponsePreview || '',
         listingCount: coverage?.total || 0,
         enabledListings: coverage?.enabled || 0,
         verifiedListings: coverage?.verified || 0,
@@ -1147,9 +1157,19 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const safety = await validateUrlForFetch(productUrl, source.allowedDomains || []);
       if (safety.safe) {
         try {
-          const fetched = await fetchRetailProductPage(productUrl);
-          if (fetched.ok) {
-            const html = fetched.html;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12_000);
+          const response = await fetch(productUrl, {
+            signal: controller.signal,
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          });
+          clearTimeout(timeout);
+          if (response.ok) {
+            const html = await response.text();
             const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; ptaStatus?: string };
             const validation = validateRetailListingPage({
               html,
@@ -1176,7 +1196,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
               verificationMessage = validation.reasons.join('; ') || 'No reliable PKR price was detected.';
             }
           } else {
-            verificationMessage = fetched.error;
+            verificationMessage = `Retailer returned HTTP ${response.status}.`;
           }
         } catch (error) {
           verificationMessage = error instanceof Error ? error.message : 'Product page verification failed.';
@@ -1227,117 +1247,71 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
 
   // ---- /api/admin/price-tracker/test-source ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'test-source') {
-    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
-    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error;
+    const permCheck = requirePermission(authResult.admin, 'prices:edit'); if (permCheck) return permCheck;
     await connectDB();
 
     const body = await req.json();
-    const { url, sourceId } = body;
-
+    const url = String(body.url || '').trim();
+    const sourceId = String(body.sourceId || '').trim();
     if (!url) return NextResponse.json({ error: 'url is required' }, { status: 400 });
 
-    // SSRF protection: validate URL safety
-    if (!url.startsWith('https://') && !url.startsWith('http://')) {
-      return NextResponse.json({ error: 'URL must use HTTP or HTTPS' }, { status: 400 });
-    }
-    if (/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(url)) {
-      return NextResponse.json({ error: 'URL must not point to localhost' }, { status: 400 });
-    }
-    if (/(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})/.test(url)) {
-      return NextResponse.json({ error: 'URL must not use private IP addresses' }, { status: 400 });
-    }
-
-    let reachable = false;
-    let title = '';
-    let detectedPrice: number | null = null;
-    let availability = 'unknown' as string;
-    let matched = false;
-    let safeToEnable = false;
-    let extractionMethod: string | null = null;
-    let extractionConfidence = 0;
-    let testError = '';
-    let httpStatus: number | null = null;
-    let finalUrl = url;
-    let responsePreview = '';
-    let failureType: string | null = null;
-    let responseContentType = '';
-    let fetchDurationMs = 0;
-
-    try {
-      const fetched = await fetchRetailProductPage(url);
-      reachable = fetched.reachable;
-      httpStatus = fetched.status;
-      finalUrl = fetched.finalUrl;
-      responsePreview = fetched.bodyPreview;
-      failureType = fetched.failureType;
-      responseContentType = fetched.contentType;
-      fetchDurationMs = fetched.durationMs;
-
-      if (fetched.ok) {
-        const html = fetched.html;
-
-        // Extract title
-        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-        if (titleMatch) title = titleMatch[1].trim().slice(0, 200);
-
-        // Shared deterministic extraction supports JSON-LD, meta tags and
-        // visible PKR price markup. The same parser is used by scheduled sync.
-        const extracted = extractRetailPrice(html);
-        detectedPrice = extracted?.price ?? null;
-        extractionMethod = extracted?.method ?? null;
-        extractionConfidence = extracted?.confidence ?? 0;
-
-        // Check availability
-        if (/out\s*of\s*stock|unavailable|sold\s*out/i.test(html)) {
-          availability = 'unavailable';
-        } else if (/add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(html)) {
-          availability = 'available';
-        }
-      } else {
-        testError = fetched.error;
-      }
-    } catch (error) {
-      reachable = false;
-      testError = error instanceof Error ? error.message : 'Product page could not be fetched';
-    }
-
-    // A deterministic parser returns confidence on a 0..1 scale. A real PKR
-    // price is reliable when it is in range and comes from a supported parser.
-    const MIN_TRUST_CONFIDENCE = 0.70;
-    matched = detectedPrice !== null && extractionConfidence >= MIN_TRUST_CONFIDENCE;
-    safeToEnable = reachable && matched && availability !== 'unavailable';
+    const source = sourceId ? await PriceSource.findById(sourceId).lean() as unknown as LeanSourceDoc | null : null;
+    const expectedDomains = Array.isArray(source?.allowedDomains)
+      ? source.allowedDomains.map((domain: string) => domain.replace(/^\./, '').toLowerCase()).filter(Boolean)
+      : [];
 
     let domainAllowed = true;
-    let expectedDomains: string[] = [];
-
-    // A source may only be trusted with a product page hosted by that source.
-    if (sourceId) {
-      const source = await PriceSource.findById(sourceId).lean();
-      if (source) {
-        expectedDomains = Array.isArray(source.allowedDomains)
-          ? source.allowedDomains.map((domain: string) => domain.replace(/^\./, '').toLowerCase()).filter(Boolean)
-          : [];
-        try {
-          const urlDomain = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-          if (expectedDomains.length > 0) {
-            domainAllowed = expectedDomains.some((domain: string) => {
-              const clean = domain.replace(/^www\./, '');
-              return urlDomain === clean || urlDomain.endsWith('.' + clean);
-            });
-            if (!domainAllowed) safeToEnable = false;
-          }
-        } catch {
-          domainAllowed = false;
-          safeToEnable = false;
-        }
+    try {
+      const urlDomain = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+      if (expectedDomains.length > 0) {
+        domainAllowed = expectedDomains.some((domain: string) => {
+          const clean = domain.replace(/^www\./, '');
+          return urlDomain === clean || urlDomain.endsWith('.' + clean);
+        });
       }
+    } catch {
+      domainAllowed = false;
+    }
+    if (!domainAllowed) {
+      return NextResponse.json({
+        reachable: false, title: null, detectedPrice: null, availability: 'unknown', matched: false,
+        safeToEnable: false, extractionMethod: null, extractionConfidence: 0,
+        error: `Wrong domain. Use a real product page from ${expectedDomains.join(' or ') || 'this source domain'}.`,
+        httpStatus: null, finalUrl: url, contentType: '', fetchDurationMs: 0, failureType: 'unsafe_url', responsePreview: '',
+      });
     }
 
-    const validationError = testError || (!reachable
-      ? 'Product page is not reachable'
-      : !domainAllowed
-        ? `Wrong domain. Use a real product page from ${expectedDomains.join(' or ') || 'this source domain'}.`
-        : detectedPrice === null
+    const fetchResult = await fetchRetailerPage(url, expectedDomains, { timeoutMs: 25_000 });
+    let title = '';
+    let detectedPrice: number | null = null;
+    let availability = 'unknown';
+    let extractionMethod: string | null = null;
+    let extractionConfidence = 0;
+
+    if (fetchResult.ok) {
+      const titleMatch = fetchResult.html.match(/<title[^>]*>([^<]+)<\/title>/i)
+        || fetchResult.html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+      title = titleMatch?.[1]?.trim().slice(0, 200) || '';
+      const extracted = extractRetailPrice(fetchResult.html);
+      detectedPrice = extracted?.price ?? null;
+      extractionMethod = extracted?.method ?? null;
+      extractionConfidence = extracted?.confidence ?? 0;
+      availability = /out\s*of\s*stock|unavailable|sold\s*out/i.test(fetchResult.html)
+        ? 'unavailable'
+        : /add\s*to\s*cart|buy\s*now|in\s*stock|available/i.test(fetchResult.html)
+          ? 'available'
+          : 'unknown';
+    }
+
+    const MIN_TRUST_CONFIDENCE = 0.70;
+    const matched = detectedPrice !== null && extractionConfidence >= MIN_TRUST_CONFIDENCE;
+    const safeToEnable = fetchResult.ok && matched && availability !== 'unavailable';
+    const challengeBlocked = fetchResult.failureType === 'challenge' || fetchResult.failureType === 'rate_limit';
+    const validationError = safeToEnable
+      ? ''
+      : fetchResult.error
+        || (detectedPrice === null
           ? 'No PKR price was detected on this product page.'
           : extractionConfidence < MIN_TRUST_CONFIDENCE
             ? `Price confidence is too low (${Math.round(extractionConfidence * 100)}%).`
@@ -1345,47 +1319,64 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
               ? 'Product is currently unavailable.'
               : 'Source validation failed.');
 
-    if (sourceId) {
-      const sourceHealth = await PriceSource.findById(sourceId).select('failureCount').lean();
-      const nextFailureCount = Number(sourceHealth?.failureCount || 0) + 1;
-      const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
-      const nextRetryAt = new Date(Date.now() + retryDelayMinutes * 60_000);
-      const failureReason = validationError;
-      const healthUpdate: {
-        $set: Record<string, unknown>;
-        $inc?: Record<string, number>;
-      } = safeToEnable
-        ? {
-            $set: {
-              lastCheckedAt: new Date(),
-              lastSuccessAt: new Date(),
-              failureCount: 0,
-              nextRetryAt: null,
-              lastError: '',
-              status: 'active',
-            },
-          }
-        : {
-            $set: {
-              lastCheckedAt: new Date(),
-              nextRetryAt,
-              lastError: failureReason,
-              status: nextFailureCount >= 3 ? 'failed' : 'active',
-            },
-            $inc: { failureCount: 1 },
-          };
+    if (sourceId && source) {
+      const diagnostics = {
+        lastCheckedAt: new Date(),
+        lastHttpStatus: fetchResult.status,
+        lastFailureType: fetchResult.failureType === 'none' ? '' : fetchResult.failureType,
+        lastFetchDurationMs: fetchResult.durationMs,
+        lastFinalUrl: fetchResult.finalUrl,
+        lastResponsePreview: fetchResult.preview,
+      };
       if (safeToEnable) {
-        healthUpdate.$set.verificationUrl = url;
-        healthUpdate.$set.trusted = true;
-        healthUpdate.$set.enabled = true;
+        await PriceSource.findByIdAndUpdate(sourceId, {
+          $set: {
+            ...diagnostics,
+            verificationUrl: url,
+            trusted: true,
+            enabled: true,
+            automaticFetchEnabled: true,
+            accessMode: 'direct',
+            lastSuccessAt: new Date(),
+            failureCount: 0,
+            nextRetryAt: null,
+            lastError: '',
+            status: 'active',
+          },
+        });
+      } else if (challengeBlocked) {
+        // An anti-bot block is a source capability, not a dead URL. Keep the
+        // source visible and trusted state unchanged, but disable automatic
+        // server-side fetching so cron does not waste CPU retrying it.
+        await PriceSource.findByIdAndUpdate(sourceId, {
+          $set: {
+            ...diagnostics,
+            accessMode: 'challenge_blocked',
+            automaticFetchEnabled: false,
+            nextRetryAt: new Date(Date.now() + 24 * 60 * 60_000),
+            lastError: validationError,
+            status: 'active',
+          },
+        });
+      } else {
+        const nextFailureCount = Number(source.failureCount || 0) + 1;
+        const retryDelayMinutes = Math.min(24 * 60, 15 * (2 ** Math.min(nextFailureCount - 1, 6)));
+        await PriceSource.findByIdAndUpdate(sourceId, {
+          $set: {
+            ...diagnostics,
+            accessMode: 'direct',
+            automaticFetchEnabled: true,
+            nextRetryAt: new Date(Date.now() + retryDelayMinutes * 60_000),
+            lastError: validationError,
+            status: nextFailureCount >= 3 ? 'failed' : 'active',
+          },
+          $inc: { failureCount: 1 },
+        });
       }
-      await PriceSource.findByIdAndUpdate(sourceId, healthUpdate).catch((error: unknown) => {
-        console.error('[price-tracker:test-source:health]', error);
-      });
     }
 
     return NextResponse.json({
-      reachable,
+      reachable: fetchResult.reachable,
       title: title || null,
       detectedPrice,
       availability,
@@ -1393,13 +1384,15 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       safeToEnable,
       extractionMethod,
       extractionConfidence,
-      httpStatus,
-      finalUrl,
-      responsePreview,
-      failureType,
-      responseContentType,
-      fetchDurationMs,
       error: safeToEnable ? null : validationError,
+      httpStatus: fetchResult.status,
+      finalUrl: fetchResult.finalUrl,
+      contentType: fetchResult.contentType,
+      fetchDurationMs: fetchResult.durationMs,
+      failureType: fetchResult.failureType,
+      responsePreview: fetchResult.preview,
+      accessMode: challengeBlocked ? 'challenge_blocked' : safeToEnable ? 'direct' : source?.accessMode || 'direct',
+      automaticFetchEnabled: challengeBlocked ? false : safeToEnable ? true : source?.automaticFetchEnabled !== false,
     });
   }
 

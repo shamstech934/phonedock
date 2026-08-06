@@ -25,10 +25,6 @@ interface SummaryData {
   specs: { withSpecs: number; completeSpecs: number; publishedPhones: number; catalogPhones: number };
   queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number };
   severity: { critical: number; high: number; medium: number; low: number; info: number; total: number };
-  issueCounts: {
-    duplicates: number; orphans: number; stalePrices: number; importWarnings: number;
-    lowConfidence: number; priceIssues: number; brandIssues: number;
-  };
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
 
@@ -37,9 +33,9 @@ interface RepairResult {
   dryRun?: boolean; type?: string; total?: number; ready?: number; updated?: number; skipped?: number; failed?: number;
   results?: RepairResultRow[]; error?: string;
 }
-interface BatchMatchRow { phoneId: string; modelName?: string; status: string; score?: number; message?: string; }
+interface BatchMatchRow { phoneId: string; modelName?: string; status: string; score?: number; }
 interface BatchMatchResult {
-  processed?: number; applied?: number; review?: number; notFound?: number; invalid?: number; failed?: number;
+  processed?: number; applied?: number; review?: number; notFound?: number; failed?: number;
   results?: BatchMatchRow[]; running?: boolean; error?: string;
 }
 
@@ -278,11 +274,13 @@ export default function DataQualityPage() {
       {/* Tabs */}
       <div className="flex overflow-x-auto gap-1 pb-1 border-b border-gray-100">
         {TABS.map(tab => {
-          // Live queue tabs use source-collection diagnostics. Issue-backed tabs
-          // use persisted DataQualityIssue counts. Never substitute an unrelated
-          // queue count for a multi-type tab, otherwise 99+ can appear beside an
-          // empty issue list.
-          const count = getTabCount(tab.id, summary);
+          const count = tab.issueTypeFilter
+            ? summary?.queues?.[getQueueCountKey(tab.issueTypeFilter)] || 0
+            : tab.id === 'issues' ? summary?.severity?.total || 0
+            : tab.id === 'orphans' ? summary?.queues?.orphans || 0
+            : tab.id === 'import-warnings' ? summary?.queues?.failedImports || 0
+            : tab.id === 'stale-prices' ? summary?.queues?.stalePrices || 0
+            : 0;
 
           const isActive = activeTab === tab.id;
           return (
@@ -307,38 +305,34 @@ export default function DataQualityPage() {
 
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab summary={summary} loading={loadingSummary} onRefresh={fetchSummary} />}
-      {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('issues', summary)} />}
+      {activeTab === 'issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} />}
       {activeTab === 'missing-specs' && <LiveQueueTab key={`specs-${refreshNonce}`} type="specs" />}
       {activeTab === 'missing-images' && <LiveQueueTab key={`images-${refreshNonce}`} type="images" />}
       {activeTab === 'missing-prices' && <LiveQueueTab key={`prices-${refreshNonce}`} type="prices" />}
-      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('orphans', summary)} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
-      {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('stale-prices', summary)} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
-      {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('import-warnings', summary)} defaultFilter={{ entityType: 'import' }} />}
-      {activeTab === 'low-confidence' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('low-confidence', summary)} defaultFilter={{ issueType: 'IMPORT_LOW_CONFIDENCE' }} />}
-      {activeTab === 'price-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('price-issues', summary)} defaultFilter={{ issueType: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' }} />}
-      {activeTab === 'brand-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} expectedCount={getTabCount('brand-issues', summary)} defaultFilter={{ issueType: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO,BRAND_MISSING_SLUG' }} />}
+      {activeTab === 'orphans' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'ORPHAN_SPECS,ORPHAN_IMAGE,ORPHAN_PRICE,ORPHAN_BENCHMARK' }} />}
+      {activeTab === 'stale-prices' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PHONE_STALE_PRICE' }} />}
+      {activeTab === 'import-warnings' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ entityType: 'import' }} />}
+      {activeTab === 'low-confidence' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'IMPORT_LOW_CONFIDENCE' }} />}
+      {activeTab === 'price-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'PRICE_OUTLIER,PRICE_MISMATCH,PRICE_STALE_TRACKED,PRICE_SOURCE_INACTIVE' }} />}
+      {activeTab === 'brand-issues' && <IssuesTab summary={summary} onRefresh={fetchSummary} defaultFilter={{ issueType: 'BRAND_DUPLICATE_NORMALIZED,BRAND_MISSING_LOGO' }} />}
       {activeTab === 'duplicates' && <DuplicatesTab onRefresh={fetchSummary} />}
       {activeTab === 'scan-history' && <ScanHistoryTab />}
     </div>
   );
 }
 
-function getTabCount(tabId: TabId, summary: SummaryData | null): number {
-  if (!summary) return 0;
-  switch (tabId) {
-    case 'issues': return summary.severity.total || 0;
-    case 'missing-specs': return summary.queues.missingSpecs || 0;
-    case 'missing-images': return summary.queues.missingImages || 0;
-    case 'missing-prices': return summary.queues.missingPrices || 0;
-    case 'duplicates': return summary.issueCounts?.duplicates || 0;
-    case 'orphans': return summary.issueCounts?.orphans || 0;
-    case 'stale-prices': return summary.issueCounts?.stalePrices || 0;
-    case 'import-warnings': return summary.issueCounts?.importWarnings || 0;
-    case 'low-confidence': return summary.issueCounts?.lowConfidence || 0;
-    case 'price-issues': return summary.issueCounts?.priceIssues || 0;
-    case 'brand-issues': return summary.issueCounts?.brandIssues || 0;
-    default: return 0;
-  }
+function getQueueCountKey(issueType: string): keyof NonNullable<SummaryData['queues']> {
+  const map: Record<string, keyof NonNullable<SummaryData['queues']>> = {
+    'PHONE_MISSING_SPECS': 'missingSpecs',
+    'PHONE_MISSING_PRIMARY_IMAGE': 'missingImages',
+    'PHONE_MISSING_PRICE': 'missingPrices',
+    'PHONE_DUPLICATE_SLUG': 'duplicates',
+    'PHONE_DUPLICATE_NORMALIZED': 'duplicates',
+    'PHONE_STALE_PRICE': 'stalePrices',
+    'ORPHAN_SPECS': 'orphans',
+    'IMPORT_LOW_CONFIDENCE': 'missingSpecs',
+  };
+  return map[issueType] || 'missingSpecs';
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -528,10 +522,10 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
   const runAutoMatch = async (phoneIds: string[]) => {
     if (!phoneIds.length) return;
     setBatchMatchLoading(true); setBatchMatchResult(null); setBatchMatchProgress({ done: 0, total: phoneIds.length });
-    const aggregate = { selected: phoneIds.length, processed: 0, applied: 0, review: 0, notFound: 0, invalid: 0, failed: 0, results: [] as BatchMatchRow[] };
+    const aggregate = { selected: phoneIds.length, processed: 0, applied: 0, review: 0, notFound: 0, failed: 0, results: [] as BatchMatchRow[] };
     try {
-      for (let offset = 0; offset < phoneIds.length; offset += 25) {
-        const chunk = phoneIds.slice(offset, offset + 25);
+      for (let offset = 0; offset < phoneIds.length; offset += 100) {
+        const chunk = phoneIds.slice(offset, offset + 100);
         const res = await fetch('/api/admin/data-quality/spec-enrichment/batch-apply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store',
           body: JSON.stringify({ phoneIds: chunk, threshold: matchThreshold }),
@@ -542,7 +536,6 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
         aggregate.applied += data.applied || 0;
         aggregate.review += data.review || 0;
         aggregate.notFound += data.notFound || 0;
-        aggregate.invalid += data.invalid || 0;
         aggregate.failed += data.failed || 0;
         if (Array.isArray(data.results)) aggregate.results.push(...data.results.filter((row: BatchMatchRow) => row.status !== 'applied').slice(0, 20));
         setBatchMatchProgress({ done: Math.min(offset + chunk.length, phoneIds.length), total: phoneIds.length });
@@ -559,7 +552,7 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
 
   const autoMatchAllMissing = async () => {
     if (type !== 'specs' || !total) return;
-    if (!confirm(`Automatically match all ${total.toLocaleString()} phones missing specs? High-confidence matches will be applied in safe batches of 25; ambiguous phones will remain for review and invalid category-page records will be skipped.`)) return;
+    if (!confirm(`Automatically match all ${total.toLocaleString()} phones missing specs? High-confidence matches will be applied in safe batches of 100; ambiguous phones will remain for review.`)) return;
     setBatchMatchLoading(true); setBatchMatchResult(null);
     try {
       const params = new URLSearchParams({ type: 'specs', idsOnly: '1' });
@@ -645,9 +638,9 @@ function LiveQueueTab({ type }: { type: LiveQueueType }) {
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error} <button onClick={load} className="underline font-medium ml-2">Retry</button></div>}
-      {type === 'specs' && total > 0 && <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className="text-sm font-semibold text-blue-800">{selected.size > 0 ? `${selected.size.toLocaleString()} selected` : `${total.toLocaleString()} phones need specs`}</span><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label>{selected.size > 0 && <button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button>}<button onClick={autoMatchAllMissing} disabled={batchMatchLoading || !datasetStatus?.count || total === 0} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title="Process the complete missing-specs queue in CPU-safe batches of 25">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match all {total.toLocaleString()}</button>{selected.size > 0 && <><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></>}</div>{batchMatchProgress && <div><div className="flex justify-between text-xs text-blue-800 mb-1"><span>Automatic matching in progress — keep this page open</span><span>{batchMatchProgress.done.toLocaleString()} / {batchMatchProgress.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-blue-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.round((batchMatchProgress.done / Math.max(1, batchMatchProgress.total)) * 100)}%` }} /></div></div>}</div>}
+      {type === 'specs' && total > 0 && <div className="flex flex-col gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className="text-sm font-semibold text-blue-800">{selected.size > 0 ? `${selected.size.toLocaleString()} selected` : `${total.toLocaleString()} phones need specs`}</span><label className="flex items-center gap-2 text-xs font-medium text-blue-800">Confidence<select value={matchThreshold} onChange={e => setMatchThreshold(Number(e.target.value))} disabled={batchMatchLoading} className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs"><option value={90}>90%</option><option value={92}>92%</option><option value={95}>95%</option><option value={98}>98%</option></select></label>{selected.size > 0 && <button onClick={autoMatchSelected} disabled={batchMatchLoading || !datasetStatus?.count} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match selected</button>}<button onClick={autoMatchAllMissing} disabled={batchMatchLoading || !datasetStatus?.count || total === 0} className="h-9 px-4 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50" title="Process the complete missing-specs queue in batches of 100">{batchMatchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />} Auto match all {total.toLocaleString()}</button>{selected.size > 0 && <><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></>}</div>{batchMatchProgress && <div><div className="flex justify-between text-xs text-blue-800 mb-1"><span>Automatic matching in progress — keep this page open</span><span>{batchMatchProgress.done.toLocaleString()} / {batchMatchProgress.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-blue-100 overflow-hidden"><div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.round((batchMatchProgress.done / Math.max(1, batchMatchProgress.total)) * 100)}%` }} /></div></div>}</div>}
       {type !== 'specs' && selected.size > 0 && <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"><span className="text-sm font-semibold text-blue-800">{selected.size} selected</span><button onClick={exportSelectedCsv} className="h-8 px-3 inline-flex items-center justify-center gap-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"><Download className="w-3.5 h-3.5" /> Export selected</button><button onClick={() => setSelected(new Set())} className="h-8 px-3 text-xs font-medium text-blue-700 border border-blue-200 rounded-lg">Clear</button></div>}
-      {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.invalid || 0} invalid catalog records skipped · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: BatchMatchRow) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: BatchMatchRow) => row.status !== 'applied').slice(0, 12).map((row: BatchMatchRow) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status === 'invalid_phone' ? (row.message || 'invalid catalog/category record skipped') : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
+      {batchMatchResult && <div className={`rounded-xl border p-4 text-sm ${batchMatchResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>{batchMatchResult.error ? batchMatchResult.error : <><p className="font-semibold">Automatic matching complete</p><p className="mt-1">{batchMatchResult.applied} applied · {batchMatchResult.review} need review · {batchMatchResult.notFound} not found · {batchMatchResult.failed} failed</p>{batchMatchResult.results?.some((row: BatchMatchRow) => row.status !== 'applied') && <div className="mt-2 text-xs space-y-1">{batchMatchResult.results.filter((row: BatchMatchRow) => row.status !== 'applied').slice(0, 8).map((row: BatchMatchRow) => <p key={row.phoneId}>{row.modelName}: {row.status === 'needs_review' ? `${row.score}% match needs review` : row.status.replace('_', ' ')}</p>)}</div>}</>}</div>}
       {loading ? <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}</div> : items.length === 0 ? <div className="bg-white border border-gray-100 rounded-2xl py-16 text-center"><CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" /><p className="text-gray-700 font-medium">No matching incomplete phones</p></div> : <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="hidden md:grid grid-cols-12 gap-3 px-4 py-3 bg-gray-50 text-xs font-medium text-gray-500"><div className="col-span-4 flex items-center gap-2"><input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={togglePage} className="rounded" /> Phone</div><div className="col-span-2">Status</div><div className="col-span-2">Current data</div><div className="col-span-2">Updated</div><div className="col-span-2">Action</div></div>
         {items.map(item => <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center px-4 py-3 border-t border-gray-100 first:border-t-0"><div className="md:col-span-4 flex items-start gap-2"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelected(item.id)} className="mt-1 rounded" /><div><p className="font-medium text-gray-900">{item.modelName}</p><p className="text-xs text-gray-500">{item.brandName} · {item.slug}</p></div></div><div className="md:col-span-2"><span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-700 text-xs font-medium">Missing {type}</span></div><div className="md:col-span-2 text-xs text-gray-600">{type === 'prices' ? 'No valid price' : type === 'images' ? 'No thumbnail/image' : 'No specs document'}<div className="text-gray-400 mt-0.5">{item.dataConfidence}</div></div><div className="md:col-span-2 text-xs text-gray-500">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</div><div className="md:col-span-2 flex flex-wrap gap-2">{type === 'specs' && <button onClick={() => searchLocalSpecs(item)} className="h-8 px-3 inline-flex items-center justify-center gap-1 bg-emerald-600 text-white rounded-lg text-xs font-medium"><Search className="w-3.5 h-3.5" /> Find specs</button>}<a href={`/admin/phones/${item.id}/edit`} className="h-8 px-3 inline-flex items-center justify-center bg-blue-600 text-white rounded-lg text-xs font-medium">Editor</a><a href={`/phones/${item.slug}`} target="_blank" className="h-8 px-3 inline-flex items-center justify-center border border-gray-200 rounded-lg text-xs font-medium">View</a></div></div>)}
@@ -837,10 +830,9 @@ function StatCard({ label, value, icon: Icon, color = 'text-gray-600', sub }: { 
 // ISSUES TAB (reusable for all queues)
 // ═══════════════════════════════════════════════════════════════════
 
-function IssuesTab({ summary, onRefresh, defaultFilter, expectedCount = 0 }: { summary: SummaryData | null; onRefresh: () => void; defaultFilter?: Record<string, any>; expectedCount?: number }) {
+function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData | null; onRefresh: () => void; defaultFilter?: Record<string, any> }) {
   const [issues, setIssues] = useState<DataQualityIssue[]>([]);
   const [loading, setLoading] = useState(true);
-  const [issuesError, setIssuesError] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
@@ -855,7 +847,6 @@ function IssuesTab({ summary, onRefresh, defaultFilter, expectedCount = 0 }: { s
 
   const fetchIssues = useCallback(async (p: number = page) => {
     setLoading(true);
-    setIssuesError('');
     try {
       const params = new URLSearchParams({ page: String(p), limit: '50', status: statusFilter });
       if (search) params.set('search', search);
@@ -863,18 +854,15 @@ function IssuesTab({ summary, onRefresh, defaultFilter, expectedCount = 0 }: { s
       if (defaultFilter?.issueType) params.set('issueType', defaultFilter.issueType);
       if (defaultFilter?.entityType) params.set('entityType', defaultFilter.entityType);
 
-      const res = await fetch(`/api/admin/data-quality/issues?${params}`, { credentials: 'include', cache: 'no-store' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || `Unable to load issues (${res.status})`);
-      setIssues(data?.issues || []);
-      setTotal(Number(data?.total || 0));
-      setPage(Number(data?.page || p));
-    } catch (e) {
-      console.error(e);
-      setIssues([]);
-      setTotal(0);
-      setIssuesError(e instanceof Error ? e.message : 'Unable to load data quality issues');
-    } finally { setLoading(false); }
+      const res = await fetch(`/api/admin/data-quality/issues?${params}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setIssues(data.issues || []);
+        setTotal(data.total);
+        setPage(data.page);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }, [page, search, severityFilter, statusFilter, defaultFilter]);
 
   useEffect(() => { fetchIssues(); }, [fetchIssues]);
@@ -1097,34 +1085,13 @@ function IssuesTab({ summary, onRefresh, defaultFilter, expectedCount = 0 }: { s
         </div>
       )}
 
-      {issuesError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {issuesError}
-        </div>
-      )}
-
       {/* Issues List */}
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 bg-gray-50 rounded-xl animate-pulse" />)}</div>
       ) : issues.length === 0 ? (
         <div className="text-center py-16">
-          {issuesError ? (
-            <>
-              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-              <p className="text-gray-700 text-sm font-medium">Issue list could not be loaded</p>
-            </>
-          ) : expectedCount > 0 ? (
-            <>
-              <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
-              <p className="text-gray-700 text-sm font-medium">{expectedCount.toLocaleString()} issue records are expected, but this filtered page returned none.</p>
-              <p className="text-gray-500 text-xs mt-1">Refresh the page or run a full scan to rebuild the issue index.</p>
-            </>
-          ) : (
-            <>
-              <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">No issues found</p>
-            </>
-          )}
+          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+          <p className="text-gray-500 text-sm">No issues found</p>
         </div>
       ) : (
         <div className="space-y-2">

@@ -1,201 +1,148 @@
-export const RETAIL_BROWSER_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
-export const RETAIL_FETCH_TIMEOUT_MS = 25_000;
-export const RETAIL_MAX_HTML_BYTES = 3 * 1024 * 1024;
-
-export type RetailFetchFailure =
-  | 'http_error'
+export type RetailerFetchFailureType =
+  | 'none'
   | 'timeout'
-  | 'network_error'
-  | 'blocked'
+  | 'network'
+  | 'http'
   | 'challenge'
+  | 'rate_limit'
   | 'invalid_content_type'
-  | 'response_too_large';
+  | 'oversized'
+  | 'unsafe_url';
 
-export interface RetailFetchResult {
-  ok: boolean;
+export interface RetailerFetchResult {
   reachable: boolean;
+  ok: boolean;
   status: number | null;
-  statusText: string;
   finalUrl: string;
   contentType: string;
   html: string;
-  bodyPreview: string;
-  failureType: RetailFetchFailure | null;
-  error: string;
+  preview: string;
   durationMs: number;
+  failureType: RetailerFetchFailureType;
+  error: string;
 }
 
-const CHALLENGE_PATTERN = /cloudflare|cf-chl-|captcha|verify you are human|checking your browser|access denied|akamai|incapsula|datadome/i;
+const DEFAULT_TIMEOUT_MS = 25_000;
+const DEFAULT_MAX_BYTES = 3_000_000;
+const CHALLENGE_PATTERNS = [
+  /cf-chl-/i,
+  /cloudflare/i,
+  /checking your browser/i,
+  /verify you are human/i,
+  /access denied/i,
+  /captcha/i,
+  /bot detection/i,
+  /security challenge/i,
+];
 
-function compactPreview(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().slice(0, 500);
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache',
+  Pragma: 'no-cache',
+  'Upgrade-Insecure-Requests': '1',
+};
+
+function classifyFailure(status: number | null, body: string): RetailerFetchFailureType {
+  if (status === 429) return 'rate_limit';
+  if (status === 401 || status === 403 || CHALLENGE_PATTERNS.some((pattern) => pattern.test(body))) {
+    return 'challenge';
+  }
+  if (status !== null && (status < 200 || status >= 300)) return 'http';
+  return 'none';
 }
 
-function classifyHttpFailure(status: number, bodyPreview: string): { type: RetailFetchFailure; message: string } {
-  if (CHALLENGE_PATTERN.test(bodyPreview)) {
-    return { type: 'challenge', message: `Retailer returned an anti-bot/challenge page (HTTP ${status}).` };
+async function readBoundedText(response: Response, maxBytes: number): Promise<{ text: string; oversized: boolean }> {
+  const declaredLength = Number(response.headers.get('content-length') || 0);
+  if (declaredLength > maxBytes) return { text: '', oversized: true };
+  if (!response.body) {
+    const text = await response.text();
+    return { text: text.slice(0, maxBytes), oversized: text.length > maxBytes };
   }
-  if (status === 403 || status === 401) {
-    return { type: 'blocked', message: `Retailer blocked the server-side request (HTTP ${status}).` };
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return { text: text.slice(0, maxBytes), oversized: true };
+    }
+    text += decoder.decode(value, { stream: true });
   }
-  if (status === 429) {
-    return { type: 'blocked', message: 'Retailer rate-limited the request (HTTP 429).' };
-  }
-  return { type: 'http_error', message: `Retailer returned HTTP ${status}.` };
+  text += decoder.decode();
+  return { text, oversized: false };
 }
 
-export async function fetchRetailProductPage(
+export async function fetchRetailerPage(
   url: string,
-  options: { timeoutMs?: number; maxBytes?: number; referer?: string } = {},
-): Promise<RetailFetchResult> {
+  allowedDomains: string[] = [],
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<RetailerFetchResult> {
   const startedAt = Date.now();
-  const timeoutMs = Math.max(5_000, Math.min(options.timeoutMs ?? RETAIL_FETCH_TIMEOUT_MS, 35_000));
-  const maxBytes = Math.max(100_000, Math.min(options.maxBytes ?? RETAIL_MAX_HTML_BYTES, 5 * 1024 * 1024));
+  const timeoutMs = Math.max(5_000, Math.min(options.timeoutMs || DEFAULT_TIMEOUT_MS, 30_000));
+  const maxBytes = Math.max(250_000, Math.min(options.maxBytes || DEFAULT_MAX_BYTES, DEFAULT_MAX_BYTES));
+  const safety = await validateUrlForFetch(url, allowedDomains);
+  if (!safety.safe) {
+    return {
+      reachable: false, ok: false, status: null, finalUrl: url, contentType: '', html: '', preview: '',
+      durationMs: Date.now() - startedAt, failureType: 'unsafe_url', error: safety.reason || 'Product URL failed safety validation.',
+    };
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
     const response = await fetch(url, {
       signal: controller.signal,
       redirect: 'follow',
+      headers: BROWSER_HEADERS,
       cache: 'no-store',
-      headers: {
-        'User-Agent': RETAIL_BROWSER_USER_AGENT,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-        'Upgrade-Insecure-Requests': '1',
-        Referer: options.referer || new URL(url).origin + '/',
-      },
     });
-
     const contentType = response.headers.get('content-type') || '';
-    const contentLength = Number(response.headers.get('content-length') || 0);
-    const finalUrl = response.url || url;
-
-    if (contentLength > maxBytes) {
-      const result: RetailFetchResult = {
-        ok: false,
-        reachable: response.status > 0,
-        status: response.status,
-        statusText: response.statusText,
-        finalUrl,
-        contentType,
-        html: '',
-        bodyPreview: '',
-        failureType: 'response_too_large',
-        error: `Retail product page exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit.`,
-        durationMs: Date.now() - startedAt,
-      };
-      console.warn('[retailer-fetch]', { url, ...result, html: undefined });
-      return result;
-    }
-
-    const body = await response.text();
-    const bodyPreview = compactPreview(body);
-
-    if (!response.ok) {
-      const failure = classifyHttpFailure(response.status, bodyPreview);
-      const result: RetailFetchResult = {
-        ok: false,
-        reachable: true,
-        status: response.status,
-        statusText: response.statusText,
-        finalUrl,
-        contentType,
-        html: '',
-        bodyPreview,
-        failureType: failure.type,
-        error: failure.message,
-        durationMs: Date.now() - startedAt,
-      };
-      console.warn('[retailer-fetch]', { url, status: result.status, finalUrl, contentType, bodyPreview, failureType: result.failureType });
-      return result;
-    }
-
-    if (body.length > maxBytes) {
-      return {
-        ok: false,
-        reachable: true,
-        status: response.status,
-        statusText: response.statusText,
-        finalUrl,
-        contentType,
-        html: '',
-        bodyPreview,
-        failureType: 'response_too_large',
-        error: `Retail product page exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit.`,
-        durationMs: Date.now() - startedAt,
-      };
-    }
-
-    if (contentType && !/text\/html|application\/xhtml\+xml|application\/xml/i.test(contentType)) {
-      return {
-        ok: false,
-        reachable: true,
-        status: response.status,
-        statusText: response.statusText,
-        finalUrl,
-        contentType,
-        html: '',
-        bodyPreview,
-        failureType: 'invalid_content_type',
-        error: `Retailer returned unsupported content type: ${contentType}.`,
-        durationMs: Date.now() - startedAt,
-      };
-    }
-
-    if (CHALLENGE_PATTERN.test(bodyPreview) && body.length < 250_000) {
-      return {
-        ok: false,
-        reachable: true,
-        status: response.status,
-        statusText: response.statusText,
-        finalUrl,
-        contentType,
-        html: '',
-        bodyPreview,
-        failureType: 'challenge',
-        error: 'Retailer returned an anti-bot/challenge page instead of the product page.',
-        durationMs: Date.now() - startedAt,
-      };
-    }
+    const { text, oversized } = await readBoundedText(response, maxBytes);
+    const preview = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+    const failureType = oversized
+      ? 'oversized'
+      : !/text\/html|application\/xhtml\+xml/i.test(contentType)
+        ? 'invalid_content_type'
+        : classifyFailure(response.status, text);
+    const ok = response.ok && failureType === 'none';
+    let error = '';
+    if (failureType === 'challenge') error = `Retailer returned an anti-bot/challenge page (HTTP ${response.status}).`;
+    else if (failureType === 'rate_limit') error = `Retailer rate-limited the request (HTTP ${response.status}).`;
+    else if (failureType === 'oversized') error = 'Retail product page exceeds the 3 MB safety limit.';
+    else if (failureType === 'invalid_content_type') error = `Retailer returned unsupported content type: ${contentType || 'unknown'}.`;
+    else if (failureType === 'http') error = `Retailer returned HTTP ${response.status}.`;
 
     return {
-      ok: true,
       reachable: true,
+      ok,
       status: response.status,
-      statusText: response.statusText,
-      finalUrl,
+      finalUrl: response.url || url,
       contentType,
-      html: body,
-      bodyPreview,
-      failureType: null,
-      error: '',
+      html: ok ? text : '',
+      preview,
       durationMs: Date.now() - startedAt,
+      failureType,
+      error,
     };
   } catch (error) {
-    const aborted = controller.signal.aborted || (error instanceof Error && error.name === 'AbortError');
-    const result: RetailFetchResult = {
-      ok: false,
-      reachable: false,
-      status: null,
-      statusText: '',
-      finalUrl: url,
-      contentType: '',
-      html: '',
-      bodyPreview: '',
-      failureType: aborted ? 'timeout' : 'network_error',
-      error: aborted
-        ? `Retailer request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
-        : error instanceof Error ? error.message : 'Retail product page could not be fetched.',
+    const timedOut = error instanceof Error && error.name === 'AbortError';
+    return {
+      reachable: false, ok: false, status: null, finalUrl: url, contentType: '', html: '', preview: '',
       durationMs: Date.now() - startedAt,
+      failureType: timedOut ? 'timeout' : 'network',
+      error: timedOut ? `Retailer request timed out after ${timeoutMs / 1000} seconds.` : error instanceof Error ? error.message : 'Retailer request failed.',
     };
-    console.warn('[retailer-fetch]', { url, failureType: result.failureType, error: result.error });
-    return result;
   } finally {
     clearTimeout(timer);
   }

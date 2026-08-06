@@ -59,11 +59,7 @@ export interface PhoneJson {
   brandName?: string;
   brand?: { id?: string; name?: string; slug?: string; logo?: string };
   thumbnail?: string;
-  /** Admin form compatibility alias. */
-  thumbnailUrl?: string;
   pricePKR?: number;
-  /** Admin form compatibility alias. */
-  pakistaniPricePKR?: number;
   originalPricePKR?: number;
   currentPrice?: number;
   previousPrice?: number;
@@ -98,9 +94,6 @@ export interface PhoneJson {
   cons?: string;
   reviewSummary?: string;
   reviewVerdict?: string;
-  seoTitle?: string;
-  seoDescription?: string;
-  keywords?: string;
   published?: boolean;
   /** Canonical workflow status returned by phoneToJSON. */
   status?: string;
@@ -128,11 +121,7 @@ interface RawPhoneObject {
   slug?: string;
   brand?: { _id?: { toString(): string }; name?: string; slug?: string; logo?: string };
   thumbnail?: string;
-  /** Admin form compatibility alias. */
-  thumbnailUrl?: string;
   pricePKR?: number;
-  /** Admin form compatibility alias. */
-  pakistaniPricePKR?: number;
   originalPricePKR?: number;
   currentPrice?: number;
   previousPrice?: number;
@@ -167,9 +156,6 @@ interface RawPhoneObject {
   cons?: string;
   reviewSummary?: string;
   reviewVerdict?: string;
-  seoTitle?: string;
-  seoDescription?: string;
-  keywords?: string;
   status?: string;
   active?: boolean;
   deletedAt?: Date | string | null;
@@ -422,9 +408,7 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     model: r.modelName,
     brand: r.brand ? { id: r.brand._id?.toString(), name: r.brand.name, slug: r.brand.slug, logo: r.brand.logo || '' } : undefined,
     thumbnail: r.thumbnail || '',
-    thumbnailUrl: r.thumbnail || '',
     pricePKR: r.pricePKR || 0,
-    pakistaniPricePKR: r.pricePKR || 0,
     originalPricePKR: r.originalPricePKR || 0,
     currentPrice: r.currentPrice || r.pricePKR || 0,
     previousPrice: r.previousPrice || 0,
@@ -459,9 +443,6 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     cons: r.cons || '',
     reviewSummary: r.reviewSummary || '',
     reviewVerdict: r.reviewVerdict || '',
-    seoTitle: r.seoTitle || '',
-    seoDescription: r.seoDescription || '',
-    keywords: r.keywords || '',
     published: r.status === 'published',
     status: r.status || 'draft',
     active: r.active !== false,

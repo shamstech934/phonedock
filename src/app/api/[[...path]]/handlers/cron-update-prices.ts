@@ -12,7 +12,6 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
-import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -119,7 +118,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     summary.autoVerifiedListings = verification.verified;
 
     // Get all enabled+trusted sources
-    const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' })
+    const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active', automaticFetchEnabled: { $ne: false }, accessMode: { $ne: 'challenge_blocked' } })
       .select('_id')
       .lean()
       .then((docs) => docs.map((d) => d._id));
@@ -216,18 +215,22 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
         // Attempt to fetch the product URL
         try {
-          const fetched = await fetchRetailProductPage(listing.productUrl);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 15000);
+          const response = await fetch(listing.productUrl, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'SpecsDekh-PriceChecker/1.0 (compatible; bot)',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+            redirect: 'follow',
+          });
+          clearTimeout(timeout);
 
-          if (!fetched.ok) {
+          if (!response.ok) {
             fetchError = true;
-            console.warn(`[cron:prices] Fetch failed: ${listing.productUrl} — ${fetched.error}`, {
-              status: fetched.status,
-              finalUrl: fetched.finalUrl,
-              failureType: fetched.failureType,
-              preview: fetched.bodyPreview,
-            });
           } else {
-            const html = fetched.html;
+            const html = await response.text();
 
             const validation = validateRetailListingPage({
               html,

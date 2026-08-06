@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import type { PhoneFormProps, PhoneFormData } from './types';
-import { TABS, createEmptyFormData, toDateInputValue, toNumberOrEmpty, slugify } from './types';
+import { TABS, createEmptyFormData, toNumberOrEmpty, slugify } from './types';
 import BasicInfoSection from './BasicInfoSection';
 import DisplayProcessorSection from './DisplayProcessorSection';
 import CameraSection from './CameraSection';
@@ -13,43 +13,6 @@ import BenchmarkSection from './BenchmarkSection';
 import ReviewSEOSection from './ReviewSEOSection';
 import ImagesPricesSection from './ImagesPricesSection';
 import VideoSection from './VideoSection';
-
-
-function extractLargestStorageGB(value: unknown): number | '' {
-  const text = String(value ?? '');
-  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(TB|GB)/gi)];
-  if (!matches.length) return '';
-  const values = matches.map((match) => Number(match[1]) * (match[2].toUpperCase() === 'TB' ? 1024 : 1));
-  const result = Math.max(...values.filter(Number.isFinite));
-  return Number.isFinite(result) && result > 0 ? result : '';
-}
-
-function extractFirstNumber(value: unknown, unitPattern?: RegExp): number | '' {
-  const text = String(value ?? '');
-  const match = unitPattern ? text.match(unitPattern) : text.match(/\d+(?:\.\d+)?/);
-  if (!match) return '';
-  const result = Number(match[1] ?? match[0]);
-  return Number.isFinite(result) && result > 0 ? result : '';
-}
-
-function buildSeoDefaults(data: Record<string, any>) {
-  const brandName = String(data.brand?.name ?? data.brandName ?? '').trim();
-  const modelName = String(data.modelName ?? data.model_name ?? '').trim();
-  const releaseDate = String(data.releaseDate ?? data.release_date ?? '');
-  const yearMatch = releaseDate.match(/20\d{2}/);
-  const year = yearMatch?.[0] || new Date().getFullYear().toString();
-  const price = Number(data.pakistaniPricePKR ?? data.pricePKR ?? data.currentPrice ?? 0);
-  const fullName = `${brandName} ${modelName}`.trim();
-  return {
-    title: fullName ? `${fullName} Price in Pakistan ${year} | Specs & Review` : '',
-    description: fullName
-      ? `${fullName} price in Pakistan${price > 0 ? ` is PKR ${price.toLocaleString('en-PK')}` : ''}. Check specifications, camera, battery, performance, PTA status and review.`
-      : '',
-    keywords: [fullName, `${modelName} price in Pakistan`, `${modelName} specs`, `${modelName} review`, `${modelName} PTA`]
-      .filter(Boolean)
-      .join(', '),
-  };
-}
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -115,60 +78,32 @@ export default function PhoneForm({
 
         if (cancelled) return;
 
-        const seoDefaults = buildSeoDefaults(data);
-        const mappedThumbnail = data.thumbnailUrl ?? data.thumbnail ?? data.thumbnail_url ?? data.images?.[0]?.url ?? '';
-        const mappedImages = Array.isArray(data.images)
-          ? data.images.map((img: Record<string, string>) => ({
-              url: img.url ?? '',
-              altText: img.altText ?? img.alt_text ?? '',
-            })).filter((img: { url: string }) => Boolean(img.url))
-          : [];
-        if (mappedImages.length === 0 && mappedThumbnail) {
-          mappedImages.push({
-            url: String(mappedThumbnail),
-            altText: `${data.brand?.name ?? data.brandName ?? ''} ${data.modelName ?? ''}`.trim(),
-          });
-        }
-
-        const mappedPrice = toNumberOrEmpty(
-          data.pakistaniPricePKR ?? data.pricePKR ?? data.currentPrice ?? data.pakistani_price_pkr,
-        );
-        const mappedPrices = Array.isArray(data.prices)
-          ? data.prices.map((p: Record<string, unknown>) => ({
-              storeName: String(p.storeName ?? p.store_name ?? 'Current public price'),
-              price: toNumberOrEmpty(p.price),
-              url: String(p.url ?? ''),
-              inStock: Boolean(p.inStock ?? p.in_stock ?? true),
-            })).filter((p: { price: number | '' }) => p.price !== '')
-          : [];
-        if (mappedPrices.length === 0 && mappedPrice !== '') {
-          mappedPrices.push({ storeName: 'Current public price', price: mappedPrice, url: '', inStock: true });
-        }
-
         // Map API response to form state
         setForm({
           brand: data.brand?.id || data.brand?._id?.toString() || data.brandId || '',
           modelName: data.modelName ?? data.model_name ?? '',
           slug: data.slug ?? '',
-          pakistaniPricePKR: mappedPrice,
+          pakistaniPricePKR: toNumberOrEmpty(
+            data.pakistaniPricePKR ?? data.pakistani_price_pkr,
+          ),
           originalPricePKR: toNumberOrEmpty(
             data.originalPricePKR ?? data.original_price_pkr,
           ),
           ptaStatus: data.ptaStatus ?? data.pta_status ?? 'Unknown',
           ptaApproved: Boolean(data.ptaApproved ?? data.pta_approved),
-          releaseDate: toDateInputValue(data.releaseDate ?? data.release_date),
-          thumbnailUrl: mappedThumbnail,
+          releaseDate: data.releaseDate ?? data.release_date ?? '',
+          thumbnailUrl: data.thumbnailUrl ?? data.thumbnail_url ?? '',
           description: data.description ?? '',
           status: data.status ?? 'draft',
           featured: Boolean(data.featured),
           trending: Boolean(data.trending),
           upcoming: Boolean(data.upcoming),
           availabilityStatus: data.availabilityStatus ?? (data.upcoming ? 'coming_soon' : 'available'),
-          announcedAt: toDateInputValue(data.announcedAt),
-          expectedLaunchAt: toDateInputValue(data.expectedLaunchAt),
-          pakistanLaunchAt: toDateInputValue(data.pakistanLaunchAt),
-          availableFrom: toDateInputValue(data.availableFrom),
-          discontinuedAt: toDateInputValue(data.discontinuedAt),
+          announcedAt: data.announcedAt ?? '',
+          expectedLaunchAt: data.expectedLaunchAt ?? '',
+          pakistanLaunchAt: data.pakistanLaunchAt ?? '',
+          availableFrom: data.availableFrom ?? '',
+          discontinuedAt: data.discontinuedAt ?? '',
           // Display & Processor
           display: data.specs?.display ?? data.display ?? '',
           displayType: data.specs?.displayType ?? data.displayType ?? data.display_type ?? '',
@@ -261,23 +196,30 @@ export default function PhoneForm({
           cons: data.cons ?? '',
           reviewSummary: data.reviewSummary ?? data.review_summary ?? '',
           reviewVerdict: data.reviewVerdict ?? data.review_verdict ?? '',
-          seoTitle: String(data.seoTitle ?? data.seo_title ?? '').trim() || seoDefaults.title,
-          seoDescription: String(data.seoDescription ?? data.seo_description ?? '').trim() || seoDefaults.description,
-          keywords: String(data.keywords ?? '').trim() || seoDefaults.keywords,
+          seoTitle: data.seoTitle ?? data.seo_title ?? '',
+          seoDescription: data.seoDescription ?? data.seo_description ?? '',
+          keywords: data.keywords ?? '',
           // Numeric filter fields
-          ramGB: toNumberOrEmpty(data.specs?.ramGB ?? data.ramGB ?? data.ram_gb)
-            || extractFirstNumber(data.specs?.ram ?? data.ram, /(\d+(?:\.\d+)?)\s*GB/i),
-          storageGB: toNumberOrEmpty(data.specs?.storageGB ?? data.storageGB ?? data.storage_gb)
-            || extractLargestStorageGB(data.specs?.storage ?? data.storage),
-          screenSizeInch: toNumberOrEmpty(data.specs?.screenSizeInch ?? data.screenSizeInch ?? data.screen_size_inch)
-            || extractFirstNumber(data.specs?.display ?? data.display, /(\d+(?:\.\d+)?)\s*(?:inch|inches|")/i),
-          mainCameraMP: toNumberOrEmpty(data.specs?.mainCameraMP ?? data.mainCameraMP ?? data.main_camera_mp)
-            || extractFirstNumber(data.specs?.mainCamera ?? data.mainCamera ?? data.main_camera, /(\d+(?:\.\d+)?)\s*MP/i),
-          batteryMAh: toNumberOrEmpty(data.specs?.batteryMAh ?? data.batteryMAh ?? data.battery_mah)
-            || extractFirstNumber(data.specs?.battery ?? data.battery, /(\d+(?:\.\d+)?)\s*mAh/i),
+          ramGB: toNumberOrEmpty(data.specs?.ramGB ?? data.ramGB ?? data.ram_gb),
+          storageGB: toNumberOrEmpty(data.specs?.storageGB ?? data.storageGB ?? data.storage_gb),
+          screenSizeInch: toNumberOrEmpty(data.specs?.screenSizeInch ?? data.screenSizeInch ?? data.screen_size_inch),
+          mainCameraMP: toNumberOrEmpty(data.specs?.mainCameraMP ?? data.mainCameraMP ?? data.main_camera_mp),
+          batteryMAh: toNumberOrEmpty(data.specs?.batteryMAh ?? data.batteryMAh ?? data.battery_mah),
           // Images & Prices
-          images: mappedImages,
-          prices: mappedPrices,
+          images: Array.isArray(data.images)
+            ? data.images.map((img: Record<string, string>) => ({
+                url: img.url ?? '',
+                altText: img.altText ?? img.alt_text ?? '',
+              }))
+            : [],
+          prices: Array.isArray(data.prices)
+            ? data.prices.map((p: Record<string, unknown>) => ({
+                storeName: String(p.storeName ?? p.store_name ?? 'Daraz'),
+                price: toNumberOrEmpty(p.price),
+                url: String(p.url ?? ''),
+                inStock: Boolean(p.inStock ?? p.in_stock ?? true),
+              }))
+            : [],
           // Price Tracking
           priceMode: data.priceMode === 'automatic' ? 'automatic' as const : 'manual' as const,
           manualLock: Boolean(data.manualLock ?? false),

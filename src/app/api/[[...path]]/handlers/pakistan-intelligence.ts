@@ -13,38 +13,25 @@ export async function handlePakistanIntelligenceGet(req: NextRequest): Promise<N
 
   const status = req.nextUrl.searchParams.get('status') || 'open';
   const type = req.nextUrl.searchParams.get('type') || 'all';
-  const severity = req.nextUrl.searchParams.get('severity') || 'all';
   const page = Math.max(1, Number(req.nextUrl.searchParams.get('page') || 1));
   const limit = Math.min(100, Math.max(10, Number(req.nextUrl.searchParams.get('limit') || 30)));
   const filter: Record<string, unknown> = {};
   if (status !== 'all') filter.status = status;
   if (type !== 'all') filter.type = type;
-  if (severity !== 'all') filter.severity = severity;
 
-  const trustedSourceIds = await PriceSource.find({ enabled: true, trusted: true, status: 'active' }).distinct('_id');
-  const [items, total, counts, phonesWithoutPrice, unknownPta, verifiedListings, coveredPhoneIds, activePhones, openSignals, severityRows] = await Promise.all([
+  const [items, total, counts, phonesWithoutPrice, unknownPta, verifiedListings, trustedSources] = await Promise.all([
     PakistanMarketSignal.find(filter).sort({ severity: 1, lastSeenAt: -1 }).skip((page - 1) * limit).limit(limit).populate('phoneId', 'modelName slug status pricePKR currentPrice ptaStatus availabilityStatus lastVerifiedAt').lean(),
     PakistanMarketSignal.countDocuments(filter),
     PakistanMarketSignal.aggregate([{ $group: { _id: { status: '$status', type: '$type' }, count: { $sum: 1 } } }]),
     Phone.countDocuments({ deletedAt: null, active: true, $and: [{ pricePKR: { $lte: 0 } }, { currentPrice: { $lte: 0 } }] }),
     Phone.countDocuments({ deletedAt: null, active: true, $or: [{ ptaStatus: { $in: ['', 'Unknown', 'unknown'] } }, { ptaStatus: { $exists: false } }] }),
-    PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'verified', sourceId: { $in: trustedSourceIds } }),
-    PhoneRetailListing.distinct('phoneId', { enabled: true, verificationStatus: 'verified', availability: 'available', currentSourcePrice: { $gt: 0 }, sourceId: { $in: trustedSourceIds } }),
-    Phone.countDocuments({ deletedAt: null, active: true }),
-    PakistanMarketSignal.countDocuments({ status: 'open' }),
-    PakistanMarketSignal.aggregate([{ $match: { status: 'open' } }, { $group: { _id: '$severity', count: { $sum: 1 } } }]),
+    PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'verified' }),
+    PriceSource.countDocuments({ enabled: true, trusted: true, status: 'active' }),
   ]);
-
-  const severitySummary = { info: 0, warning: 0, critical: 0 };
-  for (const row of severityRows as Array<{ _id: keyof typeof severitySummary; count: number }>) {
-    if (row._id in severitySummary) severitySummary[row._id] = Number(row.count || 0);
-  }
-  const phonesCovered = coveredPhoneIds.length;
-  const retailerCoveragePercent = activePhones > 0 ? Math.round((phonesCovered / activePhones) * 100) : 0;
 
   return NextResponse.json({
     items, total, page, pages: Math.max(1, Math.ceil(total / limit)),
-    summary: { activePhones, phonesWithoutPrice, unknownPta, verifiedListings, trustedSources: trustedSourceIds.length, phonesCovered, retailerCoveragePercent, openSignals, severity: severitySummary },
+    summary: { phonesWithoutPrice, unknownPta, verifiedListings, trustedSources, openSignals: await PakistanMarketSignal.countDocuments({ status: 'open' }) },
     counts,
   }, { headers: { 'Cache-Control': 'no-store' } });
 }
@@ -59,7 +46,7 @@ export async function handlePakistanIntelligencePost(req: NextRequest): Promise<
   if (action === 'scan') {
     const denied = requirePermission(auth.admin, 'prices:edit');
     if (denied) return denied;
-    const result = await scanPakistanMarket({ limit: Number(body.limit || 25) });
+    const result = await scanPakistanMarket({ limit: Number(body.limit || 150) });
     await ActivityLog.create({ adminId: auth.admin._id, action: 'pakistan_intelligence_scan', entityType: 'pakistan_intelligence', details: JSON.stringify(result) });
     return NextResponse.json({ success: true, ...result });
   }
@@ -68,15 +55,6 @@ export async function handlePakistanIntelligencePost(req: NextRequest): Promise<
   if (!id) return NextResponse.json({ error: 'Signal id is required' }, { status: 400 });
   const signal: any = await PakistanMarketSignal.findById(id);
   if (!signal) return NextResponse.json({ error: 'Signal not found' }, { status: 404 });
-
-  if (action === 'resolve') {
-    const denied = requirePermission(auth.admin, 'prices:edit');
-    if (denied) return denied;
-    signal.status = 'resolved'; signal.resolvedAt = new Date(); signal.resolvedBy = auth.admin._id; signal.resolutionNotes = String(body.notes || 'Resolved after manual admin review.');
-    await signal.save();
-    await ActivityLog.create({ adminId: auth.admin._id, action: 'pakistan_intelligence_resolved', entityType: 'pakistan_intelligence', entityId: signal._id, details: `${signal.type}: ${signal.phoneId}` });
-    return NextResponse.json({ success: true, signal });
-  }
 
   if (action === 'dismiss') {
     const denied = requirePermission(auth.admin, 'prices:edit');

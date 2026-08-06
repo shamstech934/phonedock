@@ -188,18 +188,6 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-
-/** Normalize API Date/string values for an HTML date input (YYYY-MM-DD). */
-export function toDateInputValue(value: unknown): string {
-  if (!value) return '';
-  if (typeof value === 'string') {
-    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (match) return match[1];
-  }
-  const date = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
-}
-
 export function toNumberOrEmpty(value: unknown): number | '' {
   if (value === '' || value === null || value === undefined) return '';
   const n = Number(value);

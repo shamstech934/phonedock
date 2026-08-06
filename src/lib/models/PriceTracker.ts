@@ -30,6 +30,13 @@ const PriceSourceSchema = new Schema({
   lastError: { type: String, default: '' },
   status: { type: String, enum: ['active', 'paused', 'failed'], default: 'active' },
   notes: { type: String, default: '' },
+  accessMode: { type: String, enum: ['direct', 'challenge_blocked', 'manual_verified', 'feed_api'], default: 'direct' },
+  automaticFetchEnabled: { type: Boolean, default: true },
+  lastHttpStatus: { type: Number, default: null },
+  lastFailureType: { type: String, default: '' },
+  lastFetchDurationMs: { type: Number, default: 0 },
+  lastFinalUrl: { type: String, default: '' },
+  lastResponsePreview: { type: String, default: '' },
 }, { timestamps: true });
 
 PriceSourceSchema.index({ name: 1 }, { unique: true });

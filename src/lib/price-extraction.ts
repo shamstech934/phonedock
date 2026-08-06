@@ -37,20 +37,6 @@ function walkOffers(value: unknown, prices: number[], depth = 0): void {
   Object.values(record).forEach((item) => walkOffers(item, prices, depth + 1));
 }
 
-
-function metaContent(html: string, key: string): string {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const patterns = [
-    new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`, 'i'),
-  ];
-  for (const pattern of patterns) {
-    const value = html.match(pattern)?.[1]?.trim();
-    if (value) return value;
-  }
-  return '';
-}
-
 function firstMatch(html: string, patterns: RegExp[]): number | null {
   for (const pattern of patterns) {
     const match = html.match(pattern);
@@ -73,19 +59,18 @@ export function extractRetailPrice(html: string): ExtractedPrice | null {
     return { price: Math.min(...jsonLdPrices), currency: 'PKR', method: 'json-ld', confidence: 0.98 };
   }
 
-  // Magento and many Pakistani retailers expose reliable Open Graph product
-  // price tags. Prefer these over visible text and verify the paired currency.
-  const ogAmount = metaContent(html, 'product:price:amount') || metaContent(html, 'og:price:amount');
-  const ogCurrency = (metaContent(html, 'product:price:currency') || metaContent(html, 'og:price:currency') || 'PKR').toUpperCase();
-  const structuredMetaPrice = ogCurrency === 'PKR' ? toPrice(ogAmount) : null;
-  if (structuredMetaPrice) {
-    return { price: structuredMetaPrice, currency: 'PKR', method: 'meta', confidence: 0.97 };
-  }
-
+  const metaCurrency = html.match(/<meta[^>]+(?:property|name)=["'](?:product:price:currency|og:price:currency)["'][^>]+content=["']([^"']+)["']/i)?.[1]
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:product:price:currency|og:price:currency)["']/i)?.[1]
+    || '';
+  const normalizedMetaCurrency = String(metaCurrency).trim().toUpperCase();
   const metaPrice = firstMatch(html, [
+    /<meta[^>]+(?:property|name)=["'](?:product:price:amount|og:price:amount)["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:product:price:amount|og:price:amount)["']/i,
     /<meta[^>]+itemprop=["']price["'][^>]+content=["']([^"']+)["']/i,
   ]);
-  if (metaPrice) return { price: metaPrice, currency: 'PKR', method: 'meta', confidence: 0.92 };
+  if (metaPrice && (!normalizedMetaCurrency || normalizedMetaCurrency === 'PKR')) {
+    return { price: metaPrice, currency: 'PKR', method: 'meta', confidence: normalizedMetaCurrency === 'PKR' ? 0.97 : 0.92 };
+  }
 
   const dataPrice = firstMatch(html, [
     /data-(?:sale-)?price=["']([\d,.]+)["']/i,

@@ -79,9 +79,16 @@ interface PriceSource {
   enabledListings: number;
   verifiedListings: number;
   pendingListings: number;
-  health: 'healthy' | 'setup' | 'paused' | 'attention' | 'no-listings';
+  health: 'healthy' | 'setup' | 'paused' | 'attention' | 'no-listings' | 'blocked';
   enabled: boolean;
   notes?: string;
+  accessMode?: 'direct' | 'challenge_blocked' | 'manual_verified' | 'feed_api';
+  automaticFetchEnabled?: boolean;
+  lastHttpStatus?: number | null;
+  lastFailureType?: string;
+  lastFetchDurationMs?: number;
+  lastFinalUrl?: string;
+  lastResponsePreview?: string;
 }
 
 interface PriceChange {
@@ -277,7 +284,7 @@ export default function AdminPriceTrackerPage() {
   const [sourceGapsTotalPages, setSourceGapsTotalPages] = useState(1);
   const [sourceTestModal, setSourceTestModal] = useState<PriceSource | null>(null);
   const [sourceTestUrl, setSourceTestUrl] = useState('');
-  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null; httpStatus?: number | null; finalUrl?: string; responsePreview?: string; failureType?: string | null; responseContentType?: string; fetchDurationMs?: number } | null>(null);
+  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null; httpStatus?: number | null; finalUrl?: string; contentType?: string; fetchDurationMs?: number; failureType?: string; responsePreview?: string; accessMode?: string; automaticFetchEnabled?: boolean } | null>(null);
 
   // ── Price Changes Tab ──
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -394,6 +401,13 @@ export default function AdminPriceTrackerPage() {
         type: normalizePriceSourceType(source.sourceType || source.type),
         lastChecked: source.lastCheckedAt || source.lastChecked || null,
         failures: source.failureCount ?? source.failures ?? 0,
+        accessMode: source.accessMode || 'direct',
+        automaticFetchEnabled: source.automaticFetchEnabled !== false,
+        lastHttpStatus: source.lastHttpStatus ?? null,
+        lastFailureType: source.lastFailureType || '',
+        lastFetchDurationMs: source.lastFetchDurationMs || 0,
+        lastFinalUrl: source.lastFinalUrl || '',
+        lastResponsePreview: source.lastResponsePreview || '',
       })) as PriceSource[]);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price sources'); }
   }, []);
@@ -1490,12 +1504,14 @@ export default function AdminPriceTrackerPage() {
                           <span className={
                             src.health === 'healthy' ? 'font-semibold text-emerald-700' :
                             src.health === 'attention' ? 'font-semibold text-red-600' :
+                            src.health === 'blocked' ? 'font-semibold text-violet-700' :
                             'font-medium text-amber-600'
                           }>
                             {src.type === 'manual' ? 'Manual source' :
                              src.type === 'rss_feed' ? 'Feed source' :
                              src.health === 'healthy' ? 'Ready' :
                              src.health === 'attention' ? 'Needs attention' :
+                             src.health === 'blocked' ? 'Server blocked' :
                              src.health === 'setup' ? 'Test required' :
                              src.health === 'paused' ? 'Paused' : 'No verified links'}
                           </span>
@@ -1503,11 +1519,12 @@ export default function AdminPriceTrackerPage() {
                         </div>
                         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
                           <div
-                            className={`h-full rounded-full ${src.health === 'healthy' ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                            className={`h-full rounded-full ${src.health === 'healthy' ? 'bg-emerald-500' : src.health === 'blocked' ? 'bg-violet-500' : 'bg-amber-400'}`}
                             style={{ width: `${src.listingCount > 0 ? Math.round((src.verifiedListings / src.listingCount) * 100) : 0}%` }}
                           />
                         </div>
                         {src.pendingListings > 0 && <p className="mt-1 text-[10px] text-amber-600">{src.pendingListings} pending review</p>}
+                        {src.health === 'blocked' && <p className="mt-1 max-w-[150px] text-[10px] leading-4 text-violet-700">Automatic server checks disabled; use a feed/API or manual verified price.</p>}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">{src.priority}</td>
@@ -2652,9 +2669,28 @@ export default function AdminPriceTrackerPage() {
           </div>
           <label className="mt-5 mb-1 block text-xs font-semibold text-slate-600">Real phone product URL *</label>
           <input type="url" value={sourceTestUrl} onChange={e => setSourceTestUrl(e.currentTarget.value)} placeholder="https://priceoye.pk/mobiles/brand-phone-model" className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
-          {sourceTestResult && <div className={`mt-4 rounded-xl border p-4 ${sourceTestResult.safeToEnable ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-            <div className="grid grid-cols-2 gap-3 text-xs"><span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong><span>HTTP status</span><strong>{sourceTestResult.httpStatus ?? 'No response'}</strong><span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong><span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong><span>Availability</span><strong>{sourceTestResult.availability}</strong><span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong><span>Confidence</span><strong>{Math.round(Math.max(0, Math.min(1, sourceTestResult.extractionConfidence || 0)) * 100)}%</strong><span>Failure type</span><strong>{sourceTestResult.failureType || 'None'}</strong><span>Fetch time</span><strong>{sourceTestResult.fetchDurationMs ? `${sourceTestResult.fetchDurationMs} ms` : '—'}</strong></div>{sourceTestResult.finalUrl && <p className="mt-3 break-all text-[11px] text-slate-600"><strong>Final URL:</strong> {sourceTestResult.finalUrl}</p>}{sourceTestResult.responsePreview && <details className="mt-3 rounded-lg border border-amber-200 bg-white/70 p-2 text-[11px]"><summary className="cursor-pointer font-semibold text-slate-700">Response preview</summary><pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-all text-slate-600">{sourceTestResult.responsePreview}</pre></details>}
-            {sourceTestResult.safeToEnable ? <p className="mt-3 text-xs font-semibold text-emerald-800">Reliable PKR price detected. This source is trusted and ready for tracking.</p> : sourceTestResult.error && <p className="mt-3 text-xs font-medium text-amber-800">{sourceTestResult.error}</p>}
+          {sourceTestResult && <div className={`mt-4 rounded-xl border p-4 ${sourceTestResult.safeToEnable ? 'border-emerald-200 bg-emerald-50' : sourceTestResult.failureType === 'challenge' || sourceTestResult.failureType === 'rate_limit' ? 'border-violet-200 bg-violet-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong>
+              <span>HTTP status</span><strong>{sourceTestResult.httpStatus ?? '—'}</strong>
+              <span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong>
+              <span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong>
+              <span>Availability</span><strong>{sourceTestResult.availability}</strong>
+              <span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong>
+              <span>Confidence</span><strong>{Math.round(Math.max(0, Math.min(1, sourceTestResult.extractionConfidence || 0)) * 100)}%</strong>
+              <span>Failure type</span><strong className="capitalize">{sourceTestResult.failureType || 'none'}</strong>
+              <span>Fetch time</span><strong>{sourceTestResult.fetchDurationMs ? `${sourceTestResult.fetchDurationMs} ms` : '—'}</strong>
+            </div>
+            {sourceTestResult.finalUrl && <p className="mt-3 break-all text-[11px] text-slate-600"><strong>Final URL:</strong> {sourceTestResult.finalUrl}</p>}
+            {sourceTestResult.responsePreview && <details className="mt-3 rounded-lg border border-current/20 bg-white/60 p-2 text-[11px]"><summary className="cursor-pointer font-semibold">Response preview</summary><pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px]">{sourceTestResult.responsePreview}</pre></details>}
+            {sourceTestResult.safeToEnable ? (
+              <p className="mt-3 text-xs font-semibold text-emerald-800">Reliable PKR price detected. This source is ready for automatic tracking.</p>
+            ) : sourceTestResult.failureType === 'challenge' || sourceTestResult.failureType === 'rate_limit' ? (
+              <div className="mt-3 rounded-lg border border-violet-200 bg-white/70 p-3 text-xs text-violet-900">
+                <p className="font-semibold">Retailer blocks server-side automation.</p>
+                <p className="mt-1">The URL may work in your browser, but Vercel cannot fetch it automatically. Automatic retries are disabled to save CPU. Use an official feed/API, another retailer, or a manually verified locked price.</p>
+              </div>
+            ) : sourceTestResult.error ? <p className="mt-3 text-xs font-medium text-amber-800">{sourceTestResult.error}</p> : null}
           </div>}
           {error && <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
           <div className="sticky bottom-0 z-10 flex justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4"><button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium">Cancel</button><button onClick={handleTestAndTrustSource} disabled={testing || !sourceTestUrl.trim()} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{testing ? 'Testing product page...' : sourceTestResult?.safeToEnable ? 'Retest source' : 'Test & trust'}</button></div>

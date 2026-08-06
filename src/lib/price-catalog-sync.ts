@@ -5,7 +5,6 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
-import { fetchRetailProductPage } from '@/lib/retailer-fetch';
 
 const MAX_SOURCES_PER_RUN = 2;
 const MAX_PENDING_VERIFICATIONS_PER_RUN = 8;
@@ -170,7 +169,7 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
   })
     .sort({ lastCheckedAt: 1, createdAt: 1, _id: 1 })
     .limit(MAX_PENDING_VERIFICATIONS_PER_RUN)
-    .populate({ path: 'sourceId', select: '_id enabled trusted status allowedDomains' })
+    .populate({ path: 'sourceId', select: '_id enabled trusted status allowedDomains automaticFetchEnabled accessMode' })
     .populate({
       path: 'phoneId',
       select: '_id modelName brandId ptaStatus ptaApproved',
@@ -188,14 +187,14 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
       ram?: string;
       storage?: string;
       ptaStatus?: string;
-      sourceId?: { enabled?: boolean; trusted?: boolean; status?: string; allowedDomains?: string[] } | null;
+      sourceId?: { enabled?: boolean; trusted?: boolean; status?: string; allowedDomains?: string[]; automaticFetchEnabled?: boolean; accessMode?: string } | null;
       phoneId?: PhoneRow | null;
     };
     const source = listing.sourceId;
     const phone = listing.phoneId;
     let failure = '';
 
-    if (!source?.enabled || !source.trusted || source.status !== 'active' || !phone) {
+    if (!source?.enabled || !source.trusted || source.status !== 'active' || source.automaticFetchEnabled === false || source.accessMode === 'challenge_blocked' || !phone) {
       failure = 'Trusted source or phone reference is unavailable.';
     } else if (!isPtaPriceCompatible({
       phoneStatus: phone.ptaStatus,
@@ -209,14 +208,21 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
         failure = safety.reason || 'Product URL failed safety validation.';
       } else {
         try {
-          const fetched = await fetchRetailProductPage(listing.productUrl, {
-            timeoutMs: RETAIL_FETCH_TIMEOUT_MS,
-            maxBytes: MAX_RETAIL_PAGE_BYTES,
+          const response = await fetch(listing.productUrl, {
+            redirect: 'follow',
+            signal: AbortSignal.timeout(RETAIL_FETCH_TIMEOUT_MS),
+            headers: {
+              'User-Agent': 'PhoneDock-PriceTracker/1.0 (+https://specsdekh.com)',
+              Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+            },
           });
-          if (!fetched.ok) failure = fetched.error;
+          const contentLength = Number(response.headers.get('content-length') || 0);
+          if (!response.ok) failure = `Retailer returned HTTP ${response.status}.`;
+          else if (contentLength > MAX_RETAIL_PAGE_BYTES) failure = 'Retail product page exceeds 3 MB limit.';
           else {
-            const html = fetched.html;
-            {
+            const html = await response.text();
+            if (html.length > MAX_RETAIL_PAGE_BYTES) failure = 'Retail product page exceeds 3 MB limit.';
+            else {
               const pageValidation = validateRetailListingPage({
                 html,
                 phoneModel: phone.modelName || '',
