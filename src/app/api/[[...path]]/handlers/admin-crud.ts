@@ -597,8 +597,11 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       || '',
     );
 
-    const effectiveImages = serialized.images.length > 0
-      ? serialized.images
+    const serializedImages = serialized.images ?? [];
+    const serializedPrices = serialized.prices ?? [];
+
+    const effectiveImages = serializedImages.length > 0
+      ? serializedImages
       : Array.from(new Set([effectiveThumbnail, ...collectedImages].filter(Boolean))).map((url, index) => ({
           id: `prefill-${index}`,
           url,
@@ -606,8 +609,8 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
           sortOrder: index,
         }));
 
-    const effectivePrices = serialized.prices.length > 0
-      ? serialized.prices
+    const effectivePrices = serializedPrices.length > 0
+      ? serializedPrices
       : retailListings
           .filter((entry) => asPositiveNumber(entry.currentSourcePrice) > 0)
           .map((entry) => {
