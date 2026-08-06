@@ -1,9 +1,7 @@
-import { validateUrlForFetch } from '@/lib/ssrf-guard';
+import { fetchRetailerPage } from '@/lib/retailer-fetch';
 
 const MAX_INPUT_URLS = 12;
 const MAX_DISCOVERED_URLS = 500;
-const MAX_RESPONSE_BYTES = 3_000_000;
-const FETCH_TIMEOUT_MS = 10_000;
 
 export interface CatalogDiscoveryInput {
   mode: string;
@@ -13,10 +11,29 @@ export interface CatalogDiscoveryInput {
   allowedDomains: string[];
 }
 
+export interface CatalogDiscoveryDiagnostics {
+  rootUrl: string;
+  httpStatus: number | null;
+  finalUrl: string;
+  totalLinks: number;
+  allowedDomainLinks: number;
+  probableProductLinks: number;
+  acceptedLinks: number;
+  rejectedSamples: Array<{ url: string; reason: string }>;
+}
+
 export interface CatalogDiscoveryResult {
   urls: string[];
   errors: string[];
   fetched: number;
+  diagnostics?: CatalogDiscoveryDiagnostics[];
+}
+
+export function summarizeCatalogDiscoveryDiagnostics(result: CatalogDiscoveryResult): string {
+  if (!result.diagnostics?.length) return '';
+  return result.diagnostics.map(item =>
+    `${item.rootUrl}: HTTP ${item.httpStatus ?? 'n/a'}, anchors=${item.totalLinks}, allowed=${item.allowedDomainLinks}, productCandidates=${item.probableProductLinks}, accepted=${item.acceptedLinks}`
+  ).join('; ').slice(0, 1000);
 }
 
 function decodeXml(value: string): string {
@@ -58,34 +75,56 @@ function collectJsonUrls(value: unknown, output: string[], depth = 0): void {
   }
 }
 
-export function isProbableProductUrl(value: string): boolean {
+const GENERIC_CATEGORY_TAIL = /^(?:mobiles?|phones?|smartphones?|products?|shop|store|category|collections?|catalog|search|brands?)$/i;
+const WHATMOBILE_CATALOG_PATH = /(?:^|_)(?:mobiles?|mobile_phones)(?:_|-)?prices?(?:_|-|$)/i;
+const WHATMOBILE_PRODUCT_PATH = /^[a-z0-9]+_[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+
+function normalizeHost(value: string): string {
+  return value.toLowerCase().replace(/^www\./, '');
+}
+
+function productUrlRejectionReason(value: string): string {
   try {
     const url = new URL(value);
-    if (!/^https?:$/.test(url.protocol)) return false;
+    if (!/^https?:$/.test(url.protocol)) return 'unsupported protocol';
+    const host = normalizeHost(url.hostname);
     const segments = url.pathname.split('/').filter(Boolean);
-    if (segments.length < 2) return false;
-    const tail = segments.at(-1) || '';
-    if (/^(?:mobiles?|phones?|smartphones?|products?|shop|store|category|collections?|catalog|search|brands?)$/i.test(tail)) return false;
-    return /\d/.test(tail) || tail.split(/[-_]/).filter(Boolean).length >= 2;
+    const tail = decodeURIComponent(segments.at(-1) || '');
+    if (!tail) return 'empty path';
+
+    if (host === 'whatmobile.com.pk') {
+      if (segments.length !== 1) return 'WhatMobile product URL must use one path segment';
+      if (WHATMOBILE_CATALOG_PATH.test(tail)) return 'WhatMobile catalog/category URL';
+      if (!WHATMOBILE_PRODUCT_PATH.test(tail)) return 'not a WhatMobile Brand_Model-Variant URL';
+      if (!/\d/.test(tail)) return 'WhatMobile product URL has no model number';
+      return '';
+    }
+
+    if (segments.length < 2) return 'generic provider requires at least two path segments';
+    if (GENERIC_CATEGORY_TAIL.test(tail)) return 'generic category/catalog URL';
+    if (!/\d/.test(tail) && tail.split(/[-_]/).filter(Boolean).length < 2) return 'path does not look like a product';
+    return '';
   } catch {
-    return false;
+    return 'invalid URL';
   }
 }
 
-async function fetchText(url: string, allowedDomains: string[]): Promise<string> {
-  const validation = await validateUrlForFetch(url, allowedDomains);
-  if (!validation.safe) throw new Error(validation.reason || 'Unsafe URL');
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { 'User-Agent': 'PhoneDock-PriceTracker/1.0 (+https://specsdekh.com)' },
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const contentLength = Number(response.headers.get('content-length') || 0);
-  if (contentLength > MAX_RESPONSE_BYTES) throw new Error('Response exceeds 3 MB limit');
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) throw new Error('Response exceeds 3 MB limit');
-  return text;
+export function isProbableProductUrl(value: string): boolean {
+  return productUrlRejectionReason(value) === '';
+}
+
+async function fetchText(url: string, allowedDomains: string[]): Promise<{ text: string; status: number | null; finalUrl: string }> {
+  const result = await fetchRetailerPage(url, allowedDomains, { timeoutMs: 25_000 });
+  if (!result.ok) {
+    const detail = [
+      result.error || 'Catalog fetch failed',
+      result.status ? `HTTP ${result.status}` : '',
+      result.failureType !== 'none' ? `type=${result.failureType}` : '',
+      result.preview ? `preview=${result.preview.slice(0, 180)}` : '',
+    ].filter(Boolean).join(' | ');
+    throw new Error(detail);
+  }
+  return { text: result.html, status: result.status, finalUrl: result.finalUrl || url };
 }
 
 function uniqueAllowedProductUrls(values: string[], allowedDomains: string[]): string[] {
@@ -102,6 +141,7 @@ function uniqueAllowedProductUrls(values: string[], allowedDomains: string[]): s
 export async function discoverCatalogProductUrls(input: CatalogDiscoveryInput): Promise<CatalogDiscoveryResult> {
   const errors: string[] = [];
   const discovered: string[] = [];
+  const diagnostics: CatalogDiscoveryDiagnostics[] = [];
   let fetched = 0;
   const mode = input.mode || 'manual';
   const roots = mode === 'sitemap' ? input.sitemapUrls || []
@@ -110,9 +150,34 @@ export async function discoverCatalogProductUrls(input: CatalogDiscoveryInput): 
 
   for (const root of roots.filter(Boolean).slice(0, MAX_INPUT_URLS)) {
     try {
-      const body = await fetchText(root, input.allowedDomains); fetched++;
-      if (mode === 'catalog') discovered.push(...extractLinksFromHtml(body, root));
-      else if (mode === 'api' || (mode === 'feed' && /^[\s\r\n]*[\[{]/.test(body))) {
+      const fetchedPage = await fetchText(root, input.allowedDomains); fetched++;
+      const body = fetchedPage.text;
+      if (mode === 'catalog') {
+        const allLinks = extractLinksFromHtml(body, fetchedPage.finalUrl || root);
+        const allowed = input.allowedDomains.map(normalizeHost);
+        const allowedLinks = allLinks.filter(value => {
+          try {
+            const host = normalizeHost(new URL(value).hostname);
+            return allowed.some(domain => host === domain || host.endsWith(`.${domain}`));
+          } catch { return false; }
+        });
+        const probable = allowedLinks.filter(isProbableProductUrl);
+        const rejectedSamples = allowedLinks
+          .filter(value => !isProbableProductUrl(value))
+          .slice(0, 8)
+          .map(value => ({ url: value, reason: productUrlRejectionReason(value) }));
+        diagnostics.push({
+          rootUrl: root,
+          httpStatus: fetchedPage.status,
+          finalUrl: fetchedPage.finalUrl,
+          totalLinks: allLinks.length,
+          allowedDomainLinks: allowedLinks.length,
+          probableProductLinks: probable.length,
+          acceptedLinks: probable.length,
+          rejectedSamples,
+        });
+        discovered.push(...probable);
+      } else if (mode === 'api' || (mode === 'feed' && /^[\s\r\n]*[\[{]/.test(body))) {
         const jsonUrls: string[] = [];
         collectJsonUrls(JSON.parse(body), jsonUrls);
         for (const url of jsonUrls) {
@@ -124,7 +189,7 @@ export async function discoverCatalogProductUrls(input: CatalogDiscoveryInput): 
         discovered.push(...locs.filter(url => !sitemapChildren.includes(url)));
         if (mode === 'sitemap') {
           for (const child of sitemapChildren) {
-            try { discovered.push(...extractLocsFromXml(await fetchText(child, input.allowedDomains))); fetched++; }
+            try { discovered.push(...extractLocsFromXml((await fetchText(child, input.allowedDomains)).text)); fetched++; }
             catch (error) { errors.push(`${child}: ${error instanceof Error ? error.message : 'Fetch failed'}`); }
           }
         }
@@ -133,7 +198,7 @@ export async function discoverCatalogProductUrls(input: CatalogDiscoveryInput): 
       errors.push(`${root}: ${error instanceof Error ? error.message : 'Discovery failed'}`);
     }
   }
-  return { urls: uniqueAllowedProductUrls(discovered, input.allowedDomains), errors: errors.slice(0, 10), fetched };
+  return { urls: uniqueAllowedProductUrls(discovered, input.allowedDomains), errors: errors.slice(0, 10), fetched, diagnostics };
 }
 
 function normalizedTokens(value: string): string[] {

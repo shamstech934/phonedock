@@ -1,6 +1,6 @@
 import { Phone } from '@/lib/models';
 import { PhoneRetailListing, PriceSource } from '@/lib/models/PriceTracker';
-import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
+import { discoverCatalogProductUrls, matchProductUrlToPhone, summarizeCatalogDiscoveryDiagnostics } from '@/lib/price-catalog-discovery';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
@@ -146,7 +146,7 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
         lastDiscoveryAt: now,
         lastDiscoveryCount: result.urls.length,
         productsFound: result.urls.length,
-        lastError: result.errors.join('; ').slice(0, 1000),
+        lastError: (result.errors.join('; ') || (result.urls.length === 0 ? summarizeCatalogDiscoveryDiagnostics(result) : '')).slice(0, 1000),
       },
       $inc: { productsAdded: addedForSource },
     });

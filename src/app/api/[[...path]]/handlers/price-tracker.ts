@@ -10,7 +10,7 @@ import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
-import { discoverCatalogProductUrls, matchProductUrlToPhone } from '@/lib/price-catalog-discovery';
+import { discoverCatalogProductUrls, matchProductUrlToPhone, summarizeCatalogDiscoveryDiagnostics } from '@/lib/price-catalog-discovery';
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
@@ -120,19 +120,11 @@ function normalizeAllowedDomains(value: unknown, baseUrl = ''): string[] {
 }
 
 function isLikelyProductPageUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    const path = parsed.pathname.replace(/\/+$/, '');
-    // A domain homepage or a single generic catalogue segment is not a stable
-    // product record and must never be marked verified automatically.
-    if (!path || path === '/') return false;
-    const segments = path.split('/').filter(Boolean);
-    if (segments.length < 2) return false;
-    if (/^(mobiles?|phones?|products?|shop|store|category|collections?)$/i.test(segments.at(-1) || '')) return false;
-    return true;
-  } catch {
-    return false;
-  }
+  // Keep source creation, Test & Trust, catalog discovery and auto-link on the
+  // same provider-aware URL rules. This accepts verified WhatMobile product
+  // paths such as /Samsung_Galaxy-A37 while still rejecting
+  // /Samsung_Mobiles_Prices and generic catalogue/homepage URLs.
+  return isProbableProductUrl(value);
 }
 
 
@@ -761,6 +753,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       });
       discovered += result.urls.length;
       discoveryErrors.push(...result.errors.map(error => `${source.name}: ${error}`));
+      if (result.urls.length === 0 && result.errors.length === 0) {
+        const diagnostic = summarizeCatalogDiscoveryDiagnostics(result);
+        if (diagnostic) discoveryErrors.push(`${source.name}: no product URLs accepted | ${diagnostic}`);
+      }
       let sourceAdded = 0;
       for (const productUrl of result.urls) {
         const phone = matchProductUrlToPhone(productUrl, phones);
@@ -784,7 +780,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         $set: {
           lastDiscoveryAt: new Date(), lastDiscoveryCount: result.urls.length,
           productsFound: result.urls.length, productsAdded: sourceAdded,
-          lastError: result.errors.join('; ').slice(0, 1000),
+          lastError: (result.errors.join('; ') || (result.urls.length === 0 ? summarizeCatalogDiscoveryDiagnostics(result) : '')).slice(0, 1000),
         },
       });
     }
