@@ -36,3 +36,5 @@ export { ImageIntelligenceSignal } from './ImageIntelligenceSignal';
 export { SpecsIntelligenceSignal } from './SpecsIntelligenceSignal';
 export { PriceIntelligenceSignal } from './PriceIntelligenceSignal';
 export { YouTubeIntelligenceSignal } from './YouTubeIntelligenceSignal';
+
+export { SpecsIntelligenceScanJob } from './SpecsIntelligenceScanJob';
