@@ -45,6 +45,11 @@ assert.match(priceTrackerAdmin, /Enable verified phones/, 'admin must expose the
 assert.match(priceTrackerAdmin, /setActionLoading\(''\);[\s\S]*Promise\.allSettled/, 'slow refresh queries must not leave bulk automation stuck loading');
 assert.match(priceTrackerAdmin, /const \[actionError, setActionError\]/, 'action errors must not replace the whole phone catalog');
 assert.match(priceTrackerAdmin, /Link required/, 'unverified listings must explain why automatic tracking is unavailable');
+assert.match(priceTrackerAdmin, /includeUnlinked: '1'/, 'Source Gaps must request the real unlinked catalog');
+assert.match(priceTrackerAdmin, /Unlinked catalog phones/, 'Source Gaps must identify unlinked phones separately from URL match failures');
+assert.match(priceTrackerAdmin, /sourceGapsTotalPages/, 'large unlinked catalogs must be paginated');
+assert.match(priceTrackerApi, /_id: \{ \$nin: linkedPhoneIds\.filter\(Boolean\) \}/, 'unlinked catalog query must exclude every linked phone');
+assert.match(priceTrackerApi, /Phone\.countDocuments\(unlinkedFilter\)/, 'Source Gaps must return the same real unlinked count represented in Overview');
 for (const alias of ['percentChange:', 'source:', 'status:', 'date:']) {
   assert.match(priceTrackerApi, new RegExp(alias), `admin Price Tracker response must expose the ${alias} UI alias`);
 }

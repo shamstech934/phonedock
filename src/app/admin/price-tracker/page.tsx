@@ -131,6 +131,15 @@ interface MatchCandidate {
   createdAt: string | null;
 }
 
+interface UnlinkedPhone {
+  id: string;
+  phoneName: string;
+  phoneSlug: string;
+  brand: string;
+  thumbnail: string;
+  currentPrice: number;
+}
+
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
    ═══════════════════════════════════════════════════════════ */
@@ -262,6 +271,10 @@ export default function AdminPriceTrackerPage() {
   const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [matchCandidates, setMatchCandidates] = useState<MatchCandidate[]>([]);
+  const [unlinkedPhones, setUnlinkedPhones] = useState<UnlinkedPhone[]>([]);
+  const [unlinkedTotal, setUnlinkedTotal] = useState(0);
+  const [sourceGapsPage, setSourceGapsPage] = useState(1);
+  const [sourceGapsTotalPages, setSourceGapsTotalPages] = useState(1);
   const [sourceTestModal, setSourceTestModal] = useState<PriceSource | null>(null);
   const [sourceTestUrl, setSourceTestUrl] = useState('');
   const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null } | null>(null);
@@ -387,14 +400,23 @@ export default function AdminPriceTrackerPage() {
 
   const fetchMatchCandidates = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/price-tracker/match-queue?status=pending', { credentials: 'include' });
+      const params = new URLSearchParams({
+        status: 'pending',
+        includeUnlinked: '1',
+        page: String(sourceGapsPage),
+        limit: '25',
+      });
+      const res = await fetch(`/api/admin/price-tracker/match-queue?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load source gaps'));
       const data = await readApiResponse(res);
       setMatchCandidates(data.candidates || []);
+      setUnlinkedPhones(data.unlinkedPhones || []);
+      setUnlinkedTotal(Number(data.unlinkedTotal || 0));
+      setSourceGapsTotalPages(Math.max(1, Number(data.totalPages || 1)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load source gaps');
     }
-  }, []);
+  }, [sourceGapsPage]);
 
   const fetchChanges = useCallback(async () => {
     try {
@@ -1579,14 +1601,76 @@ export default function AdminPriceTrackerPage() {
           Auto-link scans imported retailer URLs. Add and test the missing retailer in Sources, then run Auto-link again.
         </p>
       </div>
-      {matchCandidates.length === 0 ? (
+      {unlinkedPhones.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="flex flex-col gap-1 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Unlinked catalog phones</p>
+              <p className="text-xs text-gray-500">{unlinkedTotal} published phones still need a verified retailer product page.</p>
+            </div>
+            <p className="text-xs font-medium text-gray-500">Page {sourceGapsPage} of {sourceGapsTotalPages}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-gray-100 bg-gray-50/70 text-xs text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Phone</th>
+                  <th className="px-4 py-3 text-left font-medium">Brand</th>
+                  <th className="px-4 py-3 text-left font-medium">Current price</th>
+                  <th className="px-4 py-3 text-left font-medium">Required action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {unlinkedPhones.map(phone => (
+                  <tr key={phone.id} className="text-sm">
+                    <td className="px-4 py-3 font-medium text-gray-900">{phone.phoneName}</td>
+                    <td className="px-4 py-3 text-gray-600">{phone.brand}</td>
+                    <td className="px-4 py-3 text-gray-600">{phone.currentPrice > 0 ? `PKR ${phone.currentPrice.toLocaleString()}` : 'Price unavailable'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhonesSearch(phone.phoneName);
+                            setPhonesDebouncedSearch(phone.phoneName);
+                            setPhonesPage(1);
+                            setActiveTab('phones');
+                          }}
+                          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                        >
+                          Link retailer page
+                        </button>
+                        <a href={`/phones/${phone.phoneSlug}`} target="_blank" rel="noreferrer" className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
+                          View phone
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sourceGapsTotalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+              <button type="button" disabled={sourceGapsPage <= 1} onClick={() => setSourceGapsPage(page => Math.max(1, page - 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium disabled:opacity-40">Previous</button>
+              <span className="text-xs text-gray-500">Showing {(sourceGapsPage - 1) * 25 + 1}–{Math.min(sourceGapsPage * 25, unlinkedTotal)} of {unlinkedTotal}</span>
+              <button type="button" disabled={sourceGapsPage >= sourceGapsTotalPages} onClick={() => setSourceGapsPage(page => Math.min(sourceGapsTotalPages, page + 1))} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium disabled:opacity-40">Next</button>
+            </div>
+          )}
+        </div>
+      )}
+      {matchCandidates.length === 0 && unlinkedPhones.length === 0 ? (
         <div className="rounded-xl border border-gray-100 bg-white p-8 text-center shadow-sm">
           <CheckCircle className="mx-auto h-8 w-8 text-emerald-500" />
           <p className="mt-3 text-sm font-semibold text-gray-900">No unresolved source gaps</p>
           <p className="mt-1 text-xs text-gray-500">Run Auto-link catalog after importing phones to refresh this queue.</p>
         </div>
-      ) : (
+      ) : matchCandidates.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="border-b border-gray-100 px-4 py-3">
+            <p className="text-sm font-semibold text-gray-900">Imported URL match issues</p>
+            <p className="text-xs text-gray-500">These URLs could not be safely matched to a catalog phone.</p>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="border-b border-gray-100 bg-gray-50/70 text-xs text-gray-500">
@@ -1629,7 +1713,7 @@ export default function AdminPriceTrackerPage() {
             </table>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 

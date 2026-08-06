@@ -72,6 +72,15 @@ interface LeanMatchCandidate {
   createdAt?: Date;
 }
 
+interface LeanUnlinkedPhone {
+  _id: Types.ObjectId;
+  modelName: string;
+  slug: string;
+  thumbnail?: string;
+  currentPrice?: number;
+  brand?: LeanBrand | null;
+}
+
 // ── Price Tracker Settings (stored in SystemState) ──
 const PT_SETTINGS_KEY = 'price_tracker_settings';
 const PT_LAST_RUN_KEY = 'price_tracker_last_run';
@@ -573,13 +582,46 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const permCheck = requirePermission(authResult.admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
 
-    const requestedStatus = new URL(req.url).searchParams.get('status') || 'pending';
+    const searchParams = new URL(req.url).searchParams;
+    const requestedStatus = searchParams.get('status') || 'pending';
     const status = ['pending', 'resolved', 'ignored'].includes(requestedStatus) ? requestedStatus : 'pending';
-    const candidates = await PriceMatchCandidate.find({ status })
+    const includeUnlinked = searchParams.get('includeUnlinked') === '1';
+    const page = parseBoundedInt(searchParams.get('page'), 1, { min: 1, max: 10000 });
+    const limit = parseBoundedInt(searchParams.get('limit'), 25, { min: 1, max: 100 });
+
+    const candidateQuery = PriceMatchCandidate.find({ status })
       .sort({ createdAt: -1 })
       .limit(200)
       .populate('phoneId', 'modelName slug thumbnail currentPrice')
       .lean();
+
+    let unlinkedPhones: LeanUnlinkedPhone[] = [];
+    let unlinkedTotal = 0;
+    if (includeUnlinked && status === 'pending') {
+      const linkedPhoneIds = await PhoneRetailListing.distinct('phoneId', {
+        enabled: true,
+        verificationStatus: { $in: ['verified', 'pending'] },
+      });
+      const unlinkedFilter = {
+        active: true,
+        status: 'published',
+        _id: { $nin: linkedPhoneIds.filter(Boolean) },
+      };
+      const [rows, count] = await Promise.all([
+        Phone.find(unlinkedFilter)
+          .select('_id modelName slug thumbnail currentPrice brandId')
+          .sort({ modelName: 1, _id: 1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .populate('brand', 'name')
+          .lean(),
+        Phone.countDocuments(unlinkedFilter),
+      ]);
+      unlinkedPhones = rows as unknown as LeanUnlinkedPhone[];
+      unlinkedTotal = count;
+    }
+
+    const candidates = await candidateQuery;
 
     return NextResponse.json({
       candidates: candidates.map((candidate: LeanMatchCandidate) => ({
@@ -593,6 +635,18 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         reason: candidate.reason,
         createdAt: candidate.createdAt || null,
       })),
+      unlinkedPhones: unlinkedPhones.map(phone => ({
+        id: phone._id.toString(),
+        phoneName: phone.modelName,
+        phoneSlug: phone.slug,
+        brand: phone.brand?.name || 'Unknown brand',
+        thumbnail: phone.thumbnail || '',
+        currentPrice: Number(phone.currentPrice || 0),
+      })),
+      unlinkedTotal,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(unlinkedTotal / limit)),
     });
   }
 

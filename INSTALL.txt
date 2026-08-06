@@ -23,6 +23,9 @@ WHAT THIS FIXES
 - The bulk button no longer stays stuck on "Enabling..." while dashboard data refreshes.
 - Manual/Automatic counters now represent the full published catalog, not only the visible 20-row page.
 - A zero-result bulk run now distinguishes "already enabled" from "no verified links".
+- Source Gaps now lists the real published phones counted as unlinked on Overview.
+- Unlinked phones are shown 25 per page with brand, price, direct phone link and a retailer-link action.
+- Imported URL matching failures remain a separate queue, so the two kinds of gaps are no longer confused.
 
 VERIFIED LOCALLY
 - npm run typecheck: PASS
