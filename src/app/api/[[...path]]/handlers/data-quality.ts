@@ -5,7 +5,7 @@ import type { IDeviceSpecDataset } from '@/lib/models/DeviceSpecDataset';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { getRuleById, ALL_QUALITY_RULES } from '@/lib/data-quality/rules';
-import { matchAndApplySpecsForPhone, type SpecMatchResult } from '@/lib/data-quality/spec-match';
+import { matchAndApplySpecsForPhone, normalizeSpecName, type SpecDatasetCandidate, type SpecMatchResult } from '@/lib/data-quality/spec-match';
 import { parseBoundedInt } from '@/lib/http';
 
 // Shape of a Phone row after `.select('_id modelName slug brandId thumbnail
@@ -28,6 +28,7 @@ interface IdOnlyRow { _id: { toString(): string } }
 interface PhoneWithBrandName {
   _id: Types.ObjectId;
   modelName: string;
+  sourceUrl?: string;
   brandId?: { name?: string } | null;
 }
 type DatasetRow = IDeviceSpecDataset & { _id: Types.ObjectId };
@@ -799,31 +800,64 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
         .filter(Boolean)
     )];
     const threshold = Math.max(85, Math.min(100, Number(body?.threshold || 92)));
-    if (!phoneIds.length || phoneIds.length > 100) {
-      return NextResponse.json({ error: 'Select between 1 and 100 phones' }, { status: 400 });
+    // Keep each serverless invocation small. The admin UI continues larger queues
+    // in multiple 25-phone requests, so the user still gets a one-click bulk flow.
+    if (!phoneIds.length || phoneIds.length > 50) {
+      return NextResponse.json({ error: 'Select between 1 and 50 phones per batch' }, { status: 400 });
     }
     if (phoneIds.some((id) => !Types.ObjectId.isValid(id))) {
       return NextResponse.json({ error: 'One or more Phone IDs are invalid' }, { status: 400 });
     }
 
-    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null }).populate('brandId', 'name').lean() as unknown as PhoneWithBrandName[];
+    const phones = await Phone.find({ _id: { $in: phoneIds }, deletedAt: null })
+      .select('_id modelName brandId sourceUrl')
+      .populate('brandId', 'name')
+      .maxTimeMS(5000)
+      .lean() as unknown as PhoneWithBrandName[];
+
+    // One dataset query per batch, not one query per phone. Candidates are grouped
+    // by normalized brand and ranked in memory by the shared matcher.
+    const normalizedBrands = [...new Set(phones.map(phone => normalizeSpecName(phone.brandId?.name || '')).filter(Boolean))];
+    const datasetRows = normalizedBrands.length
+      ? await DeviceSpecDataset.find({ normalizedBrand: { $in: normalizedBrands } })
+          .select('brand model normalizedBrand normalizedModel display chipset ram storage battery mainCamera fiveG sourceName sourceUrl')
+          .limit(5000)
+          .maxTimeMS(5000)
+          .lean() as unknown as SpecDatasetCandidate[]
+      : [];
+    const candidatesByBrand = new Map<string, SpecDatasetCandidate[]>();
+    for (const row of datasetRows) {
+      const key = normalizeSpecName(row.normalizedBrand || row.brand || '');
+      const bucket = candidatesByBrand.get(key) || [];
+      bucket.push(row);
+      candidatesByBrand.set(key, bucket);
+    }
+
     const results: SpecMatchResult[] = [];
-    let applied = 0, review = 0, notFound = 0, failed = 0;
+    let applied = 0, review = 0, notFound = 0, invalid = 0, failed = 0;
 
     for (const phone of phones) {
-      const result = await matchAndApplySpecsForPhone(phone, threshold, authResult.admin._id.toString(), false);
+      const brandKey = normalizeSpecName(phone.brandId?.name || '');
+      const result = await matchAndApplySpecsForPhone(
+        phone,
+        threshold,
+        authResult.admin._id.toString(),
+        false,
+        candidatesByBrand.get(brandKey) || [],
+      );
       if (result.status === 'applied') applied++;
       else if (result.status === 'needs_review') review++;
       else if (result.status === 'not_found') notFound++;
+      else if (result.status === 'invalid_phone') invalid++;
       else failed++;
       results.push(result);
     }
 
     try {
-      await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_batch_applied', details: `Batch local specs: ${applied} applied, ${review} review, ${notFound} not found, ${failed} failed`, entityType: 'phone' });
+      await ActivityLog.create({ adminId: authResult.admin._id, action: 'local_specs_batch_applied', details: `Batch local specs: ${applied} applied, ${review} review, ${notFound} not found, ${invalid} invalid catalog records, ${failed} failed`, entityType: 'phone' });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json({ success: true, selected: phoneIds.length, processed: phones.length, threshold, applied, review, notFound, failed, results });
+    return NextResponse.json({ success: true, selected: phoneIds.length, processed: phones.length, threshold, applied, review, notFound, invalid, failed, results });
   }
 
   // POST /api/admin/data-quality/spec-enrichment/apply
