@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import type { PhoneFormProps, PhoneFormData } from './types';
-import { TABS, createEmptyFormData, toNumberOrEmpty, slugify } from './types';
+import { TABS, createEmptyFormData, toDateInputValue, toNumberOrEmpty, slugify } from './types';
 import BasicInfoSection from './BasicInfoSection';
 import DisplayProcessorSection from './DisplayProcessorSection';
 import CameraSection from './CameraSection';
@@ -84,26 +84,26 @@ export default function PhoneForm({
           modelName: data.modelName ?? data.model_name ?? '',
           slug: data.slug ?? '',
           pakistaniPricePKR: toNumberOrEmpty(
-            data.pakistaniPricePKR ?? data.pakistani_price_pkr,
+            data.pakistaniPricePKR ?? data.pricePKR ?? data.currentPrice ?? data.pakistani_price_pkr,
           ),
           originalPricePKR: toNumberOrEmpty(
             data.originalPricePKR ?? data.original_price_pkr,
           ),
           ptaStatus: data.ptaStatus ?? data.pta_status ?? 'Unknown',
           ptaApproved: Boolean(data.ptaApproved ?? data.pta_approved),
-          releaseDate: data.releaseDate ?? data.release_date ?? '',
-          thumbnailUrl: data.thumbnailUrl ?? data.thumbnail_url ?? '',
+          releaseDate: toDateInputValue(data.releaseDate ?? data.release_date),
+          thumbnailUrl: data.thumbnailUrl ?? data.thumbnail ?? data.thumbnail_url ?? data.images?.[0]?.url ?? '',
           description: data.description ?? '',
           status: data.status ?? 'draft',
           featured: Boolean(data.featured),
           trending: Boolean(data.trending),
           upcoming: Boolean(data.upcoming),
           availabilityStatus: data.availabilityStatus ?? (data.upcoming ? 'coming_soon' : 'available'),
-          announcedAt: data.announcedAt ?? '',
-          expectedLaunchAt: data.expectedLaunchAt ?? '',
-          pakistanLaunchAt: data.pakistanLaunchAt ?? '',
-          availableFrom: data.availableFrom ?? '',
-          discontinuedAt: data.discontinuedAt ?? '',
+          announcedAt: toDateInputValue(data.announcedAt),
+          expectedLaunchAt: toDateInputValue(data.expectedLaunchAt),
+          pakistanLaunchAt: toDateInputValue(data.pakistanLaunchAt),
+          availableFrom: toDateInputValue(data.availableFrom),
+          discontinuedAt: toDateInputValue(data.discontinuedAt),
           // Display & Processor
           display: data.specs?.display ?? data.display ?? '',
           displayType: data.specs?.displayType ?? data.displayType ?? data.display_type ?? '',
