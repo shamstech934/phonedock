@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { DataQualityIssue, ScanJob, ActivityLog, Phone, PhoneSpecs, PhoneImage, PhonePrice, PhoneBenchmark, Brand, DeviceSpecDataset } from '@/lib/models';
-import type { IDeviceSpecDataset } from '@/lib/models/DeviceSpecDataset';
+import { DEVICE_SPEC_TEXT_FIELDS, type IDeviceSpecDataset } from '@/lib/models/DeviceSpecDataset';
 import { getAdminFromRequest, requirePermission } from './helpers';
 import { startScan, executeScan, executeAutoFix, calculateHealthScore } from '@/lib/data-quality/scanner';
 import { getRuleById, ALL_QUALITY_RULES } from '@/lib/data-quality/rules';
@@ -687,18 +687,27 @@ export async function handleDataQualityPost(req: NextRequest, segments: string[]
       operations.push({
         updateOne: {
           filter: { normalizedBrand, normalizedModel },
-          update: { $set: {
-            brand, model, normalizedBrand, normalizedModel,
-            display: clean(row.display ?? row.Display),
-            chipset: clean(row.chipset ?? row.Chipset ?? row.processor ?? row.Processor),
-            ram: clean(row.ram ?? row.RAM),
-            storage: clean(row.storage ?? row.Storage),
-            battery: clean(row.battery ?? row.Battery),
-            mainCamera: clean(row.mainCamera ?? row['Main Camera'] ?? row.camera ?? row.Camera),
-            fiveG: clean(row.fiveG ?? row['5G'] ?? row.network5g ?? row.Network5G, 40),
-            sourceName: clean(row.sourceName ?? row.Source ?? row['Source Name'], 120) || 'Imported dataset',
-            sourceUrl: clean(row.sourceUrl ?? row['Source URL'], 1000),
-          } },
+          update: { $set: (() => {
+            const aliases: Record<string, unknown> = {
+              chipset: row.chipset ?? row.Chipset ?? row.processor ?? row.Processor,
+              mainCamera: row.mainCamera ?? row['Main Camera'] ?? row.camera ?? row.Camera,
+              fiveG: row.fiveG ?? row['5G'] ?? row.network5g ?? row.Network5G,
+              displayType: row.displayType ?? row['Display Type'], refreshRate: row.refreshRate ?? row['Refresh Rate'],
+              mainCameraSensor: row.mainCameraSensor ?? row['Main Camera Sensor'], selfieCamera: row.selfieCamera ?? row['Selfie Camera'],
+              chargingSpeed: row.chargingSpeed ?? row['Charging Speed'], wirelessCharge: row.wirelessCharge ?? row['Wireless Charge'],
+              wirelessSpeed: row.wirelessSpeed ?? row['Wireless Speed'], reverseCharge: row.reverseCharge ?? row['Reverse Charge'],
+              cardSlot: row.cardSlot ?? row['Card Slot'], ramType: row.ramType ?? row['RAM Type'], ipRating: row.ipRating ?? row['IP Rating'],
+              faceUnlock: row.faceUnlock ?? row['Face Unlock'], osVersion: row.osVersion ?? row['OS Version'], osUI: row.osUI ?? row['OS UI'],
+              updatePolicy: row.updatePolicy ?? row['Update Policy'], specialFeatures: row.specialFeatures ?? row['Special Features'],
+              videoRecording: row.videoRecording ?? row['Video Recording'], cameraFeatures: row.cameraFeatures ?? row['Camera Features'],
+            };
+            const specs: Record<string, string> = {};
+            for (const field of DEVICE_SPEC_TEXT_FIELDS) specs[field] = clean(aliases[field] ?? row[field] ?? row[field[0].toUpperCase() + field.slice(1)], field === 'fiveG' ? 40 : 700);
+            return { brand, model, normalizedBrand, normalizedModel, ...specs,
+              sourceName: clean(row.sourceName ?? row.Source ?? row['Source Name'], 120) || 'Imported dataset',
+              sourceUrl: clean(row.sourceUrl ?? row['Source URL'], 1000),
+            };
+          })() },
           upsert: true,
         },
       });

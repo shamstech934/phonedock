@@ -6,6 +6,7 @@
 
 import { Types } from 'mongoose';
 import { Phone, PhoneSpecs, DeviceSpecDataset } from '@/lib/models';
+import { DEVICE_SPEC_TEXT_FIELDS } from '@/lib/models/DeviceSpecDataset';
 
 export interface SpecMatchResult {
   phoneId: string;
@@ -86,10 +87,8 @@ export async function matchAndApplySpecsForPhone(phone: any, threshold: number, 
     }
     const margin = second ? best.score - second.score : best.score;
     const source = best.row;
-    const update: Record<string, unknown> = {
-      display: clean(source.display), chipset: clean(source.chipset), ram: clean(source.ram), storage: clean(source.storage),
-      battery: clean(source.battery), mainCamera: clean(source.mainCamera), fiveG: clean(source.fiveG, 20),
-    };
+    const update: Record<string, unknown> = {};
+    for (const field of DEVICE_SPEC_TEXT_FIELDS) update[field] = clean(source[field], field === 'fiveG' ? 20 : 700);
     const populatedFields = Object.values(update).filter(Boolean).length;
     if (best.score < threshold || margin < 8 || populatedFields < 3) {
       return { phoneId: String(phone._id), modelName, status: 'needs_review', score: best.score, margin, candidate: `${source.brand || ''} ${source.model || ''}`.trim() };
