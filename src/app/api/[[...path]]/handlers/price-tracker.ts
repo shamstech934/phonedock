@@ -269,7 +269,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
           sourceId?: LeanPopulatedSource | null; verificationStatus?: string; availability?: string;
           lastCheckedAt?: Date | null; lastSuccessAt?: Date | null; enabled?: boolean;
         } | undefined;
-        const automatic = Boolean(listing) && p.manualLock !== true;
+        // A linked retailer row alone must not silently change the mode shown
+        // in the admin. priceMode is the operator's explicit choice; the
+        // listing only makes that choice executable by the sync worker.
+        const automatic = p.priceMode === 'automatic' && Boolean(listing) && p.manualLock !== true;
         return {
           id: p._id.toString(),
           phoneId: p._id.toString(),
@@ -1556,22 +1559,102 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phone = await Phone.findById(phoneId);
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
-    const newLock = !(phone.manualLock || false);
+    const currentlyAutomatic = phone.priceMode === 'automatic' && phone.manualLock !== true;
+
+    if (!currentlyAutomatic) {
+      const trustedSourceIds = await PriceSource.distinct('_id', {
+        trusted: true,
+        enabled: true,
+        status: 'active',
+      });
+      const eligibleListing = await PhoneRetailListing.exists({
+        phoneId,
+        enabled: true,
+        sourceId: { $in: trustedSourceIds },
+      });
+      if (!eligibleListing) {
+        return NextResponse.json({
+          error: 'Auto-tracking needs a linked product page from an enabled trusted source. Run Auto-link catalog, then Run sync now, and try again.',
+        }, { status: 409 });
+      }
+    }
+
+    const nextMode = currentlyAutomatic ? 'manual' : 'automatic';
+    const newLock = nextMode === 'manual';
     await Phone.findByIdAndUpdate(phoneId, {
-      $set: { manualLock: newLock, manualLockReason: newLock ? 'Toggled from phones list' : '' },
+      $set: {
+        priceMode: nextMode,
+        manualLock: newLock,
+        manualLockReason: newLock ? 'Switched to manual from Price Tracker' : '',
+      },
     });
 
     try {
       await ActivityLog.create({
         adminId: admin._id,
-        action: newLock ? 'lock_price' : 'unlock_price',
-        details: `${newLock ? 'Locked' : 'Unlocked'} price for ${phone.modelName}`,
+        action: newLock ? 'disable_automatic_price' : 'enable_automatic_price',
+        details: `${newLock ? 'Disabled' : 'Enabled'} automatic price tracking for ${phone.modelName}`,
         entityType: 'phone',
         entityId: phone._id?.toString(),
       });
     } catch (e) { console.error('[ActivityLog]', e); }
 
-    return NextResponse.json({ success: true, manualLock: newLock });
+    return NextResponse.json({ success: true, manualLock: newLock, mode: nextMode });
+  }
+
+  // ---- /api/admin/price-tracker/phones/enable-eligible ----
+  // Bulk-enables only phones that already have an enabled listing backed by a
+  // trusted active source. Explicit manual locks are respected.
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'phones' && segments[3] === 'enable-eligible') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+
+    const trustedSourceIds = await PriceSource.distinct('_id', {
+      trusted: true,
+      enabled: true,
+      status: 'active',
+    });
+    const eligiblePhoneIds = trustedSourceIds.length > 0
+      ? await PhoneRetailListing.distinct('phoneId', {
+          sourceId: { $in: trustedSourceIds },
+          enabled: true,
+        })
+      : [];
+    const eligiblePublished = await Phone.countDocuments({
+      _id: { $in: eligiblePhoneIds },
+      active: true,
+      status: 'published',
+    });
+    const skippedLocked = await Phone.countDocuments({
+      _id: { $in: eligiblePhoneIds },
+      active: true,
+      status: 'published',
+      manualLock: true,
+    });
+    const result = await Phone.updateMany({
+      _id: { $in: eligiblePhoneIds },
+      active: true,
+      status: 'published',
+      manualLock: { $ne: true },
+      priceMode: { $ne: 'automatic' },
+    }, {
+      $set: { priceMode: 'automatic', manualLock: false, manualLockReason: '' },
+    });
+
+    await ActivityLog.create({
+      adminId: admin._id,
+      action: 'bulk_enable_automatic_prices',
+      details: `Enabled automatic tracking for ${result.modifiedCount} linked phones; ${skippedLocked} manual locks preserved.`,
+      entityType: 'phone',
+    }).catch((error) => console.error('[ActivityLog]', error));
+
+    return NextResponse.json({
+      success: true,
+      eligible: eligiblePublished,
+      enabled: result.modifiedCount,
+      skippedLocked,
+    });
   }
 
   return undefined;

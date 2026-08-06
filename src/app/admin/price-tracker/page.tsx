@@ -808,13 +808,43 @@ export default function AdminPriceTrackerPage() {
   };
 
   const handleToggleTracking = async (phoneId: string) => {
+    setActionLoading(`toggle-phone-${phoneId}`);
+    setError('');
     try {
       const res = await fetch(`/api/admin/price-tracker/phones/${phoneId}/toggle`, {
         method: 'POST', credentials: 'include',
       });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to update phone tracking'));
-      fetchPhones();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update phone tracking'); }
+      const result = await readApiResponse(res) as { mode?: string };
+      setActionMessage(`Phone switched to ${result.mode || 'updated'} price tracking.`);
+      await Promise.all([fetchPhones(), fetchOverview()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update phone tracking');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleEnableEligibleTracking = async () => {
+    setActionLoading('enable-eligible');
+    setError('');
+    setActionMessage('');
+    try {
+      const res = await fetch('/api/admin/price-tracker/phones/enable-eligible', {
+        method: 'POST', credentials: 'include',
+      });
+      if (!res.ok) throw new Error(await responseError(res, 'Failed to enable linked phones'));
+      const result = await readApiResponse(res) as { eligible?: number; enabled?: number; skippedLocked?: number };
+      setActionMessage(
+        `${result.enabled || 0} linked phones enabled for automatic tracking. ` +
+        `${result.skippedLocked || 0} manually locked phones were preserved.`,
+      );
+      await Promise.all([fetchPhones(), fetchOverview()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to enable linked phones');
+    } finally {
+      setActionLoading('');
+    }
   };
 
   const openEditPriceModal = (phone: PhonePrice) => {
@@ -1058,6 +1088,22 @@ export default function AdminPriceTrackerPage() {
           </div>
         </div>
 
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-blue-100 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Automatic tracking</p>
+            <p className="text-xs text-gray-600">Only phones linked to an enabled trusted source will be enabled. Manual locks stay unchanged.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleEnableEligibleTracking}
+            disabled={Boolean(actionLoading)}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${actionLoading === 'enable-eligible' ? 'animate-spin' : ''}`} />
+            {actionLoading === 'enable-eligible' ? 'Enabling...' : 'Enable linked phones'}
+          </button>
+        </div>
+
         {/* Filters */}
         <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm mb-4">
           <div className="flex flex-col sm:flex-row gap-3">
@@ -1156,10 +1202,16 @@ export default function AdminPriceTrackerPage() {
                           <button onClick={() => openViewHistory(p)} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">History</button>
                           <button
                             onClick={() => handleToggleTracking(p.phoneId)}
-                            className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+                            disabled={Boolean(actionLoading)}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                             title={p.mode === 'automatic' ? 'Switch to manual' : 'Enable auto-tracking'}
                           >
-                            {p.mode === 'automatic' ? <ToggleRight className="w-4 h-4 text-blue-500" /> : <ToggleLeft className="w-4 h-4" />}
+                            {actionLoading === `toggle-phone-${p.phoneId}`
+                              ? <RefreshCw className="h-4 w-4 animate-spin" />
+                              : p.mode === 'automatic'
+                                ? <ToggleRight className="h-4 w-4 text-blue-500" />
+                                : <ToggleLeft className="h-4 w-4" />}
+                            {p.mode === 'automatic' ? 'Auto' : 'Enable'}
                           </button>
                         </div>
                       </td>

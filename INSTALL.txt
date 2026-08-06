@@ -29,6 +29,23 @@ Is patch mein:
 - Recent Price Changes mein sirf valid old/new price wali genuine increase/decrease entries aati hain
 - Price change ka source, date, status aur percentage API aur admin UI mein correctly map hota hai
 - Baseline record per-phone History mein audit ke liye preserved rehta hai
+- Phone row ka Enable switch ab waqai priceMode ko automatic karta hai
+- Unlinked/untrusted phone par silent failure ki jagah clear setup message milta hai
+- "Enable linked phones" trusted-source listings ko bulk mein automatic mode mein lata hai
+- Explicit manual locks bulk operation mein preserve rehte hain
+- Automatic mode tabhi lagta hai jab phone ke paas enabled trusted source ka product-page link ho
+
+Automatic price data ka flow:
+1. Sources tab mein source enabled + trusted hona chahiye.
+2. Auto-link catalog product URLs ko phones se match karta hai.
+3. Phones tab mein "Enable linked phones" dabayen.
+4. Run sync now pehli verified price ko baseline banata hai.
+5. Agli sync par price badlay to Price Drop/Price Up aur history automatically update hoti hai.
+
+Lifecycle tabs ka data:
+- Coming Soon, Rumoured aur Discontinued database ke availabilityStatus/release dates se aate hain.
+- In records ko Admin Phones/Launch Center ya approved rumour feed se set karein.
+- System fake lifecycle phones generate nahi karta; zero records hon to tab empty rehna correct hai.
 
 Verified commands:
 - npm run typecheck: PASS
@@ -37,6 +54,7 @@ Verified commands:
 - npm run build: PASS
 - npm run test:price-auto-tracking: PASS
 - price-tracker-intelligence.test.ts: PASS
+- npm run test:card-lifecycle: PASS
 
 Build note:
 Local build mein MONGODB_URI na hone ki homepage fallback warning aayi, magar build exit code 0 raha.
