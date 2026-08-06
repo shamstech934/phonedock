@@ -61,6 +61,16 @@ export interface PhoneJson {
   thumbnail?: string;
   pricePKR?: number;
   originalPricePKR?: number;
+  currentPrice?: number;
+  previousPrice?: number;
+  lowestPrice?: number;
+  highestPrice?: number;
+  priceChange?: number;
+  percentageChange?: number;
+  lastPriceCheckedAt?: Date | string | null;
+  lastVerifiedAt?: Date | string | null;
+  priceVerified?: boolean;
+  inStock?: boolean;
   description?: string;
   overallRating?: number;
   cameraScore?: number;
@@ -113,6 +123,16 @@ interface RawPhoneObject {
   thumbnail?: string;
   pricePKR?: number;
   originalPricePKR?: number;
+  currentPrice?: number;
+  previousPrice?: number;
+  lowestPrice?: number;
+  highestPrice?: number;
+  priceChange?: number;
+  percentageChange?: number;
+  lastPriceCheckedAt?: Date | string | null;
+  lastVerifiedAt?: Date | string | null;
+  priceVerified?: boolean;
+  inStock?: boolean;
   description?: string;
   overallRating?: number;
   cameraScore?: number;
@@ -390,6 +410,16 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     thumbnail: r.thumbnail || '',
     pricePKR: r.pricePKR || 0,
     originalPricePKR: r.originalPricePKR || 0,
+    currentPrice: r.currentPrice || r.pricePKR || 0,
+    previousPrice: r.previousPrice || 0,
+    lowestPrice: r.lowestPrice || 0,
+    highestPrice: r.highestPrice || 0,
+    priceChange: r.priceChange || 0,
+    percentageChange: r.percentageChange || 0,
+    lastPriceCheckedAt: r.lastPriceCheckedAt || '',
+    lastVerifiedAt: r.lastVerifiedAt || '',
+    priceVerified: r.priceVerified || false,
+    inStock: r.inStock !== false,
     description: r.description || '',
     overallRating: r.overallRating || 0,
     cameraScore: r.cameraScore || 0,

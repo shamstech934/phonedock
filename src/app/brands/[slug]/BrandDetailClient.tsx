@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Smartphone, Layers, ChevronRight, ChevronLeft, Clock3, Archive, Sparkles, BadgeDollarSign } from 'lucide-react';
+import { Smartphone, Layers, ChevronRight, ChevronLeft, Clock3, Archive, Sparkles, BadgeDollarSign, Radio } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
@@ -14,12 +14,16 @@ import { OFFICIAL_LOGOS } from '@/lib/brand-logos';
 import type { Brand, Phone } from '@/components/shared/types';
 
 const PER_PAGE = 20;
-type LifecycleTab = 'all' | 'latest' | 'upcoming' | 'discontinued';
-const isUpcomingPhone = (phone: Phone) =>
-  phone.upcoming || ['rumored', 'announced', 'coming_soon'].includes(phone.availabilityStatus || '');
+type LifecycleTab = 'all' | 'latest' | 'rumored' | 'coming_soon' | 'discontinued';
+const getLifecycle = (phone: Phone) => phone.availabilityStatus || (phone.upcoming ? 'coming_soon' : 'available');
+const isRumouredPhone = (phone: Phone) => getLifecycle(phone) === 'rumored';
+const isComingSoonPhone = (phone: Phone) => {
+  const lifecycle = getLifecycle(phone);
+  return lifecycle !== 'rumored' && (phone.upcoming || ['announced', 'coming_soon'].includes(lifecycle));
+};
 const isDiscontinuedPhone = (phone: Phone) =>
-  ['discontinued', 'cancelled'].includes(phone.availabilityStatus || '') || Boolean(phone.discontinuedAt);
-const isLatestPhone = (phone: Phone) => !isUpcomingPhone(phone) && !isDiscontinuedPhone(phone);
+  ['discontinued', 'cancelled'].includes(getLifecycle(phone)) || Boolean(phone.discontinuedAt);
+const isLatestPhone = (phone: Phone) => !isRumouredPhone(phone) && !isComingSoonPhone(phone) && !isDiscontinuedPhone(phone);
 const getPhoneSeries = (phone: Phone, brandName: string) => {
   let model = phone.modelName.trim();
   if (model.toLowerCase().startsWith(brandName.toLowerCase())) model = model.slice(brandName.length).trim();
@@ -49,7 +53,10 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
     const value = readQueryValue('sort', ['newest', 'price-low', 'price-high', 'rating']);
     return value === 'all' ? 'newest' : value as 'newest' | 'price-low' | 'price-high' | 'rating';
   });
-  const [lifecycleTab, setLifecycleTab] = useState<LifecycleTab>(() => readQueryValue('status', ['all', 'latest', 'upcoming', 'discontinued']) as LifecycleTab);
+  const [lifecycleTab, setLifecycleTab] = useState<LifecycleTab>(() => {
+    const value = readQueryValue('status', ['all', 'latest', 'upcoming', 'rumored', 'coming_soon', 'discontinued']);
+    return (value === 'upcoming' ? 'coming_soon' : value) as LifecycleTab;
+  });
   const [yearFilter, setYearFilter] = useState(() => readQueryValue('year'));
   const [seriesFilter, setSeriesFilter] = useState(() => readQueryValue('series'));
 
@@ -80,7 +87,8 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
   const tabCounts = useMemo(() => ({
     all: phones.length,
     latest: phones.filter(isLatestPhone).length,
-    upcoming: phones.filter(isUpcomingPhone).length,
+    rumored: phones.filter(isRumouredPhone).length,
+    coming_soon: phones.filter(isComingSoonPhone).length,
     discontinued: phones.filter(isDiscontinuedPhone).length,
   }), [phones]);
   const pricedPhones = useMemo(() => phones.filter(phone => phone.pricePKR > 0), [phones]);
@@ -92,7 +100,8 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
   const filtered = useMemo(() => {
     let result = [...phones];
     if (lifecycleTab === 'latest') result = result.filter(isLatestPhone);
-    else if (lifecycleTab === 'upcoming') result = result.filter(isUpcomingPhone);
+    else if (lifecycleTab === 'rumored') result = result.filter(isRumouredPhone);
+    else if (lifecycleTab === 'coming_soon') result = result.filter(isComingSoonPhone);
     else if (lifecycleTab === 'discontinued') result = result.filter(isDiscontinuedPhone);
     if (yearFilter !== 'all') result = result.filter(phone => phone.releaseDate?.startsWith(yearFilter));
     if (seriesFilter !== 'all' && brand) result = result.filter(phone => getPhoneSeries(phone, brand.name) === seriesFilter);
@@ -162,10 +171,11 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
           </div>
 
           {/* Brand intelligence summary */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {[
               { label: 'Available phones', value: tabCounts.latest, icon: Sparkles, tone: 'text-blue-600 bg-blue-50' },
-              { label: 'Coming soon', value: tabCounts.upcoming, icon: Clock3, tone: 'text-violet-600 bg-violet-50' },
+              { label: 'Rumoured', value: tabCounts.rumored, icon: Radio, tone: 'text-amber-600 bg-amber-50' },
+              { label: 'Coming soon', value: tabCounts.coming_soon, icon: Clock3, tone: 'text-violet-600 bg-violet-50' },
               { label: 'Discontinued', value: tabCounts.discontinued, icon: Archive, tone: 'text-slate-600 bg-slate-100' },
               { label: 'Price range', value: priceSummary.min ? `PKR ${Math.round(priceSummary.min / 1000)}K–${Math.round(priceSummary.max / 1000)}K` : 'Not available', icon: BadgeDollarSign, tone: 'text-emerald-600 bg-emerald-50' },
             ].map(item => <div key={item.label} className="rounded-2xl border border-white/80 bg-white/55 p-3.5 shadow-sm backdrop-blur-xl sm:p-4">
@@ -180,8 +190,9 @@ export default function BrandDetailClient({ initialBrand, initialPhones }: { ini
             <div role="tablist" aria-label={`${brand.name} phone availability`} className="flex min-w-max gap-1 rounded-2xl border border-white/80 bg-white/45 p-1.5 shadow-sm backdrop-blur-xl">
               {([
                 ['all', 'All Phones'],
-                ['latest', 'Latest'],
-                ['upcoming', 'Coming Soon'],
+                ['latest', 'Available / Latest'],
+                ['rumored', 'Rumoured'],
+                ['coming_soon', 'Coming Soon'],
                 ['discontinued', 'Discontinued'],
               ] as Array<[LifecycleTab, string]>).map(([key, label]) => (
                 <button key={key} type="button" role="tab" aria-selected={lifecycleTab === key} onClick={() => setLifecycleTab(key)} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${lifecycleTab === key ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-600 hover:bg-white/80 hover:text-blue-700'}`}>

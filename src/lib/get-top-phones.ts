@@ -13,7 +13,7 @@ import { unstable_cache } from 'next/cache';
 type LeanDoc = any;
 
 // Field allowlist for card-level queries (excludes heavy fields)
-const CARD_SELECT = '-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl -manualLock -manualLockReason -sourceUrl -priceMode -preferredPriceSourceId -lastVerifiedAt -dataConfidence -createdBy -updatedBy -publishedBy -publishedAt -deletedAt';
+const CARD_SELECT = '-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl -manualLock -manualLockReason -sourceUrl -preferredPriceSourceId -dataConfidence -createdBy -updatedBy -publishedBy -publishedAt -deletedAt';
 
 const SORT_FIELDS = new Set([
   'cameraScore', 'batteryScore', 'performanceScore',
@@ -32,6 +32,14 @@ function mapPhone(p: LeanDoc, brandMap: Map<string, LeanDoc>, specsMap: Map<stri
     thumbnail: (p.thumbnail as string) || '',
     pricePKR: (p.pricePKR as number) || 0,
     originalPricePKR: (p.originalPricePKR as number) || 0,
+    currentPrice: (p.currentPrice as number) || (p.pricePKR as number) || 0,
+    previousPrice: (p.previousPrice as number) || 0,
+    lowestPrice: (p.lowestPrice as number) || 0,
+    highestPrice: (p.highestPrice as number) || 0,
+    priceChange: (p.priceChange as number) || 0,
+    percentageChange: (p.percentageChange as number) || 0,
+    lastPriceCheckedAt: p.lastPriceCheckedAt ? new Date(p.lastPriceCheckedAt).toISOString() : '',
+    lastVerifiedAt: p.lastVerifiedAt ? new Date(p.lastVerifiedAt).toISOString() : '',
     description: '',
     overallRating: (p.overallRating as number) || 0,
     cameraScore: (p.cameraScore as number) || 0,
@@ -44,7 +52,10 @@ function mapPhone(p: LeanDoc, brandMap: Map<string, LeanDoc>, specsMap: Map<stri
     releaseDate: (p.releaseDate as string) || '',
     trending: (p.trending as boolean) || false,
     upcoming: (p.upcoming as boolean) || false,
+    availabilityStatus: (p.availabilityStatus as string) || ((p.upcoming as boolean) ? 'coming_soon' : 'available'),
+    discontinuedAt: (p.discontinuedAt as string) || '',
     featured: (p.featured as boolean) || false,
+    priceMode: (p.priceMode as string) || 'manual',
     specs: rawSpec ? (serializePhoneSpecs(rawSpec as Record<string, unknown>) as unknown as PhoneSpecsType) : undefined,
   };
 }

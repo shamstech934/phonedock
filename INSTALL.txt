@@ -1,0 +1,31 @@
+PhoneDock Card Status + Brand Lifecycle Patch
+==============================================
+
+Yeh full project ZIP nahi hai. Is mein sirf changed files hain, is liye size chhota hai.
+
+Install:
+1. Apne current GitHub project folder ka backup rakhain.
+2. Is ZIP ko extract karein.
+3. Extracted folder ke andar ka sara content apne PhoneDock project root mein copy karein.
+4. Windows poochay to "Replace the files in the destination" select karein.
+5. GitHub Desktop mein changes review karke commit aur push karein.
+6. Vercel deployment complete hone ke baad hard refresh karein (Ctrl+F5).
+
+Is patch mein:
+- Phone cards par automatic Price drop / Price up indicators
+- Price tracker ka current/previous price cards tak pohanchta hai
+- Existing Trending, PTA, Non-PTA, Coming Soon, Rumoured aur Discontinued badges preserved
+- Brand page tabs: All, Available / Latest, Rumoured, Coming Soon, Discontinued
+- Old ?status=upcoming links backward-compatible
+- Ranking cards ko bhi price/lifecycle tracker fields milti hain
+- Regression test included
+
+Verified commands:
+- npm run typecheck: PASS
+- npm run lint: PASS
+- npm test: PASS
+- npm run build: PASS
+
+Build note:
+Local build mein MONGODB_URI na hone ki homepage fallback warning aayi, magar build exit code 0 raha.
+Vercel mein existing MONGODB_URI configured ho to yeh warning production issue nahi hai.

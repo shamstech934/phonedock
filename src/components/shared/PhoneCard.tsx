@@ -43,13 +43,23 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
   const isDiscontinued = ['discontinued', 'cancelled'].includes(lifecycle);
   const isRumoured = lifecycle === 'rumored';
   const isUpcoming = phone.upcoming || ['announced', 'coming_soon'].includes(lifecycle);
-  const discountPercent = phone.originalPricePKR > phone.pricePKR && phone.pricePKR > 0
-    ? Math.round(((phone.originalPricePKR - phone.pricePKR) / phone.originalPricePKR) * 100)
+  const currentPrice = Number(phone.currentPrice || phone.pricePKR || 0);
+  const originalPrice = Number(phone.originalPricePKR || 0);
+  const previousPrice = Number(phone.previousPrice || 0);
+  const compareAtPrice = Math.max(
+    originalPrice > currentPrice ? originalPrice : 0,
+    previousPrice > currentPrice ? previousPrice : 0,
+  );
+  const discountPercent = compareAtPrice > currentPrice && currentPrice > 0
+    ? Math.round(((compareAtPrice - currentPrice) / compareAtPrice) * 100)
     : 0;
   const normalizedPta = String(phone.ptaStatus || '').toLowerCase().replace(/[\s-]+/g, '_');
   const isNonPta = !phone.ptaApproved && ['non_pta', 'not_approved', 'unapproved'].includes(normalizedPta);
   const hasVerifiedPrice = Boolean(phone.priceVerified || phone.lastVerifiedAt || phone.lastPriceCheckedAt);
-  const hasPriceDrop = Number(phone.priceChange || 0) < 0 || Number(phone.percentageChange || 0) < 0;
+  const hasPriceDrop = compareAtPrice > currentPrice || Number(phone.priceChange || 0) < 0 || Number(phone.percentageChange || 0) < 0;
+  const hasPriceRise = previousPrice > 0 && currentPrice > previousPrice
+    || Number(phone.priceChange || 0) > 0
+    || Number(phone.percentageChange || 0) > 0;
   const isOutOfStock = phone.inStock === false || lifecycle === 'out_of_stock' || lifecycle === 'unavailable';
 
   const handleQuickView = useCallback((e?: React.MouseEvent) => {
@@ -131,12 +141,14 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
               </Badge>
             )}
           </div>
-          {(hasPriceDrop || isOutOfStock || hasVerifiedPrice) && (
+          {(hasPriceDrop || hasPriceRise || isOutOfStock || hasVerifiedPrice) && (
             <div className="mb-2 flex min-h-5 flex-wrap items-center gap-1" aria-label="Phone market status">
               {isOutOfStock ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600"><PackageX className="h-2.5 w-2.5" /> Out of stock</span>
               ) : hasPriceDrop ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700"><TrendingDown className="h-2.5 w-2.5" /> Price drop</span>
+              ) : hasPriceRise ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700"><TrendingUp className="h-2.5 w-2.5" /> Price up</span>
               ) : null}
               {hasVerifiedPrice && !isDiscontinued && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-bold text-blue-700"><BadgeCheck className="h-2.5 w-2.5" /> Verified price</span>
@@ -149,10 +161,10 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             </div>
             <h3 data-testid="phone-card-title" className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">{phone.modelName}</h3>
             <div className="h-10 pt-1">
-              <p className={`truncate text-sm font-bold ${isDiscontinued ? 'text-slate-500' : 'text-blue-600'}`}>{isDiscontinued ? 'Discontinued' : formatPrice(phone.pricePKR)}</p>
+              <p className={`truncate text-sm font-bold ${isDiscontinued ? 'text-slate-500' : 'text-blue-600'}`}>{isDiscontinued ? 'Discontinued' : formatPrice(currentPrice)}</p>
               {!isDiscontinued && discountPercent > 0 && (
                 <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium">
-                  <span className="truncate text-slate-400 line-through">{formatPrice(phone.originalPricePKR)}</span>
+                  <span className="truncate text-slate-400 line-through">{formatPrice(compareAtPrice)}</span>
                   <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 font-extrabold text-emerald-700">-{discountPercent}%</span>
                 </p>
               )}
