@@ -175,13 +175,28 @@ function sourceTypeBadgeClass(type: PriceSourceType): string {
   return classes[type];
 }
 
-function formatPKR(price: number): string {
-  return `PKR ${price.toLocaleString('en-PK')}`;
+function toFiniteNumber(value: unknown): number | null {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-function formatDiff(diff: number): string {
-  const sign = diff > 0 ? '+' : '';
-  return `${sign}PKR ${Math.abs(diff).toLocaleString('en-PK')}`;
+function formatPKR(price: unknown): string {
+  const numericPrice = toFiniteNumber(price);
+  return numericPrice === null ? '—' : `PKR ${numericPrice.toLocaleString('en-PK')}`;
+}
+
+function formatDiff(diff: unknown): string {
+  const numericDiff = toFiniteNumber(diff);
+  if (numericDiff === null) return '—';
+  const sign = numericDiff > 0 ? '+' : '';
+  return `${sign}PKR ${Math.abs(numericDiff).toLocaleString('en-PK')}`;
+}
+
+function formatPercentChange(percentChange: unknown): string {
+  const numericPercent = toFiniteNumber(percentChange);
+  if (numericPercent === null) return '—';
+  const sign = numericPercent > 0 ? '+' : '';
+  return `${sign}${numericPercent.toFixed(1)}%`;
 }
 
 function formatDate(dateStr: string): string {
@@ -988,7 +1003,7 @@ export default function AdminPriceTrackerPage() {
                       <td className="px-5 py-3 text-gray-900 font-medium">{formatPKR(c.newPrice)}</td>
                       <td className="px-5 py-3">
                         <span className={c.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}>
-                          {formatDiff(c.difference)} ({c.changeType === 'decrease' ? '' : '+'}{c.percentChange.toFixed(1)}%)
+                          {formatDiff(c.difference)} ({formatPercentChange(c.percentChange)})
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs">{c.source}</td>
@@ -1116,9 +1131,9 @@ export default function AdminPriceTrackerPage() {
                         ) : <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {p.percentChange !== 0 ? (
-                          <span className={p.percentChange < 0 ? 'text-green-600' : 'text-red-600'}>
-                            {p.percentChange < 0 ? '' : '+'}{p.percentChange.toFixed(1)}%
+                        {toFiniteNumber(p.percentChange) !== null && Number(p.percentChange) !== 0 ? (
+                          <span className={Number(p.percentChange) < 0 ? 'text-green-600' : 'text-red-600'}>
+                            {formatPercentChange(p.percentChange)}
                           </span>
                         ) : <span className="text-gray-400">—</span>}
                       </td>
@@ -1601,7 +1616,7 @@ export default function AdminPriceTrackerPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className={c.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}>
-                        {c.changeType === 'decrease' ? '' : '+'}{c.percentChange.toFixed(1)}%
+                        {formatPercentChange(c.percentChange)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -1678,7 +1693,7 @@ export default function AdminPriceTrackerPage() {
                   <span>Detected: <span className="font-medium text-gray-700">{formatPKR(item.newPrice)}</span></span>
                   <span>Current: <span className="font-medium text-gray-700">{formatPKR(item.oldPrice)}</span></span>
                   <span className={item.changeType === 'decrease' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                    {formatDiff(item.difference)} ({item.changeType === 'decrease' ? '' : '+'}{item.percentChange.toFixed(1)}%)
+                    {formatDiff(item.difference)} ({formatPercentChange(item.percentChange)})
                   </span>
                   <span>Source: {item.source}</span>
                   <span>{formatDateTime(item.date)}</span>
@@ -1883,7 +1898,7 @@ export default function AdminPriceTrackerPage() {
                         {formatDiff(h.difference)}
                       </td>
                       <td className={`px-4 py-2.5 text-right ${h.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}`}>
-                        {h.changeType === 'decrease' ? '' : '+'}{h.percentChange.toFixed(1)}%
+                        {formatPercentChange(h.percentChange)}
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge className={h.changeType === 'decrease' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>

@@ -19,6 +19,8 @@ Is patch mein:
 - Old ?status=upcoming links backward-compatible
 - Ranking cards ko bhi price/lifecycle tracker fields milti hain
 - Regression test included
+- Price Tracker ke legacy/missing percentChange records ab admin page ko crash nahi karte
+- Missing percentage ya invalid numeric value par safe dash show hota hai
 
 Verified commands:
 - npm run typecheck: PASS
