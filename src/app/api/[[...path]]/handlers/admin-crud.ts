@@ -561,7 +561,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     ]);
 
     const serialized = phoneToJSON(phone, specs, benchmarks, images, prices);
-    const rawPhone = phone as Record<string, unknown>;
+    const rawPhone = phone as unknown as Record<string, unknown>;
     const asPositiveNumber = (value: unknown): number => {
       const parsed = Number(value);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -575,7 +575,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       .filter((entry) => entry.verificationStatus === 'verified' && entry.availability === 'available')
       .map((entry) => asPositiveNumber(entry.currentSourcePrice))
       .filter((value) => value > 0);
-    const collected = collectedPhone as Record<string, unknown> | null;
+    const collected = collectedPhone as unknown as Record<string, unknown> | null;
     const effectivePrice = [
       rawPhone.pricePKR,
       rawPhone.currentPrice,
