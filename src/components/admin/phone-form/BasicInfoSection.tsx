@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import { Smartphone } from 'lucide-react';
 import type { PhoneFormData } from './types';
-import { TextInput, NumberInput, SelectInput, TextArea } from './FormFields';
+import { TextInput, NumberInput, SelectInput, TextArea, CheckboxInput } from './FormFields';
 import { PHONE_AVAILABILITY_LABELS, PHONE_AVAILABILITY_STATUSES } from '@/lib/phone-lifecycle';
 
 interface SectionProps {
