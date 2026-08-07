@@ -471,6 +471,9 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTrackerError, setPriceTrackerError] = useState('');
   const [selectedPriceClass, setSelectedPriceClass] = useState<'pta-approved' | 'non-pta'>('pta-approved');
+  const [selectedRam, setSelectedRam] = useState('');
+  const [selectedStorage, setSelectedStorage] = useState('');
+  const [selectedColor, setSelectedColor] = useState('');
   const [priceTracker, setPriceTracker] = useState<{
     currentPrice: number; ptaPrice: number; nonPtaPrice: number; priceClass: 'pta-approved' | 'non-pta'; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
@@ -478,6 +481,10 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     positionInRange: number | null; discountFromAveragePct: number;
     buyRecommendation: 'buy_now' | 'good_price' | 'wait' | 'insufficient_data';
     buyRecommendationReason: string;
+    selectedVariant?: { ram: string; storage: string; color: string };
+    variantOptions?: { ram: string[]; storage: string[]; colors: string[] };
+    variantOffers?: Array<{ ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; price: number; source: string; sourceUrl: string }>;
+    selectedOffer?: { price: number; source: string; sourceUrl: string; ram: string; storage: string; color: string } | null;
     priceMode: string; manualLock: boolean;
     history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
   } | null>(null);
@@ -492,7 +499,12 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } })
       .catch(() => { if (!cancelled) setHistoryLoading(false); });
     setPriceTrackerError('');
-    fetch(`/api/phones/${slug}/price-tracker?priceClass=${selectedPriceClass}`)
+    fetch(`/api/phones/${slug}/price-tracker?${new URLSearchParams({
+      priceClass: selectedPriceClass,
+      ...(selectedRam ? { ram: selectedRam } : {}),
+      ...(selectedStorage ? { storage: selectedStorage } : {}),
+      ...(selectedColor ? { color: selectedColor } : {}),
+    }).toString()}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || d.message || 'Price tracker is temporarily unavailable');
@@ -501,7 +513,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(d => { if (!cancelled && !d.error) setPriceTracker(d); })
       .catch(err => { if (!cancelled) setPriceTrackerError(err instanceof Error ? err.message : 'Price tracker is temporarily unavailable'); });
     return () => { cancelled = true; };
-  }, [slug, selectedPriceClass]);
+  }, [slug, selectedPriceClass, selectedRam, selectedStorage, selectedColor]);
 
   useEffect(() => {
     if (data?.phone) recent.add(data.phone);
@@ -673,10 +685,28 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     <button type="button" onClick={() => setSelectedPriceClass('pta-approved')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'pta-approved' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>PTA Approved</button>
                     <button type="button" onClick={() => setSelectedPriceClass('non-pta')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'non-pta' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500'}`}>Non-PTA</button>
                   </div>
+                  {(priceTracker?.variantOptions?.storage?.length || priceTracker?.variantOptions?.ram?.length) ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {priceTracker?.variantOptions?.ram?.length ? <select value={selectedRam} onChange={e => { setSelectedRam(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="RAM variant"><option value="">Any RAM</option>{priceTracker.variantOptions.ram.map(v => <option key={v} value={v}>{v} RAM</option>)}</select> : null}
+                      {priceTracker?.variantOptions?.storage?.length ? <select value={selectedStorage} onChange={e => { setSelectedStorage(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="Storage variant"><option value="">Any Storage</option>{priceTracker.variantOptions.storage.map(v => <option key={v} value={v}>{v}</option>)}</select> : null}
+                    </div>
+                  ) : null}
+                  {priceTracker?.variantOptions?.colors?.length ? (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button type="button" onClick={() => setSelectedColor('')} className={`rounded-full border px-2.5 py-1 text-[11px] ${!selectedColor ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>Any</button>
+                        {priceTracker.variantOptions.colors.map(v => <button type="button" key={v} onClick={() => setSelectedColor(v)} className={`rounded-full border px-2.5 py-1 text-[11px] ${selectedColor === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>{v}</button>)}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">{selectedPriceClass === 'pta-approved' ? 'PTA Approved Price' : 'Non-PTA Price'}</span>
                     <span className="text-2xl font-bold text-blue-600">{formatPrice(priceTracker?.currentPrice || (selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0)))}</span>
                   </div>
+                  {priceTracker?.selectedOffer ? <p className="text-[11px] text-gray-500">{[priceTracker.selectedOffer.ram, priceTracker.selectedOffer.storage, priceTracker.selectedOffer.color].filter(Boolean).join(' • ')}{priceTracker.selectedOffer.source ? ` • ${priceTracker.selectedOffer.source}` : ''}</p> : null}
+
                   {selectedPriceClass === 'non-pta' && !(priceTracker?.nonPtaPrice || p.bestNonPtaPricePKR) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
                 </div>
                 {/* Price tracking badges */}

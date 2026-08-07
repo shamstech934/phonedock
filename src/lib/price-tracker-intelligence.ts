@@ -25,6 +25,12 @@ export interface VerifiedOfferCandidate {
   sourcePriority?: number;
   price: number;
   ptaStatus?: string;
+  ram?: string;
+  storage?: string;
+  color?: string;
+  condition?: string;
+  warrantyType?: string;
+  variantKey?: string;
   availability?: string;
   enabled?: boolean;
   trusted?: boolean;

@@ -58,6 +58,9 @@ const PhoneRetailListingSchema = new Schema({
   sourceTitle: { type: String, default: '' },
   ram: { type: String, default: '' },
   storage: { type: String, default: '' },
+  color: { type: String, default: '' },
+  condition: { type: String, enum: ['', 'new', 'used', 'refurbished', 'open-box'], default: 'new' },
+  variantKey: { type: String, default: '', index: true },
   ptaStatus: { type: String, default: '' },
   warrantyType: { type: String, default: '' },
   currentSourcePrice: { type: Number, default: 0 },
@@ -82,6 +85,7 @@ const PhoneRetailListingSchema = new Schema({
 }, { timestamps: true });
 
 PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
+PhoneRetailListingSchema.index({ phoneId: 1, variantKey: 1, enabled: 1, verificationStatus: 1, currentSourcePrice: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, verificationStatus: 1, availability: 1, currentSourcePrice: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
@@ -128,6 +132,12 @@ const PriceTrackerHistorySchema = new Schema({
   sourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource' },
   sourceUrl: { type: String, default: '' },
   priceClass: { type: String, enum: ['pta-approved', 'non-pta', 'unknown'], default: 'unknown', index: true },
+  ram: { type: String, default: '' },
+  storage: { type: String, default: '' },
+  color: { type: String, default: '' },
+  condition: { type: String, default: '' },
+  warrantyType: { type: String, default: '' },
+  variantKey: { type: String, default: '', index: true },
   changedByAdminId: { type: Schema.Types.ObjectId, ref: 'Admin' },
   approvedByAdminId: { type: Schema.Types.ObjectId, ref: 'Admin' },
   capturedAt: { type: Date, default: Date.now },
@@ -137,6 +147,7 @@ const PriceTrackerHistorySchema = new Schema({
 PriceTrackerHistorySchema.index({ phoneId: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ phoneId: 1, changeType: 1 });
 PriceTrackerHistorySchema.index({ phoneId: 1, priceClass: 1, capturedAt: -1 });
+PriceTrackerHistorySchema.index({ phoneId: 1, variantKey: 1, priceClass: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ sourceType: 1 });
 PriceTrackerHistorySchema.index({ verificationStatus: 1 });
 PriceTrackerHistorySchema.index({ capturedAt: -1 });

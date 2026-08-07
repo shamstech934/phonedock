@@ -308,7 +308,7 @@ export default function AdminPriceTrackerPage() {
 
   const [addListingModal, setAddListingModal] = useState(false);
   const [listingPhoneId, setListingPhoneId] = useState('');
-  const [listingForm, setListingForm] = useState({ source: '', url: '', ram: '', storage: '', ptaStatus: '', warrantyType: '' });
+  const [listingForm, setListingForm] = useState({ source: '', url: '', ram: '', storage: '', color: '', condition: 'new', ptaStatus: '', warrantyType: '' });
 
   // ── General ──
   const [loading, setLoading] = useState(true);
@@ -621,9 +621,11 @@ export default function AdminPriceTrackerPage() {
         body: JSON.stringify({
           phoneId: listingPhoneId,
           sourceId: listingForm.source,
-          url: listingForm.url,
+          productUrl: listingForm.url,
           ram: listingForm.ram,
           storage: listingForm.storage,
+          color: listingForm.color,
+          condition: listingForm.condition,
           ptaStatus: listingForm.ptaStatus,
           warrantyType: listingForm.warrantyType,
         }),
@@ -631,7 +633,7 @@ export default function AdminPriceTrackerPage() {
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to add listing');
       setAddListingModal(false);
-      setListingForm({ source: '', url: '', ram: '', storage: '', ptaStatus: '', warrantyType: '' });
+      setListingForm({ source: '', url: '', ram: '', storage: '', color: '', condition: 'new', ptaStatus: '', warrantyType: '' });
       setListingPhoneId('');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Action failed');
@@ -2401,6 +2403,18 @@ export default function AdminPriceTrackerPage() {
                   placeholder="e.g. 256GB"
                   className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
                 />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium mb-1 block">Color</label>
+                <input type="text" value={listingForm.color} onChange={e => setListingForm(f => ({ ...f, color: e.target.value }))} placeholder="e.g. Titanium Black" className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium mb-1 block">Condition</label>
+                <select value={listingForm.condition} onChange={e => setListingForm(f => ({ ...f, condition: e.target.value }))} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white">
+                  <option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open Box</option>
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

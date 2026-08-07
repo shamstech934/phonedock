@@ -14,6 +14,7 @@ import { discoverCatalogProductUrls, isProbableProductUrl, matchProductUrlToPhon
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
+import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 
 // ── Lean document types for price-tracker ──
@@ -59,7 +60,7 @@ interface LeanHistoryDoc {
 interface LeanListingDoc {
   _id: Types.ObjectId;
   sourceId?: { _id: Types.ObjectId; name: string; sourceType: string; baseUrl: string; allowedDomains: string[] } | null;
-  productUrl: string; ram: string; storage: string; ptaStatus: string; warrantyType: string;
+  productUrl: string; ram: string; storage: string; color: string; condition: string; variantKey: string; ptaStatus: string; warrantyType: string;
   currentSourcePrice: number; previousSourcePrice: number; pendingSourcePrice: number; pendingDetectedAt: Date | null; availability: string;
   lastCheckedAt: Date | null; lastChangedAt: Date | null; enabled: boolean; verificationStatus: string;
 }
@@ -565,6 +566,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         productUrl: l.productUrl || '',
         ram: l.ram || '',
         storage: l.storage || '',
+        color: l.color || '',
+        condition: l.condition || 'new',
+        variantKey: l.variantKey || buildPriceVariantKey(l),
         ptaStatus: l.ptaStatus || '',
         warrantyType: l.warrantyType || '',
         currentSourcePrice: l.currentSourcePrice || 0,
@@ -921,7 +925,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, newPrice, reason, ptaStatus, warrantyType } = body;
+    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number') {
@@ -1088,7 +1092,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, sourceId, productUrl, ram, storage, ptaStatus, warrantyType } = body;
+    const { phoneId, sourceId, productUrl, ram, storage, color, condition, ptaStatus, warrantyType } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!sourceId) return NextResponse.json({ error: 'sourceId is required' }, { status: 400 });
@@ -1214,8 +1218,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       phoneId,
       sourceId,
       productUrl,
-      ram: ram || '',
-      storage: storage || '',
+      ram: normalizeMemoryLabel(ram),
+      storage: normalizeMemoryLabel(storage),
+      color: color || '',
+      condition: condition || 'new',
+      variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus, condition, warrantyType }),
       ptaStatus: ptaStatus || '',
       warrantyType: warrantyType || '',
       sourceTitle,

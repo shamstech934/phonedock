@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBoundedInt } from '@/lib/http';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, CollectedPhone, RateLimit } from '@/lib/models';
+import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, PhoneRetailListing, CollectedPhone, RateLimit } from '@/lib/models';
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones, checkIpRateLimit, type PhoneDocOrJson, type PhoneJson } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
@@ -14,6 +14,8 @@ import { getPublicPhoneFilter } from '@/lib/phone-publication';
 import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/phone-date-sort';
 import { getSettings } from '@/lib/models/Settings';
 import { normalizePublicPriceRanges } from '@/lib/public-price-ranges';
+import { normalizeMemoryLabel, normalizeColorLabel } from '@/lib/price-variant';
+import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -504,14 +506,52 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     const requestedClass = req.nextUrl.searchParams.get('priceClass');
     const priceClass = requestedClass === 'non-pta' ? 'non-pta' : 'pta-approved';
-    const confirmed = await PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', priceClass })
-      .sort({ capturedAt: -1 })
-      .limit(90)
-      .lean();
+    const selectedRam = normalizeMemoryLabel(req.nextUrl.searchParams.get('ram'));
+    const selectedStorage = normalizeMemoryLabel(req.nextUrl.searchParams.get('storage'));
+    const selectedColor = normalizeColorLabel(req.nextUrl.searchParams.get('color'));
+
+    const listingRows = await PhoneRetailListing.find({
+      phoneId: phone._id,
+      enabled: true,
+      verificationStatus: 'verified',
+      availability: { $ne: 'unavailable' },
+      currentSourcePrice: { $gt: 0 },
+    }).select('ram storage color condition warrantyType ptaStatus currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority').lean();
+
+    const variants = (listingRows as any[])
+      .filter(row => row.sourceId?.trusted === true && row.sourceId?.enabled !== false && (row.sourceId?.status || 'active') === 'active')
+      .map(row => ({
+        ram: normalizeMemoryLabel(row.ram),
+        storage: normalizeMemoryLabel(row.storage),
+        color: String(row.color || '').trim(),
+        colorKey: normalizeColorLabel(row.color),
+        condition: row.condition || 'new',
+        warrantyType: row.warrantyType || '',
+        priceClass: normalizePtaPriceClass(row.ptaStatus),
+        price: Number(row.currentSourcePrice || 0),
+        source: row.sourceId?.name || '',
+        sourceUrl: row.productUrl || '',
+      }))
+      .filter(row => row.priceClass !== 'unknown' && row.price > 0);
+
+    const selectedOffers = variants.filter(row =>
+      row.priceClass === priceClass
+      && (!selectedRam || row.ram === selectedRam)
+      && (!selectedStorage || row.storage === selectedStorage)
+      && (!selectedColor || row.colorKey === selectedColor)
+      && row.condition === 'new'
+    );
+    const selectedBest = selectedOffers.length > 0 ? [...selectedOffers].sort((a,b) => a.price - b.price)[0] : null;
+    const confirmedQuery: Record<string, unknown> = { phoneId: phone._id, verificationStatus: 'confirmed', priceClass };
+    if (selectedRam) confirmedQuery.ram = selectedRam;
+    if (selectedStorage) confirmedQuery.storage = selectedStorage;
+    if (selectedColor) confirmedQuery.color = { $regex: `^${selectedColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-\\s]?')}$`, $options: 'i' };
+    const confirmed = await PriceTrackerHistory.find(confirmedQuery).sort({ capturedAt: -1 }).limit(90).lean();
 
     const ptaPrice = Number(phone.bestPtaPricePKR || 0);
     const nonPtaPrice = Number(phone.bestNonPtaPricePKR || 0);
-    const currentPrice = priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
+    const fallbackPrice = priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
+    const currentPrice = selectedBest?.price || fallbackPrice;
     const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
@@ -528,6 +568,19 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       ptaPrice,
       nonPtaPrice,
       priceClass,
+      selectedVariant: { ram: selectedRam, storage: selectedStorage, color: selectedColor },
+      variantOptions: (() => {
+        const classRows = variants.filter(v => v.priceClass === priceClass && v.condition === 'new');
+        const memoryRows = selectedRam ? classRows.filter(v => v.ram === selectedRam) : classRows;
+        const colorRows = memoryRows.filter(v => !selectedStorage || v.storage === selectedStorage);
+        return {
+          ram: [...new Set(classRows.map(v => v.ram).filter(Boolean))],
+          storage: [...new Set(memoryRows.map(v => v.storage).filter(Boolean))],
+          colors: [...new Map(colorRows.filter(v => v.colorKey).map(v => [v.colorKey, v.color])).values()],
+        };
+      })(),
+      variantOffers: variants,
+      selectedOffer: selectedBest,
       previousPrice,
       lowestPrice,
       highestPrice,

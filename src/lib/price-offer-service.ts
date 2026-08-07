@@ -1,5 +1,6 @@
 import { Phone, PriceHistory } from '@/lib/models';
 import { PhoneRetailListing } from '@/lib/models/PriceTracker';
+import { buildPriceVariantKey } from '@/lib/price-variant';
 import {
   buildVerifiedPriceState,
   normalizePtaPriceClass,
@@ -22,6 +23,7 @@ type PopulatedRetailListing = {
   sourceId?: PopulatedSource | null;
   currentSourcePrice?: number;
   ptaStatus?: string;
+  ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string;
   availability?: string;
   enabled?: boolean;
   verificationStatus?: string;
@@ -52,6 +54,8 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
       sourcePriority: Number(source.priority || 0),
       price: Number(row.currentSourcePrice || 0),
       ptaStatus: row.ptaStatus || '',
+      ram: row.ram || '', storage: row.storage || '', color: row.color || '', condition: row.condition || 'new', warrantyType: row.warrantyType || '',
+      variantKey: row.variantKey || buildPriceVariantKey(row),
       availability: row.availability || 'unknown',
       enabled: row.enabled !== false,
       trusted: source.trusted === true,
