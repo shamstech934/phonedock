@@ -133,7 +133,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     nextPrice: canonicalNextPrice,
     originalPrice: phone.originalPricePKR,
   });
-  const changed = currentPrice !== selection.best.price;
+  const changed = currentPrice !== canonicalNextPrice;
   const updates: Record<string, unknown> = {
     ...metadata,
     currentPrice: state.currentPrice,
