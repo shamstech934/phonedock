@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone, ImportJob, SyncJob, CollectorJob, MonitoringRun } from '@/lib/models';
 import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
+import { buildMarketPriceIdentity, normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
 import { syncYouTubeVideos } from '@/lib/video-sync';
 import { revalidatePricePages, revalidatePublicContent } from '@/lib/revalidate';
@@ -20,7 +21,7 @@ import { PHONE_NEWEST_SORT, PHONE_OLDEST_SORT, rankedPhoneSort } from '@/lib/pho
 type MongooseSort = Record<string, 1 | -1>;
 interface AggBucketResult { _id: string | number; count: number; }
 interface AggCountResult { _id: mongoose.Types.ObjectId | null; count: number; }
-interface PriceInput { storeName?: string; price?: number; url?: string; inStock?: boolean; ptaStatus?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; }
+interface PriceInput { storeName?: string; price?: number; url?: string; inStock?: boolean; ptaStatus?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; market?: string; currency?: string; priceType?: string; }
 interface ImageInput { url?: string; altText?: string; sortOrder?: number; }
 interface LeanPhoneSlim { _id: mongoose.Types.ObjectId; slug: string; modelName: string; brand?: { name?: string } | null; }
 interface LeanSpecsDoc { _id?: mongoose.Types.ObjectId; phoneId?: mongoose.Types.ObjectId; [key: string]: unknown; }
@@ -44,13 +45,13 @@ async function ensurePhonePriceVariantIndex(): Promise<void> {
   // Older deployments used a unique {phoneId, storeName} index, which blocks
   // legitimate PTA/storage/color variants from the same retailer. Migrate it
   // lazily on admin price writes so existing installations self-heal safely.
-  try { await PhonePrice.collection.dropIndex('phoneId_1_storeName_1'); } catch (error: unknown) {
+  for (const legacyIndex of ['phoneId_1_storeName_1', 'phoneId_1_storeName_1_variantKey_1']) try { await PhonePrice.collection.dropIndex(legacyIndex); } catch (error: unknown) {
     const code = Number((error as { code?: number })?.code || 0);
     if (![26, 27].includes(code) && !/index not found/i.test(String((error as Error)?.message || error))) throw error;
   }
   await PhonePrice.collection.createIndex(
-    { phoneId: 1, storeName: 1, variantKey: 1 },
-    { unique: true, name: 'phoneId_1_storeName_1_variantKey_1' },
+    { phoneId: 1, storeName: 1, market: 1, priceType: 1, variantKey: 1 },
+    { unique: true, name: 'phoneId_1_storeName_1_market_1_priceType_1_variantKey_1' },
   );
 }
 
@@ -1421,11 +1422,11 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     if (specs && typeof specs === 'object' && Object.keys(specs).length > 0) await PhoneSpecs.findOneAndUpdate({ phoneId: phone._id }, { ...specs, phoneId: phone._id }, { upsert: true });
     if (benchmarks && typeof benchmarks === 'object') await PhoneBenchmark.findOneAndUpdate({ phoneId: phone._id }, { ...benchmarks, phoneId: phone._id }, { upsert: true });
     if (Array.isArray(images) && images.length > 0) await PhoneImage.insertMany(images.map((img: ImageInput, i: number) => ({ phoneId: phone._id, url: img.url || '', altText: img.altText || '', sortOrder: img.sortOrder ?? i })));
-    if (Array.isArray(prices) && prices.length > 0) { await ensurePhonePriceVariantIndex(); await PhonePrice.insertMany(prices.map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false, ptaStatus: pr.ptaStatus || '', ram: normalizeMemoryLabel(pr.ram), storage: normalizeMemoryLabel(pr.storage), color: String(pr.color || '').trim(), condition: String(pr.condition || 'new').trim().toLowerCase(), warrantyType: String(pr.warrantyType || '').trim(), variantKey: buildPriceVariantKey({ ram: pr.ram, storage: pr.storage, color: pr.color, ptaStatus: pr.ptaStatus, condition: pr.condition, warrantyType: pr.warrantyType }) }))); }
+    if (Array.isArray(prices) && prices.length > 0) { await ensurePhonePriceVariantIndex(); await PhonePrice.insertMany(prices.map((pr: PriceInput) => (() => { const market = normalizePriceMarket(pr.market); const currency = normalizePriceCurrency(pr.currency, market); const priceType = normalizeMarketPriceType(pr.priceType, market, pr.ptaStatus); const variantKey = buildPriceVariantKey({ ram: pr.ram, storage: pr.storage, color: pr.color, ptaStatus: market === 'PK' ? pr.ptaStatus : '', condition: pr.condition, warrantyType: pr.warrantyType }); return { phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false, ptaStatus: market === 'PK' ? pr.ptaStatus || '' : '', market, currency, priceType, ram: normalizeMemoryLabel(pr.ram), storage: normalizeMemoryLabel(pr.storage), color: String(pr.color || '').trim(), condition: String(pr.condition || 'new').trim().toLowerCase(), warrantyType: String(pr.warrantyType || '').trim(), variantKey, priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, variantKey }) }; })())); }
     // Record base price history
     if (pricePKR && pricePKR > 0) { try { await PriceHistory.create({ phoneId: phone._id, storeName: null, price: pricePKR }); } catch (e) { console.error('[PriceHistory]', e); } }
     // Record store price history
-    if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
+    if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => normalizePriceMarket(pr.market) === 'PK' && pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
     try { await ActivityLog.create({ adminId: admin._id, action: 'create_phone', details: `Created: ${brand.name} ${modelName}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
     revalidatePublicContent({ phoneSlug: slug });
     return NextResponse.json({ success: true, id: phone._id?.toString(), slug, status: effectiveStatus, warnings: publicationWarnings });
@@ -2147,8 +2148,8 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
       if (prices !== undefined) {
         await ensurePhonePriceVariantIndex();
         await PhonePrice.deleteMany({ phoneId: phone._id });
-        if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false, ptaStatus: pr.ptaStatus || '', ram: normalizeMemoryLabel(pr.ram), storage: normalizeMemoryLabel(pr.storage), color: String(pr.color || '').trim(), condition: String(pr.condition || 'new').trim().toLowerCase(), warrantyType: String(pr.warrantyType || '').trim(), variantKey: buildPriceVariantKey({ ram: pr.ram, storage: pr.storage, color: pr.color, ptaStatus: pr.ptaStatus, condition: pr.condition, warrantyType: pr.warrantyType }) })));
-        if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
+        if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: PriceInput) => (() => { const market = normalizePriceMarket(pr.market); const currency = normalizePriceCurrency(pr.currency, market); const priceType = normalizeMarketPriceType(pr.priceType, market, pr.ptaStatus); const variantKey = buildPriceVariantKey({ ram: pr.ram, storage: pr.storage, color: pr.color, ptaStatus: market === 'PK' ? pr.ptaStatus : '', condition: pr.condition, warrantyType: pr.warrantyType }); return { phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false, ptaStatus: market === 'PK' ? pr.ptaStatus || '' : '', market, currency, priceType, ram: normalizeMemoryLabel(pr.ram), storage: normalizeMemoryLabel(pr.storage), color: String(pr.color || '').trim(), condition: String(pr.condition || 'new').trim().toLowerCase(), warrantyType: String(pr.warrantyType || '').trim(), variantKey, priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, variantKey }) }; })()));
+        if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => normalizePriceMarket(pr.market) === 'PK' && pr.price && pr.price > 0).map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
       }
     } catch (e: unknown) { console.error('[SavePhone Prices]', e instanceof Error ? e.message : e); }
     // Record base price history only if price actually changed

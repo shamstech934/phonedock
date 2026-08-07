@@ -200,7 +200,7 @@ export default function ImagesPricesSection({ form, set }: SectionProps) {
 
                 {/* Price */}
                 <div className="min-w-[140px] flex-1">
-                  <FieldLabel>Price (PKR)</FieldLabel>
+                  <FieldLabel>Price ({price.currency})</FieldLabel>
                   <input
                     type="number"
                     value={price.price === '' ? '' : price.price}
@@ -263,14 +263,17 @@ export default function ImagesPricesSection({ form, set }: SectionProps) {
                 </button>
               </div>
               <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-200 pt-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div><FieldLabel>PTA Class</FieldLabel><select value={price.ptaStatus} onChange={(e) => updatePrice(idx, 'ptaStatus', e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="">Choose PTA class</option><option value="PTA Approved">PTA Approved</option><option value="Non-PTA">Non-PTA</option></select></div>
+                <div><FieldLabel>Market</FieldLabel><select value={price.market} onChange={(e) => { const market = e.target.value as PhonePrice['market']; updatePrice(idx, 'market', market); updatePrice(idx, 'currency', market === 'US' ? 'USD' : 'PKR'); updatePrice(idx, 'priceType', market === 'US' ? 'retail' : 'unknown'); if (market === 'US') updatePrice(idx, 'ptaStatus', ''); }} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="PK">Pakistan</option><option value="US">USA</option></select></div>
+                <div><FieldLabel>Price Type</FieldLabel>{price.market === 'US' ? <input value="US Retail" readOnly className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600" /> : <select value={price.priceType === 'retail' ? 'unknown' : price.priceType} onChange={(e) => { const type = e.target.value as PhonePrice['priceType']; updatePrice(idx, 'priceType', type); updatePrice(idx, 'ptaStatus', type === 'pta-approved' ? 'PTA Approved' : type === 'non-pta' ? 'Non-PTA' : ''); }} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="unknown">Choose price type</option><option value="pta-approved">PTA Approved</option><option value="non-pta">Non-PTA</option></select>}</div>
+                <div><FieldLabel>Currency</FieldLabel><input value={price.currency} readOnly className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-600" /></div>
+                {price.market === 'PK' ? <div><FieldLabel>PTA Class</FieldLabel><select value={price.ptaStatus} onChange={(e) => { const value = e.target.value; updatePrice(idx, 'ptaStatus', value); updatePrice(idx, 'priceType', value === 'PTA Approved' ? 'pta-approved' : value === 'Non-PTA' ? 'non-pta' : 'unknown'); }} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="">Choose PTA class</option><option value="PTA Approved">PTA Approved</option><option value="Non-PTA">Non-PTA</option></select></div> : null}
                 <div><FieldLabel>RAM</FieldLabel><input type="text" value={price.ram} onChange={(e) => updatePrice(idx, 'ram', e.target.value)} placeholder="e.g. 12GB" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Storage</FieldLabel><input type="text" value={price.storage} onChange={(e) => updatePrice(idx, 'storage', e.target.value)} placeholder="e.g. 256GB" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Color</FieldLabel><input type="text" value={price.color} onChange={(e) => updatePrice(idx, 'color', e.target.value)} placeholder="e.g. Black" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Condition</FieldLabel><select value={price.condition} onChange={(e) => updatePrice(idx, 'condition', e.target.value as PhonePrice['condition'])} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open Box</option></select></div>
                 <div><FieldLabel>Warranty</FieldLabel><input type="text" value={price.warrantyType} onChange={(e) => updatePrice(idx, 'warrantyType', e.target.value)} placeholder="Official / Shop / None" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
               </div>
-              <p className="mt-2 text-[11px] text-gray-500">Each row is one exact price identity. PTA/Non-PTA, RAM, storage and color are never merged automatically.</p>
+              <p className="mt-2 text-[11px] text-gray-500">Each row is one exact market price identity. Pakistan PTA, Pakistan Non-PTA and USA Retail prices, plus RAM/storage/color variants, are never merged automatically.</p>
             </div>
           ))}
         </div>

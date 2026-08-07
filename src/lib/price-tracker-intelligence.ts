@@ -1,3 +1,4 @@
+import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 export type PtaPriceClass = 'pta-approved' | 'non-pta' | 'unknown';
 
 export interface PriceStateInput {
@@ -31,6 +32,9 @@ export interface VerifiedOfferCandidate {
   condition?: string;
   warrantyType?: string;
   variantKey?: string;
+  market?: string;
+  currency?: string;
+  priceType?: string;
   availability?: string;
   enabled?: boolean;
   trusted?: boolean;
@@ -43,6 +47,7 @@ export interface BestOfferSelection {
   best: VerifiedOfferCandidate | null;
   bestPta: VerifiedOfferCandidate | null;
   bestNonPta: VerifiedOfferCandidate | null;
+  bestUsRetail: VerifiedOfferCandidate | null;
   eligibleCount: number;
   rejectedCount: number;
 }
@@ -175,9 +180,12 @@ export function selectBestVerifiedOffer(input: {
     && !String(offer.storage || '').trim()
     && !String(offer.color || '').trim()
   ));
-  const bestPta = pickLowest(canonical.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'pta-approved'));
-  const bestNonPta = pickLowest(canonical.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'non-pta'));
-  const compatible = canonical.filter((offer) => isPtaPriceCompatible({
+  const pkCanonical = canonical.filter((offer) => normalizePriceMarket(offer.market) === 'PK' && normalizePriceCurrency(offer.currency, offer.market) === 'PKR');
+  const usCanonical = canonical.filter((offer) => normalizePriceMarket(offer.market) === 'US' && normalizePriceCurrency(offer.currency, offer.market) === 'USD');
+  const bestPta = pickLowest(pkCanonical.filter((offer) => normalizeMarketPriceType(offer.priceType, offer.market, offer.ptaStatus) === 'pta-approved'));
+  const bestNonPta = pickLowest(pkCanonical.filter((offer) => normalizeMarketPriceType(offer.priceType, offer.market, offer.ptaStatus) === 'non-pta'));
+  const bestUsRetail = pickLowest(usCanonical.filter((offer) => normalizeMarketPriceType(offer.priceType, offer.market, offer.ptaStatus) === 'retail'));
+  const compatible = pkCanonical.filter((offer) => isPtaPriceCompatible({
     phoneStatus: input.phoneStatus,
     phoneApproved: input.phoneApproved,
     listingStatus: offer.ptaStatus,
@@ -192,6 +200,7 @@ export function selectBestVerifiedOffer(input: {
     best: pickLowest(pool),
     bestPta,
     bestNonPta,
+    bestUsRetail,
     eligibleCount: eligible.length,
     rejectedCount: Math.max(0, input.offers.length - eligible.length),
   };

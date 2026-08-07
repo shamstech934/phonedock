@@ -8,6 +8,7 @@ import {
 } from '@/lib/models';
 import { isProbableProductUrl } from '@/lib/price-catalog-discovery';
 import { inferRetailVariantIdentity, inferUniqueMemoryLabel } from '@/lib/price-variant';
+import { buildMarketPriceIdentity, normalizeMarketPriceType } from '@/lib/price-market';
 
 export type CollectorMatchStrategy = 'direct_approval' | 'imported' | 'exact_duplicate';
 
@@ -161,6 +162,10 @@ export async function bridgeCollectedPricesToTracker(
           ptaStatus: variant.ptaStatus,
           warrantyType: variant.warrantyType,
           variantKey: variant.variantKey,
+          market: 'PK',
+          currency: 'PKR',
+          priceType: normalizeMarketPriceType('', 'PK', variant.ptaStatus),
+          priceIdentityKey: buildMarketPriceIdentity({ market: 'PK', currency: 'PKR', priceType: normalizeMarketPriceType('', 'PK', variant.ptaStatus), ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
           ...(pendingPrice ? { pendingSourcePrice: pendingPrice, pendingDetectedAt: new Date() } : {}),
         },
       },

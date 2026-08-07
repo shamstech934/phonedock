@@ -22,6 +22,9 @@ export interface PhonePrice {
   color: string;
   condition: 'new' | 'used' | 'refurbished' | 'open-box';
   warrantyType: string;
+  market: 'PK' | 'US';
+  currency: 'PKR' | 'USD';
+  priceType: 'pta-approved' | 'non-pta' | 'retail' | 'unknown';
 }
 
 export interface PhoneFormProps {
@@ -186,6 +189,9 @@ export const EMPTY_PRICE: PhonePrice = {
   color: '',
   condition: 'new',
   warrantyType: '',
+  market: 'PK',
+  currency: 'PKR',
+  priceType: 'unknown',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

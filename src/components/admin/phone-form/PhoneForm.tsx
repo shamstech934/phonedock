@@ -224,6 +224,9 @@ export default function PhoneForm({
                 color: String(p.color ?? ''),
                 condition: (['new','used','refurbished','open-box'].includes(String(p.condition ?? 'new')) ? String(p.condition ?? 'new') : 'new') as 'new' | 'used' | 'refurbished' | 'open-box',
                 warrantyType: String(p.warrantyType ?? p.warranty_type ?? ''),
+                market: p.market === 'US' ? 'US' as const : 'PK' as const,
+                currency: p.currency === 'USD' ? 'USD' as const : 'PKR' as const,
+                priceType: (['pta-approved','non-pta','retail'].includes(String(p.priceType ?? p.price_type ?? '')) ? String(p.priceType ?? p.price_type) : 'unknown') as 'pta-approved' | 'non-pta' | 'retail' | 'unknown',
               }))
             : [],
           // Price Tracking
@@ -419,6 +422,15 @@ export default function PhoneForm({
           price: p.price === '' ? 0 : Number(p.price),
           url: p.url,
           inStock: p.inStock,
+          ptaStatus: p.market === 'PK' ? p.ptaStatus : '',
+          ram: p.ram,
+          storage: p.storage,
+          color: p.color,
+          condition: p.condition,
+          warrantyType: p.warrantyType,
+          market: p.market,
+          currency: p.currency,
+          priceType: p.market === 'US' ? 'retail' : p.priceType,
         })),
         // Price tracking fields
         priceMode: form.priceMode,

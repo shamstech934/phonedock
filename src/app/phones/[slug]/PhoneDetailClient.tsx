@@ -44,7 +44,7 @@ function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; s
   }));
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
   const areaPath = `${linePath} L${points[points.length - 1].x},${pad.t + plotH} L${points[0].x},${pad.t + plotH} Z`;
-  const fmtShort = (n: number) => n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
+  const fmtShort = (n: number) => currency === 'USD' ? `$${n >= 1000 ? `${(n / 1000).toFixed(1)}K` : Math.round(n).toLocaleString('en-US')}` : n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="phTitle phDesc">
@@ -78,7 +78,7 @@ function PriceHistoryChart({ history }: { history: Array<{ recordedAt: string; s
 }
 
 // ── Price Tracker Chart (from PriceTrackerHistory records) ──
-function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; capturedAt: string }> }) {
+function PriceTrackerChart({ history, currency = 'PKR' }: { history: Array<{ newPrice: number; capturedAt: string }>; currency?: 'PKR' | 'USD' }) {
   const [hovered, setHovered] = useState<number | null>(null);
   // history is sorted desc from API — reverse for chronological order
   const sorted = [...history].reverse();
@@ -106,7 +106,7 @@ function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; cap
   const trendDown = prices[prices.length - 1] <= prices[0];
   const lineColor = trendDown ? '#16a34a' : '#dc2626'; // green-600 / red-600
   const gradId = 'ptGrad';
-  const fmtShort = (n: number) => n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
+  const fmtShort = (n: number) => currency === 'USD' ? `$${n >= 1000 ? `${(n / 1000).toFixed(1)}K` : Math.round(n).toLocaleString('en-US')}` : n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n.toLocaleString();
 
   // X-axis labels: show every 5th
   const xLabels = pts.filter((_, i) => i % 5 === 0 || i === pts.length - 1);
@@ -121,7 +121,7 @@ function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; cap
     <div className="relative w-full" style={{ maxHeight: '200px' }}>
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '200px' }} role="img" aria-labelledby="ptTitle ptDesc">
         <title id="ptTitle">Price tracker chart</title>
-        <desc id="ptDesc">Tracked price from PKR {Math.min(...prices)?.toLocaleString()} to PKR {Math.max(...prices)?.toLocaleString()} over {sorted.length} data points</desc>
+        <desc id="ptDesc">Tracked price from {currency} {Math.min(...prices)?.toLocaleString()} to {currency} {Math.max(...prices)?.toLocaleString()} over {sorted.length} data points</desc>
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={lineColor} stopOpacity="0.15" />
@@ -493,6 +493,10 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTrackerError, setPriceTrackerError] = useState('');
+  const [selectedMarket, setSelectedMarket] = useState<'PK' | 'US'>('PK');
+  const [displayCurrency, setDisplayCurrency] = useState<'PKR' | 'USD'>('PKR');
+  useEffect(() => { try { const saved = window.localStorage.getItem('specsdekh_currency'); if (saved === 'USD' || saved === 'PKR') setDisplayCurrency(saved); } catch { /* browser storage unavailable */ } }, []);
+  useEffect(() => { try { window.localStorage.setItem('specsdekh_currency', displayCurrency); } catch { /* browser storage unavailable */ } }, [displayCurrency]);
   const [selectedPriceClass, setSelectedPriceClass] = useState<'pta-approved' | 'non-pta'>(() => {
     const status = String(data?.phone?.ptaStatus || '').toLowerCase();
     return !data?.phone?.ptaApproved && /non[-_\s]?pta|not[-_\s]?approved|unapproved/.test(status) ? 'non-pta' : 'pta-approved';
@@ -504,7 +508,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const specStorageOptions = splitCatalogVariantValues(data?.phone?.specs?.storage, 'memory');
   const specColorOptions = splitCatalogVariantValues(data?.phone?.specs?.colors, 'color');
   const [priceTracker, setPriceTracker] = useState<{
-    currentPrice: number; ptaPrice: number; nonPtaPrice: number; priceClass: 'pta-approved' | 'non-pta'; previousPrice: number; lowestPrice: number; highestPrice: number;
+    currentPrice: number; ptaPrice: number; nonPtaPrice: number; usRetailPrice: number; priceClass: 'pta-approved' | 'non-pta' | 'unknown'; market: 'PK' | 'US'; currency: 'PKR' | 'USD'; priceType: 'pta-approved' | 'non-pta' | 'retail'; usdPkrRate: number; fxUpdatedAt?: string | null; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
     priceChange: number; percentageChange: number; lastPriceChangedAt: string | null;
     positionInRange: number | null; discountFromAveragePct: number;
@@ -513,7 +517,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     selectedVariant?: { ram: string; storage: string; color: string };
     variantSelectionRequired?: boolean; exactVariantAvailable?: boolean;
     variantOptions?: { ram: string[]; storage: string[]; colors: string[] };
-    variantOffers?: Array<{ ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; price: number; source: string; sourceUrl: string }>;
+    variantOffers?: Array<{ ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; market: string; currency: string; priceType: string; price: number; source: string; sourceUrl: string }>;
     selectedOffer?: { price: number; source: string; sourceUrl: string; ram: string; storage: string; color: string } | null;
     priceMode: string; manualLock: boolean;
     history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
@@ -530,6 +534,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .catch(() => { if (!cancelled) setHistoryLoading(false); });
     setPriceTrackerError('');
     fetch(`/api/phones/${slug}/price-tracker?${new URLSearchParams({
+      market: selectedMarket,
       priceClass: selectedPriceClass,
       ...(selectedRam ? { ram: selectedRam } : {}),
       ...(selectedStorage ? { storage: selectedStorage } : {}),
@@ -543,7 +548,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(d => { if (!cancelled && !d.error) setPriceTracker(d); })
       .catch(err => { if (!cancelled) setPriceTrackerError(err instanceof Error ? err.message : 'Price tracker is temporarily unavailable'); });
     return () => { cancelled = true; };
-  }, [slug, selectedPriceClass, selectedRam, selectedStorage, selectedColor]);
+  }, [slug, selectedMarket, selectedPriceClass, selectedRam, selectedStorage, selectedColor]);
 
   useEffect(() => {
     if (data?.phone) recent.add(data.phone);
@@ -553,6 +558,20 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const storageVariantOptions = mergeVariantOptions(priceTracker?.variantOptions?.storage, specStorageOptions);
   const colorVariantOptions = mergeVariantOptions(priceTracker?.variantOptions?.colors, specColorOptions);
   const hasCatalogVariantOptions = ramVariantOptions.length > 0 || storageVariantOptions.length > 0 || colorVariantOptions.length > 0;
+  const trackedSourceCurrency: 'PKR' | 'USD' = priceTracker?.currency === 'USD' ? 'USD' : 'PKR';
+  const displayTrackedPrice = (amount: number): string => {
+    const value = Number(amount || 0);
+    if (value <= 0) return 'Price unavailable';
+    if (displayCurrency === trackedSourceCurrency) {
+      return trackedSourceCurrency === 'USD' ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `Rs. ${Math.round(value).toLocaleString('en-PK')}`;
+    }
+    const rate = Number(priceTracker?.usdPkrRate || 0);
+    if (rate <= 0) return trackedSourceCurrency === 'USD' ? `$${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `Rs. ${Math.round(value).toLocaleString('en-PK')}`;
+    const converted = trackedSourceCurrency === 'PKR' ? value / rate : value * rate;
+    return displayCurrency === 'USD'
+      ? `$${converted.toLocaleString('en-US', { maximumFractionDigits: 2 })} approx.`
+      : `Rs. ${Math.round(converted).toLocaleString('en-PK')} approx.`;
+  };
 
   if (loading) {
     return (
@@ -716,10 +735,24 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   </div>
                 )}
                 <div className="space-y-2">
-                  <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">
-                    <button type="button" onClick={() => setSelectedPriceClass('pta-approved')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'pta-approved' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>PTA Approved</button>
-                    <button type="button" onClick={() => setSelectedPriceClass('non-pta')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'non-pta' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500'}`}>Non-PTA</button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                      <button type="button" onClick={() => { setSelectedMarket('PK'); setSelectedRam(''); setSelectedStorage(''); setSelectedColor(''); }} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedMarket === 'PK' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>🇵🇰 Pakistan</button>
+                      <button type="button" onClick={() => { setSelectedMarket('US'); setSelectedRam(''); setSelectedStorage(''); setSelectedColor(''); }} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedMarket === 'US' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'}`}>🇺🇸 USA</button>
+                    </div>
+                    <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1" aria-label="Display currency">
+                      <button type="button" onClick={() => setDisplayCurrency('PKR')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${displayCurrency === 'PKR' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>PKR</button>
+                      <button type="button" onClick={() => setDisplayCurrency('USD')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${displayCurrency === 'USD' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>USD</button>
+                    </div>
                   </div>
+                  {selectedMarket === 'PK' ? (
+                    <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                      <button type="button" onClick={() => setSelectedPriceClass('pta-approved')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'pta-approved' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>PTA Approved</button>
+                      <button type="button" onClick={() => setSelectedPriceClass('non-pta')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'non-pta' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500'}`}>Non-PTA</button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">US Retail Price — actual United States market price</div>
+                  )}
                   {hasCatalogVariantOptions ? (
                     <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-2.5 space-y-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Choose variant</p>
@@ -745,16 +778,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   ) : null}
 
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-muted-foreground">{selectedPriceClass === 'pta-approved' ? 'PTA Approved Price' : 'Non-PTA Price'}</span>
+                    <span className="text-sm text-muted-foreground">{selectedMarket === 'US' ? 'US Retail Price' : selectedPriceClass === 'pta-approved' ? 'Pakistan PTA Approved Price' : 'Pakistan Non-PTA Price'}</span>
                     <span className="text-right text-2xl font-bold text-blue-600">
-                      {priceTracker ? (priceTracker.currentPrice > 0 ? formatPrice(priceTracker.currentPrice) : 'Price unavailable') : formatPrice(selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0))}
+                      {priceTracker ? displayTrackedPrice(priceTracker.currentPrice) : selectedMarket === 'US' ? 'Price unavailable' : formatPrice(selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0))}
                     </span>
                   </div>
+                  {priceTracker && displayCurrency !== trackedSourceCurrency && priceTracker.currentPrice > 0 && priceTracker.usdPkrRate > 0 ? <p className="text-[10px] text-gray-500">Converted for display only at approximately 1 USD = PKR {Math.round(priceTracker.usdPkrRate).toLocaleString('en-PK')}. The tracked {selectedMarket === 'US' ? 'US' : 'Pakistan'} market price remains stored in {trackedSourceCurrency}.</p> : null}
                   {priceTracker?.variantSelectionRequired ? <p className="text-[11px] font-medium text-blue-700">Select RAM/storage/color to see the exact verified price.</p> : null}
                   {priceTracker && !priceTracker.variantSelectionRequired && !priceTracker.exactVariantAvailable && (selectedRam || selectedStorage || selectedColor) ? <p className="text-[11px] text-amber-700">Price unavailable for this exact selected variant. Another storage or color price will not be substituted.</p> : null}
                   {priceTracker?.selectedOffer ? <p className="text-[11px] text-gray-500">{[priceTracker.selectedOffer.ram, priceTracker.selectedOffer.storage, priceTracker.selectedOffer.color].filter(Boolean).join(' • ')}{priceTracker.selectedOffer.source ? ` • ${priceTracker.selectedOffer.source}` : ''}</p> : null}
 
-                  {selectedPriceClass === 'non-pta' && priceTracker && priceTracker.currentPrice <= 0 && !priceTracker.variantSelectionRequired && !(selectedRam || selectedStorage || selectedColor) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
+                  {selectedMarket === 'PK' && selectedPriceClass === 'non-pta' && priceTracker && priceTracker.currentPrice <= 0 && !priceTracker.variantSelectionRequired && !(selectedRam || selectedStorage || selectedColor) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
                 </div>
                 {/* Price tracking badges */}
                 {priceTracker && (
@@ -762,16 +796,16 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     {/* Previous price + change badge */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {priceTracker.previousPrice > 0 && priceTracker.previousPrice !== priceTracker.currentPrice && (
-                        <span className="text-sm text-gray-400 line-through">{formatPrice(priceTracker.previousPrice)}</span>
+                        <span className="text-sm text-gray-400 line-through">{displayTrackedPrice(priceTracker.previousPrice)}</span>
                       )}
                       {priceTracker.priceChange !== 0 ? (
                         priceTracker.priceChange < 0 ? (
                           <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200/50">
-                            Price Dropped ▼ {formatPrice(Math.abs(priceTracker.priceChange))} ({Math.abs(priceTracker.percentageChange)}%)
+                            Price Dropped ▼ {displayTrackedPrice(Math.abs(priceTracker.priceChange))} ({Math.abs(priceTracker.percentageChange)}%)
                           </span>
                         ) : (
                           <span className="text-[10px] font-semibold bg-red-50 text-red-700 px-2 py-0.5 rounded-full border border-red-200/50">
-                            Price Increased ▲ {formatPrice(priceTracker.priceChange)} ({priceTracker.percentageChange}%)
+                            Price Increased ▲ {displayTrackedPrice(priceTracker.priceChange)} ({priceTracker.percentageChange}%)
                           </span>
                         )
                       ) : priceTracker.history.length > 0 ? (
@@ -781,7 +815,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     {/* Lowest price + last updated + mode */}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
                       {priceTracker.lowestPrice > 0 && priceTracker.lowestPrice < priceTracker.currentPrice && (
-                        <span className="text-emerald-600 font-medium">Lowest: {formatPrice(priceTracker.lowestPrice)}</span>
+                        <span className="text-emerald-600 font-medium">Lowest: {displayTrackedPrice(priceTracker.lowestPrice)}</span>
                       )}
                       {priceTracker.lastPriceChangedAt && (
                         <span className="text-gray-400">Last updated: {new Date(priceTracker.lastPriceChangedAt).toLocaleDateString('en-PK', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -955,7 +989,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-blue-500" /> Price Tracker
                   </h3>
-                  <PriceTrackerChart history={priceTracker.history} />
+                  <PriceTrackerChart history={priceTracker.history} currency={priceTracker.currency} />
                 </div>
               ) : priceTracker && priceTracker.history.length < 2 ? (
                 <div className="card-premium p-4">

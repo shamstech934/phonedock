@@ -64,6 +64,8 @@ interface PriceSource {
   failures: number;
   baseUrl: string;
   verificationUrl: string;
+  market: 'PK' | 'US';
+  currency: 'PKR' | 'USD';
   discoveryEnabled: boolean;
   discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api';
   catalogUrls: string[];
@@ -106,6 +108,9 @@ interface PriceChange {
   status: 'approved' | 'rejected' | 'pending';
   reason?: string;
   priceClass?: 'pta-approved' | 'non-pta' | 'unknown';
+  market?: 'PK' | 'US';
+  currency?: 'PKR' | 'USD';
+  priceType?: 'pta-approved' | 'non-pta' | 'retail' | 'unknown';
   ram?: string;
   storage?: string;
   color?: string;
@@ -128,6 +133,9 @@ interface PriceHistoryEntry {
   date: string;
   status: string;
   priceClass?: 'pta-approved' | 'non-pta' | 'unknown';
+  market?: 'PK' | 'US';
+  currency?: 'PKR' | 'USD';
+  priceType?: 'pta-approved' | 'non-pta' | 'retail' | 'unknown';
   ram?: string;
   storage?: string;
   color?: string;
@@ -212,9 +220,24 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-function variantLabel(item: { priceClass?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string }): string {
-  const pta = item.priceClass === 'pta-approved' ? 'PTA' : item.priceClass === 'non-pta' ? 'Non-PTA' : '';
-  return [pta, item.ram, item.storage, item.color, item.condition && item.condition !== 'new' ? item.condition : '', item.warrantyType].filter(Boolean).join(' • ');
+function variantLabel(item: { market?: string; currency?: string; priceType?: string; priceClass?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string }): string {
+  const market = item.market === 'US' ? 'USA' : 'Pakistan';
+  const type = item.market === 'US' || item.priceType === 'retail' ? 'US Retail' : item.priceClass === 'pta-approved' || item.priceType === 'pta-approved' ? 'PTA' : item.priceClass === 'non-pta' || item.priceType === 'non-pta' ? 'Non-PTA' : '';
+  return [market, type, item.currency, item.ram, item.storage, item.color, item.condition && item.condition !== 'new' ? item.condition : '', item.warrantyType].filter(Boolean).join(' • ');
+}
+
+function formatMoney(price: unknown, currency?: string): string {
+  const numericPrice = toFiniteNumber(price);
+  if (numericPrice === null) return '—';
+  return currency === 'USD' ? `$${numericPrice.toLocaleString('en-US')}` : `PKR ${numericPrice.toLocaleString('en-PK')}`;
+}
+
+function formatMoneyDiff(diff: unknown, currency?: string): string {
+  const numericDiff = toFiniteNumber(diff);
+  if (numericDiff === null) return '—';
+  const sign = numericDiff > 0 ? '+' : numericDiff < 0 ? '-' : '';
+  const absolute = Math.abs(numericDiff);
+  return currency === 'USD' ? `${sign}$${absolute.toLocaleString('en-US')}` : `${sign}PKR ${absolute.toLocaleString('en-PK')}`;
 }
 
 function formatPKR(price: unknown): string {
@@ -290,9 +313,9 @@ export default function AdminPriceTrackerPage() {
   // ── Sources Tab ──
   const [sources, setSources] = useState<PriceSource[]>([]);
   const [showAddSource, setShowAddSource] = useState(false);
-  const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
+  const [newSource, setNewSource] = useState<{ name: string; type: PriceSourceType; baseUrl: string; allowedDomains: string; priority: number; market: 'PK' | 'US'; currency: 'PKR' | 'USD' }>({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1, market: 'PK', currency: 'PKR' });
   const [editingSource, setEditingSource] = useState<PriceSource | null>(null);
-  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; baseUrl: string; verificationUrl: string; discoveryEnabled: boolean; discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api'; catalogUrls: string; sitemapUrls: string; feedUrl: string; syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly'; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', baseUrl: '', verificationUrl: '', discoveryEnabled: false, discoveryMode: 'manual', catalogUrls: '', sitemapUrls: '', feedUrl: '', syncFrequency: 'daily', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
+  const [editSourceForm, setEditSourceForm] = useState<{ name: string; type: PriceSourceType; market: 'PK' | 'US'; currency: 'PKR' | 'USD'; baseUrl: string; verificationUrl: string; discoveryEnabled: boolean; discoveryMode: 'manual' | 'sitemap' | 'catalog' | 'feed' | 'api'; catalogUrls: string; sitemapUrls: string; feedUrl: string; syncFrequency: 'manual' | 'hourly' | 'daily' | 'weekly'; allowedDomains: string; priority: number; status: 'active' | 'paused' | 'failed'; trusted: boolean; notes: string }>({ name: '', type: 'retailer', market: 'PK', currency: 'PKR', baseUrl: '', verificationUrl: '', discoveryEnabled: false, discoveryMode: 'manual', catalogUrls: '', sitemapUrls: '', feedUrl: '', syncFrequency: 'daily', allowedDomains: '', priority: 1, status: 'active', trusted: false, notes: '' });
   const [editSourceFieldErrors, setEditSourceFieldErrors] = useState<Record<string, string>>({});
   const [deletingSource, setDeletingSource] = useState<PriceSource | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -303,7 +326,7 @@ export default function AdminPriceTrackerPage() {
   const [sourceGapsTotalPages, setSourceGapsTotalPages] = useState(1);
   const [sourceTestModal, setSourceTestModal] = useState<PriceSource | null>(null);
   const [sourceTestUrl, setSourceTestUrl] = useState('');
-  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null; httpStatus?: number | null; finalUrl?: string; contentType?: string; fetchDurationMs?: number; failureType?: string; responsePreview?: string; accessMode?: string; automaticFetchEnabled?: boolean } | null>(null);
+  const [sourceTestResult, setSourceTestResult] = useState<{ reachable: boolean; title: string | null; detectedPrice: number | null; availability: string; matched: boolean; safeToEnable: boolean; extractionMethod: string | null; extractionConfidence: number; error: string | null; httpStatus?: number | null; finalUrl?: string; contentType?: string; fetchDurationMs?: number; failureType?: string; responsePreview?: string; accessMode?: string; automaticFetchEnabled?: boolean; market?: 'PK' | 'US'; currency?: 'PKR' | 'USD' } | null>(null);
 
   // ── Price Changes Tab ──
   const [changes, setChanges] = useState<PriceChange[]>([]);
@@ -323,7 +346,7 @@ export default function AdminPriceTrackerPage() {
   // ── Modals ──
   const [editPriceModal, setEditPriceModal] = useState(false);
   const [editingPhone, setEditingPhone] = useState<PhonePrice | null>(null);
-  const [editForm, setEditForm] = useState({ price: '', reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+  const [editForm, setEditForm] = useState({ price: '', reason: '', market: 'PK' as 'PK' | 'US', currency: 'PKR' as 'PKR' | 'USD', priceType: 'pta-approved' as 'pta-approved' | 'non-pta' | 'retail', ptaStatus: 'approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
 
   const [addListingModal, setAddListingModal] = useState(false);
   const [listingPhoneId, setListingPhoneId] = useState('');
@@ -608,7 +631,10 @@ export default function AdminPriceTrackerPage() {
           phoneId: editingPhone.phoneId,
           newPrice: Number(editForm.price),
           reason: editForm.reason,
-          ptaStatus: editForm.ptaStatus,
+          market: editForm.market,
+          currency: editForm.currency,
+          priceType: editForm.priceType,
+          ptaStatus: editForm.market === 'PK' ? editForm.ptaStatus : '',
           warrantyType: editForm.warrantyType,
           ram: editForm.ram,
           storage: editForm.storage,
@@ -619,7 +645,7 @@ export default function AdminPriceTrackerPage() {
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
       setEditPriceModal(false);
-      setEditForm({ price: '', reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+      setEditForm({ price: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
       setEditingPhone(null);
       if (activeTab === 'phones') fetchPhones();
       else fetchOverview();
@@ -677,12 +703,14 @@ export default function AdminPriceTrackerPage() {
           baseUrl: newSource.baseUrl,
           allowedDomains: newSource.allowedDomains.split(',').map(s => s.trim()).filter(Boolean),
           priority: newSource.priority,
+          market: newSource.market,
+          currency: newSource.currency,
         }),
       });
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to add source');
       setShowAddSource(false);
-      setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 });
+      setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1, market: 'PK', currency: 'PKR' });
       fetchSources();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Action failed');
@@ -704,6 +732,8 @@ export default function AdminPriceTrackerPage() {
     setEditSourceForm({
       name: source.name,
       type: source.type,
+      market: source.market || 'PK',
+      currency: source.currency || (source.market === 'US' ? 'USD' : 'PKR'),
       baseUrl: source.baseUrl || '',
       verificationUrl: source.verificationUrl || '',
       discoveryEnabled: Boolean(source.discoveryEnabled),
@@ -759,6 +789,8 @@ export default function AdminPriceTrackerPage() {
         body: JSON.stringify({
           name: editSourceForm.name.trim(),
           sourceType: editSourceForm.type,
+          market: editSourceForm.market,
+          currency: editSourceForm.currency,
           baseUrl: editSourceForm.baseUrl.trim(),
           verificationUrl,
           discoveryEnabled: editSourceForm.discoveryEnabled,
@@ -934,7 +966,7 @@ export default function AdminPriceTrackerPage() {
 
   const openEditPriceModal = (phone: PhonePrice) => {
     setEditingPhone(phone);
-    setEditForm({ price: String(phone.currentPrice), reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+    setEditForm({ price: String(phone.currentPrice), reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
     setEditPriceModal(true);
   };
 
@@ -1115,11 +1147,11 @@ export default function AdminPriceTrackerPage() {
                   {recentChanges.map((c) => (
                     <tr key={c.id} className="text-sm hover:bg-gray-50/50">
                       <td className="px-5 py-3 font-medium text-gray-900">{c.phoneName}</td>
-                      <td className="px-5 py-3 text-gray-600">{formatPKR(c.oldPrice)}</td>
-                      <td className="px-5 py-3 text-gray-900 font-medium">{formatPKR(c.newPrice)}</td>
+                      <td className="px-5 py-3 text-gray-600">{formatMoney(c.oldPrice, c.currency)}</td>
+                      <td className="px-5 py-3 text-gray-900 font-medium">{formatMoney(c.newPrice, c.currency)}</td>
                       <td className="px-5 py-3">
                         <span className={c.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}>
-                          {formatDiff(c.difference)} ({formatPercentChange(c.percentChange)})
+                          {formatMoneyDiff(c.difference, c.currency)} ({formatPercentChange(c.percentChange)})
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-500 text-xs">{c.source}</td>
@@ -1425,6 +1457,18 @@ export default function AdminPriceTrackerPage() {
               </p>
             </div>
             <div>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">Market *</label>
+              <select value={newSource.market} onChange={event => { const market = event.currentTarget.value as 'PK' | 'US'; setNewSource(current => ({ ...current, market, currency: market === 'US' ? 'USD' : 'PKR' })); }} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-white">
+                <option value="PK">🇵🇰 Pakistan</option>
+                <option value="US">🇺🇸 USA</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">Tracking Currency</label>
+              <input value={newSource.currency} readOnly className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 text-gray-600" />
+              <p className="mt-1 text-[10px] text-gray-400">Pakistan sources track PKR; USA sources track USD. Conversion is display-only.</p>
+            </div>
+            <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Base URL {newSource.type === 'manual' ? '(optional)' : '*'}</label>
               <input
                 type="text"
@@ -1465,7 +1509,7 @@ export default function AdminPriceTrackerPage() {
               {actionLoading === 'add-source' ? 'Saving...' : 'Save Source'}
             </button>
             <button
-              onClick={() => { setShowAddSource(false); setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1 }); }}
+              onClick={() => { setShowAddSource(false); setNewSource({ name: '', type: 'retailer', baseUrl: '', allowedDomains: '', priority: 1, market: 'PK', currency: 'PKR' }); }}
               className="px-4 py-2 border border-gray-200 text-gray-600 text-xs font-medium rounded-xl hover:bg-gray-50 transition-colors"
             >
               Cancel
@@ -1500,7 +1544,7 @@ export default function AdminPriceTrackerPage() {
                 {sources.map((src) => (
                   <tr key={src.id} className="text-sm hover:bg-gray-50/50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{src.name}</p>
+                      <p className="font-medium text-gray-900">{src.name}</p><p className="mt-0.5 text-[10px] font-semibold text-slate-500">{src.market === 'US' ? '🇺🇸 USA · USD' : '🇵🇰 Pakistan · PKR'}</p>
                       <p className={`mt-0.5 max-w-[180px] truncate text-[10px] ${src.allowedDomains.length ? 'text-gray-400' : 'font-medium text-amber-600'}`}>
                         {src.allowedDomains.length ? src.allowedDomains.join(', ') : src.type === 'manual' ? 'Manual source' : 'No allowed domain'}
                       </p>
@@ -1814,11 +1858,11 @@ export default function AdminPriceTrackerPage() {
                 {changes.map((c) => (
                   <tr key={c.id} className="text-sm hover:bg-gray-50/50">
                     <td className="px-4 py-3 text-gray-900 max-w-[220px]"><div className="font-medium truncate">{c.phoneName}</div>{variantLabel(c) ? <div className="mt-0.5 text-[10px] text-blue-600">{variantLabel(c)}</div> : null}</td>
-                    <td className="px-4 py-3 text-gray-500 text-right">{formatPKR(c.oldPrice)}</td>
-                    <td className="px-4 py-3 text-gray-900 font-medium text-right">{formatPKR(c.newPrice)}</td>
+                    <td className="px-4 py-3 text-gray-500 text-right">{formatMoney(c.oldPrice, c.currency)}</td>
+                    <td className="px-4 py-3 text-gray-900 font-medium text-right">{formatMoney(c.newPrice, c.currency)}</td>
                     <td className="px-4 py-3 text-right">
                       <span className={c.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}>
-                        {formatDiff(c.difference)}
+                        {formatMoneyDiff(c.difference, c.currency)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -1898,10 +1942,10 @@ export default function AdminPriceTrackerPage() {
                 </div>
                 {variantLabel(item) ? <p className="mb-1 text-[10px] font-medium text-blue-600">{variantLabel(item)}</p> : null}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                  <span>Detected: <span className="font-medium text-gray-700">{formatPKR(item.newPrice)}</span></span>
-                  <span>Current: <span className="font-medium text-gray-700">{formatPKR(item.oldPrice)}</span></span>
+                  <span>Detected: <span className="font-medium text-gray-700">{formatMoney(item.newPrice, item.currency)}</span></span>
+                  <span>Current: <span className="font-medium text-gray-700">{formatMoney(item.oldPrice, item.currency)}</span></span>
                   <span className={item.changeType === 'decrease' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                    {formatDiff(item.difference)} ({formatPercentChange(item.percentChange)})
+                    {formatMoneyDiff(item.difference, item.currency)} ({formatPercentChange(item.percentChange)})
                   </span>
                   <span>Source: {item.source}</span>
                   <span>{formatDateTime(item.date)}</span>
@@ -2100,10 +2144,10 @@ export default function AdminPriceTrackerPage() {
                   {priceHistory.map((h) => (
                     <tr key={h.id} className="text-sm hover:bg-gray-50/50">
                       <td className="px-4 py-2.5 text-xs text-gray-500">{formatDateTime(h.date)}</td>
-                      <td className="px-4 py-2.5 text-gray-500 text-right">{formatPKR(h.oldPrice)}</td>
-                      <td className="px-4 py-2.5 text-gray-900 font-medium text-right">{formatPKR(h.newPrice)}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-right">{formatMoney(h.oldPrice, h.currency)}</td>
+                      <td className="px-4 py-2.5 text-gray-900 font-medium text-right">{formatMoney(h.newPrice, h.currency)}</td>
                       <td className={`px-4 py-2.5 text-right ${h.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatDiff(h.difference)}
+                        {formatMoneyDiff(h.difference, h.currency)}
                       </td>
                       <td className={`px-4 py-2.5 text-right ${h.changeType === 'decrease' ? 'text-green-600' : 'text-red-600'}`}>
                         {formatPercentChange(h.percentChange)}
@@ -2300,8 +2344,13 @@ export default function AdminPriceTrackerPage() {
             {editingPhone.phoneName} — Current: {formatPKR(editingPhone.currentPrice)}
           </p>
           <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Market</label><select value={editForm.market} onChange={e => { const market = e.target.value as 'PK' | 'US'; setEditForm(f => ({ ...f, market, currency: market === 'US' ? 'USD' : 'PKR', priceType: market === 'US' ? 'retail' : 'pta-approved', ptaStatus: market === 'US' ? '' : 'approved' })); }} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white"><option value="PK">🇵🇰 Pakistan</option><option value="US">🇺🇸 USA</option></select></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Price Type</label><select value={editForm.priceType} onChange={e => { const priceType = e.target.value as 'pta-approved' | 'non-pta' | 'retail'; setEditForm(f => ({ ...f, priceType, ptaStatus: priceType === 'pta-approved' ? 'approved' : priceType === 'non-pta' ? 'non-pta' : '' })); }} disabled={editForm.market === 'US'} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm bg-white disabled:bg-gray-50"><option value="pta-approved">PTA Approved</option><option value="non-pta">Non-PTA</option><option value="retail">US Retail</option></select></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Currency</label><input value={editForm.currency} readOnly className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm bg-gray-50" /></div>
+            </div>
             <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">New Price (PKR) *</label>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">New Price ({editForm.currency}) *</label>
               <input
                 type="number"
                 required
@@ -2322,19 +2371,13 @@ export default function AdminPriceTrackerPage() {
                 className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               />
             </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">PTA Status</label>
-              <select
-                value={editForm.ptaStatus}
-                onChange={e => setEditForm(f => ({ ...f, ptaStatus: e.target.value }))}
-                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
-              >
-                <option value="">No Change</option>
+            {editForm.market === 'PK' ? <div>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">PTA Classification</label>
+              <select value={editForm.ptaStatus} onChange={e => { const ptaStatus = e.target.value; setEditForm(f => ({ ...f, ptaStatus, priceType: ptaStatus === 'non-pta' ? 'non-pta' : 'pta-approved' })); }} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm bg-white">
                 <option value="approved">PTA Approved</option>
                 <option value="non-pta">Non-PTA</option>
-                <option value="unknown">Unknown</option>
               </select>
-            </div>
+            </div> : <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">USA entries are stored as <b>US Retail · USD</b> and never overwrite Pakistan PTA/Non-PTA prices.</div>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">RAM</label><input value={editForm.ram} onChange={e => setEditForm(f => ({ ...f, ram: e.target.value }))} placeholder="12GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">Storage</label><input value={editForm.storage} onChange={e => setEditForm(f => ({ ...f, storage: e.target.value }))} placeholder="256GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
@@ -2549,6 +2592,17 @@ export default function AdminPriceTrackerPage() {
                 {SOURCE_TYPES.find(type => type.value === editSourceForm.type)?.description}
               </p>
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Market</label>
+              <select value={editSourceForm.market} onChange={event => { const market = event.currentTarget.value as 'PK' | 'US'; setEditSourceForm(current => ({ ...current, market, currency: market === 'US' ? 'USD' : 'PKR' })); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                <option value="PK">🇵🇰 Pakistan</option><option value="US">🇺🇸 USA</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Tracking currency</label>
+              <input value={editSourceForm.currency} readOnly className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600" />
+              <p className="mt-1 text-[10px] text-slate-400">Market currency is fixed to avoid cross-market price mixing.</p>
+            </div>
             <div className="sm:col-span-2">
               <label className="mb-1 block text-xs font-semibold text-slate-600">HTTPS base URL {editSourceForm.type === 'manual' ? '(optional)' : '*'}</label>
               <input
@@ -2662,7 +2716,7 @@ export default function AdminPriceTrackerPage() {
               />
               <span>
                 <span className="block text-sm font-semibold text-slate-800">Trusted source</span>
-                <span className="block text-xs text-slate-500">Only enable after testing a real product page and confirming reliable PKR extraction.</span>
+                <span className="block text-xs text-slate-500">Only enable after testing a real product page and confirming reliable extraction in the configured market/currency.</span>
               </span>
             </label>
             <div className="sm:col-span-2">
@@ -2711,7 +2765,7 @@ export default function AdminPriceTrackerPage() {
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
           <div className="flex items-start justify-between gap-4">
-            <div><h2 className="text-base font-bold text-slate-900">Test & trust {sourceTestModal.name}</h2><p className="mt-1 text-xs text-slate-500">Verify one real product page and preview the detected PKR price.</p></div>
+            <div><h2 className="text-base font-bold text-slate-900">Test & trust {sourceTestModal.name}</h2><p className="mt-1 text-xs text-slate-500">Verify one real product page and preview the detected price in this source's configured currency.</p></div>
             <button onClick={() => { setSourceTestModal(null); setSourceTestResult(null); setError(''); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
           </div>
           <label className="mt-5 mb-1 block text-xs font-semibold text-slate-600">Real phone product URL *</label>
@@ -2721,7 +2775,7 @@ export default function AdminPriceTrackerPage() {
               <span>Reachable</span><strong>{sourceTestResult.reachable ? 'Yes' : 'No'}</strong>
               <span>HTTP status</span><strong>{sourceTestResult.httpStatus ?? '—'}</strong>
               <span>Page title</span><strong className="truncate">{sourceTestResult.title || 'Not detected'}</strong>
-              <span>Detected price</span><strong>{sourceTestResult.detectedPrice ? formatPKR(sourceTestResult.detectedPrice) : 'Not detected'}</strong>
+              <span>Detected price</span><strong>{sourceTestResult.detectedPrice ? (sourceTestResult.currency === 'USD' ? `$${Number(sourceTestResult.detectedPrice).toLocaleString('en-US')}` : formatPKR(sourceTestResult.detectedPrice)) : 'Not detected'}</strong>
               <span>Availability</span><strong>{sourceTestResult.availability}</strong>
               <span>Method</span><strong>{sourceTestResult.extractionMethod || 'None'}</strong>
               <span>Confidence</span><strong>{Math.round(Math.max(0, Math.min(1, sourceTestResult.extractionConfidence || 0)) * 100)}%</strong>

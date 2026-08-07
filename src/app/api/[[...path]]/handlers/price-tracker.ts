@@ -16,6 +16,7 @@ import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
 import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
+import { buildMarketPriceIdentity, normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -32,6 +33,7 @@ interface LeanPhoneDoc {
 interface LeanSourceDoc {
   _id: Types.ObjectId; name: string; sourceType: string;
   enabled: boolean; trusted: boolean; baseUrl: string; verificationUrl: string; allowedDomains: string[];
+  market?: string; currency?: string;
   discoveryEnabled?: boolean; discoveryMode?: string; catalogUrls?: string[]; sitemapUrls?: string[]; feedUrl?: string; syncFrequency?: string;
   lastDiscoveryAt?: Date | null; productsFound?: number; productsAdded?: number; productsUpdated?: number; productsRemoved?: number;
   priority: number; lastCheckedAt: Date | null; lastSuccessAt: Date | null;
@@ -55,6 +57,7 @@ interface LeanHistoryDoc {
   oldPrice: number; newPrice: number; difference: number; percentageChange: number;
   changeType: string; sourceType: string; sourceUrl: string;
   priceClass?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string;
+  market?: string; currency?: string; priceType?: string; priceIdentityKey?: string;
   verificationStatus: string; capturedAt: Date | null; createdAt?: Date;
 }
 
@@ -62,6 +65,7 @@ interface LeanListingDoc {
   _id: Types.ObjectId;
   sourceId?: { _id: Types.ObjectId; name: string; sourceType: string; baseUrl: string; allowedDomains: string[] } | null;
   productUrl: string; ram: string; storage: string; color: string; condition: string; variantKey: string; ptaStatus: string; warrantyType: string;
+  market?: string; currency?: string; priceType?: string; priceIdentityKey?: string;
   currentSourcePrice: number; previousSourcePrice: number; pendingSourcePrice: number; pendingDetectedAt: Date | null; availability: string;
   lastCheckedAt: Date | null; lastChangedAt: Date | null; enabled: boolean; verificationStatus: string;
 }
@@ -368,6 +372,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         id,
         name: s.name,
         sourceType: s.sourceType,
+        market: normalizePriceMarket(s.market),
+        currency: normalizePriceCurrency(s.currency, s.market),
         enabled: s.enabled,
         trusted: s.trusted,
         baseUrl: s.baseUrl || '',
@@ -461,6 +467,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         priceClass: c.priceClass || 'unknown',
+        market: normalizePriceMarket(c.market),
+        currency: normalizePriceCurrency(c.currency, c.market),
+        priceType: c.priceType || normalizeMarketPriceType(c.priceClass, c.market, c.priceClass),
+        priceIdentityKey: c.priceIdentityKey || '',
         ram: c.ram || '',
         storage: c.storage || '',
         color: c.color || '',
@@ -509,6 +519,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
         priceClass: c.priceClass || 'unknown',
+        market: normalizePriceMarket(c.market),
+        currency: normalizePriceCurrency(c.currency, c.market),
+        priceType: c.priceType || normalizeMarketPriceType(c.priceClass, c.market, c.priceClass),
+        priceIdentityKey: c.priceIdentityKey || '',
         ram: c.ram || '',
         storage: c.storage || '',
         color: c.color || '',
@@ -550,6 +564,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         source: h.sourceId?.name || '',
         sourceUrl: h.sourceUrl || '',
         priceClass: h.priceClass || 'unknown',
+        market: normalizePriceMarket(h.market),
+        currency: normalizePriceCurrency(h.currency, h.market),
+        priceType: h.priceType || normalizeMarketPriceType(h.priceClass, h.market, h.priceClass),
+        priceIdentityKey: h.priceIdentityKey || '',
         ram: h.ram || '',
         storage: h.storage || '',
         color: h.color || '',
@@ -576,7 +594,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
 
     const listings = await PhoneRetailListing.find({ phoneId })
       .sort({ createdAt: -1 })
-      .populate('sourceId', 'name sourceType baseUrl allowedDomains')
+      .populate('sourceId', 'name sourceType baseUrl allowedDomains market currency')
       .lean();
 
     return NextResponse.json({
@@ -591,6 +609,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         color: l.color || '',
         condition: l.condition || 'new',
         variantKey: l.variantKey || buildPriceVariantKey(l),
+        market: normalizePriceMarket(l.market || l.sourceId?.market),
+        currency: normalizePriceCurrency(l.currency || l.sourceId?.currency, l.market || l.sourceId?.market),
+        priceType: l.priceType || normalizeMarketPriceType('', l.market || l.sourceId?.market, l.ptaStatus),
+        priceIdentityKey: l.priceIdentityKey || buildMarketPriceIdentity({ market: l.market || l.sourceId?.market, currency: l.currency || l.sourceId?.currency, priceType: l.priceType, ptaStatus: l.ptaStatus, variantKey: l.variantKey || buildPriceVariantKey(l) }),
         ptaStatus: l.ptaStatus || '',
         warrantyType: l.warrantyType || '',
         currentSourcePrice: l.currentSourcePrice || 0,
@@ -739,7 +761,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       trusted: true,
       status: 'active',
       allowedDomains: { $exists: true, $ne: [] },
-    }).select('_id name allowedDomains discoveryEnabled discoveryMode catalogUrls sitemapUrls feedUrl').lean() as unknown as LeanSourceDoc[];
+    }).select('_id name allowedDomains discoveryEnabled discoveryMode catalogUrls sitemapUrls feedUrl market currency').lean() as unknown as LeanSourceDoc[];
 
     if (!sources.length) {
       return NextResponse.json(
@@ -789,6 +811,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         const phone = matchProductUrlToPhone(productUrl, phones);
         if (!phone) { discoveryUnmatched++; continue; }
         const variant = inferRetailVariantIdentity({ productUrl, existing: { condition: 'new' } });
+        const market = normalizePriceMarket(source.market);
+        const currency = normalizePriceCurrency(source.currency, market);
+        const priceType = normalizeMarketPriceType('', market, variant.ptaStatus);
         const update = await PhoneRetailListing.updateOne(
           { sourceId: source._id, productUrl },
           { $setOnInsert: {
@@ -801,6 +826,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
             ptaStatus: variant.ptaStatus,
             warrantyType: variant.warrantyType,
             variantKey: variant.variantKey,
+            market,
+            currency,
+            priceType,
+            priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
             enabled: true,
             verificationStatus: 'pending',
             discoveryOrigin: 'catalog',
@@ -822,14 +851,14 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const legacyPriceRows = await PhonePrice.find({
       phoneId: { $in: phones.map(phone => phone._id) },
       $or: [{ url: { $type: 'string', $ne: '' } }, { sourceUrl: { $type: 'string', $ne: '' } }],
-    }).select('phoneId url sourceUrl storeName price ptaStatus warrantyType').lean();
-    const legacyUrlsByPhone = new Map<string, Array<{ url: string; storeName: string; price: number; ptaStatus: string; warrantyType: string }>>();
+    }).select('phoneId url sourceUrl storeName price ptaStatus warrantyType ram storage color condition variantKey market currency priceType').lean();
+    const legacyUrlsByPhone = new Map<string, Array<{ url: string; storeName: string; price: number; ptaStatus: string; warrantyType: string; ram?: string; storage?: string; color?: string; condition?: string; variantKey?: string; market?: string; currency?: string; priceType?: string }>>();
     for (const row of legacyPriceRows) {
       const url = String(row.url || row.sourceUrl || '').trim();
       if (!url) continue;
       const key = row.phoneId.toString();
       const values = legacyUrlsByPhone.get(key) || [];
-      values.push({ url, storeName: String(row.storeName || ''), price: Number(row.price || 0), ptaStatus: String(row.ptaStatus || ''), warrantyType: String(row.warrantyType || '') });
+      values.push({ url, storeName: String(row.storeName || ''), price: Number(row.price || 0), ptaStatus: String(row.ptaStatus || ''), warrantyType: String(row.warrantyType || ''), ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''), condition: String(row.condition || 'new'), variantKey: String(row.variantKey || ''), market: String(row.market || ''), currency: String(row.currency || ''), priceType: String(row.priceType || '') });
       legacyUrlsByPhone.set(key, values);
     }
 
@@ -842,7 +871,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
 
     for (const phone of phones) {
       const candidates = [
-        ...(String(phone.sourceUrl || '').trim() ? [{ url: String(phone.sourceUrl).trim(), storeName: '', price: 0, ptaStatus: '', warrantyType: '' }] : []),
+        ...(String(phone.sourceUrl || '').trim() ? [{ url: String(phone.sourceUrl).trim(), storeName: '', price: 0, ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', variantKey: '', market: '', currency: '', priceType: '' }] : []),
         ...(legacyUrlsByPhone.get(phone._id.toString()) || []),
       ].filter((candidate, index, all) => all.findIndex(other => other.url === candidate.url) === index);
 
@@ -878,8 +907,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
           const variant = inferRetailVariantIdentity({
             title: candidate.storeName || phone.modelName,
             productUrl: sourceUrl,
-            existing: { ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType, condition: 'new' },
+            existing: { ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType, condition: candidate.condition || 'new', ram: candidate.ram, storage: candidate.storage, color: candidate.color },
           });
+          const market = normalizePriceMarket(candidate.market || source.market);
+          const currency = normalizePriceCurrency(candidate.currency || source.currency, market);
+          const priceType = normalizeMarketPriceType(candidate.priceType, market, variant.ptaStatus);
           await PhoneRetailListing.create({
             phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl, sourceTitle: candidate.storeName || phone.modelName,
             currentSourcePrice: 0,
@@ -892,6 +924,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
             ptaStatus: variant.ptaStatus,
             warrantyType: variant.warrantyType,
             variantKey: variant.variantKey,
+            market,
+            currency,
+            priceType,
+            priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
             enabled: true,
             verificationStatus: 'pending',
             discoveryOrigin: candidate.storeName ? 'legacy' : 'phone',
@@ -965,7 +1001,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition } = body;
+    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition, market: requestedMarket, currency: requestedCurrency, priceType: requestedPriceType } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number') {
@@ -975,43 +1011,53 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phone = await Phone.findById(phoneId);
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
-    const priceClass = normalizePtaPriceClass(ptaStatus || phone.ptaStatus, ptaStatus ? undefined : phone.ptaApproved);
-    if (priceClass === 'unknown') return NextResponse.json({ error: 'Choose PTA Approved or Non-PTA before saving this price' }, { status: 400 });
-    const oldPrice = priceClass === 'non-pta'
-      ? Number(phone.bestNonPtaPricePKR || 0)
-      : Number(phone.bestPtaPricePKR || phone.currentPrice || phone.pricePKR || 0);
+    const market = normalizePriceMarket(requestedMarket);
+    const currency = normalizePriceCurrency(requestedCurrency, market);
+    const priceType = normalizeMarketPriceType(requestedPriceType, market, ptaStatus);
+    const priceClass = market === 'PK' ? normalizePtaPriceClass(ptaStatus || phone.ptaStatus, ptaStatus ? undefined : phone.ptaApproved) : 'unknown';
+    if (market === 'PK' && priceClass === 'unknown') return NextResponse.json({ error: 'Choose PTA Approved or Non-PTA before saving a Pakistan price' }, { status: 400 });
+    if (market === 'US' && (currency !== 'USD' || priceType !== 'retail')) return NextResponse.json({ error: 'USA market prices must use USD and US Retail price type' }, { status: 400 });
+
+    const oldPrice = market === 'US'
+      ? Number(phone.bestUsRetailPriceUSD || 0)
+      : priceClass === 'non-pta'
+        ? Number(phone.bestNonPtaPricePKR || 0)
+        : Number(phone.bestPtaPricePKR || phone.currentPrice || phone.pricePKR || 0);
     const difference = newPrice - oldPrice;
     const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
 
     let changeType: 'increase' | 'decrease' | 'unchanged' | 'correction' = 'unchanged';
-    if (difference > 0) changeType = 'increase';
+    if (oldPrice === 0 && newPrice > 0) changeType = 'correction';
+    else if (difference > 0) changeType = 'increase';
     else if (difference < 0) changeType = 'decrease';
-    else if (oldPrice === 0 && newPrice > 0) changeType = 'correction';
 
-    // Update Phone document
+    // Market buckets are independent. US Retail never mutates PKR/currentPrice.
     const updates: Record<string, unknown> = {
       lastPriceChangedAt: new Date(),
       priceMode: 'manual',
       lastPriceCheckedAt: new Date(),
-      ...(priceClass === 'pta-approved' ? { bestPtaPricePKR: newPrice } : { bestNonPtaPricePKR: newPrice }),
+      ...(market === 'US'
+        ? { bestUsRetailPriceUSD: newPrice }
+        : priceClass === 'pta-approved'
+          ? { bestPtaPricePKR: newPrice }
+          : { bestNonPtaPricePKR: newPrice }),
     };
     const phoneClass = normalizePtaPriceClass(phone.ptaStatus, phone.ptaApproved);
-    if (priceClass === phoneClass) {
+    if (market === 'PK' && priceClass === phoneClass) {
       updates.currentPrice = newPrice;
       updates.previousPrice = oldPrice;
       updates.priceChange = difference;
       updates.percentageChange = percentageChange;
       updates.pricePKR = newPrice;
+
+      const lowest = phone.lowestPrice || 0;
+      const highest = phone.highestPrice || 0;
+      if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
+      if (newPrice > highest) updates.highestPrice = newPrice;
     }
 
-    // Track lowest/highest
-    const lowest = phone.lowestPrice || 0;
-    const highest = phone.highestPrice || 0;
-    if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
-    if (newPrice > highest) updates.highestPrice = newPrice;
-
-    // `ptaStatus` here classifies this price variant; it must not mutate the phone's canonical PTA status.
-    if (warrantyType) updates.warrantyType = warrantyType;
+    // `ptaStatus` classifies only the PK price bucket; it never mutates phone PTA state.
+    if (warrantyType && market === 'PK') updates.warrantyType = warrantyType;
 
     await Phone.findByIdAndUpdate(phoneId, { $set: updates });
 
@@ -1028,27 +1074,33 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         changedByAdminId: admin._id,
         verificationStatus: 'confirmed',
         priceClass,
+        market,
+        currency,
+        priceType,
         ram: normalizeMemoryLabel(ram),
         storage: normalizeMemoryLabel(storage),
         color: String(color || '').trim(),
         condition: String(condition || 'new').trim().toLowerCase(),
         warrantyType: String(warrantyType || '').trim(),
-        variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus: priceClass, condition, warrantyType }),
+        variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus: market === 'PK' ? priceClass : '', condition, warrantyType }),
+        priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: market === 'PK' ? priceClass : '', variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus: market === 'PK' ? priceClass : '', condition, warrantyType }) }),
         capturedAt: new Date(),
       });
     } catch (e) { console.error('[PriceTrackerHistory]', e); }
 
     // Create legacy PriceHistory record for backward compat
-    try {
-      await PriceHistory.create({ phoneId: phone._id, storeName: null, price: newPrice });
-    } catch (e) { console.error('[PriceHistory]', e); }
+    if (market === 'PK') {
+      try {
+        await PriceHistory.create({ phoneId: phone._id, storeName: null, price: newPrice });
+      } catch (e) { console.error('[PriceHistory]', e); }
+    }
 
     // Create ActivityLog
     try {
       await ActivityLog.create({
         adminId: admin._id,
         action: 'update_price',
-        details: `${changeType === 'unchanged' ? 'Set' : changeType === 'increase' ? 'Increased' : changeType === 'decrease' ? 'Decreased' : 'Corrected'} price for ${phone.modelName}: PKR ${oldPrice.toLocaleString()} → PKR ${newPrice.toLocaleString()}${reason ? ` (${reason})` : ''}`,
+        details: `${changeType === 'unchanged' ? 'Set' : changeType === 'increase' ? 'Increased' : changeType === 'decrease' ? 'Decreased' : 'Corrected'} ${market} ${priceType} price for ${phone.modelName}: ${currency} ${oldPrice.toLocaleString()} → ${currency} ${newPrice.toLocaleString()}${reason ? ` (${reason})` : ''}`,
         entityType: 'phone',
         entityId: phone._id?.toString(),
       });
@@ -1076,7 +1128,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency, market, currency } = body;
 
     if (!name || !name.trim()) return NextResponse.json({ error: 'Source name is required' }, { status: 400 });
     if (sourceType !== undefined && !PRICE_SOURCE_TYPES.has(sourceType)) {
@@ -1099,6 +1151,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const source = await PriceSource.create({
       name: name.trim(),
       sourceType: sourceType || 'retailer',
+      market: normalizePriceMarket(market),
+      currency: normalizePriceCurrency(currency, market),
       baseUrl: normalizedBaseUrl,
       verificationUrl: typeof verificationUrl === 'string' ? verificationUrl.trim() : '',
       discoveryEnabled: Boolean(discoveryEnabled),
@@ -1126,6 +1180,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       id: source._id?.toString(),
       name: source.name,
       sourceType: source.sourceType,
+      market: source.market,
+      currency: source.currency,
       enabled: source.enabled,
       trusted: source.trusted,
     });
@@ -1138,7 +1194,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, sourceId, productUrl, ram, storage, color, condition, ptaStatus, warrantyType } = body;
+    const { phoneId, sourceId, productUrl, ram, storage, color, condition, ptaStatus, warrantyType, market: requestedMarket, currency: requestedCurrency, priceType: requestedPriceType } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!sourceId) return NextResponse.json({ error: 'sourceId is required' }, { status: 400 });
@@ -1164,6 +1220,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     // Verify source exists and get allowed domains
     const source = await PriceSource.findById(sourceId);
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
+    const listingMarket = normalizePriceMarket(requestedMarket || source.market);
+    const listingCurrency = normalizePriceCurrency(requestedCurrency || source.currency, listingMarket);
+    const listingPriceType = normalizeMarketPriceType(requestedPriceType, listingMarket, ptaStatus);
 
     // Validate domain is in source's allowedDomains
     let urlDomain = '';
@@ -1231,9 +1290,9 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
               brandName: phoneIdentity.brandName || '',
               expectedRam: ram || '',
               expectedStorage: storage || '',
-              expectedPtaStatus: ptaStatus || phoneIdentity.ptaStatus || '',
+              expectedPtaStatus: listingMarket === 'PK' ? (ptaStatus || phoneIdentity.ptaStatus || '') : '',
             });
-            const extracted = extractRetailPrice(html);
+            const extracted = extractRetailPrice(html, { currency: listingCurrency });
             sourceTitle = validation.title;
             detectedPrice = extracted?.price || 0;
             extractionMethod = extracted?.method || '';
@@ -1247,7 +1306,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
               verificationStatus = 'verified';
               verificationMessage = 'Product page verified and ready for automatic price checks.';
             } else {
-              verificationMessage = validation.reasons.join('; ') || 'No reliable PKR price was detected.';
+              verificationMessage = validation.reasons.join('; ') || `No reliable ${listingCurrency} price was detected.`;
             }
           } else {
             verificationMessage = `Retailer returned HTTP ${response.status}.`;
@@ -1269,6 +1328,10 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       color: color || '',
       condition: condition || 'new',
       variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus, condition, warrantyType }),
+      market: listingMarket,
+      currency: listingCurrency,
+      priceType: listingPriceType,
+      priceIdentityKey: buildMarketPriceIdentity({ market: listingMarket, currency: listingCurrency, priceType: listingPriceType, ptaStatus, variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus, condition, warrantyType }) }),
       ptaStatus: ptaStatus || '',
       warrantyType: warrantyType || '',
       sourceTitle,
@@ -1350,7 +1413,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       const titleMatch = fetchResult.html.match(/<title[^>]*>([^<]+)<\/title>/i)
         || fetchResult.html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
       title = titleMatch?.[1]?.trim().slice(0, 200) || '';
-      const extracted = extractRetailPrice(fetchResult.html);
+      const extracted = extractRetailPrice(fetchResult.html, { currency: normalizePriceCurrency(source?.currency, source?.market) });
       detectedPrice = extracted?.price ?? null;
       extractionMethod = extracted?.method ?? null;
       extractionConfidence = extracted?.confidence ?? 0;
@@ -1369,7 +1432,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       ? ''
       : fetchResult.error
         || (detectedPrice === null
-          ? 'No PKR price was detected on this product page.'
+          ? `No ${normalizePriceCurrency(source?.currency, source?.market)} price was detected on this product page.`
           : extractionConfidence < MIN_TRUST_CONFIDENCE
             ? `Price confidence is too low (${Math.round(extractionConfidence * 100)}%).`
             : availability === 'unavailable'
@@ -1441,6 +1504,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       safeToEnable,
       extractionMethod,
       extractionConfidence,
+      market: normalizePriceMarket(source?.market),
+      currency: normalizePriceCurrency(source?.currency, source?.market),
       error: safeToEnable ? null : validationError,
       httpStatus: fetchResult.status,
       finalUrl: fetchResult.finalUrl,
@@ -1804,7 +1869,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
 
     const body = await req.json();
-    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency } = body;
+    const { name, sourceType, baseUrl, verificationUrl, allowedDomains, priority, enabled, trusted, status, notes, discoveryEnabled, discoveryMode, catalogUrls, sitemapUrls, feedUrl, syncFrequency, market, currency } = body;
 
     const updates: Record<string, unknown> = {};
 
@@ -1857,6 +1922,9 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
         updates.lastError = normalizedVerificationUrl ? 'Verification URL changed; run Test & trust again.' : '';
       }
     }
+    if (market !== undefined) updates.market = normalizePriceMarket(market);
+    if (currency !== undefined) updates.currency = normalizePriceCurrency(currency, market !== undefined ? market : source.market);
+
     if (priority !== undefined) {
       const normalizedPriority = Number(priority);
       if (!Number.isFinite(normalizedPriority) || normalizedPriority < 0 || normalizedPriority > 100) {
@@ -1884,6 +1952,34 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
 
     const updatedSource = await PriceSource.findByIdAndUpdate(sourceId, { $set: updates }, { new: true });
 
+    // Market/currency changes redefine the meaning of every linked source price.
+    // Reset linked rows to review rather than silently reinterpreting an old
+    // PKR value as USD (or vice versa).
+    const nextMarket = normalizePriceMarket(updatedSource?.market || source.market);
+    const nextCurrency = normalizePriceCurrency(updatedSource?.currency || source.currency, nextMarket);
+    const marketChanged = nextMarket !== normalizePriceMarket(source.market) || nextCurrency !== normalizePriceCurrency(source.currency, source.market);
+    if (marketChanged) {
+      const linkedRows = await PhoneRetailListing.find({ sourceId }).select('_id ptaStatus ram storage color condition warrantyType variantKey').lean();
+      for (const row of linkedRows) {
+        const nextType = normalizeMarketPriceType('', nextMarket, nextMarket === 'PK' ? row.ptaStatus : '');
+        const variantKey = row.variantKey || buildPriceVariantKey({ ram: row.ram, storage: row.storage, color: row.color, ptaStatus: nextMarket === 'PK' ? row.ptaStatus : '', condition: row.condition, warrantyType: row.warrantyType });
+        await PhoneRetailListing.findByIdAndUpdate(row._id, { $set: {
+          market: nextMarket,
+          currency: nextCurrency,
+          priceType: nextType,
+          ptaStatus: nextMarket === 'PK' ? row.ptaStatus : '',
+          variantKey,
+          priceIdentityKey: buildMarketPriceIdentity({ market: nextMarket, currency: nextCurrency, priceType: nextType, variantKey }),
+          currentSourcePrice: 0,
+          previousSourcePrice: 0,
+          pendingSourcePrice: 0,
+          pendingDetectedAt: null,
+          verificationStatus: 'pending',
+          lastError: 'Source market/currency changed; product price must be verified again.',
+        } });
+      }
+    }
+
     try {
       await ActivityLog.create({
         adminId: admin._id,
@@ -1910,7 +2006,7 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (!listing) return NextResponse.json({ error: 'Listing not found' }, { status: 404 });
 
     const body = await req.json();
-    const { productUrl, ram, storage, ptaStatus, warrantyType, enabled, verificationStatus } = body;
+    const { productUrl, ram, storage, color, condition, ptaStatus, warrantyType, market, currency, priceType, enabled, verificationStatus } = body;
 
     const updates: Record<string, unknown> = {};
 
@@ -1928,6 +2024,11 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     }
     if (ram !== undefined) updates.ram = ram;
     if (storage !== undefined) updates.storage = storage;
+    if (color !== undefined) updates.color = color;
+    if (condition !== undefined) updates.condition = condition;
+    if (market !== undefined) updates.market = normalizePriceMarket(market);
+    if (currency !== undefined) updates.currency = normalizePriceCurrency(currency, market !== undefined ? market : listing.market);
+    if (priceType !== undefined) updates.priceType = normalizeMarketPriceType(priceType, market !== undefined ? market : listing.market, ptaStatus !== undefined ? ptaStatus : listing.ptaStatus);
     if (ptaStatus !== undefined) updates.ptaStatus = ptaStatus;
     if (warrantyType !== undefined) updates.warrantyType = warrantyType;
     if (typeof enabled === 'boolean') updates.enabled = enabled;
@@ -1938,6 +2039,22 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
+    const mergedIdentity = {
+      ram: updates.ram ?? listing.ram,
+      storage: updates.storage ?? listing.storage,
+      color: updates.color ?? listing.color,
+      condition: updates.condition ?? listing.condition,
+      ptaStatus: updates.ptaStatus ?? listing.ptaStatus,
+      warrantyType: updates.warrantyType ?? listing.warrantyType,
+    };
+    updates.variantKey = buildPriceVariantKey(mergedIdentity);
+    const mergedMarket = normalizePriceMarket(updates.market ?? listing.market);
+    const mergedCurrency = normalizePriceCurrency(updates.currency ?? listing.currency, mergedMarket);
+    const mergedPriceType = normalizeMarketPriceType(updates.priceType ?? listing.priceType, mergedMarket, mergedIdentity.ptaStatus);
+    updates.market = mergedMarket;
+    updates.currency = mergedCurrency;
+    updates.priceType = mergedPriceType;
+    updates.priceIdentityKey = buildMarketPriceIdentity({ market: mergedMarket, currency: mergedCurrency, priceType: mergedPriceType, ptaStatus: mergedIdentity.ptaStatus, variantKey: updates.variantKey });
 
     await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: updates });
 

@@ -5,6 +5,8 @@ import { PRICE_SOURCE_TYPES } from '@/lib/price-source-types';
 const PriceSourceSchema = new Schema({
   name: { type: String, required: true },
   sourceType: { type: String, enum: PRICE_SOURCE_TYPES, default: 'retailer' },
+  market: { type: String, enum: ['PK', 'US'], default: 'PK', index: true },
+  currency: { type: String, enum: ['PKR', 'USD'], default: 'PKR' },
   enabled: { type: Boolean, default: true },
   trusted: { type: Boolean, default: false },
   baseUrl: { type: String, default: '' },
@@ -61,6 +63,10 @@ const PhoneRetailListingSchema = new Schema({
   color: { type: String, default: '' },
   condition: { type: String, enum: ['', 'new', 'used', 'refurbished', 'open-box'], default: 'new' },
   variantKey: { type: String, default: '', index: true },
+  market: { type: String, enum: ['PK', 'US'], default: 'PK', index: true },
+  currency: { type: String, enum: ['PKR', 'USD'], default: 'PKR' },
+  priceType: { type: String, enum: ['pta-approved', 'non-pta', 'retail', 'unknown'], default: 'unknown', index: true },
+  priceIdentityKey: { type: String, default: '', index: true },
   ptaStatus: { type: String, default: '' },
   warrantyType: { type: String, default: '' },
   currentSourcePrice: { type: Number, default: 0 },
@@ -85,7 +91,7 @@ const PhoneRetailListingSchema = new Schema({
 }, { timestamps: true });
 
 PhoneRetailListingSchema.index({ phoneId: 1, sourceId: 1 });
-PhoneRetailListingSchema.index({ phoneId: 1, variantKey: 1, enabled: 1, verificationStatus: 1, currentSourcePrice: 1 });
+PhoneRetailListingSchema.index({ phoneId: 1, market: 1, priceType: 1, variantKey: 1, enabled: 1, verificationStatus: 1, currentSourcePrice: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, enabled: 1 });
 PhoneRetailListingSchema.index({ phoneId: 1, verificationStatus: 1, availability: 1, currentSourcePrice: 1 });
 PhoneRetailListingSchema.index({ sourceId: 1, enabled: 1 });
@@ -132,6 +138,10 @@ const PriceTrackerHistorySchema = new Schema({
   sourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource' },
   sourceUrl: { type: String, default: '' },
   priceClass: { type: String, enum: ['pta-approved', 'non-pta', 'unknown'], default: 'unknown', index: true },
+  market: { type: String, enum: ['PK', 'US'], default: 'PK', index: true },
+  currency: { type: String, enum: ['PKR', 'USD'], default: 'PKR' },
+  priceType: { type: String, enum: ['pta-approved', 'non-pta', 'retail', 'unknown'], default: 'unknown', index: true },
+  priceIdentityKey: { type: String, default: '', index: true },
   ram: { type: String, default: '' },
   storage: { type: String, default: '' },
   color: { type: String, default: '' },
@@ -147,7 +157,7 @@ const PriceTrackerHistorySchema = new Schema({
 PriceTrackerHistorySchema.index({ phoneId: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ phoneId: 1, changeType: 1 });
 PriceTrackerHistorySchema.index({ phoneId: 1, priceClass: 1, capturedAt: -1 });
-PriceTrackerHistorySchema.index({ phoneId: 1, variantKey: 1, priceClass: 1, capturedAt: -1 });
+PriceTrackerHistorySchema.index({ phoneId: 1, market: 1, priceType: 1, variantKey: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ sourceType: 1 });
 PriceTrackerHistorySchema.index({ verificationStatus: 1 });
 PriceTrackerHistorySchema.index({ capturedAt: -1 });

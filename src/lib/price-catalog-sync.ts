@@ -4,6 +4,7 @@ import { discoverCatalogProductUrls, matchProductUrlToPhone, summarizeCatalogDis
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 import { inferRetailVariantIdentity } from '@/lib/price-variant';
+import { buildMarketPriceIdentity, isSafeAutomaticMarketPrice, normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
@@ -23,6 +24,8 @@ type SourceRow = {
   allowedDomains?: string[];
   syncFrequency?: Frequency;
   lastDiscoveryAt?: Date | null;
+  market?: string;
+  currency?: string;
 };
 
 type PhoneRow = {
@@ -70,7 +73,7 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
     discoveryMode: { $ne: 'manual' },
     syncFrequency: { $ne: 'manual' },
   })
-    .select('_id discoveryMode catalogUrls sitemapUrls feedUrl allowedDomains syncFrequency lastDiscoveryAt priority')
+    .select('_id discoveryMode catalogUrls sitemapUrls feedUrl allowedDomains syncFrequency lastDiscoveryAt priority market currency')
     .sort({ priority: -1, lastDiscoveryAt: 1, _id: 1 })
     .limit(12)
     .lean() as unknown as SourceRow[];
@@ -104,6 +107,9 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
       const phone = matchProductUrlToPhone(productUrl, phones);
       if (!phone) return [];
       const variant = inferRetailVariantIdentity({ productUrl, existing: { condition: 'new' } });
+      const market = normalizePriceMarket(source.market);
+      const currency = normalizePriceCurrency(source.currency, market);
+      const priceType = normalizeMarketPriceType('', market, variant.ptaStatus);
       return [{
         updateOne: {
           filter: { sourceId: source._id, productUrl },
@@ -119,6 +125,10 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
               ptaStatus: variant.ptaStatus,
               warrantyType: variant.warrantyType,
               variantKey: variant.variantKey,
+              market,
+              currency,
+              priceType,
+              priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
               availability: 'unknown',
               enabled: true,
               verificationStatus: 'pending',
@@ -177,7 +187,7 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
   })
     .sort({ lastCheckedAt: 1, createdAt: 1, _id: 1 })
     .limit(MAX_PENDING_VERIFICATIONS_PER_RUN)
-    .populate({ path: 'sourceId', select: '_id enabled trusted status allowedDomains automaticFetchEnabled accessMode' })
+    .populate({ path: 'sourceId', select: '_id enabled trusted status allowedDomains automaticFetchEnabled accessMode market currency' })
     .populate({
       path: 'phoneId',
       select: '_id modelName brandId ptaStatus ptaApproved',
@@ -199,11 +209,17 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
       warrantyType?: string;
       variantKey?: string;
       ptaStatus?: string;
-      sourceId?: { enabled?: boolean; trusted?: boolean; status?: string; allowedDomains?: string[]; automaticFetchEnabled?: boolean; accessMode?: string } | null;
+      market?: string;
+      currency?: string;
+      priceType?: string;
+      priceIdentityKey?: string;
+      sourceId?: { enabled?: boolean; trusted?: boolean; status?: string; allowedDomains?: string[]; automaticFetchEnabled?: boolean; accessMode?: string; market?: string; currency?: string } | null;
       phoneId?: PhoneRow | null;
     };
     const source = listing.sourceId;
     const phone = listing.phoneId;
+    const market = normalizePriceMarket(listing.market || source?.market);
+    const currency = normalizePriceCurrency(listing.currency || source?.currency, market);
     let failure = '';
 
     if (!source?.enabled || !source.trusted || source.status !== 'active' || source.automaticFetchEnabled === false || source.accessMode === 'challenge_blocked' || !phone) {
@@ -252,14 +268,15 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
                 brandName: phone.brandId?.name || phone.brandName || '',
                 expectedRam: variant.ram,
                 expectedStorage: variant.storage,
-                expectedPtaStatus: variant.ptaStatus,
+                expectedPtaStatus: market === 'PK' ? variant.ptaStatus : '',
               });
-              const extracted = extractRetailPrice(html);
+              const priceType = normalizeMarketPriceType(listing.priceType, market, variant.ptaStatus);
+              const extracted = extractRetailPrice(html, { currency });
               if (!pageValidation.valid) failure = pageValidation.reasons.join('; ');
-              else if (normalizePtaPriceClass(variant.ptaStatus) === 'unknown') {
-                failure = 'PTA class is not explicit on this listing. Choose PTA Approved or Non-PTA in review before automatic publication.';
+              else if (!isSafeAutomaticMarketPrice({ market, currency, priceType, ptaStatus: variant.ptaStatus })) {
+                failure = market === 'PK' ? 'PTA class is not explicit on this listing. Choose PTA Approved or Non-PTA in review before automatic publication.' : 'US listing must be USD retail before automatic publication.';
               } else if (!extracted || extracted.price <= 0 || extracted.confidence < 0.7) {
-                failure = 'No reliable PKR price was detected on the product page.';
+                failure = `No reliable ${currency} price was detected on the product page.`;
               } else {
                 await PhoneRetailListing.findByIdAndUpdate(listing._id, {
                   $set: {
@@ -271,6 +288,10 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
                     ptaStatus: variant.ptaStatus,
                     warrantyType: variant.warrantyType,
                     variantKey: variant.variantKey,
+                    market,
+                    currency,
+                    priceType,
+                    priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
                     // The regular price-sync phase owns canonical price writes
                     // and history. Keeping this at zero makes the same cron
                     // treat the verified page as its first auditable detection.
@@ -301,6 +322,10 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
                   ptaStatus: variant.ptaStatus,
                   warrantyType: variant.warrantyType,
                   variantKey: variant.variantKey,
+                  market,
+                  currency,
+                  priceType,
+                  priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
                 },
               });
             }

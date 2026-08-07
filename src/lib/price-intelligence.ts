@@ -18,6 +18,10 @@ type PlainListing = {
   enabled?: boolean;
   verificationStatus?: string;
   ptaStatus?: string;
+  market?: string;
+  currency?: string;
+  priceType?: string;
+  ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string;
 };
 
 type SignalInput = {
@@ -41,7 +45,7 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
 
   const phoneIds = phones.map((phone) => phone._id);
   const [listings, historyRows, sourceSummary] = await Promise.all([
-    PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
+    PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true, market: 'PK', currency: 'PKR' })
       .populate('sourceId', 'name trusted enabled status priority')
       .lean() as Promise<PlainListing[]>,
     PriceTrackerHistory.aggregate([
@@ -121,7 +125,7 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
         recommendedPrice: Number(lowest.currentSourcePrice),
         sourceId: lowest.sourceId?._id,
         sourceUrl: lowest.productUrl,
-        evidence: { listingId: lowest._id, sourceName: lowest.sourceId?.name, priceClass: normalizePtaPriceClass(lowest.ptaStatus) },
+        evidence: { listingId: lowest._id, sourceName: lowest.sourceId?.name, market: 'PK', currency: 'PKR', priceType: lowest.priceType || normalizePtaPriceClass(lowest.ptaStatus), priceClass: normalizePtaPriceClass(lowest.ptaStatus), ram: lowest.ram || '', storage: lowest.storage || '', color: lowest.color || '', condition: lowest.condition || 'new', warrantyType: lowest.warrantyType || '', variantKey: lowest.variantKey || '' },
       });
       recommendations++;
     }

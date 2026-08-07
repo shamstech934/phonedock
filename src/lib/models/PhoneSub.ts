@@ -59,7 +59,9 @@ const PhonePriceSchema = new Schema({
   price: { type: Number, default: 0 },
   url: { type: String, default: '' },
   inStock: { type: Boolean, default: true },
-  currency: { type: String, default: 'PKR' },
+  currency: { type: String, enum: ['PKR', 'USD'], default: 'PKR' },
+  market: { type: String, enum: ['PK', 'US'], default: 'PK', index: true },
+  priceType: { type: String, enum: ['pta-approved', 'non-pta', 'retail', 'unknown'], default: 'unknown', index: true },
   sourceUrl: { type: String, default: '' },
   warrantyType: { type: String, default: '' },
   ptaStatus: { type: String, default: '' },
@@ -68,11 +70,12 @@ const PhonePriceSchema = new Schema({
   color: { type: String, default: '' },
   condition: { type: String, enum: ['', 'new', 'used', 'refurbished', 'open-box'], default: 'new' },
   variantKey: { type: String, default: '', index: true },
+  priceIdentityKey: { type: String, default: '', index: true },
   lastChecked: { type: Date, default: null },
   validityStatus: { type: String, enum: ['valid', 'stale', 'unknown'], default: 'unknown' },
 }, { timestamps: true });
 
-PhonePriceSchema.index({ phoneId: 1, storeName: 1, variantKey: 1 }, { unique: true });
+PhonePriceSchema.index({ phoneId: 1, storeName: 1, market: 1, priceType: 1, variantKey: 1 }, { unique: true });
 
 export const PhonePrice = mongoose.models.PhonePrice || mongoose.model('PhonePrice', PhonePriceSchema);
 

@@ -34,6 +34,8 @@ export async function scanPakistanMarket(options?: { limit?: number }) {
     phoneId: { $in: phoneIds },
     enabled: true,
     verificationStatus: 'verified',
+    market: 'PK',
+    currency: 'PKR',
   }).populate('sourceId', 'name trusted sourceType status enabled').lean();
 
   const byPhone = new Map<string, any[]>();
