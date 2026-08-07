@@ -99,7 +99,7 @@ export default function PakistanIntelligencePage() {
         <p className="mt-1 max-w-3xl text-sm text-slate-500">Low-load review center for PTA status, Pakistan prices, retailer coverage and market freshness. It never publishes automatically.</p>
       </div>
       <button onClick={() => void runAction('scan')} disabled={running} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-        <RefreshCw className={`h-4 w-4 ${running ? 'animate-spin' : ''}`}/>{running ? 'Scanning…' : 'Scan 150 phones'}
+        <RefreshCw className={`h-4 w-4 ${running ? 'animate-spin' : ''}`}/>{running ? 'Scanning…' : 'Scan 25 phones'}
       </button>
     </div>
 

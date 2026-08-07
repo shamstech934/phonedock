@@ -94,6 +94,17 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState('');
   const [pendingVideoCount, setPendingVideoCount] = useState(0);
+  const [navigationMode, setNavigationMode] = useState<'simple' | 'advanced'>('simple');
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('specsdekh-admin-navigation-mode');
+    if (saved === 'advanced' || saved === 'simple') setNavigationMode(saved);
+  }, []);
+
+  const changeNavigationMode = (mode: 'simple' | 'advanced') => {
+    setNavigationMode(mode);
+    window.localStorage.setItem('specsdekh-admin-navigation-mode', mode);
+  };
 
   // Fetch pending video count
   useEffect(() => {
@@ -186,11 +197,15 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     moderator: ['phones:read','phones:edit','brands:read','news:read','news:edit','activity:read','reviews:read','reviews:manage','media:upload'],
   };
   const hasPermission = (permission?: string) => !permission || (rolePerms[admin.role] || []).includes(permission);
+  const simpleDestinations = new Set([
+    '/admin/dashboard', '/admin/phones', '/admin/brands', '/admin/news', '/admin/videos', '/admin/reviews',
+    '/admin/import-v2', '/admin/data-quality', '/admin/price-tracker', '/admin/homepage-builder', '/admin/settings',
+  ]);
   const filteredLinks = adminLinks
     .map(link => link.children
-      ? { ...link, children: link.children.filter(child => hasPermission(child.permission)) }
+      ? { ...link, children: link.children.filter(child => hasPermission(child.permission) && (navigationMode === 'advanced' || simpleDestinations.has(child.href))) }
       : link)
-    .filter(link => hasPermission(link.permission) && (!link.children || link.children.length > 0));
+    .filter(link => hasPermission(link.permission) && (navigationMode === 'advanced' || simpleDestinations.has(link.href) || Boolean(link.children?.length)) && (!link.children || link.children.length > 0));
   const flatMobileLinks = filteredLinks.flatMap(link => link.children || [{ label: link.label, href: link.href, permission: link.permission }]);
   const currentMobileHref = flatMobileLinks.find(link => childIsActive(pathname, link.href))?.href || '/admin/dashboard';
 
@@ -205,6 +220,10 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
           <span className="font-bold text-sm text-gray-900 hidden sm:block">SpecsDekh Admin</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
+          <div className="hidden md:flex items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5" title="Switch between everyday and technical admin tools">
+            <button onClick={() => changeNavigationMode('simple')} className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${navigationMode === 'simple' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'}`}>Simple</button>
+            <button onClick={() => changeNavigationMode('advanced')} className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${navigationMode === 'advanced' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'}`}>Advanced</button>
+          </div>
           <button
             onClick={() => setShowPasswordModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"

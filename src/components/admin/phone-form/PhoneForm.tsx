@@ -346,7 +346,7 @@ export default function PhoneForm({
         pricePKR: form.pakistaniPricePKR === '' ? 0 : Number(form.pakistaniPricePKR),
         originalPricePKR: form.originalPricePKR === '' ? 0 : Number(form.originalPricePKR),
         ptaStatus: form.ptaStatus,
-        ptaApproved: form.ptaApproved,
+        ptaApproved: form.ptaStatus === 'PTA Approved',
         releaseDate: form.releaseDate,
         thumbnail: form.thumbnailUrl,
         description: form.description,

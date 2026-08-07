@@ -20,6 +20,7 @@ export async function handleSpecsIntelligencePost(req: NextRequest): Promise<Nex
   const auth=await getAdminFromRequest(req); if(auth.error)return auth.error;
   const denied=requirePermission(auth.admin,'phones:edit'); if(denied)return denied; await connectDB();
   const body=await req.json().catch(()=>({})); const action=String(body.action||'');
+  if(action==='bulk_dismiss'){const ids=Array.isArray(body.ids)?body.ids.map(String).slice(0,100):[];if(!ids.length)return NextResponse.json({error:'Select at least one signal'},{status:400});const result=await SpecsIntelligenceSignal.updateMany({_id:{$in:ids},status:'open'},{$set:{status:'dismissed',resolvedAt:new Date(),resolvedBy:auth.admin._id,resolutionNotes:'Bulk dismissed by admin.'}});await ActivityLog.create({adminId:auth.admin._id,action:'specs_intelligence_bulk_dismiss',entityType:'specs_intelligence',details:`Dismissed ${result.modifiedCount} signals`});return NextResponse.json({success:true,updated:result.modifiedCount});}
   if(action==='scan'){const result=await scanSpecsIntelligence({limit:Number(body.limit||200)});await ActivityLog.create({adminId:auth.admin._id,action:'specs_intelligence_scan',entityType:'specs_intelligence',details:JSON.stringify(result)});return NextResponse.json({success:true,...result});}
   const id=String(body.id||''); if(!id)return NextResponse.json({error:'Signal id is required'},{status:400});
   const signal:any=await SpecsIntelligenceSignal.findById(id); if(!signal)return NextResponse.json({error:'Signal not found'},{status:404});

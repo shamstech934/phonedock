@@ -23,12 +23,10 @@ export async function handleIntelligenceCenterGet(req: NextRequest): Promise<Nex
   if (denied) return denied;
   await connectDB();
 
-  const [phoneCount, pendingLaunches, openIssues, missingSpecs, missingImages, recentCandidates, pricePhoneIds] = await Promise.all([
+  const [phoneCount, pendingLaunches, qualityOpenIssues, recentCandidates, pricePhoneIds] = await Promise.all([
     Phone.countDocuments({ deletedAt: null }),
     LaunchCandidate.countDocuments({ status: 'pending' }),
     DataQualityIssue.countDocuments({ status: { $in: ['open', 'needs_review'] } }),
-    DataQualityIssue.countDocuments({ status: { $in: ['open', 'needs_review'] }, issueType: /spec/i }),
-    DataQualityIssue.countDocuments({ status: { $in: ['open', 'needs_review'] }, issueType: /image/i }),
     LaunchCandidate.find({ status: 'pending' }).sort({ createdAt: -1 }).limit(12).lean<LeanLaunchCandidate[]>(),
     PriceHistory.distinct('phoneId'),
   ]);
@@ -64,13 +62,21 @@ export async function handleIntelligenceCenterGet(req: NextRequest): Promise<Nex
 
   const completenessSample = await Phone.find({ deletedAt: null }).select('_id').sort({ updatedAt: -1 }).limit(300).lean();
   const sampleIds = completenessSample.map((phone: any) => phone._id);
-  const [specIds, imageIds] = await Promise.all([
+  const [specIds, imageIds, allPhoneIds, allSpecIds, allImageIds] = await Promise.all([
     PhoneSpecs.distinct('phoneId', { phoneId: { $in: sampleIds } }),
     PhoneImage.distinct('phoneId', { phoneId: { $in: sampleIds } }),
+    Phone.distinct('_id', { deletedAt: null }),
+    PhoneSpecs.distinct('phoneId'),
+    PhoneImage.distinct('phoneId'),
   ]);
   const withSpecs = new Set(specIds.map(String)).size;
   const withImages = new Set(imageIds.map(String)).size;
   const sampleSize = sampleIds.length || 1;
+  const allSpecSet = new Set(allSpecIds.map(String));
+  const allImageSet = new Set(allImageIds.map(String));
+  const missingSpecs = allPhoneIds.reduce((n: number, id: unknown) => n + (allSpecSet.has(String(id)) ? 0 : 1), 0);
+  const missingImages = allPhoneIds.reduce((n: number, id: unknown) => n + (allImageSet.has(String(id)) ? 0 : 1), 0);
+  const openIssues = Math.max(qualityOpenIssues, missingSpecs + missingImages);
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),

@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import { Smartphone } from 'lucide-react';
 import type { PhoneFormData } from './types';
-import { TextInput, NumberInput, SelectInput, TextArea, CheckboxInput } from './FormFields';
+import { TextInput, NumberInput, SelectInput, TextArea } from './FormFields';
 import { PHONE_AVAILABILITY_LABELS, PHONE_AVAILABILITY_STATUSES } from '@/lib/phone-lifecycle';
 
 interface SectionProps {
@@ -48,7 +48,7 @@ export default function BasicInfoSection({ form, set, brandOptions }: SectionPro
       <SelectInput
         label="PTA Status"
         value={form.ptaStatus}
-        onChange={(v) => set('ptaStatus', v)}
+        onChange={(v) => { set('ptaStatus', v); set('ptaApproved', v === 'PTA Approved'); }}
         options={[
           { value: 'PTA Approved', label: 'PTA Approved' },
           { value: 'Non-PTA', label: 'Non-PTA' },
@@ -56,11 +56,7 @@ export default function BasicInfoSection({ form, set, brandOptions }: SectionPro
         ]}
       />
       <div className="flex items-end pb-1">
-        <CheckboxInput
-          label="PTA Approved"
-          value={form.ptaApproved}
-          onChange={(v) => set('ptaApproved', v)}
-        />
+        <div className="w-full rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">PTA Approved is derived automatically from PTA Status. No duplicate checkbox is required.</div>
       </div>
       <TextInput
         label="Release Date"
