@@ -1850,6 +1850,32 @@ export async function handleAdminCrudPost(req: NextRequest, segments: string[]):
     }
   }
 
+  // ---- /api/admin/brands/bulk (BULK ACTIONS) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'brands' && segments[2] === 'bulk') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'brands:manage'); if (permCheck) return permCheck;
+    await connectDB(); const { ids, action } = await req.json();
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) return NextResponse.json({ error: 'Select between 1 and 100 brands' }, { status: 400 });
+    if (!['activate', 'deactivate', 'delete'].includes(action)) return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    if (action === 'delete') { const result = await Brand.deleteMany({ _id: { $in: ids } }); await Phone.updateMany({ brandId: { $in: ids } }, { $unset: { brandId: 1 } }); try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_brands', details: `Bulk deleted ${result.deletedCount} brands`, entityType: 'brand' }); } catch (e) { console.error('[ActivityLog]', e); } return NextResponse.json({ success: true, deleted: result.deletedCount }); }
+    const result = await Brand.updateMany({ _id: { $in: ids } }, { $set: { active: action === 'activate' } });
+    try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_brands`, details: `Bulk ${action}: ${result.modifiedCount} brands`, entityType: 'brand' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, modified: result.modifiedCount });
+  }
+
+  // ---- /api/admin/sponsors/bulk (BULK ACTIONS) ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'sponsors' && segments[2] === 'bulk') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'sponsors:manage'); if (permCheck) return permCheck;
+    await connectDB(); const { ids, action } = await req.json();
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) return NextResponse.json({ error: 'Select between 1 and 100 sponsors' }, { status: 400 });
+    if (!['activate', 'deactivate', 'delete'].includes(action)) return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    if (action === 'delete') { const result = await Sponsor.deleteMany({ _id: { $in: ids } }); try { await ActivityLog.create({ adminId: admin._id, action: 'bulk_delete_sponsors', details: `Bulk deleted ${result.deletedCount} sponsors`, entityType: 'sponsor' }); } catch (e) { console.error('[ActivityLog]', e); } return NextResponse.json({ success: true, deleted: result.deletedCount }); }
+    const result = await Sponsor.updateMany({ _id: { $in: ids } }, { $set: { active: action === 'activate' } });
+    try { await ActivityLog.create({ adminId: admin._id, action: `bulk_${action}_sponsors`, details: `Bulk ${action}: ${result.modifiedCount} sponsors`, entityType: 'sponsor' }); } catch (e) { console.error('[ActivityLog]', e); }
+    return NextResponse.json({ success: true, modified: result.modifiedCount });
+  }
+
   // ---- /api/admin/videos/bulk (BULK ACTIONS) ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'videos' && segments[2] === 'bulk') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
