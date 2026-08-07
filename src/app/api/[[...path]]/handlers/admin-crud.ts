@@ -566,7 +566,7 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      PhonePrice.find({ phoneId: phone._id }).limit(50).lean(),
+      PhonePrice.find({ phoneId: phone._id, manualOverride: { $ne: true } }).limit(50).lean(),
     ]);
     return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
   }
@@ -2150,7 +2150,7 @@ export async function handleAdminCrudPut(req: NextRequest, segments: string[]): 
     try {
       if (prices !== undefined) {
         await ensurePhonePriceVariantIndex();
-        await PhonePrice.deleteMany({ phoneId: phone._id });
+        await PhonePrice.deleteMany({ phoneId: phone._id, manualOverride: { $ne: true } });
         if (Array.isArray(prices) && prices.length > 0) await PhonePrice.insertMany(prices.map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || '', price: pr.price || 0, url: pr.url || '', inStock: pr.inStock !== false, ptaStatus: pr.ptaStatus || '', ram: normalizeMemoryLabel(pr.ram), storage: normalizeMemoryLabel(pr.storage), color: String(pr.color || '').trim(), condition: String(pr.condition || 'new').trim().toLowerCase(), warrantyType: String(pr.warrantyType || '').trim(), market: normalizePriceMarket(pr.market), currency: normalizePriceCurrency(pr.currency, pr.market), priceType: normalizeMarketPriceType({ market: pr.market, priceType: pr.priceType, ptaStatus: pr.ptaStatus }), variantKey: buildPriceVariantKey({ ram: pr.ram, storage: pr.storage, color: pr.color, ptaStatus: pr.ptaStatus, condition: pr.condition, warrantyType: pr.warrantyType, market: pr.market, currency: pr.currency, priceType: pr.priceType }) })));
         if (Array.isArray(prices) && prices.length > 0) { try { await PriceHistory.insertMany(prices.filter((pr: PriceInput) => pr.price && pr.price > 0 && normalizePriceMarket(pr.market) === 'PK' && normalizePriceCurrency(pr.currency, pr.market) === 'PKR').map((pr: PriceInput) => ({ phoneId: phone._id, storeName: pr.storeName || null, price: pr.price }))); } catch (e) { console.error('[PriceHistory]', e); } }
       }

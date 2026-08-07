@@ -51,6 +51,8 @@ interface PhonePrice {
   status: 'active' | 'inactive';
   linked?: boolean;
   verificationStatus?: 'pending' | 'verified' | 'rejected' | 'failed' | 'unlinked';
+  manualOverrideCount?: number;
+  lockedOverrideCount?: number;
 }
 
 interface PriceSource {
@@ -339,7 +341,9 @@ export default function AdminPriceTrackerPage() {
   // ── Modals ──
   const [editPriceModal, setEditPriceModal] = useState(false);
   const [editingPhone, setEditingPhone] = useState<PhonePrice | null>(null);
-  const [editForm, setEditForm] = useState({ price: '', reason: '', market: 'PK' as 'PK' | 'US', currency: 'PKR' as 'PKR' | 'USD', priceType: 'pta-approved' as 'pta-approved' | 'non-pta' | 'us-retail', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+  const [editForm, setEditForm] = useState({ price: '', reason: '', market: 'PK' as 'PK' | 'US', currency: 'PKR' as 'PKR' | 'USD', priceType: 'pta-approved' as 'pta-approved' | 'non-pta' | 'us-retail', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
+  const [priceControlRows, setPriceControlRows] = useState<{ manual: Array<Record<string, any>>; automatic: Array<Record<string, any>> }>({ manual: [], automatic: [] });
+  const [priceControlLoading, setPriceControlLoading] = useState(false);
 
   const [addListingModal, setAddListingModal] = useState(false);
   const [listingPhoneId, setListingPhoneId] = useState('');
@@ -633,18 +637,40 @@ export default function AdminPriceTrackerPage() {
           storage: editForm.storage,
           color: editForm.color,
           condition: editForm.condition,
+          lockOverride: editForm.lockOverride,
         }),
       });
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
       setEditPriceModal(false);
-      setEditForm({ price: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+      setEditForm({ price: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
       setEditingPhone(null);
       if (activeTab === 'phones') fetchPhones();
       else fetchOverview();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Action failed');
     } finally { setActionLoading(''); }
+  };
+
+  const handleResetOverride = async () => {
+    if (!editingPhone) return;
+    if (!window.confirm('Reset this exact variant to automatic pricing? The admin override will be removed, but price history will remain.')) return;
+    setActionLoading('reset-override');
+    try {
+      const res = await fetch('/api/admin/price-tracker/reset-override', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({
+          phoneId: editingPhone.phoneId, market: editForm.market, currency: editForm.currency, priceType: editForm.priceType,
+          ptaStatus: editForm.ptaStatus, warrantyType: editForm.warrantyType, ram: editForm.ram, storage: editForm.storage, color: editForm.color, condition: editForm.condition,
+        }),
+      });
+      const d = await readApiResponse(res);
+      if (!res.ok) throw new Error(d.error || 'Failed to reset manual override');
+      setActionMessage(d.removed ? 'Manual override removed. Automatic verified pricing is active for this exact variant.' : 'No manual override existed for this exact variant.');
+      setEditPriceModal(false); setEditingPhone(null);
+      if (activeTab === 'phones') fetchPhones(); else fetchOverview();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Reset failed'); }
+    finally { setActionLoading(''); }
   };
 
   const handleAddListing = async () => {
@@ -960,10 +986,17 @@ export default function AdminPriceTrackerPage() {
     }
   };
 
-  const openEditPriceModal = (phone: PhonePrice) => {
+  const openEditPriceModal = async (phone: PhonePrice) => {
     setEditingPhone(phone);
-    setEditForm({ price: String(phone.currentPrice), reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
+    setEditForm({ price: String(phone.currentPrice), reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
+    setPriceControlRows({ manual: [], automatic: [] });
     setEditPriceModal(true);
+    setPriceControlLoading(true);
+    try {
+      const res = await fetch(`/api/admin/price-tracker/price-control/${phone.phoneId}`, { credentials: 'include' });
+      const data = await readApiResponse(res) as { manual?: Array<Record<string, any>>; automatic?: Array<Record<string, any>>; error?: string };
+      if (res.ok) setPriceControlRows({ manual: data.manual || [], automatic: data.automatic || [] });
+    } finally { setPriceControlLoading(false); }
   };
 
   // openAddListingModal is available for future use when adding listing buttons to phone rows
@@ -1298,9 +1331,10 @@ export default function AdminPriceTrackerPage() {
                         ) : <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge className={p.mode === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}>
-                          {p.mode}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge className={p.mode === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}>{p.mode}</Badge>
+                          {Number(p.lockedOverrideCount || 0) > 0 && <span className="text-[10px] font-medium text-amber-700">{p.lockedOverrideCount} locked override{Number(p.lockedOverrideCount) === 1 ? '' : 's'}</span>}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 max-w-[120px] truncate">{p.source || '—'}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">{timeAgo(p.lastUpdated)}</td>
@@ -1312,7 +1346,7 @@ export default function AdminPriceTrackerPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
-                          <button onClick={() => openEditPriceModal(p)} className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Edit Price</button>
+                          <button onClick={() => openEditPriceModal(p)} className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Price Control</button>
                           <button onClick={() => openViewHistory(p)} className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">History</button>
                           <button
                             onClick={() => handleToggleTracking(p.phoneId)}
@@ -2331,14 +2365,15 @@ export default function AdminPriceTrackerPage() {
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
         <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-xl">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-gray-900">Edit Price</h2>
+            <h2 className="text-sm font-bold text-gray-900">Price Control</h2>
             <button onClick={() => setEditPriceModal(false)} className="text-gray-400 hover:text-gray-600">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-xs text-gray-500 mb-4">
-            {editingPhone.phoneName} — Current: {formatPKR(editingPhone.currentPrice)}
-          </p>
+          <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3">
+            <p className="text-xs font-semibold text-blue-900">{editingPhone.phoneName} — Current public: {formatPKR(editingPhone.currentPrice)}</p>
+            <p className="mt-1 text-[11px] leading-5 text-blue-700">Admin override has final authority for the exact market + PTA class + RAM + storage + color variant. Saving the same identity updates it; it does not create a duplicate.</p>
+          </div>
           <div className="space-y-3">
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">New Price ({editForm.currency}) *</label>
@@ -2375,6 +2410,10 @@ export default function AdminPriceTrackerPage() {
               <label className="text-xs text-gray-500 font-medium mb-1 block">Condition</label>
               <select value={editForm.condition} onChange={e => setEditForm(f => ({ ...f, condition: e.target.value }))} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm bg-white"><option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open Box</option></select>
             </div>
+            <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <input type="checkbox" checked={editForm.lockOverride} onChange={e => setEditForm(f => ({ ...f, lockOverride: e.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
+              <span><span className="block text-xs font-semibold text-amber-900">Lock this exact manual price</span><span className="mt-0.5 block text-[11px] leading-4 text-amber-700">Recommended when correcting a wrong automatic price. Auto sync may keep recording retailer prices, but cannot replace this public variant price until Reset to Auto is used.</span></span>
+            </label>
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Warranty Type</label>
               <select
@@ -2389,20 +2428,19 @@ export default function AdminPriceTrackerPage() {
               </select>
             </div>
           </div>
-          <div className="flex gap-2 mt-5">
-            <button
-              onClick={() => { setEditPriceModal(false); setEditingPhone(null); }}
-              className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleUpdatePrice}
-              disabled={actionLoading === 'update-price' || !editForm.price}
-              className="flex-1 h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {actionLoading === 'update-price' ? 'Saving...' : 'Save Price'}
-            </button>
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+            <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-gray-800">Existing price controls</span><span className="text-[10px] text-gray-500">{priceControlRows.manual.length} manual • {priceControlRows.automatic.length} auto</span></div>
+            {priceControlLoading ? <div className="py-3 text-center text-xs text-gray-500">Loading price identities…</div> : (priceControlRows.manual.length === 0 && priceControlRows.automatic.length === 0) ? <div className="py-3 text-center text-xs text-gray-500">No existing price records yet.</div> : <div className="max-h-36 space-y-1.5 overflow-y-auto">
+              {priceControlRows.manual.slice(0, 8).map((row, i) => <button type="button" key={`m-${row.id || i}`} onClick={() => setEditForm(f => ({ ...f, price: String(row.price || ''), market: row.market === 'US' ? 'US' : 'PK', currency: row.currency === 'USD' ? 'USD' : 'PKR', priceType: row.priceType || 'pta-approved', ptaStatus: row.ptaStatus || '', ram: row.ram || '', storage: row.storage || '', color: row.color || '', condition: row.condition || 'new', warrantyType: row.warrantyType || '', reason: row.reason || '', lockOverride: row.locked !== false }))} className="flex w-full items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-2 text-left hover:bg-amber-100"><span className="text-[11px] text-amber-900"><b>MANUAL{row.locked ? ' • LOCKED' : ''}</b> · {row.market}/{row.priceType} · {[row.ram,row.storage,row.color].filter(Boolean).join(' / ') || 'base'}</span><span className="text-[11px] font-bold text-amber-900">{row.currency} {Number(row.price || 0).toLocaleString()}</span></button>)}
+              {priceControlRows.automatic.slice(0, 8).map((row, i) => <div key={`a-${row.id || i}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2"><span className="text-[11px] text-gray-600"><b>AUTO</b> · {row.source || 'source'} · {row.market}/{row.priceType} · {[row.ram,row.storage,row.color].filter(Boolean).join(' / ') || 'base'}</span><span className="text-[11px] font-semibold text-gray-800">{row.currency} {Number(row.price || 0).toLocaleString()}</span></div>)}
+            </div>}
+            <p className="mt-2 text-[10px] leading-4 text-gray-500">Click an existing manual row to edit that exact identity. Saving uses upsert, so the same variant is updated instead of duplicated.</p>
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <button onClick={() => { setEditPriceModal(false); setEditingPhone(null); }} className="h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+            <button onClick={handleResetOverride} disabled={actionLoading === 'reset-override'} className="h-10 rounded-xl border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">{actionLoading === 'reset-override' ? 'Resetting...' : 'Reset to Auto'}</button>
+            <button onClick={handleUpdatePrice} disabled={actionLoading === 'update-price' || !editForm.price} className="h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{actionLoading === 'update-price' ? 'Saving...' : (editForm.lockOverride ? 'Save & Lock' : 'Save Override')}</button>
           </div>
         </div>
       </div>

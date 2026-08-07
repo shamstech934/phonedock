@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/lib/useAdmin';
 import { toast } from '@/hooks/use-toast';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   ShieldCheck, AlertTriangle, AlertCircle, Info, XCircle,
   Smartphone, Image, DollarSign, Copy, Ghost, Clock, Upload,
@@ -727,6 +728,38 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
         Missing-data counters cover the complete working catalog: Published + Draft/Review. Archived and soft-deleted records are excluded. Counts are read live from MongoDB and do not depend on a completed scan.
       </div>
 
+      {/* Central issue router: keep the sidebar clean and send each data type to its specialist workspace. */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Fix by data area</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Start here. Each button opens the specialist workspace for that kind of data.</p>
+          </div>
+          <Link href="/admin/data-quality?tab=issues" className="text-xs font-semibold text-blue-600 hover:text-blue-700">View all issues</Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+          {[
+            { label: 'Prices', value: summary.queues.missingPrices + summary.queues.stalePrices, href: '/admin/price-tracker', icon: DollarSign, detail: 'PTA / Non-PTA / USA, overrides & history' },
+            { label: 'Specifications', value: summary.queues.missingSpecs, href: '/admin/specs-intelligence', icon: Smartphone, detail: 'Missing and conflicting specs' },
+            { label: 'Images', value: summary.queues.missingImages, href: '/admin/image-intelligence', icon: Image, detail: 'Missing, broken and duplicate images' },
+            { label: 'Lifecycle', value: 0, href: '/admin/launch-center', icon: Clock, detail: 'Upcoming, released and discontinued' },
+            { label: 'Incoming data', value: summary.severity.total, href: '/admin/collector/review', icon: ScanSearch, detail: 'Review collected changes before apply' },
+          ].map(item => (
+            <Link key={item.label} href={item.href} className="group rounded-xl border border-gray-100 p-4 hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
+              <div className="flex items-center justify-between gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gray-50 group-hover:bg-white flex items-center justify-center"><item.icon className="w-4 h-4 text-gray-600" /></div>
+                {item.value > 0 ? <span className="text-sm font-bold text-gray-900">{item.value.toLocaleString()}</span> : <span className="text-[10px] font-semibold text-green-600">Open</span>}
+              </div>
+              <p className="mt-3 text-sm font-semibold text-gray-900">{item.label}</p>
+              <p className="mt-1 text-[11px] leading-4 text-gray-500">{item.detail}</p>
+            </Link>
+          ))}
+        </div>
+        <div className="mt-4 rounded-xl bg-gray-50 px-4 py-3 text-[11px] text-gray-600">
+          Easy workflow: <strong>scan</strong> → open the affected data area → review suggestions → apply or lock the final value. Data Quality remains the command center; specialist intelligence pages do the detailed work.
+        </div>
+      </div>
+
       {/* Severity + Queue Rows */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Severity Breakdown */}
@@ -764,17 +797,17 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
           <h2 className="text-sm font-semibold text-gray-500 mb-3">Data Queues</h2>
           <div className="space-y-2">
             {[
-              { label: 'Missing Specs', count: summary.queues.missingSpecs, icon: Smartphone, tab: 'missing-specs' },
-              { label: 'Missing Images', count: summary.queues.missingImages, icon: Image, tab: 'missing-images' },
-              { label: 'Missing Prices', count: summary.queues.missingPrices, icon: DollarSign, tab: 'missing-prices' },
+              { label: 'Missing Specs', count: summary.queues.missingSpecs, icon: Smartphone, tab: 'missing-specs', href: '/admin/specs-intelligence' },
+              { label: 'Missing Images', count: summary.queues.missingImages, icon: Image, tab: 'missing-images', href: '/admin/image-intelligence' },
+              { label: 'Missing Prices', count: summary.queues.missingPrices, icon: DollarSign, tab: 'missing-prices', href: '/admin/price-tracker' },
               { label: 'Duplicate Candidates', count: summary.queues.duplicates, icon: Copy, tab: 'duplicates' },
               { label: 'Orphan Records', count: summary.queues.orphans, icon: Ghost, tab: 'orphans' },
-              { label: 'Stale Prices', count: summary.queues.stalePrices, icon: Clock, tab: 'stale-prices' },
-              { label: 'Failed Imports', count: summary.queues.failedImports, icon: Upload, tab: 'import-warnings' },
+              { label: 'Stale Prices', count: summary.queues.stalePrices, icon: Clock, tab: 'stale-prices', href: '/admin/price-tracker' },
+              { label: 'Failed Imports', count: summary.queues.failedImports, icon: Upload, tab: 'import-warnings', href: '/admin/import-v2' },
             ].map(q => (
               <button
                 key={q.tab}
-                onClick={() => { const url = new URL(window.location.href); url.searchParams.set('tab', q.tab); window.history.pushState({}, '', url); window.dispatchEvent(new PopStateEvent('popstate')); }}
+                onClick={() => { if (q.href) { window.location.href = q.href; return; } const url = new URL(window.location.href); url.searchParams.set('tab', q.tab); window.history.pushState({}, '', url); window.dispatchEvent(new PopStateEvent('popstate')); }}
                 className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors text-left"
               >
                 <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">

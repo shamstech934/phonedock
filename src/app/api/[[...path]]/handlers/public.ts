@@ -523,7 +523,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         currentSourcePrice: { $gt: 0 },
       }).select('ram storage color condition warrantyType ptaStatus market currency priceType currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority market currency defaultPriceType').lean(),
       PhonePrice.find({ phoneId: phone._id, price: { $gt: 0 }, inStock: { $ne: false } })
-        .select('storeName price url ram storage color condition warrantyType ptaStatus market currency priceType variantKey')
+        .select('storeName price url ram storage color condition warrantyType ptaStatus market currency priceType variantKey manualOverride overrideLocked overrideReason autoDetectedPrice lastAutoDetectedAt')
         .lean(),
       PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', newPrice: { $gt: 0 } })
         .sort({ capturedAt: -1 })
@@ -565,6 +565,11 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       source: row.storeName || 'Admin verified',
       sourceUrl: row.url || '',
       sourceKind: 'manual' as const,
+      manualOverride: row.manualOverride === true,
+      overrideLocked: row.overrideLocked === true,
+      overrideReason: row.overrideReason || '',
+      autoDetectedPrice: Number(row.autoDetectedPrice || 0),
+      lastAutoDetectedAt: row.lastAutoDetectedAt || null,
     }));
     const historyVariants = (manualVariantHistoryRows as any[]).map(row => ({
       ram: normalizeMemoryLabel(row.ram),
@@ -589,7 +594,11 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       // Live verified retailer/admin rows outrank historical snapshots. History
       // only fills a variant that no longer has a live row, and is already
       // newest-first so the first historical identity is the latest one.
-      for (const row of [...retailerVariants, ...manualVariants, ...historyVariants]) {
+      // Authoritative admin overrides must win over automatic retailer rows
+      // for the exact same market/variant identity.
+      const lockedManual = manualVariants.filter(row => row.manualOverride && row.overrideLocked);
+      const unlockedManual = manualVariants.filter(row => !row.manualOverride || !row.overrideLocked);
+      for (const row of [...lockedManual, ...retailerVariants, ...unlockedManual, ...historyVariants]) {
         if (row.priceClass === 'unknown' || row.price <= 0) continue;
         const key = variantIdentity(row);
         if (!byIdentity.has(key)) byIdentity.set(key, row);

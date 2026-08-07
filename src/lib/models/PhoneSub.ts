@@ -72,10 +72,16 @@ const PhonePriceSchema = new Schema({
   variantKey: { type: String, default: '', index: true },
   lastChecked: { type: Date, default: null },
   validityStatus: { type: String, enum: ['valid', 'stale', 'unknown'], default: 'unknown' },
+  manualOverride: { type: Boolean, default: false, index: true },
+  overrideLocked: { type: Boolean, default: false, index: true },
+  overrideReason: { type: String, default: '' },
+  autoDetectedPrice: { type: Number, default: 0 },
+  lastAutoDetectedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 PhonePriceSchema.index({ phoneId: 1, storeName: 1, market: 1, currency: 1, variantKey: 1 }, { unique: true });
 PhonePriceSchema.index({ phoneId: 1, market: 1, currency: 1, priceType: 1, inStock: 1 });
+PhonePriceSchema.index({ phoneId: 1, market: 1, priceType: 1, variantKey: 1, manualOverride: 1, overrideLocked: 1 });
 
 export const PhonePrice = mongoose.models.PhonePrice || mongoose.model('PhonePrice', PhonePriceSchema);
 

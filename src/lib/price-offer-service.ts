@@ -1,4 +1,4 @@
-import { Phone, PriceHistory } from '@/lib/models';
+import { Phone, PhonePrice, PriceHistory } from '@/lib/models';
 import { PhoneRetailListing } from '@/lib/models/PriceTracker';
 import { buildPriceVariantKey } from '@/lib/price-variant';
 import {
@@ -43,9 +43,14 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
   const phone = await Phone.findById(phoneId);
   if (!phone) return { slug: null, changed: false, bestPrice: 0, offerCount: 0 };
 
-  const rows = await PhoneRetailListing.find({ phoneId, enabled: true })
-    .populate('sourceId', 'name sourceType priority trusted enabled status market currency defaultPriceType')
-    .lean();
+  const [rows, manualOverrideRows] = await Promise.all([
+    PhoneRetailListing.find({ phoneId, enabled: true })
+      .populate('sourceId', 'name sourceType priority trusted enabled status market currency defaultPriceType')
+      .lean(),
+    PhonePrice.find({ phoneId, manualOverride: true, overrideLocked: true, inStock: { $ne: false }, price: { $gt: 0 }, condition: 'new' })
+      .select('price market currency priceType ptaStatus ram storage color condition warrantyType variantKey overrideReason')
+      .lean(),
+  ]);
 
   const offers: VerifiedOfferCandidate[] = (rows as unknown as PopulatedRetailListing[]).map((row) => {
     const source = (row.sourceId || {}) as PopulatedSource;
@@ -71,6 +76,20 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     };
   });
 
+  const overrideRows = (manualOverrideRows as Array<Record<string, unknown>>).map((row) => ({
+    price: Number(row.price || 0),
+    market: String(row.market || 'PK'),
+    currency: String(row.currency || (row.market === 'US' ? 'USD' : 'PKR')),
+    priceType: String(row.priceType || 'unknown'),
+    ptaStatus: String(row.ptaStatus || ''),
+    ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''),
+    condition: String(row.condition || 'new'), warrantyType: String(row.warrantyType || ''), variantKey: String(row.variantKey || ''),
+  })).filter(row => row.price > 0);
+  const bestOverride = (type: string) => overrideRows.filter(row => row.priceType === type && row.condition === 'new').sort((a,b) => a.price - b.price)[0];
+  const overridePta = bestOverride('pta-approved');
+  const overrideNonPta = bestOverride('non-pta');
+  const overrideUs = bestOverride('us-retail');
+
   const phonePriceClass = normalizePtaPriceClass(phone.ptaStatus, phone.ptaApproved);
   const selection = selectBestVerifiedOffer({
     offers,
@@ -80,29 +99,38 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
   });
   const metadata: Record<string, unknown> = {
     verifiedOfferCount: selection.eligibleCount,
-    bestPtaPricePKR: selection.bestPta?.price || 0,
-    bestNonPtaPricePKR: selection.bestNonPta?.price || 0,
-    bestUsPriceUSD: selection.bestUs?.price || 0,
+    bestPtaPricePKR: overridePta?.price || selection.bestPta?.price || 0,
+    bestNonPtaPricePKR: overrideNonPta?.price || selection.bestNonPta?.price || 0,
+    bestUsPriceUSD: overrideUs?.price || selection.bestUs?.price || 0,
     bestPriceListingId: selection.best?.listingId || null,
     bestPriceSourceId: selection.best?.sourceId || null,
     bestPriceSelectedAt: selection.best ? new Date() : null,
     lastPriceCheckedAt: new Date(),
   };
 
-  if (!selection.best || phone.manualLock === true || phonePriceClass === 'unknown') {
+  const canonicalOverride = phonePriceClass === 'pta-approved' ? overridePta : phonePriceClass === 'non-pta' ? overrideNonPta : undefined;
+  const canonicalNextPrice = canonicalOverride?.price || selection.best?.price || 0;
+  if (canonicalNextPrice <= 0 || phonePriceClass === 'unknown') {
     await Phone.findByIdAndUpdate(phoneId, { $set: metadata });
     return {
       slug: phone.slug || null,
       changed: false,
-      bestPrice: selection.best?.price || 0,
-      offerCount: selection.eligibleCount,
+      bestPrice: canonicalNextPrice,
+      offerCount: selection.eligibleCount + overrideRows.length,
     };
+  }
+
+  // A locked exact admin override is authoritative for its bucket. Phone-level
+  // manualLock remains a legacy global emergency stop when no override exists.
+  if (phone.manualLock === true && !canonicalOverride) {
+    await Phone.findByIdAndUpdate(phoneId, { $set: metadata });
+    return { slug: phone.slug || null, changed: false, bestPrice: canonicalNextPrice, offerCount: selection.eligibleCount + overrideRows.length };
   }
 
   const currentPrice = Number(phone.currentPrice || phone.pricePKR || 0);
   const state = buildVerifiedPriceState({
     currentPrice,
-    nextPrice: selection.best.price,
+    nextPrice: canonicalNextPrice,
     originalPrice: phone.originalPricePKR,
   });
   const changed = currentPrice !== selection.best.price;
@@ -113,7 +141,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     originalPricePKR: state.originalPrice,
     priceChange: state.difference,
     percentageChange: state.percentageChange,
-    priceMode: 'automatic',
+    priceMode: canonicalOverride ? 'manual' : 'automatic',
     pricePKR: state.currentPrice,
   };
 
@@ -138,7 +166,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     try {
       await PriceHistory.create({
         phoneId,
-        storeName: selection.best.sourceName || null,
+        storeName: canonicalOverride ? 'Admin Override' : (selection.best?.sourceName || null),
         price: state.currentPrice,
       });
     } catch (error) {
@@ -150,7 +178,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     slug: phone.slug || null,
     changed,
     bestPrice: state.currentPrice,
-    offerCount: selection.eligibleCount,
+    offerCount: selection.eligibleCount + overrideRows.length,
   };
 }
 

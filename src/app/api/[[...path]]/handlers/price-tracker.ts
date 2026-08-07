@@ -12,7 +12,7 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { PAKISTAN_OFFICIAL_PRICE_SOURCES } from '@/lib/pakistan-price-sources';
 import { USA_OFFICIAL_PRICE_SOURCES } from '@/lib/usa-price-sources';
 import { discoverCatalogProductUrls, isProbableProductUrl, matchProductUrlToPhone, summarizeCatalogDiscoveryDiagnostics } from '@/lib/price-catalog-discovery';
-import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
+import { recomputeBestPriceForPhone, resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
 import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
@@ -271,10 +271,20 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     ]);
 
     const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
-    const listingRows = await PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
-      .sort({ verificationStatus: 1, lastSuccessAt: -1, createdAt: 1 })
-      .populate('sourceId', 'name sourceType')
-      .lean();
+    const [listingRows, overrideRows] = await Promise.all([
+      PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
+        .sort({ verificationStatus: 1, lastSuccessAt: -1, createdAt: 1 })
+        .populate('sourceId', 'name sourceType')
+        .lean(),
+      PhonePrice.find({ phoneId: { $in: phoneIds }, manualOverride: true, price: { $gt: 0 } })
+        .select('phoneId overrideLocked market priceType variantKey')
+        .lean(),
+    ]);
+    const overrideStats = new Map<string, { total: number; locked: number }>();
+    for (const row of overrideRows as Array<{ phoneId: Types.ObjectId; overrideLocked?: boolean }>) {
+      const key = String(row.phoneId); const current = overrideStats.get(key) || { total: 0, locked: 0 };
+      current.total += 1; if (row.overrideLocked) current.locked += 1; overrideStats.set(key, current);
+    }
     const listingByPhone = new Map<string, typeof listingRows[number]>();
     const verificationRank: Record<string, number> = { verified: 4, pending: 3, failed: 2, rejected: 1 };
     for (const listing of listingRows) {
@@ -315,6 +325,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
           lastUpdated: (listing?.lastSuccessAt || listing?.lastCheckedAt || p.lastPriceCheckedAt || p.lastPriceChangedAt || '').toString(),
           status: listing?.enabled === false ? 'inactive' : 'active',
           manualLock: Boolean(p.manualLock),
+          manualOverrideCount: overrideStats.get(p._id.toString())?.total || 0,
+          lockedOverrideCount: overrideStats.get(p._id.toString())?.locked || 0,
         };
       }),
       total,
@@ -323,6 +335,36 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       limit,
       totalPages: Math.ceil(total / limit),
     });
+  }
+
+  // ---- /api/admin/price-tracker/price-control/:phoneId ----
+  if (segments.length === 4 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'price-control') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
+    await connectDB();
+    const phoneId = segments[3];
+    const phone = await Phone.findById(phoneId).select('_id modelName slug priceMode manualLock manualLockReason bestPtaPricePKR bestNonPtaPricePKR bestUsPriceUSD').lean();
+    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+    const [manualRows, autoRows] = await Promise.all([
+      PhonePrice.find({ phoneId, manualOverride: true }).sort({ updatedAt: -1 }).lean(),
+      PhoneRetailListing.find({ phoneId, enabled: true, currentSourcePrice: { $gt: 0 } })
+        .populate('sourceId', 'name trusted enabled status market currency defaultPriceType')
+        .sort({ lastSuccessAt: -1, updatedAt: -1 }).lean(),
+    ]);
+    const manual = (manualRows as Array<Record<string, unknown>>).map(row => ({
+      id: String(row._id || ''), price: Number(row.price || 0), market: normalizePriceMarket(row.market),
+      currency: normalizePriceCurrency(row.currency, row.market), priceType: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
+      ptaStatus: String(row.ptaStatus || ''), ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''), condition: String(row.condition || 'new'), warrantyType: String(row.warrantyType || ''),
+      variantKey: String(row.variantKey || ''), locked: row.overrideLocked === true, reason: String(row.overrideReason || ''), autoDetectedPrice: Number(row.autoDetectedPrice || 0), lastAutoDetectedAt: row.lastAutoDetectedAt || null, updatedAt: row.updatedAt || null,
+    }));
+    const automatic = (autoRows as Array<Record<string, any>>).map(row => { const source = row.sourceId || {}; return ({
+      id: String(row._id || ''), source: String(source.name || ''), trusted: source.trusted === true, verificationStatus: String(row.verificationStatus || ''), price: Number(row.currentSourcePrice || 0),
+      market: normalizePriceMarket(row.market || source.market), currency: normalizePriceCurrency(row.currency || source.currency, row.market || source.market),
+      priceType: normalizeMarketPriceType({ market: row.market || source.market, priceType: row.priceType || source.defaultPriceType, ptaStatus: row.ptaStatus }), ptaStatus: String(row.ptaStatus || ''),
+      ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''), condition: String(row.condition || 'new'), warrantyType: String(row.warrantyType || ''), variantKey: String(row.variantKey || ''),
+      lastSuccessAt: row.lastSuccessAt || null, productUrl: String(row.productUrl || ''),
+    }); });
+    return NextResponse.json({ phone: { id: phone._id.toString(), name: phone.modelName, slug: phone.slug, priceMode: phone.priceMode, manualLock: phone.manualLock, manualLockReason: phone.manualLockReason, bestPtaPricePKR: phone.bestPtaPricePKR || 0, bestNonPtaPricePKR: phone.bestNonPtaPricePKR || 0, bestUsPriceUSD: phone.bestUsPriceUSD || 0 }, manual, automatic });
   }
 
   // ---- /api/admin/price-tracker/sources ----
@@ -991,7 +1033,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition, market, currency, priceType } = body;
+    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition, market, currency, priceType, lockOverride = true } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number') {
@@ -1008,11 +1050,25 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     if (normalizedMarket === 'US' && normalizedCurrency !== 'USD') return NextResponse.json({ error: 'USA retail prices must be stored in USD' }, { status: 400 });
     if (normalizedMarket === 'PK' && normalizedCurrency !== 'PKR') return NextResponse.json({ error: 'Pakistan market prices must be stored in PKR' }, { status: 400 });
     const priceClass = normalizedPriceType;
-    const oldPrice = normalizedPriceType === 'us-retail'
+    const normalizedRam = normalizeMemoryLabel(ram);
+    const normalizedStorage = normalizeMemoryLabel(storage);
+    const normalizedColor = String(color || '').trim();
+    const normalizedCondition = String(condition || 'new').trim().toLowerCase();
+    const normalizedWarranty = String(warrantyType || '').trim();
+    const overrideVariantKey = buildPriceVariantKey({
+      ram: normalizedRam, storage: normalizedStorage, color: normalizedColor,
+      ptaStatus: priceClass, condition: normalizedCondition, warrantyType: normalizedWarranty,
+      market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType,
+    });
+    const existingOverride = await PhonePrice.findOne({
+      phoneId: phone._id, storeName: 'Admin Override', market: normalizedMarket,
+      currency: normalizedCurrency, variantKey: overrideVariantKey,
+    }).lean();
+    const oldPrice = Number(existingOverride?.price || (normalizedPriceType === 'us-retail'
       ? Number(phone.bestUsPriceUSD || 0)
       : normalizedPriceType === 'non-pta'
         ? Number(phone.bestNonPtaPricePKR || 0)
-        : Number(phone.bestPtaPricePKR || phone.currentPrice || phone.pricePKR || 0);
+        : Number(phone.bestPtaPricePKR || phone.currentPrice || phone.pricePKR || 0)));
     const difference = newPrice - oldPrice;
     const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
 
@@ -1021,10 +1077,24 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     else if (difference < 0) changeType = 'decrease';
     else if (oldPrice === 0 && newPrice > 0) changeType = 'correction';
 
+    // Persist one authoritative admin override per exact market/variant identity.
+    // Upsert prevents duplicate rows when an admin corrects the same variant again.
+    await PhonePrice.findOneAndUpdate(
+      { phoneId: phone._id, storeName: 'Admin Override', market: normalizedMarket, currency: normalizedCurrency, variantKey: overrideVariantKey },
+      { $set: {
+        price: newPrice, url: '', sourceUrl: '', inStock: true,
+        market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType,
+        ptaStatus: normalizedPriceType === 'pta-approved' ? 'PTA Approved' : normalizedPriceType === 'non-pta' ? 'Non-PTA' : '',
+        ram: normalizedRam, storage: normalizedStorage, color: normalizedColor, condition: normalizedCondition, warrantyType: normalizedWarranty,
+        variantKey: overrideVariantKey, validityStatus: 'valid', manualOverride: true, overrideLocked: Boolean(lockOverride),
+        overrideReason: String(reason || '').trim().slice(0, 500),
+      } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
     // Update Phone document
     const updates: Record<string, unknown> = {
       lastPriceChangedAt: new Date(),
-      priceMode: 'manual',
       lastPriceCheckedAt: new Date(),
       ...(normalizedPriceType === 'us-retail' ? { bestUsPriceUSD: newPrice } : normalizedPriceType === 'pta-approved' ? { bestPtaPricePKR: newPrice } : { bestNonPtaPricePKR: newPrice }),
     };
@@ -1066,12 +1136,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         market: normalizedMarket,
         currency: normalizedCurrency,
         priceType: normalizedPriceType,
-        ram: normalizeMemoryLabel(ram),
-        storage: normalizeMemoryLabel(storage),
-        color: String(color || '').trim(),
-        condition: String(condition || 'new').trim().toLowerCase(),
-        warrantyType: String(warrantyType || '').trim(),
-        variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus: priceClass, condition, warrantyType, market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType }),
+        ram: normalizedRam,
+        storage: normalizedStorage,
+        color: normalizedColor,
+        condition: normalizedCondition,
+        warrantyType: normalizedWarranty,
+        variantKey: overrideVariantKey,
         capturedAt: new Date(),
       });
     } catch (e) { console.error('[PriceTrackerHistory]', e); }
@@ -1105,7 +1175,30 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       difference,
       percentageChange,
       changeType,
+      overrideLocked: Boolean(lockOverride),
+      variantKey: overrideVariantKey,
     });
+  }
+
+  // ---- /api/admin/price-tracker/reset-override ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'reset-override') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const { phoneId, market, currency, priceType, ptaStatus, ram, storage, color, condition, warrantyType } = body;
+    if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
+    const phone = await Phone.findById(phoneId);
+    if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
+    const normalizedMarket = normalizePriceMarket(market);
+    const normalizedCurrency = normalizePriceCurrency(currency, normalizedMarket);
+    const normalizedPriceType = normalizeMarketPriceType({ market: normalizedMarket, priceType, ptaStatus });
+    const variantKey = buildPriceVariantKey({ ram, storage, color, ptaStatus: normalizedPriceType, condition, warrantyType, market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType });
+    const removed = await PhonePrice.findOneAndDelete({ phoneId: phone._id, storeName: 'Admin Override', market: normalizedMarket, currency: normalizedCurrency, variantKey, manualOverride: true });
+    const recomputed = await recomputeBestPriceForPhone(phoneId);
+    try { await ActivityLog.create({ adminId: admin._id, action: 'reset_price_override', details: `Reset ${normalizedMarket}/${normalizedPriceType} manual override for ${phone.modelName}${removed ? '' : ' (no override existed)'}`, entityType: 'phone', entityId: phone._id?.toString() }); } catch (e) { console.error('[ActivityLog]', e); }
+    revalidatePricePages(phone.slug);
+    return NextResponse.json({ success: true, removed: Boolean(removed), variantKey, recomputed });
   }
 
   // ---- /api/admin/price-tracker/sources ----

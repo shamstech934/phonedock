@@ -36,12 +36,12 @@ const adminLinks: NavLink[] = [
     { label: 'Review Engine', href: '/admin/review-engine', permission: 'phones:edit' },
     { label: 'Sponsors', href: '/admin/sponsors', permission: 'sponsors:read' },
   ]},
-  { label: 'Data Operations', href: '/admin/data-operations', icon: Database, children: [
+  { label: 'Data & Quality', href: '/admin/data-operations', icon: Database, children: [
     { label: 'Import', href: '/admin/import-v2', permission: 'imports:read' },
     { label: 'Collector Workspace', href: '/admin/collector', permission: 'collectors:read' },
     { label: 'Sync', href: '/admin/sync', permission: 'phones:edit' },
     { label: 'Data Quality', href: '/admin/data-quality', permission: 'data-quality:read' },
-    { label: 'Price Tracker', href: '/admin/price-tracker', permission: 'prices:read' },
+    { label: 'Price Control', href: '/admin/price-tracker', permission: 'prices:read' },
   ]},
   { label: 'Intelligence', href: '/admin/intelligence', icon: BrainCircuit, children: [
     { label: 'Launch Center', href: '/admin/launch-center', permission: 'settings:read' },
@@ -199,7 +199,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const hasPermission = (permission?: string) => !permission || (rolePerms[admin.role] || []).includes(permission);
   const simpleDestinations = new Set([
     '/admin/dashboard', '/admin/phones', '/admin/brands', '/admin/news', '/admin/videos', '/admin/reviews',
-    '/admin/import-v2', '/admin/data-quality', '/admin/price-tracker', '/admin/homepage-builder', '/admin/settings',
+    '/admin/import-v2', '/admin/collector', '/admin/data-quality', '/admin/price-tracker', '/admin/homepage-builder', '/admin/settings',
   ]);
   const filteredLinks = adminLinks
     .map(link => link.children

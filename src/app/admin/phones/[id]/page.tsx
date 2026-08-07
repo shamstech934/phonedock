@@ -4,7 +4,7 @@ import { readApiResponse } from '@/lib/client/api-response';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Edit } from 'lucide-react';
+import { ChevronLeft, Edit, DollarSign, Image as ImageIcon, ListChecks, Rocket, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAdmin } from '@/lib/useAdmin';
@@ -44,6 +44,9 @@ interface PhoneViewData {
   trending?: boolean;
   upcoming?: boolean;
   pricePKR?: number;
+  thumbnail?: string;
+  images?: string[];
+  status?: string;
   description?: string;
   cameraScore?: number;
   performanceScore?: number;
@@ -75,6 +78,19 @@ export default function AdminPhoneViewPage() {
   if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
   if (!phone) return <div className="text-center py-12 text-muted-foreground">Phone not found</div>;
 
+  const specValues = Object.values(phone.specs || {}).filter(value => String(value || '').trim());
+  const hasPrice = Number(phone.pricePKR || 0) > 0 || Boolean(phone.prices?.some(row => Number(row.price || 0) > 0));
+  const hasImages = Boolean(phone.thumbnail || phone.images?.some(Boolean));
+  const hasRatings = Number(phone.overallRating || 0) > 0 || [phone.cameraScore, phone.performanceScore, phone.batteryScore, phone.displayScore, phone.valueScore].some(value => Number(value || 0) > 0);
+  const lifecycleReady = Boolean(phone.releaseDate || phone.upcoming || phone.status);
+  const healthItems = [
+    { label: 'Price', ready: hasPrice, detail: hasPrice ? 'Price data available' : 'Needs price review', href: '/admin/price-tracker', icon: DollarSign },
+    { label: 'Specs', ready: specValues.length >= 8, detail: `${specValues.length} filled fields`, href: '/admin/specs-intelligence', icon: ListChecks },
+    { label: 'Images', ready: hasImages, detail: hasImages ? 'Image available' : 'Missing primary image', href: '/admin/image-intelligence', icon: ImageIcon },
+    { label: 'Ratings', ready: hasRatings, detail: hasRatings ? 'Rating data available' : 'No rating yet', href: '/admin/review-engine', icon: ShieldCheck },
+    { label: 'Lifecycle', ready: lifecycleReady, detail: phone.upcoming ? 'Upcoming' : (phone.releaseDate ? 'Release date set' : 'Needs lifecycle review'), href: '/admin/launch-center', icon: Rocket },
+  ];
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -86,6 +102,28 @@ export default function AdminPhoneViewPage() {
           </div>
         </div>
         <Link href={`/admin/phones/${id}/edit`} className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"><Edit className="w-4 h-4" /> Edit</Link>
+      </div>
+
+      <div className="card-premium p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Data Health</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">One-click access to the right workspace instead of hunting through the admin.</p>
+          </div>
+          <Link href={`/admin/data-quality?tab=issues`} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Open all data issues</Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
+          {healthItems.map(item => (
+            <Link key={item.label} href={item.href} className="rounded-xl border border-gray-100 p-3 hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
+              <div className="flex items-center justify-between gap-2">
+                <item.icon className="w-4 h-4 text-gray-500" />
+                <span className={`text-[10px] font-bold ${item.ready ? 'text-emerald-600' : 'text-amber-600'}`}>{item.ready ? 'READY' : 'REVIEW'}</span>
+              </div>
+              <p className="mt-2 text-xs font-bold text-gray-900">{item.label}</p>
+              <p className="mt-0.5 text-[10px] leading-4 text-gray-500">{item.detail}</p>
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
