@@ -62,6 +62,8 @@ export default async function PhoneDetailPage({ params }: Props) {
   const model = phone?.modelName || '';
   const canonicalUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/phones/${slug}`;
 
+  const structuredPrice = Number(phone?.currentPrice || phone?.pricePKR || 0);
+
   const productJsonLd = phone ? {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -80,11 +82,11 @@ export default async function PhoneDetailPage({ params }: Props) {
       worstRating: 1,
       ratingCount: Number((phone as unknown as { userReviewCount?: number }).userReviewCount || 0),
     } : undefined,
-    offers: phone.pricePKR > 0 ? {
+    offers: structuredPrice > 0 ? {
       '@type': 'Offer',
       url: canonicalUrl,
       priceCurrency: 'PKR',
-      price: phone.pricePKR,
+      price: structuredPrice,
       availability: phone.ptaApproved ? 'https://schema.org/InStock' : 'https://schema.org/LimitedAvailability',
       itemCondition: 'https://schema.org/NewCondition',
     } : undefined,

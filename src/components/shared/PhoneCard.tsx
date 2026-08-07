@@ -44,6 +44,7 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
   const isRumoured = lifecycle === 'rumored';
   const isUpcoming = phone.upcoming || ['announced', 'coming_soon'].includes(lifecycle);
   const currentPrice = Number(phone.currentPrice || phone.pricePKR || 0);
+  const hasMultipleVerifiedOffers = Number(phone.verifiedOfferCount || 0) > 1;
   const originalPrice = Number(phone.originalPricePKR || 0);
   const previousPrice = Number(phone.previousPrice || 0);
   const compareAtPrice = Math.max(
@@ -161,7 +162,8 @@ export function PhoneCard({ phone, onSelect, categoryScore, categoryLabel, categ
             </div>
             <h3 data-testid="phone-card-title" className="line-clamp-2 h-10 min-h-10 text-sm font-extrabold leading-5 text-slate-900">{phone.modelName}</h3>
             <div className="h-10 pt-1">
-              <p className={`truncate text-sm font-bold ${isDiscontinued ? 'text-slate-500' : 'text-blue-600'}`}>{isDiscontinued ? 'Discontinued' : formatPrice(currentPrice)}</p>
+              <p className={`truncate text-sm font-bold ${isDiscontinued ? 'text-slate-500' : 'text-blue-600'}`}>{isDiscontinued ? 'Discontinued' : `${hasMultipleVerifiedOffers && currentPrice > 0 ? 'From ' : ''}${formatPrice(currentPrice)}`}</p>
+              {!isDiscontinued && currentPrice > 0 && <p className="truncate text-[9px] font-medium text-slate-400">{phone.ptaApproved ? 'PTA price' : isNonPta ? 'Non-PTA price' : 'Verified market price'}{hasMultipleVerifiedOffers ? ' • variants available' : ''}</p>}
               {!isDiscontinued && discountPercent > 0 && (
                 <p className="flex min-w-0 items-center gap-1 text-[10px] font-medium">
                   <span className="truncate text-slate-400 line-through">{formatPrice(compareAtPrice)}</span>

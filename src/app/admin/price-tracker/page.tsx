@@ -105,6 +105,13 @@ interface PriceChange {
   date: string;
   status: 'approved' | 'rejected' | 'pending';
   reason?: string;
+  priceClass?: 'pta-approved' | 'non-pta' | 'unknown';
+  ram?: string;
+  storage?: string;
+  color?: string;
+  condition?: string;
+  warrantyType?: string;
+  variantKey?: string;
 }
 
 interface PriceHistoryEntry {
@@ -120,6 +127,13 @@ interface PriceHistoryEntry {
   sourceType: string;
   date: string;
   status: string;
+  priceClass?: 'pta-approved' | 'non-pta' | 'unknown';
+  ram?: string;
+  storage?: string;
+  color?: string;
+  condition?: string;
+  warrantyType?: string;
+  variantKey?: string;
 }
 
 interface PhoneOption {
@@ -196,6 +210,11 @@ function sourceTypeBadgeClass(type: PriceSourceType): string {
 function toFiniteNumber(value: unknown): number | null {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function variantLabel(item: { priceClass?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string }): string {
+  const pta = item.priceClass === 'pta-approved' ? 'PTA' : item.priceClass === 'non-pta' ? 'Non-PTA' : '';
+  return [pta, item.ram, item.storage, item.color, item.condition && item.condition !== 'new' ? item.condition : '', item.warrantyType].filter(Boolean).join(' • ');
 }
 
 function formatPKR(price: unknown): string {
@@ -304,7 +323,7 @@ export default function AdminPriceTrackerPage() {
   // ── Modals ──
   const [editPriceModal, setEditPriceModal] = useState(false);
   const [editingPhone, setEditingPhone] = useState<PhonePrice | null>(null);
-  const [editForm, setEditForm] = useState({ price: '', reason: '', ptaStatus: '', warrantyType: '' });
+  const [editForm, setEditForm] = useState({ price: '', reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
 
   const [addListingModal, setAddListingModal] = useState(false);
   const [listingPhoneId, setListingPhoneId] = useState('');
@@ -591,12 +610,16 @@ export default function AdminPriceTrackerPage() {
           reason: editForm.reason,
           ptaStatus: editForm.ptaStatus,
           warrantyType: editForm.warrantyType,
+          ram: editForm.ram,
+          storage: editForm.storage,
+          color: editForm.color,
+          condition: editForm.condition,
         }),
       });
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
       setEditPriceModal(false);
-      setEditForm({ price: '', reason: '', ptaStatus: '', warrantyType: '' });
+      setEditForm({ price: '', reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
       setEditingPhone(null);
       if (activeTab === 'phones') fetchPhones();
       else fetchOverview();
@@ -911,7 +934,7 @@ export default function AdminPriceTrackerPage() {
 
   const openEditPriceModal = (phone: PhonePrice) => {
     setEditingPhone(phone);
-    setEditForm({ price: String(phone.currentPrice), reason: '', ptaStatus: '', warrantyType: '' });
+    setEditForm({ price: String(phone.currentPrice), reason: '', ptaStatus: '', warrantyType: '', ram: '', storage: '', color: '', condition: 'new' });
     setEditPriceModal(true);
   };
 
@@ -1790,7 +1813,7 @@ export default function AdminPriceTrackerPage() {
               <tbody className="divide-y divide-gray-50">
                 {changes.map((c) => (
                   <tr key={c.id} className="text-sm hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-medium text-gray-900 max-w-[180px] truncate">{c.phoneName}</td>
+                    <td className="px-4 py-3 text-gray-900 max-w-[220px]"><div className="font-medium truncate">{c.phoneName}</div>{variantLabel(c) ? <div className="mt-0.5 text-[10px] text-blue-600">{variantLabel(c)}</div> : null}</td>
                     <td className="px-4 py-3 text-gray-500 text-right">{formatPKR(c.oldPrice)}</td>
                     <td className="px-4 py-3 text-gray-900 font-medium text-right">{formatPKR(c.newPrice)}</td>
                     <td className="px-4 py-3 text-right">
@@ -1873,6 +1896,7 @@ export default function AdminPriceTrackerPage() {
                   <h3 className="text-sm font-semibold text-gray-900 truncate">{item.phoneName}</h3>
                   <Badge className="bg-yellow-100 text-yellow-700">pending</Badge>
                 </div>
+                {variantLabel(item) ? <p className="mb-1 text-[10px] font-medium text-blue-600">{variantLabel(item)}</p> : null}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                   <span>Detected: <span className="font-medium text-gray-700">{formatPKR(item.newPrice)}</span></span>
                   <span>Current: <span className="font-medium text-gray-700">{formatPKR(item.oldPrice)}</span></span>
@@ -2068,7 +2092,7 @@ export default function AdminPriceTrackerPage() {
                     <th className="text-right px-4 py-2.5 font-medium">Change</th>
                     <th className="text-right px-4 py-2.5 font-medium">%</th>
                     <th className="text-left px-4 py-2.5 font-medium">Type</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Source</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Variant</th><th className="text-left px-4 py-2.5 font-medium">Source</th>
                     <th className="text-left px-4 py-2.5 font-medium">Status</th>
                   </tr>
                 </thead>
@@ -2089,7 +2113,7 @@ export default function AdminPriceTrackerPage() {
                           {h.changeType}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500">{h.source}</td>
+                      <td className="px-4 py-2.5 text-[10px] text-blue-600">{variantLabel(h) || "Base"}</td><td className="px-4 py-2.5 text-xs text-gray-500">{h.source}</td>
                       <td className="px-4 py-2.5">
                         <Badge className={
                           h.status === 'approved' ? 'bg-green-100 text-green-700' :
@@ -2265,7 +2289,7 @@ export default function AdminPriceTrackerPage() {
     if (!editPriceModal || !editingPhone) return null;
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-gray-900">Edit Price</h2>
             <button onClick={() => setEditPriceModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -2310,6 +2334,15 @@ export default function AdminPriceTrackerPage() {
                 <option value="non-pta">Non-PTA</option>
                 <option value="unknown">Unknown</option>
               </select>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">RAM</label><input value={editForm.ram} onChange={e => setEditForm(f => ({ ...f, ram: e.target.value }))} placeholder="12GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Storage</label><input value={editForm.storage} onChange={e => setEditForm(f => ({ ...f, storage: e.target.value }))} placeholder="256GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Color</label><input value={editForm.color} onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))} placeholder="Black" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium mb-1 block">Condition</label>
+              <select value={editForm.condition} onChange={e => setEditForm(f => ({ ...f, condition: e.target.value }))} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm bg-white"><option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open Box</option></select>
             </div>
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Warranty Type</label>

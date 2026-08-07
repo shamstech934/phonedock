@@ -510,15 +510,25 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const selectedStorage = normalizeMemoryLabel(req.nextUrl.searchParams.get('storage'));
     const selectedColor = normalizeColorLabel(req.nextUrl.searchParams.get('color'));
 
-    const listingRows = await PhoneRetailListing.find({
-      phoneId: phone._id,
-      enabled: true,
-      verificationStatus: 'verified',
-      availability: { $ne: 'unavailable' },
-      currentSourcePrice: { $gt: 0 },
-    }).select('ram storage color condition warrantyType ptaStatus currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority').lean();
+    const [listingRows, manualPriceRows, manualVariantHistoryRows] = await Promise.all([
+      PhoneRetailListing.find({
+        phoneId: phone._id,
+        enabled: true,
+        verificationStatus: 'verified',
+        availability: { $ne: 'unavailable' },
+        currentSourcePrice: { $gt: 0 },
+      }).select('ram storage color condition warrantyType ptaStatus currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority').lean(),
+      PhonePrice.find({ phoneId: phone._id, price: { $gt: 0 }, inStock: { $ne: false } })
+        .select('storeName price url ram storage color condition warrantyType ptaStatus variantKey')
+        .lean(),
+      PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', newPrice: { $gt: 0 } })
+        .sort({ capturedAt: -1 })
+        .limit(300)
+        .select('newPrice priceClass ram storage color condition warrantyType variantKey sourceUrl capturedAt')
+        .lean(),
+    ]);
 
-    const variants = (listingRows as any[])
+    const retailerVariants = (listingRows as any[])
       .filter(row => row.sourceId?.trusted === true && row.sourceId?.enabled !== false && (row.sourceId?.status || 'active') === 'active')
       .map(row => ({
         ram: normalizeMemoryLabel(row.ram),
@@ -531,8 +541,48 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         price: Number(row.currentSourcePrice || 0),
         source: row.sourceId?.name || '',
         sourceUrl: row.productUrl || '',
-      }))
-      .filter(row => row.priceClass !== 'unknown' && row.price > 0);
+        sourceKind: 'retailer' as const,
+      }));
+    const manualVariants = (manualPriceRows as any[]).map(row => ({
+      ram: normalizeMemoryLabel(row.ram),
+      storage: normalizeMemoryLabel(row.storage),
+      color: String(row.color || '').trim(),
+      colorKey: normalizeColorLabel(row.color),
+      condition: row.condition || 'new',
+      warrantyType: row.warrantyType || '',
+      priceClass: normalizePtaPriceClass(row.ptaStatus),
+      price: Number(row.price || 0),
+      source: row.storeName || 'Admin verified',
+      sourceUrl: row.url || '',
+      sourceKind: 'manual' as const,
+    }));
+    const historyVariants = (manualVariantHistoryRows as any[]).map(row => ({
+      ram: normalizeMemoryLabel(row.ram),
+      storage: normalizeMemoryLabel(row.storage),
+      color: String(row.color || '').trim(),
+      colorKey: normalizeColorLabel(row.color),
+      condition: row.condition || 'new',
+      warrantyType: row.warrantyType || '',
+      priceClass: normalizePtaPriceClass(row.priceClass),
+      price: Number(row.newPrice || 0),
+      source: row.sourceUrl ? 'Verified history' : 'Admin verified',
+      sourceUrl: row.sourceUrl || '',
+      sourceKind: 'history' as const,
+    }));
+    const variantIdentity = (row: { priceClass: string; ram: string; storage: string; colorKey: string; condition: string; warrantyType: string }) =>
+      [row.priceClass, row.ram, row.storage, row.colorKey, row.condition || 'new', String(row.warrantyType || '').toLowerCase()].join('|');
+    const variants = (() => {
+      const byIdentity = new Map<string, any>();
+      // Live verified retailer/admin rows outrank historical snapshots. History
+      // only fills a variant that no longer has a live row, and is already
+      // newest-first so the first historical identity is the latest one.
+      for (const row of [...retailerVariants, ...manualVariants, ...historyVariants]) {
+        if (row.priceClass === 'unknown' || row.price <= 0) continue;
+        const key = variantIdentity(row);
+        if (!byIdentity.has(key)) byIdentity.set(key, row);
+      }
+      return [...byIdentity.values()];
+    })();
 
     const hasVariantSelection = Boolean(selectedRam || selectedStorage || selectedColor);
     const selectedOffers = variants.filter(row =>
@@ -562,7 +612,8 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const fallbackPrice = priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
     // Once a user chooses RAM/storage/color, never fall back to another
     // variant's class-level price. A missing exact offer is genuinely missing.
-    const currentPrice = selectedBest?.price || (hasVariantSelection ? 0 : fallbackPrice);
+    const manualHistoryPrice = confirmed.length > 0 ? Number(confirmed[0].newPrice || 0) : 0;
+    const currentPrice = selectedBest?.price || (hasVariantSelection ? manualHistoryPrice : fallbackPrice);
     const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;

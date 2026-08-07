@@ -218,6 +218,12 @@ export default function PhoneForm({
                 price: toNumberOrEmpty(p.price),
                 url: String(p.url ?? ''),
                 inStock: Boolean(p.inStock ?? p.in_stock ?? true),
+                ptaStatus: String(p.ptaStatus ?? p.pta_status ?? ''),
+                ram: String(p.ram ?? ''),
+                storage: String(p.storage ?? ''),
+                color: String(p.color ?? ''),
+                condition: (['new','used','refurbished','open-box'].includes(String(p.condition ?? 'new')) ? String(p.condition ?? 'new') : 'new') as 'new' | 'used' | 'refurbished' | 'open-box',
+                warrantyType: String(p.warrantyType ?? p.warranty_type ?? ''),
               }))
             : [],
           // Price Tracking

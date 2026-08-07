@@ -493,7 +493,10 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTrackerError, setPriceTrackerError] = useState('');
-  const [selectedPriceClass, setSelectedPriceClass] = useState<'pta-approved' | 'non-pta'>('pta-approved');
+  const [selectedPriceClass, setSelectedPriceClass] = useState<'pta-approved' | 'non-pta'>(() => {
+    const status = String(data?.phone?.ptaStatus || '').toLowerCase();
+    return !data?.phone?.ptaApproved && /non[-_\s]?pta|not[-_\s]?approved|unapproved/.test(status) ? 'non-pta' : 'pta-approved';
+  });
   const [selectedRam, setSelectedRam] = useState('');
   const [selectedStorage, setSelectedStorage] = useState('');
   const [selectedColor, setSelectedColor] = useState('');

@@ -63,6 +63,9 @@ export interface PhoneJson {
   originalPricePKR?: number;
   currentPrice?: number;
   previousPrice?: number;
+  bestPtaPricePKR?: number;
+  bestNonPtaPricePKR?: number;
+  verifiedOfferCount?: number;
   lowestPrice?: number;
   highestPrice?: number;
   priceChange?: number;
@@ -106,7 +109,7 @@ export interface PhoneJson {
   specs?: Record<string, string | number | null> | null;
   benchmarks?: Record<string, unknown>;
   images?: Array<{ id?: string; url?: string; altText?: string; sortOrder?: number }>;
-  prices?: Array<{ id?: string; storeName?: string; price?: number; url?: string; inStock?: boolean }>;
+  prices?: Array<{ id?: string; storeName?: string; price?: number; url?: string; inStock?: boolean; ptaStatus?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string }>;
   priceMode?: string;
   manualLock?: boolean;
   manualLockReason?: string;
@@ -125,6 +128,9 @@ interface RawPhoneObject {
   originalPricePKR?: number;
   currentPrice?: number;
   previousPrice?: number;
+  bestPtaPricePKR?: number;
+  bestNonPtaPricePKR?: number;
+  verifiedOfferCount?: number;
   lowestPrice?: number;
   highestPrice?: number;
   priceChange?: number;
@@ -412,6 +418,9 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     originalPricePKR: r.originalPricePKR || 0,
     currentPrice: r.currentPrice || r.pricePKR || 0,
     previousPrice: r.previousPrice || 0,
+    bestPtaPricePKR: r.bestPtaPricePKR || 0,
+    bestNonPtaPricePKR: r.bestNonPtaPricePKR || 0,
+    verifiedOfferCount: r.verifiedOfferCount || 0,
     lowestPrice: r.lowestPrice || 0,
     highestPrice: r.highestPrice || 0,
     priceChange: r.priceChange || 0,
@@ -454,7 +463,7 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     specs: specs ? serializePhoneSpecs(specs) : undefined,
     benchmarks: benchmarks || undefined,
     images: images?.map((img: Record<string, unknown>) => ({ id: (img._id as { toString(): string } | undefined)?.toString(), url: img.url as string, altText: img.altText as string, sortOrder: img.sortOrder as number })) || [],
-    prices: prices?.map((pr: Record<string, unknown>) => ({ id: (pr._id as { toString(): string } | undefined)?.toString(), storeName: pr.storeName as string, price: pr.price as number, url: pr.url as string, inStock: pr.inStock as boolean })) || [],
+    prices: prices?.map((pr: Record<string, unknown>) => ({ id: (pr._id as { toString(): string } | undefined)?.toString(), storeName: pr.storeName as string, price: pr.price as number, url: pr.url as string, inStock: pr.inStock as boolean, ptaStatus: String(pr.ptaStatus || ''), ram: String(pr.ram || ''), storage: String(pr.storage || ''), color: String(pr.color || ''), condition: String(pr.condition || 'new'), warrantyType: String(pr.warrantyType || ''), variantKey: String(pr.variantKey || '') })) || [],
     // Price tracking
     priceMode: r.priceMode || 'manual',
     manualLock: r.manualLock || false,

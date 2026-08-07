@@ -40,7 +40,7 @@ const scoreFor = (phone: Phone, category: CompareCategory) => {
   return { score: result.score, confidence: result.confidence };
 };
 
-const validPrice = (phone: Phone) => Number.isFinite(phone.pricePKR) && phone.pricePKR > 0;
+const validPrice = (phone: Phone) => Number.isFinite(Number(phone.currentPrice || phone.pricePKR || 0)) && Number(phone.currentPrice || phone.pricePKR || 0) > 0;
 
 function reasonFor(category: CompareCategory, phone: Phone, score: number) {
   const suffix = phone.compareScoresEstimated ? ' Estimated from available specifications.' : '';
@@ -121,5 +121,5 @@ export function buildSmartComparison(phones: Phone[]) {
 }
 
 export function getLowestPriceWinner(phones: Phone[]) {
-  return [...phones].filter(validPrice).sort((a, b) => a.pricePKR - b.pricePKR)[0] || null;
+  return [...phones].filter(validPrice).sort((a, b) => Number(a.currentPrice || a.pricePKR || 0) - Number(b.currentPrice || b.pricePKR || 0))[0] || null;
 }

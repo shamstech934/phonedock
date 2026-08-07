@@ -96,6 +96,13 @@ export interface PhonePrice {
   price: number;
   url: string;
   inStock: boolean;
+  ptaStatus?: string;
+  ram?: string;
+  storage?: string;
+  color?: string;
+  condition?: string;
+  warrantyType?: string;
+  variantKey?: string;
 }
 
 export interface Phone {
@@ -113,6 +120,7 @@ export interface Phone {
   previousPrice?: number;
   bestPtaPricePKR?: number;
   bestNonPtaPricePKR?: number;
+  verifiedOfferCount?: number;
   lowestPrice?: number;
   highestPrice?: number;
   priceChange?: number;

@@ -43,7 +43,7 @@ export function SmartComparisonSummary({ phones }: { phones: Phone[] }) {
           <Link href={`/phones/${cheapest.slug}`} className="rounded-xl border border-white bg-white/80 p-3 transition hover:-translate-y-0.5 hover:shadow-md">
             <div className="flex items-center gap-2 text-xs font-semibold text-gray-500"><WalletCards className="h-4 w-4 text-emerald-500" /> Lowest listed price</div>
             <p className="mt-1 truncate text-sm font-bold text-gray-900">{cheapest.modelName}</p>
-            <p className="mt-1 text-xs font-semibold text-emerald-600">{formatPrice(cheapest.pricePKR)}</p>
+            <p className="mt-1 text-xs font-semibold text-emerald-600">{`${Number(cheapest.verifiedOfferCount || 0) > 1 ? 'From ' : ''}${formatPrice(Number(cheapest.currentPrice || cheapest.pricePKR || 0))}`}</p>
           </Link>
         )}
       </div>

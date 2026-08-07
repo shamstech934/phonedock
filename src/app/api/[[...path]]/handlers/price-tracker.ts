@@ -54,6 +54,7 @@ interface LeanHistoryDoc {
   changedByAdminId?: LeanPopulatedAdmin | null;
   oldPrice: number; newPrice: number; difference: number; percentageChange: number;
   changeType: string; sourceType: string; sourceUrl: string;
+  priceClass?: string; ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string;
   verificationStatus: string; capturedAt: Date | null; createdAt?: Date;
 }
 
@@ -459,6 +460,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         sourceName: c.sourceId?.name || '',
         source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
+        priceClass: c.priceClass || 'unknown',
+        ram: c.ram || '',
+        storage: c.storage || '',
+        color: c.color || '',
+        condition: c.condition || 'new',
+        warrantyType: c.warrantyType || '',
+        variantKey: c.variantKey || '',
         verificationStatus: c.verificationStatus || 'confirmed',
         status: c.verificationStatus || 'confirmed',
         capturedAt: c.capturedAt || c.createdAt || null,
@@ -500,6 +508,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         sourceName: c.sourceId?.name || '',
         source: c.sourceId?.name || '',
         sourceUrl: c.sourceUrl || '',
+        priceClass: c.priceClass || 'unknown',
+        ram: c.ram || '',
+        storage: c.storage || '',
+        color: c.color || '',
+        condition: c.condition || 'new',
+        warrantyType: c.warrantyType || '',
+        variantKey: c.variantKey || '',
         capturedAt: c.capturedAt || c.createdAt || null,
         date: c.capturedAt || c.createdAt || null,
       })),
@@ -534,6 +549,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         sourceName: h.sourceId?.name || '',
         source: h.sourceId?.name || '',
         sourceUrl: h.sourceUrl || '',
+        priceClass: h.priceClass || 'unknown',
+        ram: h.ram || '',
+        storage: h.storage || '',
+        color: h.color || '',
+        condition: h.condition || 'new',
+        warrantyType: h.warrantyType || '',
+        variantKey: h.variantKey || '',
         verificationStatus: h.verificationStatus || 'confirmed',
         status: h.verificationStatus || 'confirmed',
         capturedAt: h.capturedAt || h.createdAt || null,

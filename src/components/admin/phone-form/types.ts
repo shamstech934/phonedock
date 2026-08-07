@@ -16,6 +16,12 @@ export interface PhonePrice {
   price: number | '';
   url: string;
   inStock: boolean;
+  ptaStatus: string;
+  ram: string;
+  storage: string;
+  color: string;
+  condition: 'new' | 'used' | 'refurbished' | 'open-box';
+  warrantyType: string;
 }
 
 export interface PhoneFormProps {
@@ -174,6 +180,12 @@ export const EMPTY_PRICE: PhonePrice = {
   price: '',
   url: '',
   inStock: true,
+  ptaStatus: '',
+  ram: '',
+  storage: '',
+  color: '',
+  condition: 'new',
+  warrantyType: '',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

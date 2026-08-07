@@ -437,7 +437,7 @@ function CompareContent() {
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-500">Phone {slotIndex + 1}</p>
                       <Link href={`/phones/${phone.slug}`} className="block truncate text-sm font-bold text-slate-900 hover:text-blue-600">{phone.modelName}</Link>
-                      <p className="mt-1 text-xs font-semibold text-blue-600">{formatPrice(phone.pricePKR)}</p>
+                      <p className="mt-1 text-xs font-semibold text-blue-600">{compareDisplayPrice(phone)}</p>
                     </div>
                     <div className="flex flex-col gap-1">
                       <button onClick={() => { setActiveSlotIndex(slotIndex); const nextQuery = slotQueries[slotIndex] || ''; setSearch(nextQuery); }} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-100">Change</button>
@@ -466,7 +466,7 @@ function CompareContent() {
                     ) : autocompleteResults.length ? autocompleteResults.slice(0, 10).map(result => (
                       <button key={result.id} onClick={() => selectPhoneForSlot(result, slotIndex)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-blue-50">
                         <SafePhoneImage src={result.thumbnail} alt={result.modelName} width={38} height={38} className="h-10 w-10 rounded-lg bg-slate-50 object-contain p-1" />
-                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{result.modelName}</span><span className="block text-xs text-slate-500">{result.brand?.name} · {formatPrice(result.pricePKR)}</span></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{result.modelName}</span><span className="block text-xs text-slate-500">{result.brand?.name} · {compareDisplayPrice(result)}</span></span>
                       </button>
                     )) : !acLoading ? <div className="py-4 text-center"><p className="text-xs font-semibold text-slate-600">No exact match found</p><p className="mt-1 text-[11px] text-slate-400">Try fewer words, for example “S26”, “Ultra” or “Samsung”.</p></div> : null}
                   </div>
@@ -544,7 +544,7 @@ function CompareContent() {
                   <Link key={phone.id} href={`/phones/${phone.slug}`} className="group min-w-0 rounded-xl px-2 py-2 text-center hover:bg-blue-50 transition-colors">
                     <SafePhoneImage src={phone.thumbnail} alt={phone.modelName} width={42} height={42} className="mx-auto h-10 w-10 rounded-lg bg-gray-50 object-contain p-1" />
                     <p className="mt-1 truncate text-[11px] sm:text-xs font-semibold text-gray-900 group-hover:text-blue-600">{phone.modelName}</p>
-                    <p className="hidden sm:block text-[10px] font-bold text-blue-600">{formatPrice(phone.pricePKR)}</p>
+                    <p className="hidden sm:block text-[10px] font-bold text-blue-600">{compareDisplayPrice(phone)}</p>
                   </Link>
                 ))}
               </div>
@@ -623,7 +623,7 @@ function CompareContent() {
                         const minPrice = validPrices.length ? Math.min(...validPrices) : 0;
                         return comparePhones.map(p => (
                           <td key={p.id} className={`px-4 py-3 font-bold text-blue-600 ${p.pricePKR === minPrice && comparePhones.length > 1 ? 'bg-emerald-50' : ''}`}>
-                            {formatPrice(p.pricePKR)}
+                            {compareDisplayPrice(p)}
                             {p.pricePKR === minPrice && comparePhones.length > 1 && minPrice > 0 && <span className="ml-1 text-[10px] font-medium text-emerald-600">Best</span>}
                           </td>
                         ));
@@ -721,6 +721,11 @@ function CompareContent() {
       )}
     </div>
   );
+}
+
+function compareDisplayPrice(phone: Phone): string {
+  const price = Number(phone.currentPrice || phone.pricePKR || 0);
+  return `${Number(phone.verifiedOfferCount || 0) > 1 && price > 0 ? 'From ' : ''}${formatPrice(price)}`;
 }
 
 export default function ComparePage() {
