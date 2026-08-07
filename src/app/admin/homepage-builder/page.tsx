@@ -757,7 +757,7 @@ export default function HomepageBuilderPage() {
           </div>
           <div className="overflow-auto rounded-2xl border border-slate-300 bg-slate-300/60 p-3">
             <div style={{ width: previewWidth, maxWidth: '100%' }} className="mx-auto overflow-hidden rounded-xl bg-white shadow-2xl transition-all">
-              <HomepagePreview homepage={homepage} device={device} />
+              <HomepagePreview homepage={homepage} settings={settings} device={device} />
             </div>
           </div>
         </div>
@@ -806,10 +806,10 @@ function MediaField({ label, hint = 'Recommended 1600 × 900 px · WebP/AVIF · 
   </div>;
 }
 
-function HomepagePreview({ homepage, device }: { homepage: HomepageSettings; device: Device }) {
+function HomepagePreview({ homepage, settings, device }: { homepage: HomepageSettings; settings: SettingsDocument; device: Device }) {
   const compact = device !== 'desktop';
   return <div className="min-h-[620px] bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 text-slate-950">
-    <div className="flex h-12 items-center border-b bg-white/80 px-4"><strong className="text-sm">Specs<span className="text-blue-600">Dekh</span></strong><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
+    <div className="flex min-h-12 items-center border-b bg-white/80 px-4 py-2"><div className="min-w-0"><strong className="block truncate text-sm">{settings.siteName || <>Specs<span className="text-blue-600">Dekh</span></>}</strong>{settings.tagline ? <span className="mt-0.5 block max-w-[190px] truncate text-[7px] font-medium text-slate-400">{settings.tagline}</span> : null}</div><div className="ml-auto flex gap-3 text-[9px] font-bold text-slate-500"><span>Phones</span><span>Brands</span><span>Compare</span></div></div>
     {homepage.heroEnabled && <section className={`m-3 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-600 p-5 text-white ${compact ? 'min-h-72' : 'min-h-64'}`}>
       <div className={compact ? '' : 'grid grid-cols-2 items-center gap-5'}>
         <div><span className="rounded-full border border-white/20 px-2 py-1 text-[7px] font-bold">{homepage.heroBadge}</span><h3 className="mt-4 text-2xl font-black leading-tight">{homepage.heroTitle}<br /><span className="text-blue-400">{homepage.heroHighlight}</span></h3><p className="mt-2 line-clamp-2 text-[9px] leading-4 text-slate-300">{homepage.heroSubtitle}</p><div className="mt-4 flex gap-2"><span className="rounded-lg bg-blue-600 px-3 py-2 text-[8px] font-bold">{homepage.cta1Text}</span><span className="rounded-lg border border-white/20 px-3 py-2 text-[8px] font-bold">{homepage.cta2Text}</span></div></div>

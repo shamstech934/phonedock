@@ -21,6 +21,7 @@ interface AutocompleteResult {
 
 interface HeaderSiteSettings {
   siteName?: string;
+  tagline?: string;
   logo?: string;
   navigation?: Array<{ label: string; url: string; enabled: boolean }>;
 }
@@ -66,6 +67,7 @@ export function Header() {
           : {};
         setSiteSettings({
           siteName: typeof settings.siteName === 'string' ? settings.siteName : undefined,
+          tagline: typeof settings.tagline === 'string' ? settings.tagline.trim() : undefined,
           logo: typeof settings.logo === 'string' ? settings.logo : undefined,
           navigation: Array.isArray(homepage.navigation)
             ? homepage.navigation as HeaderSiteSettings['navigation']
@@ -191,11 +193,16 @@ export function Header() {
                 <Smartphone className="w-5 h-5 text-white" />
               </div>
             )}
-            {siteSettings.siteName ? (
-              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">{siteSettings.siteName}</span>
-            ) : (
-              <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Specs<span className="text-blue-700">Dekh</span></span>
-            )}
+            <span className="flex min-w-0 flex-col leading-none">
+              {siteSettings.siteName ? (
+                <span className="truncate font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">{siteSettings.siteName}</span>
+              ) : (
+                <span className="font-extrabold text-base text-gray-900 dark:text-white sm:text-lg">Specs<span className="text-blue-700">Dekh</span></span>
+              )}
+              {siteSettings.tagline ? (
+                <span className="mt-1 max-w-[190px] truncate text-[10px] font-medium leading-none text-gray-500 dark:text-slate-400 sm:max-w-[240px] sm:text-[11px]">{siteSettings.tagline}</span>
+              ) : null}
+            </span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-0.5">
