@@ -14,7 +14,7 @@ import { discoverCatalogProductUrls, isProbableProductUrl, matchProductUrlToPhon
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
-import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
+import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 
 // ── Lean document types for price-tracker ──
@@ -766,11 +766,19 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       for (const productUrl of result.urls) {
         const phone = matchProductUrlToPhone(productUrl, phones);
         if (!phone) { discoveryUnmatched++; continue; }
+        const variant = inferRetailVariantIdentity({ productUrl, existing: { condition: 'new' } });
         const update = await PhoneRetailListing.updateOne(
           { sourceId: source._id, productUrl },
           { $setOnInsert: {
             phoneId: phone._id,
             sourceTitle: phone.modelName,
+            ram: variant.ram,
+            storage: variant.storage,
+            color: variant.color,
+            condition: variant.condition,
+            ptaStatus: variant.ptaStatus,
+            warrantyType: variant.warrantyType,
+            variantKey: variant.variantKey,
             enabled: true,
             verificationStatus: 'pending',
             discoveryOrigin: 'catalog',
@@ -845,13 +853,23 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         if (existing) {
           alreadyLinked++; phoneLinked = true;
         } else {
+          const variant = inferRetailVariantIdentity({
+            title: candidate.storeName || phone.modelName,
+            productUrl: sourceUrl,
+            existing: { ptaStatus: candidate.ptaStatus, warrantyType: candidate.warrantyType, condition: 'new' },
+          });
           await PhoneRetailListing.create({
             phoneId: phone._id, sourceId: source._id, productUrl: sourceUrl, sourceTitle: candidate.storeName || phone.modelName,
             currentSourcePrice: 0,
             pendingSourcePrice: candidate.price > 0 ? candidate.price : 0,
             pendingDetectedAt: candidate.price > 0 ? new Date() : null,
-            ptaStatus: candidate.ptaStatus,
-            warrantyType: candidate.warrantyType,
+            ram: variant.ram,
+            storage: variant.storage,
+            color: variant.color,
+            condition: variant.condition,
+            ptaStatus: variant.ptaStatus,
+            warrantyType: variant.warrantyType,
+            variantKey: variant.variantKey,
             enabled: true,
             verificationStatus: 'pending',
             discoveryOrigin: candidate.storeName ? 'legacy' : 'phone',

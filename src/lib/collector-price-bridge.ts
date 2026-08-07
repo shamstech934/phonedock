@@ -7,6 +7,7 @@ import {
   PriceSource,
 } from '@/lib/models';
 import { isProbableProductUrl } from '@/lib/price-catalog-discovery';
+import { inferRetailVariantIdentity, inferUniqueMemoryLabel } from '@/lib/price-variant';
 
 export type CollectorMatchStrategy = 'direct_approval' | 'imported' | 'exact_duplicate';
 
@@ -91,7 +92,7 @@ export async function bridgeCollectedPricesToTracker(
 
   const [records, sources] = await Promise.all([
     CollectedPhone.find(filter)
-      .select('_id brandName model sourceUrl pakistanPrice ptaStatus approvedPhoneId importedPhoneId duplicatePhoneId hasExactDuplicate duplicateMatches')
+      .select('_id brandName model sourceUrl pakistanPrice ptaStatus officialWarranty memory.ram memory.storage body.colors localSellerNotes approvedPhoneId importedPhoneId duplicatePhoneId hasExactDuplicate duplicateMatches')
       .lean(),
     PriceSource.find({ enabled: true, trusted: true, status: 'active', allowedDomains: { $exists: true, $ne: [] } })
       .select('_id allowedDomains')
@@ -125,12 +126,24 @@ export async function bridgeCollectedPricesToTracker(
     }
 
     const pendingPrice = normalizePendingCollectedPrice(record.pakistanPrice);
+    const sourceTitle = `${String(record.brandName || '').trim()} ${String(record.model || '').trim()}`.trim();
+    const variant = inferRetailVariantIdentity({
+      title: `${sourceTitle} ${String(record.localSellerNotes || '')}`,
+      productUrl,
+      existing: {
+        ram: inferUniqueMemoryLabel(record.memory?.ram),
+        storage: inferUniqueMemoryLabel(record.memory?.storage),
+        ptaStatus: record.ptaStatus,
+        warrantyType: record.officialWarranty,
+        condition: 'new',
+      },
+    });
     const update = await PhoneRetailListing.updateOne(
       { sourceId: source._id, productUrl },
       {
         $setOnInsert: {
           phoneId: target.phoneId,
-          sourceTitle: `${String(record.brandName || '').trim()} ${String(record.model || '').trim()}`.trim(),
+          sourceTitle,
           currentSourcePrice: 0,
           availability: 'unknown',
           enabled: true,
@@ -139,9 +152,17 @@ export async function bridgeCollectedPricesToTracker(
           collectorRecordId: record._id,
           matchStrategy: target.strategy,
           matchConfidence: target.confidence,
-          ptaStatus: String(record.ptaStatus || ''),
         },
-        ...(pendingPrice ? { $set: { pendingSourcePrice: pendingPrice, pendingDetectedAt: new Date() } } : {}),
+        $set: {
+          ram: variant.ram,
+          storage: variant.storage,
+          color: variant.color,
+          condition: variant.condition,
+          ptaStatus: variant.ptaStatus,
+          warrantyType: variant.warrantyType,
+          variantKey: variant.variantKey,
+          ...(pendingPrice ? { pendingSourcePrice: pendingPrice, pendingDetectedAt: new Date() } : {}),
+        },
       },
       { upsert: true },
     );

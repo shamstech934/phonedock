@@ -2,7 +2,8 @@ import { Phone } from '@/lib/models';
 import { PhoneRetailListing, PriceSource } from '@/lib/models/PriceTracker';
 import { discoverCatalogProductUrls, matchProductUrlToPhone, summarizeCatalogDiscoveryDiagnostics } from '@/lib/price-catalog-discovery';
 import { extractRetailPrice } from '@/lib/price-extraction';
-import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
+import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
+import { inferRetailVariantIdentity } from '@/lib/price-variant';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { validateUrlForFetch } from '@/lib/ssrf-guard';
 
@@ -102,6 +103,7 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
     const operations = result.urls.flatMap(productUrl => {
       const phone = matchProductUrlToPhone(productUrl, phones);
       if (!phone) return [];
+      const variant = inferRetailVariantIdentity({ productUrl, existing: { condition: 'new' } });
       return [{
         updateOne: {
           filter: { sourceId: source._id, productUrl },
@@ -110,7 +112,13 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
               phoneId: phone._id,
               sourceId: source._id,
               productUrl,
-              ptaStatus: phone.ptaStatus || '',
+              ram: variant.ram,
+              storage: variant.storage,
+              color: variant.color,
+              condition: variant.condition,
+              ptaStatus: variant.ptaStatus,
+              warrantyType: variant.warrantyType,
+              variantKey: variant.variantKey,
               availability: 'unknown',
               enabled: true,
               verificationStatus: 'pending',
@@ -186,6 +194,10 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
       productUrl: string;
       ram?: string;
       storage?: string;
+      color?: string;
+      condition?: string;
+      warrantyType?: string;
+      variantKey?: string;
       ptaStatus?: string;
       sourceId?: { enabled?: boolean; trusted?: boolean; status?: string; allowedDomains?: string[]; automaticFetchEnabled?: boolean; accessMode?: string } | null;
       phoneId?: PhoneRow | null;
@@ -196,12 +208,6 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
 
     if (!source?.enabled || !source.trusted || source.status !== 'active' || source.automaticFetchEnabled === false || source.accessMode === 'challenge_blocked' || !phone) {
       failure = 'Trusted source or phone reference is unavailable.';
-    } else if (!isPtaPriceCompatible({
-      phoneStatus: phone.ptaStatus,
-      phoneApproved: phone.ptaApproved,
-      listingStatus: listing.ptaStatus,
-    })) {
-      failure = 'PTA and Non-PTA price variants cannot be mixed automatically.';
     } else {
       const safety = await validateUrlForFetch(listing.productUrl, source.allowedDomains || []);
       if (!safety.safe) {
@@ -223,22 +229,48 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
             const html = await response.text();
             if (html.length > MAX_RETAIL_PAGE_BYTES) failure = 'Retail product page exceeds 3 MB limit.';
             else {
+              const preliminary = validateRetailListingPage({
+                html,
+                phoneModel: phone.modelName || '',
+                brandName: phone.brandId?.name || phone.brandName || '',
+              });
+              const variant = inferRetailVariantIdentity({
+                title: preliminary.title,
+                productUrl: listing.productUrl,
+                existing: {
+                  ram: listing.ram,
+                  storage: listing.storage,
+                  color: listing.color,
+                  condition: listing.condition,
+                  ptaStatus: listing.ptaStatus,
+                  warrantyType: listing.warrantyType,
+                },
+              });
               const pageValidation = validateRetailListingPage({
                 html,
                 phoneModel: phone.modelName || '',
                 brandName: phone.brandId?.name || phone.brandName || '',
-                expectedRam: listing.ram || '',
-                expectedStorage: listing.storage || '',
-                expectedPtaStatus: listing.ptaStatus || phone.ptaStatus || '',
+                expectedRam: variant.ram,
+                expectedStorage: variant.storage,
+                expectedPtaStatus: variant.ptaStatus,
               });
               const extracted = extractRetailPrice(html);
               if (!pageValidation.valid) failure = pageValidation.reasons.join('; ');
-              else if (!extracted || extracted.price <= 0 || extracted.confidence < 0.7) {
+              else if (normalizePtaPriceClass(variant.ptaStatus) === 'unknown') {
+                failure = 'PTA class is not explicit on this listing. Choose PTA Approved or Non-PTA in review before automatic publication.';
+              } else if (!extracted || extracted.price <= 0 || extracted.confidence < 0.7) {
                 failure = 'No reliable PKR price was detected on the product page.';
               } else {
                 await PhoneRetailListing.findByIdAndUpdate(listing._id, {
                   $set: {
                     sourceTitle: pageValidation.title,
+                    ram: variant.ram,
+                    storage: variant.storage,
+                    color: variant.color,
+                    condition: variant.condition,
+                    ptaStatus: variant.ptaStatus,
+                    warrantyType: variant.warrantyType,
+                    variantKey: variant.variantKey,
                     // The regular price-sync phase owns canonical price writes
                     // and history. Keeping this at zero makes the same cron
                     // treat the verified page as its first auditable detection.
@@ -257,6 +289,20 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
                 verified++;
                 continue;
               }
+
+              // Persist safe inferred identity even when the row stays pending.
+              await PhoneRetailListing.findByIdAndUpdate(listing._id, {
+                $set: {
+                  sourceTitle: pageValidation.title || preliminary.title,
+                  ram: variant.ram,
+                  storage: variant.storage,
+                  color: variant.color,
+                  condition: variant.condition,
+                  ptaStatus: variant.ptaStatus,
+                  warrantyType: variant.warrantyType,
+                  variantKey: variant.variantKey,
+                },
+              });
             }
           }
         } catch (error) {

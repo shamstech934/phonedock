@@ -9,10 +9,10 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
-import { isPtaPriceCompatible, normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
+import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
-import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
+import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -176,22 +176,6 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           continue;
         }
 
-        if (!isPtaPriceCompatible({
-          phoneStatus: phone.ptaStatus,
-          phoneApproved: phone.ptaApproved,
-          listingStatus: (listing as unknown as { ptaStatus?: string }).ptaStatus,
-        })) {
-          await PhoneRetailListing.findByIdAndUpdate(listingId, {
-            $set: {
-              verificationStatus: 'pending',
-              lastCheckedAt: new Date(),
-              lastError: 'PTA and Non-PTA price variants cannot be mixed automatically.',
-            },
-          });
-          summary.pending++;
-          continue;
-        }
-
         // Record that we're checking
         await PhoneRetailListing.findByIdAndUpdate(listingId, {
           $set: { lastCheckedAt: new Date() },
@@ -200,6 +184,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         let detectedPrice: number | null = null;
         let availability = 'unknown' as string;
         let fetchError = false;
+        const listingVariantSeed = listing as unknown as { ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; ptaStatus?: string; variantKey?: string };
+        let resolvedVariant = inferRetailVariantIdentity({
+          productUrl: listing.productUrl,
+          existing: listingVariantSeed,
+        });
 
         // ── SSRF protection ──
         const sourceAllowedDomains = source?.allowedDomains || [];
@@ -233,32 +222,56 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
           } else {
             const html = await response.text();
 
+            const preliminary = validateRetailListingPage({
+              html,
+              phoneModel: phone.modelName || '',
+              brandName: phone.brandName || '',
+            });
+            resolvedVariant = inferRetailVariantIdentity({
+              title: preliminary.title,
+              productUrl: listing.productUrl,
+              existing: listingVariantSeed,
+            });
             const validation = validateRetailListingPage({
               html,
               phoneModel: phone.modelName || '',
               brandName: phone.brandName || '',
-              expectedRam: (listing as unknown as { ram?: string }).ram || '',
-              expectedStorage: (listing as unknown as { storage?: string }).storage || '',
-              expectedPtaStatus: (listing as unknown as { ptaStatus?: string }).ptaStatus || phone.ptaStatus || '',
+              expectedRam: resolvedVariant.ram,
+              expectedStorage: resolvedVariant.storage,
+              expectedPtaStatus: resolvedVariant.ptaStatus,
             });
 
-            if (!validation.valid) {
+            const identityUpdate = {
+              sourceTitle: validation.title || preliminary.title,
+              ram: resolvedVariant.ram,
+              storage: resolvedVariant.storage,
+              color: resolvedVariant.color,
+              condition: resolvedVariant.condition,
+              ptaStatus: resolvedVariant.ptaStatus,
+              warrantyType: resolvedVariant.warrantyType,
+              variantKey: resolvedVariant.variantKey,
+            };
+
+            if (!validation.valid || normalizePtaPriceClass(resolvedVariant.ptaStatus) === 'unknown') {
+              const reasons = [...validation.reasons];
+              if (normalizePtaPriceClass(resolvedVariant.ptaStatus) === 'unknown') {
+                reasons.push('PTA class is not explicit; choose PTA Approved or Non-PTA in review.');
+              }
               await PhoneRetailListing.findByIdAndUpdate(listingId, {
                 $set: {
-                  sourceTitle: validation.title,
+                  ...identityUpdate,
                   verificationStatus: 'pending',
                   availability: 'unknown',
                   lastCheckedAt: new Date(),
+                  lastError: reasons.join('; ').slice(0, 1000),
                 },
               });
               summary.pending++;
-              console.warn(`[cron:prices] Listing moved to pending review: ${listing.productUrl} — ${validation.reasons.join('; ')}`);
+              console.warn(`[cron:prices] Listing moved to pending review: ${listing.productUrl} — ${reasons.join('; ')}`);
               continue;
             }
 
-            if (validation.title) {
-              await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: { sourceTitle: validation.title } });
-            }
+            await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: identityUpdate });
 
             const extracted = extractRetailPrice(html);
             detectedPrice = extracted?.price ?? null;
@@ -320,15 +333,14 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle successful price extraction ──
         if (detectedPrice !== null && detectedPrice > 0) {
           const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
-          const listingVariant = listing as unknown as { ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; ptaStatus?: string; variantKey?: string };
           const historyVariant = {
-            priceClass: normalizePtaPriceClass(listingVariant.ptaStatus),
-            ram: normalizeMemoryLabel(listingVariant.ram),
-            storage: normalizeMemoryLabel(listingVariant.storage),
-            color: String(listingVariant.color || '').trim(),
-            condition: String(listingVariant.condition || 'new').trim().toLowerCase(),
-            warrantyType: String(listingVariant.warrantyType || '').trim(),
-            variantKey: listingVariant.variantKey || buildPriceVariantKey(listingVariant),
+            priceClass: normalizePtaPriceClass(resolvedVariant.ptaStatus),
+            ram: normalizeMemoryLabel(resolvedVariant.ram),
+            storage: normalizeMemoryLabel(resolvedVariant.storage),
+            color: String(resolvedVariant.color || '').trim(),
+            condition: String(resolvedVariant.condition || 'new').trim().toLowerCase(),
+            warrantyType: String(resolvedVariant.warrantyType || '').trim(),
+            variantKey: resolvedVariant.variantKey || buildPriceVariantKey(resolvedVariant),
           };
 
           if (previousSourcePrice <= 0) {
