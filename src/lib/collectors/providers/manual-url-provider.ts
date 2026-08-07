@@ -2,6 +2,7 @@ import { BaseProvider, ProviderFetchResult } from './base';
 import type { NormalizedPhone } from '../types';
 import { getManufacturerParser } from '../parsers/registry';
 import type { ParserContext } from '../parsers/types';
+import { classifyCollectorPage, normalizeCollectedModelName } from '../page-classifier';
 
 
 const NON_PRODUCT_ASSET_RE = /\.(?:pdf|zip|rar|7z|docx?|xlsx?|pptx?|jpe?g|png|gif|webp|svg|ico|mp4|webm|mp3|wav)(?:$|[?#])/i;
@@ -62,9 +63,15 @@ export class ManualUrlProvider extends BaseProvider {
       return false;
     });
 
-    // Some catalog pages expose complete Product JSON-LD. Parse the catalog itself first.
-    const catalogPhone = normalizePhone(parser.parseProduct(html, url, context), this.generateSlug.bind(this));
-    if (catalogPhone && discovered.length === 0) phones.push(catalogPhone);
+    // Catalog/listing/navigation pages are discovery surfaces only. They must
+    // never become Phone records, even when their HTML contains generic JSON-LD.
+    const sourcePageClassification = classifyCollectorPage({ url, html, sourceName: this.sourceName });
+    if (sourcePageClassification.kind === 'product') {
+      const catalogPhone = normalizePhone(parser.parseProduct(html, url, context), this.generateSlug.bind(this));
+      if (catalogPhone && discovered.length === 0) phones.push(catalogPhone);
+    } else if (sourcePageClassification.kind !== 'unknown') {
+      warnings.push(`Source page classified as ${sourcePageClassification.kind}; used for link discovery only.`);
+    }
 
     // Process a bounded slice per invocation. This keeps Vercel/GitHub serverless
     // requests under their execution limits and lets the job runner resume on
@@ -94,6 +101,12 @@ export class ManualUrlProvider extends BaseProvider {
           return null;
         }
         const productHtml = await this.readTextLimited(productResponse);
+        const classification = classifyCollectorPage({ url: candidate.url, html: productHtml, title: candidate.label, sourceName: this.sourceName });
+        if (classification.kind !== 'product') {
+          skippedCount += 1;
+          warnings.push(`${candidate.url}: rejected as ${classification.kind} (${classification.reasons.join('; ')})`);
+          return null;
+        }
         let parsed = parser.parseProduct(productHtml, candidate.url, context);
         if (!parsed && candidate.brandHint && candidate.modelHint) {
           parsed = {
@@ -105,6 +118,7 @@ export class ManualUrlProvider extends BaseProvider {
             sourceUrl: candidate.url,
           };
         }
+        if (parsed) parsed.model = normalizeCollectedModelName(parsed.brandName, parsed.model);
         const phone = parsed ? normalizePhone(parsed, this.generateSlug.bind(this)) : null;
         if (!phone) warnings.push(`${candidate.url}: product identity could not be confirmed`);
         return phone;

@@ -1,0 +1,2 @@
+# After manual review, paste one confirmed Phone ID per line.
+# Keep this file empty until confirmation.

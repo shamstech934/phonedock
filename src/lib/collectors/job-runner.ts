@@ -7,6 +7,7 @@ import { validateCollectedPhone, detectDuplicates, detectConflicts, suggestCateg
 import { createHash } from 'node:crypto';
 import { generateSlug } from '@/lib/import/validators';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
+import { classifyCollectorPage, normalizeCollectedModelName } from './page-classifier';
 
 const MAX_COLLECT_PER_JOB = 2000;
 // Vercel serverless: limit pages per invocation to stay within timeout.
@@ -250,6 +251,16 @@ async function processCollectedPhone(
   jobId: string,
   reliability: number,
 ): Promise<{ isNew: boolean; isPossibleUpdate: boolean; isDuplicate: boolean; conflicts: number }> {
+  const classification = classifyCollectorPage({ url: phone.sourceUrl || sourceUrl, title: `${phone.brandName} ${phone.model}`, sourceName });
+  if (['catalog', 'brand_listing', 'price_range', 'article', 'navigation'].includes(classification.kind)) {
+    return { isNew: false, isPossibleUpdate: false, isDuplicate: false, conflicts: 0 };
+  }
+  if ((config.type === 'manual_url' || config.type === 'manufacturer')
+      && /(?:whatmobile\.com\.pk|samsung\.com)/i.test(phone.sourceUrl || sourceUrl)
+      && classification.kind !== 'product') {
+    return { isNew: false, isPossibleUpdate: false, isDuplicate: false, conflicts: 0 };
+  }
+  phone.model = normalizeCollectedModelName(phone.brandName, phone.model);
   const issues = validateCollectedPhone(phone);
   const isValid = !issues.some(issue => issue.severity === 'error');
   const scores = scoreCollectedPhone(phone, issues, reliability);
@@ -299,6 +310,11 @@ async function processCollectedPhone(
 export async function approveAndImport(draftId: string, adminEdits?: Record<string, unknown>): Promise<{ success: boolean; phoneId?: string; error?: string }> {
   const draft = await CollectedPhone.findById(draftId);
   if (!draft) return { success: false, error: 'Draft not found' };
+  const classification = classifyCollectorPage({ url: draft.sourceUrl, title: `${draft.brandName} ${draft.model}`, sourceName: draft.sourceName });
+  if (['catalog', 'brand_listing', 'price_range', 'article', 'navigation'].includes(classification.kind)) {
+    return { success: false, error: `Import blocked: source page classified as ${classification.kind}. ${classification.reasons.join('; ')}` };
+  }
+  draft.model = normalizeCollectedModelName(draft.brandName, draft.model);
 
   // Apply admin edits if provided
   if (adminEdits) {

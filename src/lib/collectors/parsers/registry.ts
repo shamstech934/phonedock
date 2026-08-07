@@ -1,8 +1,10 @@
 import type { ManufacturerParserPlugin } from './types';
 import { SamsungParser } from './samsung-parser';
+import { WhatMobileParser } from './whatmobile-parser';
 import { GenericManufacturerParser } from './generic-parser';
 
 const plugins: ManufacturerParserPlugin[] = [
+  new WhatMobileParser(),
   new SamsungParser(),
   new GenericManufacturerParser(),
 ];
