@@ -164,6 +164,29 @@ function PriceTrackerChart({ history }: { history: Array<{ newPrice: number; cap
 }
 
 
+
+function splitCatalogVariantValues(value: unknown, kind: 'memory' | 'color'): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  if (kind === 'memory') {
+    const matches = raw.match(/\b\d+(?:\.\d+)?\s*(?:TB|GB)\b/gi) || [];
+    return [...new Set(matches.map(v => v.toUpperCase().replace(/\s+/g, '')))];
+  }
+
+  return [...new Set(
+    raw
+      .split(/[,/|;]/)
+      .map(v => v.trim())
+      .filter(Boolean)
+      .filter(v => v.length <= 40)
+  )];
+}
+
+function mergeVariantOptions(primary: string[] | undefined, fallback: string[]): string[] {
+  return [...new Set([...(primary || []), ...fallback].map(v => String(v || '').trim()).filter(Boolean))];
+}
+
 function ScoreRadar({ phone }: { phone: Phone }) {
   const scores = [
     { label: 'Performance', value: phone.performanceScore || 0 },
@@ -474,6 +497,9 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [selectedRam, setSelectedRam] = useState('');
   const [selectedStorage, setSelectedStorage] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
+  const specRamOptions = splitCatalogVariantValues(data?.phone?.specs?.ram, 'memory');
+  const specStorageOptions = splitCatalogVariantValues(data?.phone?.specs?.storage, 'memory');
+  const specColorOptions = splitCatalogVariantValues(data?.phone?.specs?.colors, 'color');
   const [priceTracker, setPriceTracker] = useState<{
     currentPrice: number; ptaPrice: number; nonPtaPrice: number; priceClass: 'pta-approved' | 'non-pta'; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
@@ -519,6 +545,11 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   useEffect(() => {
     if (data?.phone) recent.add(data.phone);
   }, [data?.phone?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ramVariantOptions = mergeVariantOptions(priceTracker?.variantOptions?.ram, specRamOptions);
+  const storageVariantOptions = mergeVariantOptions(priceTracker?.variantOptions?.storage, specStorageOptions);
+  const colorVariantOptions = mergeVariantOptions(priceTracker?.variantOptions?.colors, specColorOptions);
+  const hasCatalogVariantOptions = ramVariantOptions.length > 0 || storageVariantOptions.length > 0 || colorVariantOptions.length > 0;
 
   if (loading) {
     return (
@@ -686,19 +717,27 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     <button type="button" onClick={() => setSelectedPriceClass('pta-approved')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'pta-approved' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>PTA Approved</button>
                     <button type="button" onClick={() => setSelectedPriceClass('non-pta')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'non-pta' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500'}`}>Non-PTA</button>
                   </div>
-                  {(priceTracker?.variantOptions?.storage?.length || priceTracker?.variantOptions?.ram?.length) ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {priceTracker?.variantOptions?.ram?.length ? <select value={selectedRam} onChange={e => { setSelectedRam(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="RAM variant"><option value="">Any RAM</option>{priceTracker.variantOptions.ram.map(v => <option key={v} value={v}>{v} RAM</option>)}</select> : null}
-                      {priceTracker?.variantOptions?.storage?.length ? <select value={selectedStorage} onChange={e => { setSelectedStorage(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="Storage variant"><option value="">Any Storage</option>{priceTracker.variantOptions.storage.map(v => <option key={v} value={v}>{v}</option>)}</select> : null}
-                    </div>
-                  ) : null}
-                  {priceTracker?.variantOptions?.colors?.length ? (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button type="button" onClick={() => setSelectedColor('')} className={`rounded-full border px-2.5 py-1 text-[11px] ${!selectedColor ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>Any</button>
-                        {priceTracker.variantOptions.colors.map(v => <button type="button" key={v} onClick={() => setSelectedColor(v)} className={`rounded-full border px-2.5 py-1 text-[11px] ${selectedColor === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>{v}</button>)}
-                      </div>
+                  {hasCatalogVariantOptions ? (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-2.5 space-y-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Choose variant</p>
+                      {(ramVariantOptions.length > 0 || storageVariantOptions.length > 0) ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {ramVariantOptions.length > 0 ? <select value={selectedRam} onChange={e => { setSelectedRam(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="RAM variant"><option value="">Any RAM</option>{ramVariantOptions.map(v => <option key={v} value={v}>{v} RAM</option>)}</select> : <div />}
+                          {storageVariantOptions.length > 0 ? <select value={selectedStorage} onChange={e => { setSelectedStorage(e.target.value); setSelectedColor(''); }} className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-xs" aria-label="Storage variant"><option value="">Any Storage</option>{storageVariantOptions.map(v => <option key={v} value={v}>{v}</option>)}</select> : null}
+                        </div>
+                      ) : null}
+                      {colorVariantOptions.length > 0 ? (
+                        <div>
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Color</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button type="button" onClick={() => setSelectedColor('')} className={`rounded-full border px-2.5 py-1 text-[11px] ${!selectedColor ? 'border-blue-500 bg-white text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}>Any</button>
+                            {colorVariantOptions.map(v => <button type="button" key={v} onClick={() => setSelectedColor(v)} className={`rounded-full border px-2.5 py-1 text-[11px] ${selectedColor === v ? 'border-blue-500 bg-white text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}>{v}</button>)}
+                          </div>
+                        </div>
+                      ) : null}
+                      {(!priceTracker?.variantOptions?.ram?.length && !priceTracker?.variantOptions?.storage?.length && !priceTracker?.variantOptions?.colors?.length) ? (
+                        <p className="text-[10px] text-gray-500">Variants are from the phone specifications. Price is shown only when this exact variant has a verified price record.</p>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -746,10 +785,14 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${priceTracker.priceMode === 'manual' ? 'bg-blue-50 text-blue-700 border-blue-200/50' : 'bg-purple-50 text-purple-700 border-purple-200/50'}`}>
-                        {priceTracker.priceMode === 'manual' ? 'Manually Verified' : 'Auto Tracked'}
-                      </span>
-                      {priceTracker.manualLock && (
+                      {priceTracker.currentPrice > 0 ? (
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${priceTracker.priceMode === 'manual' ? 'bg-blue-50 text-blue-700 border-blue-200/50' : 'bg-purple-50 text-purple-700 border-purple-200/50'}`}>
+                          {priceTracker.priceMode === 'manual' ? 'Manually Verified' : 'Auto Tracked'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-500">No verified price</span>
+                      )}
+                      {priceTracker.manualLock && priceTracker.currentPrice > 0 && (
                         <span className="text-[10px] font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200/50">Price Locked</span>
                       )}
                     </div>
