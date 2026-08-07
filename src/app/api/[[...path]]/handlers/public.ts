@@ -534,24 +534,35 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       }))
       .filter(row => row.priceClass !== 'unknown' && row.price > 0);
 
+    const hasVariantSelection = Boolean(selectedRam || selectedStorage || selectedColor);
     const selectedOffers = variants.filter(row =>
       row.priceClass === priceClass
-      && (!selectedRam || row.ram === selectedRam)
-      && (!selectedStorage || row.storage === selectedStorage)
-      && (!selectedColor || row.colorKey === selectedColor)
       && row.condition === 'new'
+      && (hasVariantSelection
+        ? ((!selectedRam || row.ram === selectedRam)
+          && (!selectedStorage || row.storage === selectedStorage)
+          && (!selectedColor || row.colorKey === selectedColor))
+        : (!row.ram && !row.storage && !row.colorKey))
     );
     const selectedBest = selectedOffers.length > 0 ? [...selectedOffers].sort((a,b) => a.price - b.price)[0] : null;
-    const confirmedQuery: Record<string, unknown> = { phoneId: phone._id, verificationStatus: 'confirmed', priceClass };
-    if (selectedRam) confirmedQuery.ram = selectedRam;
-    if (selectedStorage) confirmedQuery.storage = selectedStorage;
-    if (selectedColor) confirmedQuery.color = { $regex: `^${selectedColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-\\s]?')}$`, $options: 'i' };
+    const confirmedQuery: Record<string, unknown> = { phoneId: phone._id, verificationStatus: 'confirmed', priceClass, condition: 'new' };
+    if (hasVariantSelection) {
+      if (selectedRam) confirmedQuery.ram = selectedRam;
+      if (selectedStorage) confirmedQuery.storage = selectedStorage;
+      if (selectedColor) confirmedQuery.color = { $regex: `^${selectedColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-\\s]?')}$`, $options: 'i' };
+    } else {
+      confirmedQuery.ram = '';
+      confirmedQuery.storage = '';
+      confirmedQuery.color = '';
+    }
     const confirmed = await PriceTrackerHistory.find(confirmedQuery).sort({ capturedAt: -1 }).limit(90).lean();
 
     const ptaPrice = Number(phone.bestPtaPricePKR || 0);
     const nonPtaPrice = Number(phone.bestNonPtaPricePKR || 0);
     const fallbackPrice = priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
-    const currentPrice = selectedBest?.price || fallbackPrice;
+    // Once a user chooses RAM/storage/color, never fall back to another
+    // variant's class-level price. A missing exact offer is genuinely missing.
+    const currentPrice = selectedBest?.price || (hasVariantSelection ? 0 : fallbackPrice);
     const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
@@ -569,6 +580,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       nonPtaPrice,
       priceClass,
       selectedVariant: { ram: selectedRam, storage: selectedStorage, color: selectedColor },
+      variantSelectionRequired: !hasVariantSelection && currentPrice <= 0
+        && variants.some(v => v.priceClass === priceClass && v.condition === 'new' && Boolean(v.ram || v.storage || v.colorKey)),
+      exactVariantAvailable: currentPrice > 0,
       variantOptions: (() => {
         const classRows = variants.filter(v => v.priceClass === priceClass && v.condition === 'new');
         const memoryRows = selectedRam ? classRows.filter(v => v.ram === selectedRam) : classRows;

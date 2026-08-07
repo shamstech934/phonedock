@@ -12,8 +12,8 @@ assert.equal(normalizePtaPriceClass('', false), 'unknown');
 
 assert.equal(isPtaPriceCompatible({ phoneStatus: 'PTA Approved', listingStatus: 'Non PTA' }), false);
 assert.equal(isPtaPriceCompatible({ phoneStatus: 'Non-PTA', listingStatus: 'PTA Approved' }), false);
-assert.equal(isPtaPriceCompatible({ phoneStatus: 'PTA Approved', listingStatus: '' }), true);
-assert.equal(isPtaPriceCompatible({ phoneStatus: 'Unknown', listingStatus: 'Non PTA' }), true);
+assert.equal(isPtaPriceCompatible({ phoneStatus: 'PTA Approved', listingStatus: '' }), false);
+assert.equal(isPtaPriceCompatible({ phoneStatus: 'Unknown', listingStatus: 'Non PTA' }), false);
 
 const drop = buildVerifiedPriceState({ currentPrice: 100_000, nextPrice: 85_000 });
 assert.equal(drop.previousPrice, 100_000);
@@ -41,10 +41,10 @@ assert.equal(initial.qualifiesForPriceDropTrend, false);
 assert.throws(() => buildVerifiedPriceState({ currentPrice: 50_000, nextPrice: 0 }));
 
 const offers = [
-  { listingId: 'l1', sourceId: 's1', sourceName: 'Official', sourceType: 'official', sourcePriority: 100, price: 105_000, ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
-  { listingId: 'l2', sourceId: 's2', sourceName: 'Retailer', sourceType: 'retailer', sourcePriority: 50, price: 99_000, ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
-  { listingId: 'l3', sourceId: 's3', sourceName: 'Non PTA', sourceType: 'retailer', sourcePriority: 40, price: 70_000, ptaStatus: 'Non PTA', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
-  { listingId: 'l4', sourceId: 's4', sourceName: 'Untrusted', sourceType: 'marketplace', sourcePriority: 0, price: 50_000, ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: false, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
+  { listingId: 'l1', sourceId: 's1', sourceName: 'Official', sourceType: 'official', sourcePriority: 100, price: 105_000, condition: 'new', ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
+  { listingId: 'l2', sourceId: 's2', sourceName: 'Retailer', sourceType: 'retailer', sourcePriority: 50, price: 99_000, condition: 'new', ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
+  { listingId: 'l3', sourceId: 's3', sourceName: 'Non PTA', sourceType: 'retailer', sourcePriority: 40, price: 70_000, condition: 'new', ptaStatus: 'Non PTA', availability: 'available', enabled: true, trusted: true, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
+  { listingId: 'l4', sourceId: 's4', sourceName: 'Untrusted', sourceType: 'marketplace', sourcePriority: 0, price: 50_000, condition: 'new', ptaStatus: 'PTA Approved', availability: 'available', enabled: true, trusted: false, sourceEnabled: true, sourceStatus: 'active', verificationStatus: 'verified' },
 ];
 const selected = selectBestVerifiedOffer({ offers, phoneStatus: 'PTA Approved' });
 assert.equal(selected.best?.listingId, 'l2');
@@ -64,5 +64,25 @@ const unavailable = selectBestVerifiedOffer({
   phoneStatus: 'PTA Approved',
 });
 assert.equal(unavailable.best, null);
+
+
+// Used/refurbished inventory must never become a public canonical price.
+const usedOnly = selectBestVerifiedOffer({
+  offers: [{ ...offers[1], listingId: 'used', condition: 'used', price: 40_000 }],
+  phoneStatus: 'PTA Approved',
+});
+assert.equal(usedOnly.best, null);
+assert.equal(usedOnly.bestPta, null);
+
+// A cheaper storage/color-specific offer must not overwrite the phone-level price.
+const mixedVariants = selectBestVerifiedOffer({
+  offers: [
+    { ...offers[0], listingId: 'generic', price: 105_000, ram: '', storage: '', color: '' },
+    { ...offers[1], listingId: '128gb', price: 80_000, ram: '8GB', storage: '128GB', color: 'Black' },
+  ],
+  phoneStatus: 'PTA Approved',
+});
+assert.equal(mixedVariants.best?.listingId, 'generic');
+assert.equal(mixedVariants.bestPta?.listingId, 'generic');
 
 console.log('Price tracker intelligence tests passed');

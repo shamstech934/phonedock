@@ -988,6 +988,12 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         changedByAdminId: admin._id,
         verificationStatus: 'confirmed',
         priceClass,
+        ram: normalizeMemoryLabel(ram),
+        storage: normalizeMemoryLabel(storage),
+        color: String(color || '').trim(),
+        condition: String(condition || 'new').trim().toLowerCase(),
+        warrantyType: String(warrantyType || '').trim(),
+        variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus: priceClass, condition, warrantyType }),
         capturedAt: new Date(),
       });
     } catch (e) { console.error('[PriceTrackerHistory]', e); }

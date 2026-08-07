@@ -162,12 +162,22 @@ export function selectBestVerifiedOffer(input: {
     && (offer.sourceStatus || 'active') === 'active'
     && (offer.verificationStatus || 'pending') === 'verified'
     && (offer.availability || 'unknown') !== 'unavailable'
+    && !/(?:used|refurb|open[-\s]?box|pre[-\s]?owned)/i.test(String(offer.condition || 'new'))
     && positiveNumber(offer.price) > 0
   ));
 
-  const bestPta = pickLowest(eligible.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'pta-approved'));
-  const bestNonPta = pickLowest(eligible.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'non-pta'));
-  const compatible = eligible.filter((offer) => isPtaPriceCompatible({
+  // Canonical phone-level prices must never be borrowed from a specific
+  // RAM/storage/color variant. Variant-specific offers remain eligible for
+  // the public variant selector, but only generic NEW offers may become the
+  // phone-level PTA/Non-PTA fallback or overwrite pricePKR/currentPrice.
+  const canonical = eligible.filter((offer) => (
+    !String(offer.ram || '').trim()
+    && !String(offer.storage || '').trim()
+    && !String(offer.color || '').trim()
+  ));
+  const bestPta = pickLowest(canonical.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'pta-approved'));
+  const bestNonPta = pickLowest(canonical.filter((offer) => normalizePtaPriceClass(offer.ptaStatus) === 'non-pta'));
+  const compatible = canonical.filter((offer) => isPtaPriceCompatible({
     phoneStatus: input.phoneStatus,
     phoneApproved: input.phoneApproved,
     listingStatus: offer.ptaStatus,

@@ -482,6 +482,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     buyRecommendation: 'buy_now' | 'good_price' | 'wait' | 'insufficient_data';
     buyRecommendationReason: string;
     selectedVariant?: { ram: string; storage: string; color: string };
+    variantSelectionRequired?: boolean; exactVariantAvailable?: boolean;
     variantOptions?: { ram: string[]; storage: string[]; colors: string[] };
     variantOffers?: Array<{ ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; price: number; source: string; sourceUrl: string }>;
     selectedOffer?: { price: number; source: string; sourceUrl: string; ram: string; storage: string; color: string } | null;
@@ -701,13 +702,17 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     </div>
                   ) : null}
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-sm text-muted-foreground">{selectedPriceClass === 'pta-approved' ? 'PTA Approved Price' : 'Non-PTA Price'}</span>
-                    <span className="text-2xl font-bold text-blue-600">{formatPrice(priceTracker?.currentPrice || (selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0)))}</span>
+                    <span className="text-right text-2xl font-bold text-blue-600">
+                      {priceTracker ? (priceTracker.currentPrice > 0 ? formatPrice(priceTracker.currentPrice) : 'Price unavailable') : formatPrice(selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0))}
+                    </span>
                   </div>
+                  {priceTracker?.variantSelectionRequired ? <p className="text-[11px] font-medium text-blue-700">Select RAM/storage/color to see the exact verified price.</p> : null}
+                  {priceTracker && !priceTracker.variantSelectionRequired && !priceTracker.exactVariantAvailable && (selectedRam || selectedStorage || selectedColor) ? <p className="text-[11px] text-amber-700">Price unavailable for this exact selected variant. Another storage or color price will not be substituted.</p> : null}
                   {priceTracker?.selectedOffer ? <p className="text-[11px] text-gray-500">{[priceTracker.selectedOffer.ram, priceTracker.selectedOffer.storage, priceTracker.selectedOffer.color].filter(Boolean).join(' • ')}{priceTracker.selectedOffer.source ? ` • ${priceTracker.selectedOffer.source}` : ''}</p> : null}
 
-                  {selectedPriceClass === 'non-pta' && !(priceTracker?.nonPtaPrice || p.bestNonPtaPricePKR) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
+                  {selectedPriceClass === 'non-pta' && priceTracker && priceTracker.currentPrice <= 0 && !priceTracker.variantSelectionRequired && !(selectedRam || selectedStorage || selectedColor) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
                 </div>
                 {/* Price tracking badges */}
                 {priceTracker && (

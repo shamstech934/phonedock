@@ -12,6 +12,7 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { isPtaPriceCompatible, normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
+import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -319,6 +320,16 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle successful price extraction ──
         if (detectedPrice !== null && detectedPrice > 0) {
           const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
+          const listingVariant = listing as unknown as { ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; ptaStatus?: string; variantKey?: string };
+          const historyVariant = {
+            priceClass: normalizePtaPriceClass(listingVariant.ptaStatus),
+            ram: normalizeMemoryLabel(listingVariant.ram),
+            storage: normalizeMemoryLabel(listingVariant.storage),
+            color: String(listingVariant.color || '').trim(),
+            condition: String(listingVariant.condition || 'new').trim().toLowerCase(),
+            warrantyType: String(listingVariant.warrantyType || '').trim(),
+            variantKey: listingVariant.variantKey || buildPriceVariantKey(listingVariant),
+          };
 
           if (previousSourcePrice <= 0) {
             // First successful detection from a trusted, verified listing.
@@ -351,7 +362,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
-              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
+              ...historyVariant,
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -434,7 +445,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
-              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
+              ...historyVariant,
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -451,7 +462,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
-              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
+              ...historyVariant,
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -468,7 +479,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
-              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
+              ...historyVariant,
               verificationStatus: 'pending',
               capturedAt: new Date(),
             });
