@@ -9,7 +9,7 @@ import { validateUrlForFetch } from '@/lib/ssrf-guard';
 import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
-import { isPtaPriceCompatible } from '@/lib/price-tracker-intelligence';
+import { isPtaPriceCompatible, normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
 
@@ -351,6 +351,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
+              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -433,6 +434,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
+              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -449,6 +451,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
+              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
               verificationStatus: 'confirmed',
               capturedAt: new Date(),
             });
@@ -465,6 +468,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               sourceType: 'retailer',
               sourceId: source._id,
               sourceUrl: listing.productUrl,
+              priceClass: normalizePtaPriceClass((listing as unknown as { ptaStatus?: string }).ptaStatus),
               verificationStatus: 'pending',
               capturedAt: new Date(),
             });

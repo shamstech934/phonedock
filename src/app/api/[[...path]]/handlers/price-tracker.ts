@@ -14,6 +14,7 @@ import { discoverCatalogProductUrls, isProbableProductUrl, matchProductUrlToPhon
 import { resolvePendingRetailOffer } from '@/lib/price-offer-service';
 import { bridgeCollectedPricesToTracker } from '@/lib/collector-price-bridge';
 import { fetchRetailerPage } from '@/lib/retailer-fetch';
+import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 
 // ── Lean document types for price-tracker ──
 interface LeanBrand { _id: Types.ObjectId; name: string }
@@ -930,7 +931,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const phone = await Phone.findById(phoneId);
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
-    const oldPrice = phone.currentPrice || 0;
+    const priceClass = normalizePtaPriceClass(ptaStatus || phone.ptaStatus, ptaStatus ? undefined : phone.ptaApproved);
+    if (priceClass === 'unknown') return NextResponse.json({ error: 'Choose PTA Approved or Non-PTA before saving this price' }, { status: 400 });
+    const oldPrice = priceClass === 'non-pta'
+      ? Number(phone.bestNonPtaPricePKR || 0)
+      : Number(phone.bestPtaPricePKR || phone.currentPrice || phone.pricePKR || 0);
     const difference = newPrice - oldPrice;
     const percentageChange = oldPrice > 0 ? Math.round((difference / oldPrice) * 10000) / 100 : 0;
 
@@ -941,14 +946,19 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
 
     // Update Phone document
     const updates: Record<string, unknown> = {
-      currentPrice: newPrice,
-      previousPrice: oldPrice,
-      priceChange: difference,
-      percentageChange: percentageChange,
       lastPriceChangedAt: new Date(),
       priceMode: 'manual',
       lastPriceCheckedAt: new Date(),
+      ...(priceClass === 'pta-approved' ? { bestPtaPricePKR: newPrice } : { bestNonPtaPricePKR: newPrice }),
     };
+    const phoneClass = normalizePtaPriceClass(phone.ptaStatus, phone.ptaApproved);
+    if (priceClass === phoneClass) {
+      updates.currentPrice = newPrice;
+      updates.previousPrice = oldPrice;
+      updates.priceChange = difference;
+      updates.percentageChange = percentageChange;
+      updates.pricePKR = newPrice;
+    }
 
     // Track lowest/highest
     const lowest = phone.lowestPrice || 0;
@@ -956,11 +966,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     if (newPrice < lowest || lowest === 0) updates.lowestPrice = newPrice;
     if (newPrice > highest) updates.highestPrice = newPrice;
 
-    if (ptaStatus) updates.ptaStatus = ptaStatus;
+    // `ptaStatus` here classifies this price variant; it must not mutate the phone's canonical PTA status.
     if (warrantyType) updates.warrantyType = warrantyType;
-
-    // Also update the legacy pricePKR field
-    updates.pricePKR = newPrice;
 
     await Phone.findByIdAndUpdate(phoneId, { $set: updates });
 
@@ -976,6 +983,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
         sourceType: 'manual',
         changedByAdminId: admin._id,
         verificationStatus: 'confirmed',
+        priceClass,
         capturedAt: new Date(),
       });
     } catch (e) { console.error('[PriceTrackerHistory]', e); }

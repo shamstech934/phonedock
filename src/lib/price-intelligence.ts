@@ -1,4 +1,5 @@
 import { Phone, PhoneRetailListing, PriceIntelligenceSignal, PriceSource, PriceTrackerHistory } from '@/lib/models';
+import { isPtaPriceCompatible, normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 
 type PlainListing = {
   _id: unknown;
@@ -16,6 +17,7 @@ type PlainListing = {
   lastCheckedAt?: Date | string | null;
   enabled?: boolean;
   verificationStatus?: string;
+  ptaStatus?: string;
 };
 
 type SignalInput = {
@@ -32,7 +34,7 @@ type SignalInput = {
 export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } = {}) {
   const safeLimit = Math.min(1000, Math.max(1, Number.isFinite(limit) ? limit : 500));
   const phones = await Phone.find({ deletedAt: null, active: { $ne: false }, status: 'published' })
-    .select('_id modelName slug pricePKR currentPrice manualLock')
+    .select('_id modelName slug pricePKR currentPrice manualLock ptaStatus ptaApproved bestPtaPricePKR bestNonPtaPricePKR')
     .sort({ updatedAt: -1 })
     .limit(safeLimit)
     .lean();
@@ -80,7 +82,8 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
     trustedListings += trusted.length;
     if (trusted.length) coveredPhones++;
 
-    const sorted = [...trusted].sort((a, b) => Number(a.currentSourcePrice) - Number(b.currentSourcePrice));
+    const compatibleTrusted = trusted.filter((listing) => isPtaPriceCompatible({ phoneStatus: phone.ptaStatus, phoneApproved: phone.ptaApproved, listingStatus: listing.ptaStatus }));
+    const sorted = [...compatibleTrusted].sort((a, b) => Number(a.currentSourcePrice) - Number(b.currentSourcePrice));
     const lowest = sorted[0];
     const highest = sorted[sorted.length - 1];
     const signals: SignalInput[] = [];
@@ -118,7 +121,7 @@ export async function scanPriceIntelligence({ limit = 500 }: { limit?: number } 
         recommendedPrice: Number(lowest.currentSourcePrice),
         sourceId: lowest.sourceId?._id,
         sourceUrl: lowest.productUrl,
-        evidence: { listingId: lowest._id, sourceName: lowest.sourceId?.name },
+        evidence: { listingId: lowest._id, sourceName: lowest.sourceId?.name, priceClass: normalizePtaPriceClass(lowest.ptaStatus) },
       });
       recommendations++;
     }

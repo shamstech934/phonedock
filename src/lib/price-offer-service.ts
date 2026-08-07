@@ -2,6 +2,7 @@ import { Phone, PriceHistory } from '@/lib/models';
 import { PhoneRetailListing } from '@/lib/models/PriceTracker';
 import {
   buildVerifiedPriceState,
+  normalizePtaPriceClass,
   selectBestVerifiedOffer,
   type VerifiedOfferCandidate,
 } from '@/lib/price-tracker-intelligence';
@@ -60,6 +61,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     };
   });
 
+  const phonePriceClass = normalizePtaPriceClass(phone.ptaStatus, phone.ptaApproved);
   const selection = selectBestVerifiedOffer({
     offers,
     phoneStatus: phone.ptaStatus,
@@ -76,7 +78,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     lastPriceCheckedAt: new Date(),
   };
 
-  if (!selection.best || phone.manualLock === true) {
+  if (!selection.best || phone.manualLock === true || phonePriceClass === 'unknown') {
     await Phone.findByIdAndUpdate(phoneId, { $set: metadata });
     return {
       slug: phone.slug || null,

@@ -65,7 +65,10 @@ export function isPtaPriceCompatible(input: {
 }): boolean {
   const phoneClass = normalizePtaPriceClass(input.phoneStatus, input.phoneApproved);
   const listingClass = normalizePtaPriceClass(input.listingStatus);
-  return phoneClass === 'unknown' || listingClass === 'unknown' || phoneClass === listingClass;
+  // Unknown evidence is never safe for automatic publication. It may be stored
+  // and reviewed, but it must not overwrite either PTA or Non-PTA public price.
+  if (phoneClass === 'unknown' || listingClass === 'unknown') return false;
+  return phoneClass === listingClass;
 }
 
 /**

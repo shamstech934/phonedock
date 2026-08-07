@@ -470,8 +470,9 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
   const [priceHistory, setPriceHistory] = useState<Array<{ recordedAt: string; storeName: string | null; price: number }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceTrackerError, setPriceTrackerError] = useState('');
+  const [selectedPriceClass, setSelectedPriceClass] = useState<'pta-approved' | 'non-pta'>('pta-approved');
   const [priceTracker, setPriceTracker] = useState<{
-    currentPrice: number; previousPrice: number; lowestPrice: number; highestPrice: number;
+    currentPrice: number; ptaPrice: number; nonPtaPrice: number; priceClass: 'pta-approved' | 'non-pta'; previousPrice: number; lowestPrice: number; highestPrice: number;
     averagePrice: number; dataPoints: number; savingsFromHigh: number; trend: 'up' | 'down' | 'stable';
     priceChange: number; percentageChange: number; lastPriceChangedAt: string | null;
     positionInRange: number | null; discountFromAveragePct: number;
@@ -491,7 +492,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(d => { if (!cancelled) { setPriceHistory(d.history || []); setHistoryLoading(false); } })
       .catch(() => { if (!cancelled) setHistoryLoading(false); });
     setPriceTrackerError('');
-    fetch(`/api/phones/${slug}/price-tracker`)
+    fetch(`/api/phones/${slug}/price-tracker?priceClass=${selectedPriceClass}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || d.message || 'Price tracker is temporarily unavailable');
@@ -500,7 +501,7 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
       .then(d => { if (!cancelled && !d.error) setPriceTracker(d); })
       .catch(err => { if (!cancelled) setPriceTrackerError(err instanceof Error ? err.message : 'Price tracker is temporarily unavailable'); });
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, selectedPriceClass]);
 
   useEffect(() => {
     if (data?.phone) recent.add(data.phone);
@@ -667,9 +668,16 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
                     <p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((p.originalPricePKR - p.pricePKR) / p.originalPricePKR) * 100)}% — was {formatPrice(p.originalPricePKR)}</p>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Price in Pakistan</span>
-                  <span className="text-2xl font-bold text-blue-600">{formatPrice(p.pricePKR)}</span>
+                <div className="space-y-2">
+                  <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+                    <button type="button" onClick={() => setSelectedPriceClass('pta-approved')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'pta-approved' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500'}`}>PTA Approved</button>
+                    <button type="button" onClick={() => setSelectedPriceClass('non-pta')} className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${selectedPriceClass === 'non-pta' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500'}`}>Non-PTA</button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{selectedPriceClass === 'pta-approved' ? 'PTA Approved Price' : 'Non-PTA Price'}</span>
+                    <span className="text-2xl font-bold text-blue-600">{formatPrice(priceTracker?.currentPrice || (selectedPriceClass === 'pta-approved' ? (p.bestPtaPricePKR || p.pricePKR) : (p.bestNonPtaPricePKR || 0)))}</span>
+                  </div>
+                  {selectedPriceClass === 'non-pta' && !(priceTracker?.nonPtaPrice || p.bestNonPtaPricePKR) && <p className="text-[11px] text-amber-700">Verified Non-PTA price is not available yet.</p>}
                 </div>
                 {/* Price tracking badges */}
                 {priceTracker && (

@@ -499,15 +499,19 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   // ---- /api/phones/:slug/price-tracker ----
   if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-tracker') {
     await connectDB();
-    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('_id pricePKR').lean();
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('_id pricePKR bestPtaPricePKR bestNonPtaPricePKR ptaStatus ptaApproved priceMode manualLock').lean();
     if (!phone) return cachedError('Not found', 404, 60, 300);
 
-    const confirmed = await PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed' })
+    const requestedClass = req.nextUrl.searchParams.get('priceClass');
+    const priceClass = requestedClass === 'non-pta' ? 'non-pta' : 'pta-approved';
+    const confirmed = await PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', priceClass })
       .sort({ capturedAt: -1 })
       .limit(90)
       .lean();
 
-    const currentPrice = phone.pricePKR || 0;
+    const ptaPrice = Number(phone.bestPtaPricePKR || 0);
+    const nonPtaPrice = Number(phone.bestNonPtaPricePKR || 0);
+    const currentPrice = priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
     const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
@@ -521,6 +525,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     return cached({
       currentPrice,
+      ptaPrice,
+      nonPtaPrice,
+      priceClass,
       previousPrice,
       lowestPrice,
       highestPrice,

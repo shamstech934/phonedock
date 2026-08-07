@@ -111,6 +111,8 @@ export interface Phone {
   originalPricePKR: number;
   currentPrice?: number;
   previousPrice?: number;
+  bestPtaPricePKR?: number;
+  bestNonPtaPricePKR?: number;
   lowestPrice?: number;
   highestPrice?: number;
   priceChange?: number;

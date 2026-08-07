@@ -127,6 +127,7 @@ const PriceTrackerHistorySchema = new Schema({
   sourceType: { type: String, enum: ['manual', 'retailer', 'correction'], default: 'manual' },
   sourceId: { type: Schema.Types.ObjectId, ref: 'PriceSource' },
   sourceUrl: { type: String, default: '' },
+  priceClass: { type: String, enum: ['pta-approved', 'non-pta', 'unknown'], default: 'unknown', index: true },
   changedByAdminId: { type: Schema.Types.ObjectId, ref: 'Admin' },
   approvedByAdminId: { type: Schema.Types.ObjectId, ref: 'Admin' },
   capturedAt: { type: Date, default: Date.now },
@@ -135,6 +136,7 @@ const PriceTrackerHistorySchema = new Schema({
 
 PriceTrackerHistorySchema.index({ phoneId: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ phoneId: 1, changeType: 1 });
+PriceTrackerHistorySchema.index({ phoneId: 1, priceClass: 1, capturedAt: -1 });
 PriceTrackerHistorySchema.index({ sourceType: 1 });
 PriceTrackerHistorySchema.index({ verificationStatus: 1 });
 PriceTrackerHistorySchema.index({ capturedAt: -1 });
