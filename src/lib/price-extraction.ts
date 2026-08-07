@@ -5,34 +5,31 @@ export interface ExtractedPrice {
   confidence: number;
 }
 
-type SupportedCurrency = 'PKR' | 'USD';
-
-const PRICE_BOUNDS: Record<SupportedCurrency, { min: number; max: number }> = {
+const LIMITS = {
   PKR: { min: 1_000, max: 5_000_000 },
   USD: { min: 20, max: 20_000 },
-};
+} as const;
 
-function normalizeCurrency(value: unknown, fallback: SupportedCurrency): SupportedCurrency | null {
+type SupportedCurrency = keyof typeof LIMITS;
+
+function normalizeCurrency(value: unknown): SupportedCurrency | '' {
   const text = String(value || '').trim().toUpperCase();
-  if (!text) return fallback;
-  if (text === 'PKR' || text === 'RS' || text === '₨') return 'PKR';
   if (text === 'USD' || text === 'US$' || text === '$') return 'USD';
-  return null;
+  if (text === 'PKR' || text === 'RS' || text === '₨') return 'PKR';
+  return '';
 }
 
 function toPrice(value: unknown, currency: SupportedCurrency): number | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const normalized = String(value).replace(/[^\d.]/g, '');
   const price = Number(normalized);
-  const bounds = PRICE_BOUNDS[currency];
-  return Number.isFinite(price) && price >= bounds.min && price <= bounds.max
-    ? (currency === 'USD' ? Math.round(price * 100) / 100 : Math.round(price))
+  const limits = LIMITS[currency];
+  return Number.isFinite(price) && price >= limits.min && price <= limits.max
+    ? Math.round(price * (currency === 'USD' ? 100 : 1)) / (currency === 'USD' ? 100 : 1)
     : null;
 }
 
-type PriceEvidence = { price: number; currency: SupportedCurrency };
-
-function walkOffers(value: unknown, prices: PriceEvidence[], expectedCurrency: SupportedCurrency, depth = 0): void {
+function walkOffers(value: unknown, prices: Array<{ price: number; currency: SupportedCurrency }>, expectedCurrency: SupportedCurrency, depth = 0): void {
   if (depth > 8 || value == null || typeof value !== 'object') return;
   if (Array.isArray(value)) {
     value.forEach((item) => walkOffers(item, prices, expectedCurrency, depth + 1));
@@ -40,12 +37,12 @@ function walkOffers(value: unknown, prices: PriceEvidence[], expectedCurrency: S
   }
   const record = value as Record<string, unknown>;
   const type = String(record['@type'] || '').toLowerCase();
+  const declared = normalizeCurrency(record.priceCurrency || record.currency) || expectedCurrency;
   if (type.includes('offer') || 'price' in record || 'lowPrice' in record) {
-    const currency = normalizeCurrency(record.priceCurrency || record.currency, expectedCurrency);
-    if (currency === expectedCurrency) {
+    if (declared === expectedCurrency) {
       for (const field of ['price', 'lowPrice', 'highPrice']) {
-        const parsed = toPrice(record[field], currency);
-        if (parsed) prices.push({ price: parsed, currency });
+        const parsed = toPrice(record[field], expectedCurrency);
+        if (parsed) prices.push({ price: parsed, currency: expectedCurrency });
       }
     }
   }
@@ -61,59 +58,38 @@ function firstMatch(html: string, patterns: RegExp[], currency: SupportedCurrenc
   return null;
 }
 
-/**
- * Extract a price only for the requested currency. PK retailer pages default to
- * PKR for backwards compatibility; US sources explicitly request USD.
- */
-export function extractRetailPrice(
-  html: string,
-  options: { currency?: SupportedCurrency } = {},
-): ExtractedPrice | null {
-  const expectedCurrency: SupportedCurrency = options.currency === 'USD' ? 'USD' : 'PKR';
-  const jsonLdPrices: PriceEvidence[] = [];
+export function extractRetailPrice(html: string, expectedCurrency: SupportedCurrency = 'PKR'): ExtractedPrice | null {
+  const jsonLdPrices: Array<{ price: number; currency: SupportedCurrency }> = [];
   for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-    try {
-      walkOffers(JSON.parse(match[1]), jsonLdPrices, expectedCurrency);
-    } catch {
-      // Ignore malformed blocks and keep checking stronger structured signals.
-    }
+    try { walkOffers(JSON.parse(match[1]), jsonLdPrices, expectedCurrency); }
+    catch { /* malformed JSON-LD */ }
   }
   if (jsonLdPrices.length) {
     return { price: Math.min(...jsonLdPrices.map(item => item.price)), currency: expectedCurrency, method: 'json-ld', confidence: 0.98 };
   }
 
-  const metaCurrencyRaw = html.match(/<meta[^>]+(?:property|name)=["'](?:product:price:currency|og:price:currency)["'][^>]+content=["']([^"']+)["']/i)?.[1]
+  const metaCurrency = html.match(/<meta[^>]+(?:property|name)=["'](?:product:price:currency|og:price:currency)["'][^>]+content=["']([^"']+)["']/i)?.[1]
     || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:product:price:currency|og:price:currency)["']/i)?.[1]
     || '';
-  const metaCurrency = normalizeCurrency(metaCurrencyRaw, expectedCurrency);
+  const normalizedMetaCurrency = normalizeCurrency(metaCurrency);
   const metaPrice = firstMatch(html, [
     /<meta[^>]+(?:property|name)=["'](?:product:price:amount|og:price:amount)["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:product:price:amount|og:price:amount)["']/i,
     /<meta[^>]+itemprop=["']price["'][^>]+content=["']([^"']+)["']/i,
   ], expectedCurrency);
-  if (metaPrice && metaCurrency === expectedCurrency) {
-    return { price: metaPrice, currency: expectedCurrency, method: 'meta', confidence: metaCurrencyRaw ? 0.97 : 0.92 };
+  if (metaPrice && (!normalizedMetaCurrency || normalizedMetaCurrency === expectedCurrency)) {
+    return { price: metaPrice, currency: expectedCurrency, method: 'meta', confidence: normalizedMetaCurrency === expectedCurrency ? 0.97 : 0.90 };
   }
 
   const dataPrice = firstMatch(html, [
     /data-(?:sale-)?price=["']([\d,.]+)["']/i,
     /itemprop=["']price["'][^>]+(?:content|value)=["']([\d,.]+)["']/i,
   ], expectedCurrency);
-  if (dataPrice && (expectedCurrency === 'PKR' || /(?:USD|US\$|\$)/i.test(html))) {
-    return { price: dataPrice, currency: expectedCurrency, method: 'data-attribute', confidence: 0.86 };
-  }
+  if (dataPrice) return { price: dataPrice, currency: expectedCurrency, method: 'data-attribute', confidence: 0.86 };
 
   const visiblePatterns = expectedCurrency === 'USD'
-    ? [
-        /(?:USD|US\$|\$)\s*([\d,]+(?:\.\d{1,2})?)/i,
-        /(?:sale|current|our)\s*price[^>]{0,80}>\s*(?:USD|US\$|\$)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-      ]
-    : [
-        /(?:PKR|Rs\.?|₨)\s*([\d,]+(?:\.\d{1,2})?)/i,
-        /(?:sale|current|our)\s*price[^>]{0,80}>\s*(?:PKR|Rs\.?|₨)?\s*([\d,]+(?:\.\d{1,2})?)/i,
-      ];
+    ? [/(?:US\$|USD|\$)\s*([\d,]+(?:\.\d{1,2})?)/i, /(?:sale|current|our)\s*price[^>]{0,80}>\s*(?:US\$|USD|\$)?\s*([\d,]+(?:\.\d{1,2})?)/i]
+    : [/(?:PKR|Rs\.?|₨)\s*([\d,]+(?:\.\d{1,2})?)/i, /(?:sale|current|our)\s*price[^>]{0,80}>\s*(?:PKR|Rs\.?|₨)?\s*([\d,]+(?:\.\d{1,2})?)/i];
   const visiblePrice = firstMatch(html, visiblePatterns, expectedCurrency);
-  return visiblePrice
-    ? { price: visiblePrice, currency: expectedCurrency, method: 'visible-text', confidence: 0.72 }
-    : null;
+  return visiblePrice ? { price: visiblePrice, currency: expectedCurrency, method: 'visible-text', confidence: 0.72 } : null;
 }

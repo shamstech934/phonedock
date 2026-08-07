@@ -10,10 +10,10 @@ import { getPriceTrackerSettings } from './price-tracker';
 import { extractRetailPrice } from '@/lib/price-extraction';
 import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
+import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
 import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
 import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
-import { buildMarketPriceIdentity, isSafeAutomaticMarketPrice, normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 
 const LOCK_KEY = 'cron_update_prices_lock';
 const LAST_RUN_KEY = 'price_tracker_last_run';
@@ -166,7 +166,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         summary.processed++;
         const listingId = listing._id;
         const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string; ptaApproved?: boolean } | null;
-        const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string; market?: string; currency?: string } | null;
+        const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string; market?: string; currency?: string; defaultPriceType?: string } | null;
 
         if (!phone || !source) {
           summary.failed++;
@@ -185,12 +185,11 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         let detectedPrice: number | null = null;
         let availability = 'unknown' as string;
         let fetchError = false;
-        const listingVariantSeed = listing as unknown as { ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; ptaStatus?: string; variantKey?: string; market?: string; currency?: string; priceType?: string; priceIdentityKey?: string };
-        const market = normalizePriceMarket(listingVariantSeed.market || source.market);
-        const currency = normalizePriceCurrency(listingVariantSeed.currency || source.currency, market);
+        const listingVariantSeed = listing as unknown as { ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; ptaStatus?: string; variantKey?: string; market?: string; currency?: string; priceType?: string };
+        const sourceMarketSeed = { market: listingVariantSeed.market || source.market, currency: listingVariantSeed.currency || source.currency, priceType: listingVariantSeed.priceType || source.defaultPriceType };
         let resolvedVariant = inferRetailVariantIdentity({
           productUrl: listing.productUrl,
-          existing: listingVariantSeed,
+          existing: { ...listingVariantSeed, ...sourceMarketSeed },
         });
 
         // ── SSRF protection ──
@@ -233,7 +232,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             resolvedVariant = inferRetailVariantIdentity({
               title: preliminary.title,
               productUrl: listing.productUrl,
-              existing: listingVariantSeed,
+              existing: { ...listingVariantSeed, ...sourceMarketSeed },
             });
             const validation = validateRetailListingPage({
               html,
@@ -241,11 +240,9 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               brandName: phone.brandName || '',
               expectedRam: resolvedVariant.ram,
               expectedStorage: resolvedVariant.storage,
-              expectedPtaStatus: market === 'PK' ? resolvedVariant.ptaStatus : '',
+              expectedPtaStatus: resolvedVariant.ptaStatus,
             });
 
-            const priceType = normalizeMarketPriceType(listingVariantSeed.priceType, market, resolvedVariant.ptaStatus);
-            const priceIdentityKey = buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: resolvedVariant.ptaStatus, variantKey: resolvedVariant.variantKey });
             const identityUpdate = {
               sourceTitle: validation.title || preliminary.title,
               ram: resolvedVariant.ram,
@@ -254,19 +251,18 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
               condition: resolvedVariant.condition,
               ptaStatus: resolvedVariant.ptaStatus,
               warrantyType: resolvedVariant.warrantyType,
+              market: resolvedVariant.market,
+              currency: resolvedVariant.currency,
+              priceType: resolvedVariant.priceType,
               variantKey: resolvedVariant.variantKey,
-              market,
-              currency,
-              priceType,
-              priceIdentityKey,
             };
 
-            const marketSafe = isSafeAutomaticMarketPrice({ market, currency, priceType, ptaStatus: resolvedVariant.ptaStatus });
-            if (!validation.valid || !marketSafe) {
+            const marketType = normalizeMarketPriceType({ market: resolvedVariant.market, priceType: resolvedVariant.priceType, ptaStatus: resolvedVariant.ptaStatus });
+            const missingPakistanPta = normalizePriceMarket(resolvedVariant.market) === 'PK' && normalizePtaPriceClass(resolvedVariant.ptaStatus) === 'unknown';
+            if (!validation.valid || missingPakistanPta || marketType === 'unknown') {
               const reasons = [...validation.reasons];
-              if (!marketSafe) {
-                reasons.push(market === 'PK' ? 'PTA class is not explicit; choose PTA Approved or Non-PTA in review.' : 'US listing must be USD retail before automatic publication.');
-              }
+              if (missingPakistanPta) reasons.push('PTA class is not explicit for this Pakistan listing; choose PTA Approved or Non-PTA in review.');
+              if (marketType === 'unknown') reasons.push('Market price type is unknown; review before automatic publication.');
               await PhoneRetailListing.findByIdAndUpdate(listingId, {
                 $set: {
                   ...identityUpdate,
@@ -283,7 +279,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
             await PhoneRetailListing.findByIdAndUpdate(listingId, { $set: identityUpdate });
 
-            const extracted = extractRetailPrice(html, { currency });
+            const extracted = extractRetailPrice(html, normalizePriceCurrency(resolvedVariant.currency, resolvedVariant.market));
             detectedPrice = extracted?.price ?? null;
             if (extracted) {
               await PhoneRetailListing.findByIdAndUpdate(listingId, {
@@ -343,20 +339,17 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
         // ── Handle successful price extraction ──
         if (detectedPrice !== null && detectedPrice > 0) {
           const previousSourcePrice = (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).currentSourcePrice || (listing as unknown as { currentSourcePrice?: number; previousSourcePrice?: number }).previousSourcePrice || 0;
-          const priceType = normalizeMarketPriceType(listingVariantSeed.priceType, market, resolvedVariant.ptaStatus);
-          const variantKey = resolvedVariant.variantKey || buildPriceVariantKey(resolvedVariant);
           const historyVariant = {
-            priceClass: market === 'PK' ? normalizePtaPriceClass(resolvedVariant.ptaStatus) : 'unknown',
-            market,
-            currency,
-            priceType,
-            priceIdentityKey: buildMarketPriceIdentity({ market, currency, priceType, ptaStatus: resolvedVariant.ptaStatus, variantKey }),
+            priceClass: resolvedVariant.priceType,
+            market: resolvedVariant.market,
+            currency: resolvedVariant.currency,
+            priceType: resolvedVariant.priceType,
             ram: normalizeMemoryLabel(resolvedVariant.ram),
             storage: normalizeMemoryLabel(resolvedVariant.storage),
             color: String(resolvedVariant.color || '').trim(),
             condition: String(resolvedVariant.condition || 'new').trim().toLowerCase(),
             warrantyType: String(resolvedVariant.warrantyType || '').trim(),
-            variantKey,
+            variantKey: resolvedVariant.variantKey || buildPriceVariantKey(resolvedVariant),
           };
 
           if (previousSourcePrice <= 0) {

@@ -8,7 +8,6 @@ import {
 } from '@/lib/models';
 import { isProbableProductUrl } from '@/lib/price-catalog-discovery';
 import { inferRetailVariantIdentity, inferUniqueMemoryLabel } from '@/lib/price-variant';
-import { buildMarketPriceIdentity, normalizeMarketPriceType } from '@/lib/price-market';
 
 export type CollectorMatchStrategy = 'direct_approval' | 'imported' | 'exact_duplicate';
 
@@ -29,6 +28,9 @@ export interface CollectorTarget {
 export interface TrustedSourceLike {
   _id: unknown;
   allowedDomains?: string[];
+  market?: string;
+  currency?: string;
+  defaultPriceType?: string;
 }
 
 export interface CollectorPriceBridgeResult {
@@ -96,7 +98,7 @@ export async function bridgeCollectedPricesToTracker(
       .select('_id brandName model sourceUrl pakistanPrice ptaStatus officialWarranty memory.ram memory.storage body.colors localSellerNotes approvedPhoneId importedPhoneId duplicatePhoneId hasExactDuplicate duplicateMatches')
       .lean(),
     PriceSource.find({ enabled: true, trusted: true, status: 'active', allowedDomains: { $exists: true, $ne: [] } })
-      .select('_id allowedDomains')
+      .select('_id allowedDomains market currency defaultPriceType')
       .lean(),
   ]);
 
@@ -137,6 +139,9 @@ export async function bridgeCollectedPricesToTracker(
         ptaStatus: record.ptaStatus,
         warrantyType: record.officialWarranty,
         condition: 'new',
+        market: source.market,
+        currency: source.currency,
+        priceType: source.defaultPriceType,
       },
     });
     const update = await PhoneRetailListing.updateOne(
@@ -161,11 +166,10 @@ export async function bridgeCollectedPricesToTracker(
           condition: variant.condition,
           ptaStatus: variant.ptaStatus,
           warrantyType: variant.warrantyType,
+          market: variant.market,
+          currency: variant.currency,
+          priceType: variant.priceType,
           variantKey: variant.variantKey,
-          market: 'PK',
-          currency: 'PKR',
-          priceType: normalizeMarketPriceType('', 'PK', variant.ptaStatus),
-          priceIdentityKey: buildMarketPriceIdentity({ market: 'PK', currency: 'PKR', priceType: normalizeMarketPriceType('', 'PK', variant.ptaStatus), ptaStatus: variant.ptaStatus, variantKey: variant.variantKey }),
           ...(pendingPrice ? { pendingSourcePrice: pendingPrice, pendingDetectedAt: new Date() } : {}),
         },
       },

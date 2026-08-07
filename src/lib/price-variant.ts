@@ -1,4 +1,5 @@
 import { normalizePtaPriceClass, type PtaPriceClass } from '@/lib/price-tracker-intelligence';
+import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 
 export type PriceVariantIdentity = {
   ram?: unknown;
@@ -7,6 +8,9 @@ export type PriceVariantIdentity = {
   ptaStatus?: unknown;
   condition?: unknown;
   warrantyType?: unknown;
+  market?: unknown;
+  currency?: unknown;
+  priceType?: unknown;
 };
 
 export type RetailVariantInference = {
@@ -16,6 +20,9 @@ export type RetailVariantInference = {
   ptaStatus: '' | 'PTA Approved' | 'Non-PTA';
   condition: 'new' | 'used' | 'refurbished' | 'open-box';
   warrantyType: string;
+  market: 'PK' | 'US';
+  currency: 'PKR' | 'USD';
+  priceType: 'pta-approved' | 'non-pta' | 'us-retail' | 'unknown';
   variantKey: string;
 };
 
@@ -46,8 +53,14 @@ export function normalizeCondition(value: unknown): 'new' | 'used' | 'refurbishe
 }
 
 export function buildPriceVariantKey(input: PriceVariantIdentity): string {
+  const market = normalizePriceMarket(input.market);
+  const currency = normalizePriceCurrency(input.currency, market);
+  const priceType = normalizeMarketPriceType({ market, priceType: input.priceType, ptaStatus: input.ptaStatus });
   const ptaClass: PtaPriceClass = normalizePtaPriceClass(input.ptaStatus);
   return [
+    `market:${market}`,
+    `currency:${currency}`,
+    `type:${priceType}`, 
     `ram:${normalizeMemoryLabel(input.ram) || '*'}`,
     `storage:${normalizeMemoryLabel(input.storage) || '*'}`,
     `color:${normalizeColorLabel(input.color) || '*'}`,
@@ -168,6 +181,8 @@ export function inferRetailVariantIdentity(input: {
   const evidence = `${title} ${urlText}`.trim();
   const existing = input.existing || {};
   const memory = inferMemory(evidence);
+  const market = normalizePriceMarket(existing.market);
+  const currency = normalizePriceCurrency(existing.currency, market);
 
   const ram = normalizeMemoryLabel(existing.ram) || memory.ram;
   const storage = normalizeMemoryLabel(existing.storage) || memory.storage;
@@ -181,6 +196,7 @@ export function inferRetailVariantIdentity(input: {
       : inferredPtaStatus;
   const condition = clean(existing.condition) ? normalizeCondition(existing.condition) : normalizeCondition(evidence);
   const warrantyType = clean(existing.warrantyType) || inferWarranty(evidence);
+  const priceType = normalizeMarketPriceType({ market, priceType: existing.priceType, ptaStatus });
 
   return {
     ram,
@@ -189,6 +205,9 @@ export function inferRetailVariantIdentity(input: {
     ptaStatus,
     condition,
     warrantyType,
-    variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus, condition, warrantyType }),
+    market,
+    currency,
+    priceType,
+    variantKey: buildPriceVariantKey({ ram, storage, color, ptaStatus, condition, warrantyType, market, currency, priceType }),
   };
 }

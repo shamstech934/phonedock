@@ -96,6 +96,9 @@ export interface PhonePrice {
   price: number;
   url: string;
   inStock: boolean;
+  market?: 'PK' | 'US';
+  currency?: 'PKR' | 'USD';
+  priceType?: 'pta-approved' | 'non-pta' | 'us-retail' | 'unknown';
   ptaStatus?: string;
   ram?: string;
   storage?: string;
@@ -120,6 +123,7 @@ export interface Phone {
   previousPrice?: number;
   bestPtaPricePKR?: number;
   bestNonPtaPricePKR?: number;
+  bestUsPriceUSD?: number;
   verifiedOfferCount?: number;
   lowestPrice?: number;
   highestPrice?: number;

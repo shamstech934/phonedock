@@ -283,6 +283,10 @@ export const PHONE_MISSING_PRICE: RuleDefinition = {
     const phoneId = issue.entityId;
     const listings = await PhoneRetailListing.find({
       phoneId, enabled: true, verificationStatus: 'verified', currentSourcePrice: { $gt: 0 },
+      $and: [
+        { $or: [{ market: 'PK' }, { market: '' }, { market: { $exists: false } }] },
+        { $or: [{ currency: 'PKR' }, { currency: '' }, { currency: { $exists: false } }] },
+      ],
     }).sort({ currentSourcePrice: 1 }).limit(1).lean() as Array<{ currentSourcePrice: number; sourceId: unknown }>;
 
     if (listings.length === 0) {
@@ -303,6 +307,7 @@ export const PHONE_MISSING_PRICE: RuleDefinition = {
         percentageChange: oldPrice > 0 ? Math.round(((newPrice - oldPrice) / oldPrice) * 100) : 0,
         changeType: oldPrice === 0 ? 'correction' : newPrice > oldPrice ? 'increase' : 'decrease',
         sourceType: 'retailer', sourceId: listings[0].sourceId,
+        market: 'PK', currency: 'PKR', priceType: 'pta-approved', priceClass: 'pta-approved',
         changedByAdminId: ctx.adminId, verificationStatus: 'confirmed',
       });
     } catch { /* history log is best-effort, not fatal to the fix */ }

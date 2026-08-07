@@ -16,8 +16,7 @@ import { getSettings } from '@/lib/models/Settings';
 import { normalizePublicPriceRanges } from '@/lib/public-price-ranges';
 import { normalizeMemoryLabel, normalizeColorLabel } from '@/lib/price-variant';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
-import { buildMarketPriceIdentity, normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
-import { getUsdPkrRate } from '@/lib/fx-rate';
+import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 
 // ============ LOCAL TYPES ============
 /** Lean brand document (from Brand.find().select().lean()) */
@@ -503,17 +502,14 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   // ---- /api/phones/:slug/price-tracker ----
   if (segments.length === 3 && segments[0] === 'phones' && segments[2] === 'price-tracker') {
     await connectDB();
-    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' })
-      .select('_id pricePKR bestPtaPricePKR bestNonPtaPricePKR bestUsRetailPriceUSD ptaStatus ptaApproved priceMode manualLock')
-      .lean();
+    const phone = await Phone.findOne({ slug: segments[1], active: true, status: 'published' }).select('_id pricePKR bestPtaPricePKR bestNonPtaPricePKR bestUsPriceUSD ptaStatus ptaApproved priceMode manualLock').lean();
     if (!phone) return cachedError('Not found', 404, 60, 300);
 
     const market = normalizePriceMarket(req.nextUrl.searchParams.get('market'));
-    const requestedClass = req.nextUrl.searchParams.get('priceClass');
-    const requestedType = req.nextUrl.searchParams.get('priceType');
-    const priceClass = requestedClass === 'non-pta' ? 'non-pta' : 'pta-approved';
-    const priceType = market === 'US' ? 'retail' : normalizeMarketPriceType(requestedType || priceClass, market, priceClass);
     const currency = normalizePriceCurrency(req.nextUrl.searchParams.get('currency'), market);
+    const requestedClass = req.nextUrl.searchParams.get('priceClass');
+    const priceClass = market === 'US' ? 'us-retail' : requestedClass === 'non-pta' ? 'non-pta' : 'pta-approved';
+    const priceType = normalizeMarketPriceType({ market, priceType: priceClass });
     const selectedRam = normalizeMemoryLabel(req.nextUrl.searchParams.get('ram'));
     const selectedStorage = normalizeMemoryLabel(req.nextUrl.searchParams.get('storage'));
     const selectedColor = normalizeColorLabel(req.nextUrl.searchParams.get('color'));
@@ -525,94 +521,76 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         verificationStatus: 'verified',
         availability: { $ne: 'unavailable' },
         currentSourcePrice: { $gt: 0 },
-      }).select('ram storage color condition warrantyType ptaStatus currentSourcePrice sourceId productUrl market currency priceType priceIdentityKey variantKey')
-        .populate('sourceId', 'name trusted enabled status priority market currency').lean(),
+      }).select('ram storage color condition warrantyType ptaStatus market currency priceType currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority market currency defaultPriceType').lean(),
       PhonePrice.find({ phoneId: phone._id, price: { $gt: 0 }, inStock: { $ne: false } })
-        .select('storeName price url ram storage color condition warrantyType ptaStatus variantKey market currency priceType priceIdentityKey')
+        .select('storeName price url ram storage color condition warrantyType ptaStatus market currency priceType variantKey')
         .lean(),
       PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', newPrice: { $gt: 0 } })
         .sort({ capturedAt: -1 })
-        .limit(400)
-        .select('newPrice priceClass ram storage color condition warrantyType variantKey sourceUrl capturedAt market currency priceType priceIdentityKey')
+        .limit(300)
+        .select('newPrice priceClass market currency priceType ram storage color condition warrantyType variantKey sourceUrl capturedAt')
         .lean(),
     ]);
 
     const retailerVariants = (listingRows as any[])
       .filter(row => row.sourceId?.trusted === true && row.sourceId?.enabled !== false && (row.sourceId?.status || 'active') === 'active')
-      .map(row => {
-        const rowMarket = normalizePriceMarket(row.market || row.sourceId?.market);
-        const rowCurrency = normalizePriceCurrency(row.currency || row.sourceId?.currency, rowMarket);
-        const rowType = normalizeMarketPriceType(row.priceType, rowMarket, row.ptaStatus);
-        return {
-          ram: normalizeMemoryLabel(row.ram),
-          storage: normalizeMemoryLabel(row.storage),
-          color: String(row.color || '').trim(),
-          colorKey: normalizeColorLabel(row.color),
-          condition: row.condition || 'new',
-          warrantyType: row.warrantyType || '',
-          priceClass: rowMarket === 'PK' ? normalizePtaPriceClass(row.ptaStatus) : 'unknown',
-          market: rowMarket,
-          currency: rowCurrency,
-          priceType: rowType,
-          priceIdentityKey: row.priceIdentityKey || buildMarketPriceIdentity({ market: rowMarket, currency: rowCurrency, priceType: rowType, ptaStatus: row.ptaStatus, variantKey: row.variantKey }),
-          price: Number(row.currentSourcePrice || 0),
-          source: row.sourceId?.name || '',
-          sourceUrl: row.productUrl || '',
-          sourceKind: 'retailer' as const,
-        };
-      });
-    const manualVariants = (manualPriceRows as any[]).map(row => {
-      const rowMarket = normalizePriceMarket(row.market);
-      const rowCurrency = normalizePriceCurrency(row.currency, rowMarket);
-      const rowType = normalizeMarketPriceType(row.priceType, rowMarket, row.ptaStatus);
-      return {
+      .map(row => ({
         ram: normalizeMemoryLabel(row.ram),
         storage: normalizeMemoryLabel(row.storage),
         color: String(row.color || '').trim(),
         colorKey: normalizeColorLabel(row.color),
         condition: row.condition || 'new',
         warrantyType: row.warrantyType || '',
-        priceClass: rowMarket === 'PK' ? normalizePtaPriceClass(row.ptaStatus) : 'unknown',
-        market: rowMarket,
-        currency: rowCurrency,
-        priceType: rowType,
-        priceIdentityKey: row.priceIdentityKey || buildMarketPriceIdentity({ market: rowMarket, currency: rowCurrency, priceType: rowType, ptaStatus: row.ptaStatus, variantKey: row.variantKey }),
-        price: Number(row.price || 0),
-        source: row.storeName || 'Admin verified',
-        sourceUrl: row.url || '',
-        sourceKind: 'manual' as const,
-      };
-    });
-    const historyVariants = (manualVariantHistoryRows as any[]).map(row => {
-      const rowMarket = normalizePriceMarket(row.market);
-      const rowCurrency = normalizePriceCurrency(row.currency, rowMarket);
-      const rowType = normalizeMarketPriceType(row.priceType || row.priceClass, rowMarket, row.priceClass);
-      return {
-        ram: normalizeMemoryLabel(row.ram),
-        storage: normalizeMemoryLabel(row.storage),
-        color: String(row.color || '').trim(),
-        colorKey: normalizeColorLabel(row.color),
-        condition: row.condition || 'new',
-        warrantyType: row.warrantyType || '',
-        priceClass: rowMarket === 'PK' ? normalizePtaPriceClass(row.priceClass) : 'unknown',
-        market: rowMarket,
-        currency: rowCurrency,
-        priceType: rowType,
-        priceIdentityKey: row.priceIdentityKey || buildMarketPriceIdentity({ market: rowMarket, currency: rowCurrency, priceType: rowType, ptaStatus: row.priceClass, variantKey: row.variantKey }),
-        price: Number(row.newPrice || 0),
-        source: row.sourceUrl ? 'Verified history' : 'Admin verified',
-        sourceUrl: row.sourceUrl || '',
-        sourceKind: 'history' as const,
-      };
-    });
-    const variantIdentity = (row: any) =>
-      [row.market, row.currency, row.priceType, row.ram, row.storage, row.colorKey, row.condition || 'new', String(row.warrantyType || '').toLowerCase()].join('|');
+        market: normalizePriceMarket(row.market || row.sourceId?.market),
+        currency: normalizePriceCurrency(row.currency || row.sourceId?.currency, row.market || row.sourceId?.market),
+        priceType: normalizeMarketPriceType({ market: row.market || row.sourceId?.market, priceType: row.priceType || row.sourceId?.defaultPriceType, ptaStatus: row.ptaStatus }),
+        priceClass: normalizeMarketPriceType({ market: row.market || row.sourceId?.market, priceType: row.priceType || row.sourceId?.defaultPriceType, ptaStatus: row.ptaStatus }),
+        price: Number(row.currentSourcePrice || 0),
+        source: row.sourceId?.name || '',
+        sourceUrl: row.productUrl || '',
+        sourceKind: 'retailer' as const,
+      }));
+    const manualVariants = (manualPriceRows as any[]).map(row => ({
+      ram: normalizeMemoryLabel(row.ram),
+      storage: normalizeMemoryLabel(row.storage),
+      color: String(row.color || '').trim(),
+      colorKey: normalizeColorLabel(row.color),
+      condition: row.condition || 'new',
+      warrantyType: row.warrantyType || '',
+      market: normalizePriceMarket(row.market),
+      currency: normalizePriceCurrency(row.currency, row.market),
+      priceType: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
+      priceClass: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
+      price: Number(row.price || 0),
+      source: row.storeName || 'Admin verified',
+      sourceUrl: row.url || '',
+      sourceKind: 'manual' as const,
+    }));
+    const historyVariants = (manualVariantHistoryRows as any[]).map(row => ({
+      ram: normalizeMemoryLabel(row.ram),
+      storage: normalizeMemoryLabel(row.storage),
+      color: String(row.color || '').trim(),
+      colorKey: normalizeColorLabel(row.color),
+      condition: row.condition || 'new',
+      warrantyType: row.warrantyType || '',
+      market: normalizePriceMarket(row.market),
+      currency: normalizePriceCurrency(row.currency, row.market),
+      priceType: normalizeMarketPriceType({ market: row.market, priceType: row.priceType || row.priceClass, ptaStatus: row.priceClass }),
+      priceClass: normalizeMarketPriceType({ market: row.market, priceType: row.priceType || row.priceClass, ptaStatus: row.priceClass }),
+      price: Number(row.newPrice || 0),
+      source: row.sourceUrl ? 'Verified history' : 'Admin verified',
+      sourceUrl: row.sourceUrl || '',
+      sourceKind: 'history' as const,
+    }));
+    const variantIdentity = (row: { market: string; currency: string; priceType: string; priceClass: string; ram: string; storage: string; colorKey: string; condition: string; warrantyType: string }) =>
+      [row.market, row.currency, row.priceType, row.priceClass, row.ram, row.storage, row.colorKey, row.condition || 'new', String(row.warrantyType || '').toLowerCase()].join('|');
     const variants = (() => {
       const byIdentity = new Map<string, any>();
+      // Live verified retailer/admin rows outrank historical snapshots. History
+      // only fills a variant that no longer has a live row, and is already
+      // newest-first so the first historical identity is the latest one.
       for (const row of [...retailerVariants, ...manualVariants, ...historyVariants]) {
-        if (row.price <= 0 || row.condition !== 'new') continue;
-        if (row.market === 'PK' && !['pta-approved', 'non-pta'].includes(row.priceType)) continue;
-        if (row.market === 'US' && row.priceType !== 'retail') continue;
+        if (row.priceClass === 'unknown' || row.price <= 0) continue;
         const key = variantIdentity(row);
         if (!byIdentity.has(key)) byIdentity.set(key, row);
       }
@@ -622,8 +600,10 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
     const hasVariantSelection = Boolean(selectedRam || selectedStorage || selectedColor);
     const selectedOffers = variants.filter(row =>
       row.market === market
-      && row.currency === (market === 'US' ? 'USD' : 'PKR')
+      && row.currency === currency
       && row.priceType === priceType
+      && row.priceClass === priceClass
+      && row.condition === 'new'
       && (hasVariantSelection
         ? ((!selectedRam || row.ram === selectedRam)
           && (!selectedStorage || row.storage === selectedStorage)
@@ -631,15 +611,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         : (!row.ram && !row.storage && !row.colorKey))
     );
     const selectedBest = selectedOffers.length > 0 ? [...selectedOffers].sort((a,b) => a.price - b.price)[0] : null;
-
-    const confirmedQuery: Record<string, unknown> = {
-      phoneId: phone._id,
-      verificationStatus: 'confirmed',
-      market,
-      currency: market === 'US' ? 'USD' : 'PKR',
-      priceType,
-      condition: 'new',
-    };
+    const confirmedQuery: Record<string, unknown> = { phoneId: phone._id, verificationStatus: 'confirmed', priceClass, condition: 'new' };
+    if (market === 'US') confirmedQuery.market = 'US';
+    else confirmedQuery.$or = [{ market: 'PK' }, { market: '' }, { market: { $exists: false } }];
     if (hasVariantSelection) {
       if (selectedRam) confirmedQuery.ram = selectedRam;
       if (selectedStorage) confirmedQuery.storage = selectedStorage;
@@ -653,38 +627,38 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
     const ptaPrice = Number(phone.bestPtaPricePKR || 0);
     const nonPtaPrice = Number(phone.bestNonPtaPricePKR || 0);
-    const usRetailPrice = Number(phone.bestUsRetailPriceUSD || 0);
-    const fallbackPrice = market === 'US' ? usRetailPrice : priceType === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
+    const usPrice = Number((phone as any).bestUsPriceUSD || 0);
+    const fallbackPrice = market === 'US' ? usPrice : priceClass === 'non-pta' ? nonPtaPrice : (ptaPrice || Number(phone.pricePKR || 0));
+    // Once a user chooses RAM/storage/color, never fall back to another
+    // variant's class-level price. A missing exact offer is genuinely missing.
     const manualHistoryPrice = confirmed.length > 0 ? Number(confirmed[0].newPrice || 0) : 0;
     const currentPrice = selectedBest?.price || (hasVariantSelection ? manualHistoryPrice : fallbackPrice);
     const previousPrice = confirmed.length >= 2 ? confirmed[1].newPrice : (confirmed.length === 1 ? confirmed[0].oldPrice : 0);
     const allPrices = confirmed.map(h => h.newPrice);
     const lowestPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
     const highestPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
-    const averagePrice = allPrices.length > 0 ? Math.round(allPrices.reduce((sum, value) => sum + value, 0) / allPrices.length) : 0;
+    const averagePrice = allPrices.length > 0
+      ? Math.round(allPrices.reduce((sum, value) => sum + value, 0) / allPrices.length)
+      : 0;
     const priceChange = previousPrice > 0 ? currentPrice - previousPrice : 0;
     const percentageChange = previousPrice > 0 ? Math.round((priceChange / previousPrice) * 10000) / 100 : 0;
     const lastPriceChangedAt = confirmed.length > 0 ? confirmed[0].capturedAt : null;
-    const fx = await getUsdPkrRate();
 
     return cached({
       currentPrice,
-      usdPkrRate: fx.rate,
-      fxUpdatedAt: fx.updatedAt,
-      fxSource: fx.source,
-      market,
-      currency: market === 'US' ? 'USD' : 'PKR',
-      priceType,
       ptaPrice,
       nonPtaPrice,
-      usRetailPrice,
-      priceClass: market === 'PK' ? priceType : 'unknown',
+      usPrice,
+      market,
+      currency,
+      priceType,
+      priceClass,
       selectedVariant: { ram: selectedRam, storage: selectedStorage, color: selectedColor },
       variantSelectionRequired: !hasVariantSelection && currentPrice <= 0
-        && variants.some(v => v.market === market && v.priceType === priceType && Boolean(v.ram || v.storage || v.colorKey)),
+        && variants.some(v => v.market === market && v.currency === currency && v.priceType === priceType && v.priceClass === priceClass && v.condition === 'new' && Boolean(v.ram || v.storage || v.colorKey)),
       exactVariantAvailable: currentPrice > 0,
       variantOptions: (() => {
-        const classRows = variants.filter(v => v.market === market && v.priceType === priceType);
+        const classRows = variants.filter(v => v.market === market && v.currency === currency && v.priceType === priceType && v.priceClass === priceClass && v.condition === 'new');
         const memoryRows = selectedRam ? classRows.filter(v => v.ram === selectedRam) : classRows;
         const colorRows = memoryRows.filter(v => !selectedStorage || v.storage === selectedStorage);
         return {
@@ -693,7 +667,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
           colors: [...new Map(colorRows.filter(v => v.colorKey).map(v => [v.colorKey, v.color])).values()],
         };
       })(),
-      variantOffers: variants.filter(v => v.market === market && v.priceType === priceType),
+      variantOffers: variants,
       selectedOffer: selectedBest,
       previousPrice,
       lowestPrice,
@@ -715,9 +689,6 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         percentageChange: h.percentageChange,
         changeType: h.changeType,
         sourceType: h.sourceType,
-        market: h.market,
-        currency: h.currency,
-        priceType: h.priceType,
         capturedAt: h.capturedAt,
       })),
     }, 60, 300);

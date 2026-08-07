@@ -78,7 +78,7 @@ export interface IPhone extends Document {
   verifiedOfferCount: number;
   bestPtaPricePKR: number;
   bestNonPtaPricePKR: number;
-  bestUsRetailPriceUSD: number;
+  bestUsPriceUSD: number;
 }
 
 export interface IPhoneModel extends Model<IPhone> {
@@ -151,7 +151,7 @@ const PhoneSchema = new Schema<IPhone>({
   verifiedOfferCount: { type: Number, default: 0 },
   bestPtaPricePKR: { type: Number, default: 0 },
   bestNonPtaPricePKR: { type: Number, default: 0 },
-  bestUsRetailPriceUSD: { type: Number, default: 0 },
+  bestUsPriceUSD: { type: Number, default: 0 },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

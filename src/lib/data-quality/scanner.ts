@@ -759,6 +759,10 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
       enabled: true,
       verificationStatus: { $ne: 'rejected' },
       currentSourcePrice: { $gt: 0 },
+      $and: [
+        { $or: [{ market: 'PK' }, { market: '' }, { market: { $exists: false } }] },
+        { $or: [{ currency: 'PKR' }, { currency: '' }, { currency: { $exists: false } }] },
+      ],
     }).select('phoneId currentSourcePrice sourceId').lean();
 
     const byPhone = new Map<string, typeof enabledListings>();
@@ -804,9 +808,13 @@ async function scanPriceTrackerIssues(allIssues: DetectedIssue[]): Promise<void>
   try {
     const activeListings = await PhoneRetailListing.find({
       enabled: true,
-      availability: 'in_stock',
+      availability: { $in: ['available', 'in_stock'] },
       verificationStatus: { $in: ['verified', 'pending'] },
       currentSourcePrice: { $gt: 0 },
+      $and: [
+        { $or: [{ market: 'PK' }, { market: '' }, { market: { $exists: false } }] },
+        { $or: [{ currency: 'PKR' }, { currency: '' }, { currency: { $exists: false } }] },
+      ],
     }).select('phoneId currentSourcePrice').lean();
 
     const byPhone = new Map<string, number[]>();

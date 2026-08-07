@@ -16,15 +16,15 @@ export interface PhonePrice {
   price: number | '';
   url: string;
   inStock: boolean;
+  market: 'PK' | 'US';
+  currency: 'PKR' | 'USD';
+  priceType: 'pta-approved' | 'non-pta' | 'us-retail' | 'unknown';
   ptaStatus: string;
   ram: string;
   storage: string;
   color: string;
   condition: 'new' | 'used' | 'refurbished' | 'open-box';
   warrantyType: string;
-  market: 'PK' | 'US';
-  currency: 'PKR' | 'USD';
-  priceType: 'pta-approved' | 'non-pta' | 'retail' | 'unknown';
 }
 
 export interface PhoneFormProps {
@@ -162,6 +162,13 @@ export const STORE_NAMES = [
   'Telemart',
   'iShopping',
   'Yayvo',
+  'Apple US',
+  'Samsung US',
+  'Google Store US',
+  'Best Buy US',
+  'Amazon US',
+  'OnePlus US',
+  'Motorola US',
 ] as const;
 
 export const TABS = [
@@ -183,15 +190,15 @@ export const EMPTY_PRICE: PhonePrice = {
   price: '',
   url: '',
   inStock: true,
-  ptaStatus: '',
+  market: 'PK',
+  currency: 'PKR',
+  priceType: 'pta-approved',
+  ptaStatus: 'PTA Approved',
   ram: '',
   storage: '',
   color: '',
   condition: 'new',
   warrantyType: '',
-  market: 'PK',
-  currency: 'PKR',
-  priceType: 'unknown',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

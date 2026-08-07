@@ -1,7 +1,6 @@
 import { Phone, PriceHistory } from '@/lib/models';
 import { PhoneRetailListing } from '@/lib/models/PriceTracker';
 import { buildPriceVariantKey } from '@/lib/price-variant';
-import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import {
   buildVerifiedPriceState,
   normalizePtaPriceClass,
@@ -14,11 +13,12 @@ type PopulatedSource = {
   name?: string;
   sourceType?: string;
   priority?: number;
-  market?: string;
-  currency?: string;
   trusted?: boolean;
   enabled?: boolean;
   status?: string;
+  market?: string;
+  currency?: string;
+  defaultPriceType?: string;
 };
 
 type PopulatedRetailListing = {
@@ -26,8 +26,7 @@ type PopulatedRetailListing = {
   sourceId?: PopulatedSource | null;
   currentSourcePrice?: number;
   ptaStatus?: string;
-  ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string;
-  market?: string; currency?: string; priceType?: string; priceIdentityKey?: string;
+  ram?: string; storage?: string; color?: string; condition?: string; warrantyType?: string; variantKey?: string; market?: string; currency?: string; priceType?: string;
   availability?: string;
   enabled?: boolean;
   verificationStatus?: string;
@@ -45,7 +44,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
   if (!phone) return { slug: null, changed: false, bestPrice: 0, offerCount: 0 };
 
   const rows = await PhoneRetailListing.find({ phoneId, enabled: true })
-    .populate('sourceId', 'name sourceType priority trusted enabled status market currency')
+    .populate('sourceId', 'name sourceType priority trusted enabled status market currency defaultPriceType')
     .lean();
 
   const offers: VerifiedOfferCandidate[] = (rows as unknown as PopulatedRetailListing[]).map((row) => {
@@ -59,16 +58,16 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
       price: Number(row.currentSourcePrice || 0),
       ptaStatus: row.ptaStatus || '',
       ram: row.ram || '', storage: row.storage || '', color: row.color || '', condition: row.condition || 'new', warrantyType: row.warrantyType || '',
-      variantKey: row.variantKey || buildPriceVariantKey(row),
+      market: row.market || source.market || 'PK',
+      currency: row.currency || source.currency || 'PKR',
+      priceType: row.priceType || source.defaultPriceType || '',
+      variantKey: row.variantKey || buildPriceVariantKey({ ...row, market: row.market || source.market, currency: row.currency || source.currency, priceType: row.priceType || source.defaultPriceType }),
       availability: row.availability || 'unknown',
       enabled: row.enabled !== false,
       trusted: source.trusted === true,
       sourceEnabled: source.enabled !== false,
       sourceStatus: source.status || 'active',
       verificationStatus: row.verificationStatus || 'pending',
-      market: normalizePriceMarket(row.market || source.market),
-      currency: normalizePriceCurrency(row.currency || source.currency, row.market || source.market),
-      priceType: normalizeMarketPriceType(row.priceType, row.market || source.market, row.ptaStatus),
     };
   });
 
@@ -83,7 +82,7 @@ export async function recomputeBestPriceForPhone(phoneId: string): Promise<BestP
     verifiedOfferCount: selection.eligibleCount,
     bestPtaPricePKR: selection.bestPta?.price || 0,
     bestNonPtaPricePKR: selection.bestNonPta?.price || 0,
-    bestUsRetailPriceUSD: selection.bestUsRetail?.price || 0,
+    bestUsPriceUSD: selection.bestUs?.price || 0,
     bestPriceListingId: selection.best?.listingId || null,
     bestPriceSourceId: selection.best?.sourceId || null,
     bestPriceSelectedAt: selection.best ? new Date() : null,
