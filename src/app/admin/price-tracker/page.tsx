@@ -354,6 +354,11 @@ export default function AdminPriceTrackerPage() {
   const [editForm, setEditForm] = useState({ price: '', regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK' as 'PK' | 'US', currency: 'PKR' as 'PKR' | 'USD', priceType: 'pta-approved' as 'pta-approved' | 'non-pta' | 'us-retail', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
   const [priceControlRows, setPriceControlRows] = useState<{ manual: Array<Record<string, any>>; automatic: Array<Record<string, any>> }>({ manual: [], automatic: [] });
   const [priceControlLoading, setPriceControlLoading] = useState(false);
+  const [phoneControlPickerOpen, setPhoneControlPickerOpen] = useState(false);
+  const [phoneControlPickerSearch, setPhoneControlPickerSearch] = useState('');
+  const [phoneControlPickerRows, setPhoneControlPickerRows] = useState<PhonePrice[]>([]);
+  const [phoneControlPickerLoading, setPhoneControlPickerLoading] = useState(false);
+  const [phoneControlPickerError, setPhoneControlPickerError] = useState('');
 
   const [addListingModal, setAddListingModal] = useState(false);
   const [listingPhoneId, setListingPhoneId] = useState('');
@@ -1066,6 +1071,37 @@ export default function AdminPriceTrackerPage() {
     }
   };
 
+  const loadPhoneControlPicker = useCallback(async (search = '') => {
+    setPhoneControlPickerLoading(true);
+    setPhoneControlPickerError('');
+    try {
+      const params = new URLSearchParams({ page: '1', limit: '20', sort: 'name-az' });
+      const cleaned = search.trim();
+      if (cleaned.length >= 2) params.set('search', cleaned);
+      const res = await fetch(`/api/admin/price-tracker/phones?${params}`, { credentials: 'include' });
+      const data = await readApiResponse(res) as { phones?: PhonePrice[]; data?: PhonePrice[]; error?: string };
+      if (!res.ok) throw new Error(data.error || 'Failed to load phones');
+      setPhoneControlPickerRows(data.phones || data.data || []);
+    } catch (cause) {
+      setPhoneControlPickerRows([]);
+      setPhoneControlPickerError(cause instanceof Error ? cause.message : 'Unable to load phones');
+    } finally {
+      setPhoneControlPickerLoading(false);
+    }
+  }, []);
+
+  const openPhoneControlPicker = () => {
+    setPhoneControlPickerSearch('');
+    setPhoneControlPickerOpen(true);
+    void loadPhoneControlPicker('');
+  };
+
+  useEffect(() => {
+    if (!phoneControlPickerOpen) return;
+    const timer = setTimeout(() => { void loadPhoneControlPicker(phoneControlPickerSearch); }, 300);
+    return () => clearTimeout(timer);
+  }, [phoneControlPickerOpen, phoneControlPickerSearch, loadPhoneControlPicker]);
+
   const openEditPriceModal = async (phone: PhonePrice) => {
     setEditingPhone(phone);
     setEditForm({ price: phone.currentPrice > 0 ? String(phone.currentPrice) : '', regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
@@ -1221,7 +1257,7 @@ export default function AdminPriceTrackerPage() {
               <h2 className="mt-1 text-lg font-bold text-gray-900">Public Price Control Center</h2>
               <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">Every public price belongs to one exact identity: market + PTA bucket + RAM + storage + color + condition + warranty. Automatic offers may update in the background; a locked admin override always wins for that exact identity.</p>
             </div>
-            <button onClick={() => openPhonePrices('all')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700"><Pencil className="h-4 w-4"/>Control a phone</button>
+            <button onClick={openPhoneControlPicker} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700"><Pencil className="h-4 w-4"/>Control a phone</button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button onClick={() => openPhonePrices('pta-approved')} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-left hover:bg-emerald-100"><p className="text-xs font-bold text-emerald-900">Pakistan PTA</p><p className="mt-1 text-[11px] text-emerald-700">PKR · exact RAM/storage/color</p></button>
@@ -3078,6 +3114,63 @@ export default function AdminPriceTrackerPage() {
     );
   };
 
+  const renderPhoneControlPicker = () => {
+    if (!phoneControlPickerOpen) return null;
+    return (
+      <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Control a phone price</h2>
+              <p className="mt-1 text-xs text-slate-500">Choose a phone, then manage its exact PTA / Non-PTA / USA variant price without leaving Control Center.</p>
+            </div>
+            <button type="button" onClick={() => setPhoneControlPickerOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="p-5">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                autoFocus
+                value={phoneControlPickerSearch}
+                onChange={event => setPhoneControlPickerSearch(event.target.value)}
+                placeholder="Search phone by brand or model…"
+                className="h-11 w-full rounded-xl border border-slate-200 pl-10 pr-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            {phoneControlPickerError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{phoneControlPickerError}</div>}
+            <div className="mt-4 max-h-[420px] overflow-y-auto rounded-xl border border-slate-100">
+              {phoneControlPickerLoading ? (
+                <div className="p-8 text-center text-sm text-slate-400">Loading phones…</div>
+              ) : phoneControlPickerRows.length === 0 ? (
+                <div className="p-8 text-center text-sm text-slate-500">No matching phones found.</div>
+              ) : phoneControlPickerRows.map(phone => (
+                <button
+                  key={phone.phoneId}
+                  type="button"
+                  onClick={() => { setPhoneControlPickerOpen(false); void openEditPriceModal(phone); }}
+                  className="flex w-full items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-blue-50/60"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{phone.phoneName}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{phone.brand} · {phone.mode} · {Number(phone.lockedOverrideCount || 0)} locked</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-slate-900">{formatPKR(phone.currentPrice)}</p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-blue-600">Open Price Control →</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-slate-500">Showing up to 20 matches. Type at least 2 characters to search the full catalog.</p>
+              <button type="button" onClick={() => setPhoneControlPickerOpen(false)} className="h-9 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderListingReviewModal = () => {
     if (!reviewListing?.listingId) return null;
     const saving = actionLoading === `listing-${reviewListing.listingId}`;
@@ -3139,6 +3232,7 @@ export default function AdminPriceTrackerPage() {
       {renderEditSourceModal()}
       {renderSourceTestModal()}
       {renderDeleteSourceModal()}
+      {renderPhoneControlPicker()}
       {renderListingReviewModal()}
     </div>
   );
