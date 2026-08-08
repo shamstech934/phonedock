@@ -216,6 +216,9 @@ export default function PhoneForm({
             ? data.prices.map((p: Record<string, unknown>) => ({
                 storeName: String(p.storeName ?? p.store_name ?? 'Daraz'),
                 price: toNumberOrEmpty(p.price),
+                regularPrice: toNumberOrEmpty(p.regularPrice ?? p.regular_price),
+                discountStartAt: p.discountStartAt || p.discount_start_at ? String(p.discountStartAt ?? p.discount_start_at).slice(0, 10) : '',
+                discountEndAt: p.discountEndAt || p.discount_end_at ? String(p.discountEndAt ?? p.discount_end_at).slice(0, 10) : '',
                 url: String(p.url ?? ''),
                 inStock: Boolean(p.inStock ?? p.in_stock ?? true),
                 market: String(p.market ?? 'PK').toUpperCase() === 'US' ? 'US' as const : 'PK' as const,
@@ -420,6 +423,9 @@ export default function PhoneForm({
         prices: form.prices.map(p => ({
           storeName: p.storeName,
           price: p.price === '' ? 0 : Number(p.price),
+          regularPrice: p.regularPrice === '' ? 0 : Number(p.regularPrice),
+          discountStartAt: p.discountStartAt,
+          discountEndAt: p.discountEndAt,
           url: p.url,
           inStock: p.inStock,
           market: p.market,

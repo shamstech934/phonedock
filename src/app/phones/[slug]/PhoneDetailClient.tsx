@@ -522,8 +522,8 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
     selectedVariant?: { ram: string; storage: string; color: string };
     variantSelectionRequired?: boolean; exactVariantAvailable?: boolean;
     variantOptions?: { ram: string[]; storage: string[]; colors: string[] };
-    variantOffers?: Array<{ market: string; currency: string; priceType: string; ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; price: number; source: string; sourceUrl: string }>;
-    selectedOffer?: { price: number; source: string; sourceUrl: string; ram: string; storage: string; color: string } | null;
+    variantOffers?: Array<{ market: string; currency: string; priceType: string; ram: string; storage: string; color: string; colorKey: string; condition: string; warrantyType: string; priceClass: string; price: number; regularPrice?: number; discountStartAt?: string | null; discountEndAt?: string | null; source: string; sourceUrl: string }>;
+    selectedOffer?: { price: number; regularPrice?: number; discountStartAt?: string | null; discountEndAt?: string | null; source: string; sourceUrl: string; ram: string; storage: string; color: string } | null;
     priceMode: string; manualLock: boolean;
     history: Array<{ id: string; oldPrice: number; newPrice: number; difference: number; percentageChange: number; changeType: string; sourceType: string; capturedAt: string }>;
   } | null>(null);
@@ -726,12 +726,13 @@ export default function PhoneDetailPage({ slug, initialData }: { slug: string; i
 
               {/* Price & Quick Info */}
               <div className="card-premium p-4 space-y-3">
-                {selectedMarket === 'PK' && p.originalPricePKR > p.pricePKR && p.originalPricePKR > 0 && (
-                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-2.5 text-center">
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span>
-                    <p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((p.originalPricePKR - p.pricePKR) / p.originalPricePKR) * 100)}% — was {formatPrice(p.originalPricePKR)}</p>
-                  </div>
-                )}
+                {(() => {
+                  const sale = Number(priceTracker?.selectedOffer?.price || 0);
+                  const regular = Number(priceTracker?.selectedOffer?.regularPrice || 0);
+                  if (regular > sale && sale > 0) return <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-2.5 text-center"><span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span><p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((regular - sale) / regular) * 100)}% — was {formatTrackedPrice(regular, priceTracker?.currency || 'PKR')}</p></div>;
+                  if (selectedMarket === 'PK' && p.originalPricePKR > p.pricePKR && p.originalPricePKR > 0 && !(selectedRam || selectedStorage || selectedColor)) return <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-2.5 text-center"><span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Deal</span><p className="text-xs text-emerald-600 mt-0.5">Save {Math.round(((p.originalPricePKR - p.pricePKR) / p.originalPricePKR) * 100)}% — was {formatPrice(p.originalPricePKR)}</p></div>;
+                  return null;
+                })()}
                 <div className="space-y-2">
                   <div className="space-y-2">
                     <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-1">

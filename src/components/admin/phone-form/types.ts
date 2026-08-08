@@ -14,6 +14,9 @@ export interface PhoneImage {
 export interface PhonePrice {
   storeName: string;
   price: number | '';
+  regularPrice: number | '';
+  discountStartAt: string;
+  discountEndAt: string;
   url: string;
   inStock: boolean;
   market: 'PK' | 'US';
@@ -188,6 +191,9 @@ export const EMPTY_IMAGE: PhoneImage = { url: '', altText: '' };
 export const EMPTY_PRICE: PhonePrice = {
   storeName: 'Daraz',
   price: '',
+  regularPrice: '',
+  discountStartAt: '',
+  discountEndAt: '',
   url: '',
   inStock: true,
   market: 'PK',

@@ -217,6 +217,12 @@ export default function ImagesPricesSection({ form, set }: SectionProps) {
                   />
                 </div>
 
+                <div className="min-w-[140px] flex-1">
+                  <FieldLabel>Regular Price ({price.currency})</FieldLabel>
+                  <input type="number" value={price.regularPrice === '' ? '' : price.regularPrice} onChange={(e) => updatePrice(idx, 'regularPrice', e.target.value === '' ? '' : Number(e.target.value))} placeholder="Before discount" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />
+                  {Number(price.regularPrice || 0) > Number(price.price || 0) && Number(price.price || 0) > 0 ? <p className="mt-1 text-[11px] font-medium text-emerald-600">{Math.round(((Number(price.regularPrice) - Number(price.price)) / Number(price.regularPrice)) * 100)}% discount</p> : null}
+                </div>
+
                 {/* URL */}
                 <div className="min-w-[200px] flex-1">
                   <FieldLabel>URL</FieldLabel>
@@ -271,9 +277,11 @@ export default function ImagesPricesSection({ form, set }: SectionProps) {
                 <div><FieldLabel>Storage</FieldLabel><input type="text" value={price.storage} onChange={(e) => updatePrice(idx, 'storage', e.target.value)} placeholder="e.g. 256GB" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Color</FieldLabel><input type="text" value={price.color} onChange={(e) => updatePrice(idx, 'color', e.target.value)} placeholder="e.g. Black" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Condition</FieldLabel><select value={price.condition} onChange={(e) => updatePrice(idx, 'condition', e.target.value as PhonePrice['condition'])} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"><option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open Box</option></select></div>
+                <div><FieldLabel>Discount Starts</FieldLabel><input type="date" value={price.discountStartAt} onChange={(e) => updatePrice(idx, 'discountStartAt', e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
+                <div><FieldLabel>Discount Ends</FieldLabel><input type="date" value={price.discountEndAt} onChange={(e) => updatePrice(idx, 'discountEndAt', e.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
                 <div><FieldLabel>Warranty</FieldLabel><input type="text" value={price.warrantyType} onChange={(e) => updatePrice(idx, 'warrantyType', e.target.value)} placeholder="Official / Shop / None" className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" /></div>
               </div>
-              <p className="mt-2 text-[11px] text-gray-500">Each row is one exact market price identity. Pakistan PTA, Pakistan Non-PTA and USA Retail stay separate, including RAM/storage/color variants.</p>
+              <p className="mt-2 text-[11px] text-gray-500">Each row is one exact market price identity. Pakistan PTA, Pakistan Non-PTA and USA Retail stay separate, including RAM/storage/color variants. Sale price, regular price and discount dates belong to this exact variant only.</p>
             </div>
           ))}
         </div>
