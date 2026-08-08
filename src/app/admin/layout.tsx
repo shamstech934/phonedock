@@ -42,13 +42,14 @@ const adminLinks: NavLink[] = [
     { label: 'Sync', href: '/admin/sync', permission: 'phones:edit' },
     { label: 'Data Quality', href: '/admin/data-quality', permission: 'data-quality:read' },
     { label: 'Price Control', href: '/admin/price-tracker', permission: 'prices:read' },
+    { label: 'Specs Control', href: '/admin/specs-intelligence', permission: 'phones:read' },
+    { label: 'Image Control', href: '/admin/image-intelligence', permission: 'phones:read' },
+    { label: 'Ratings & Benchmarks', href: '/admin/ratings-benchmarks', permission: 'phones:read' },
     { label: 'Lifecycle', href: '/admin/launch-center', permission: 'phones:read' },
   ]},
   { label: 'Intelligence', href: '/admin/intelligence', icon: BrainCircuit, children: [
     { label: 'Intelligence Center', href: '/admin/intelligence-center', permission: 'phones:read' },
     { label: 'Pakistan Intelligence', href: '/admin/pakistan-intelligence', permission: 'prices:read' },
-    { label: 'Image Intelligence', href: '/admin/image-intelligence', permission: 'phones:read' },
-    { label: 'Specs Intelligence', href: '/admin/specs-intelligence', permission: 'phones:read' },
     { label: 'Price Intelligence V2', href: '/admin/price-intelligence-v2', permission: 'prices:read' },
     { label: 'YouTube Intelligence', href: '/admin/youtube-intelligence', permission: 'videos:read' },
   ]},
@@ -199,7 +200,7 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const hasPermission = (permission?: string) => !permission || (rolePerms[admin.role] || []).includes(permission);
   const simpleDestinations = new Set([
     '/admin/dashboard', '/admin/phones', '/admin/brands', '/admin/news', '/admin/videos', '/admin/reviews',
-    '/admin/import-v2', '/admin/collector', '/admin/data-quality', '/admin/price-tracker', '/admin/launch-center', '/admin/homepage-builder', '/admin/settings',
+    '/admin/import-v2', '/admin/collector', '/admin/data-quality', '/admin/price-tracker', '/admin/specs-intelligence', '/admin/image-intelligence', '/admin/ratings-benchmarks', '/admin/launch-center', '/admin/homepage-builder', '/admin/settings',
   ]);
   const filteredLinks = adminLinks
     .map(link => link.children
