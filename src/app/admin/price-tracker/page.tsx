@@ -375,6 +375,13 @@ export default function AdminPriceTrackerPage() {
     }
   };
 
+  const networkError = (cause: unknown, area: string) => {
+    if (cause instanceof TypeError && /failed to fetch/i.test(cause.message)) {
+      return `${area} could not reach the Price Control API. Retry once; if it persists, check the deployment Function logs.`;
+    }
+    return cause instanceof Error ? cause.message : `${area} failed`;
+  };
+
   /* ── Debounced search for phones ── */
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -405,7 +412,7 @@ export default function AdminPriceTrackerPage() {
         const d = await readApiResponse(changesRes);
         setRecentChanges(d.changes || d.data || []);
       }
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price overview'); }
+    } catch (e) { setError(networkError(e, 'Price overview')); }
   }, []);
 
   const fetchPhones = useCallback(async () => {
@@ -426,7 +433,7 @@ export default function AdminPriceTrackerPage() {
         automatic: Number(d.modeTotals?.automatic || 0),
       });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load phones');
+      setError(networkError(e, 'Phone prices'));
     } finally { setLoading(false); }
   }, [phonesPage, phonesSort, phonesDebouncedSearch, phonesModeFilter]);
 
@@ -449,7 +456,7 @@ export default function AdminPriceTrackerPage() {
         lastFinalUrl: source.lastFinalUrl || '',
         lastResponsePreview: source.lastResponsePreview || '',
       })) as PriceSource[]);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load price sources'); }
+    } catch (e) { setError(networkError(e, 'Price sources')); }
   }, []);
 
   const fetchMatchCandidates = useCallback(async () => {
@@ -490,7 +497,7 @@ export default function AdminPriceTrackerPage() {
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load pending price reviews'));
       const d = await readApiResponse(res);
       setPending(d.pending || d.data || []);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load pending price reviews'); }
+    } catch (e) { setError(networkError(e, 'Review queue')); }
   }, []);
 
   const fetchPhoneOptions = useCallback(async () => {
