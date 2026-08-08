@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Types } from 'mongoose';
-import { Phone, PhoneSpecs } from '@/lib/models';
+import { Phone, PhoneSpecs, PhoneBenchmark } from '@/lib/models';
 import { generatePhoneReview } from '@/lib/intelligence/review-engine';
 import { getAdminFromRequest, connectDB, requirePermission } from '@/app/api/[[...path]]/handlers/helpers';
 
@@ -12,6 +12,23 @@ async function authorize(req: NextRequest) {
   if (auth.error) return { error: auth.error };
   const forbidden = requirePermission(auth.admin, 'phones:edit');
   return forbidden ? { error: forbidden } : { admin: auth.admin };
+}
+
+
+export async function GET(req: NextRequest) {
+  const auth = await authorize(req);
+  if (auth.error) return auth.error;
+  await connectDB();
+  const scope = { deletedAt: null, active: true, status: { $in: ['published', 'draft', 'pending'] } };
+  const [total, missingRatings, missingReviews, benchmarkPhoneIds] = await Promise.all([
+    Phone.countDocuments(scope),
+    Phone.countDocuments({ ...scope, overallRating: { $lte: 0 }, cameraScore: { $lte: 0 }, performanceScore: { $lte: 0 }, batteryScore: { $lte: 0 }, displayScore: { $lte: 0 }, valueScore: { $lte: 0 } }),
+    Phone.countDocuments({ ...scope, $or: [{ reviewSummary: '' }, { reviewVerdict: '' }] }),
+    PhoneBenchmark.distinct('phoneId'),
+  ]);
+  const phoneIds = new Set((await Phone.find(scope).distinct('_id')).map(id => String(id)));
+  const withBenchmarks = new Set(benchmarkPhoneIds.map(id => String(id)).filter(id => phoneIds.has(id))).size;
+  return NextResponse.json({ total, missingRatings, missingReviews, withBenchmarks, missingBenchmarks: Math.max(0, total - withBenchmarks) }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(req: NextRequest) {

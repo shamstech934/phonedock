@@ -24,7 +24,7 @@ interface SummaryData {
   } | null;
   totals: { totalPhones: number; publishedPhones: number; draftPhones: number; archivedPhones: number; totalBrands: number };
   specs: { withSpecs: number; completeSpecs: number; publishedPhones: number; catalogPhones: number };
-  queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number };
+  queues: { missingSpecs: number; missingImages: number; missingPrices: number; duplicates: number; orphans: number; stalePrices: number; failedImports: number; lifecycleIssues: number; ratingIssues: number };
   severity: { critical: number; high: number; medium: number; low: number; info: number; total: number };
   trends: { discoveredToday: number; fixedToday: number; newLast7Days: number };
 }
@@ -69,6 +69,17 @@ const SEVERITY_CONFIG: Record<string, { color: string; bg: string; icon: React.E
   low: { color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: Info, label: 'Low' },
   info: { color: 'text-gray-600', bg: 'bg-gray-50 border-gray-200', icon: Info, label: 'Info' },
 };
+
+function workspaceForIssue(issueType?: string): { href: string; label: string } | null {
+  const type = String(issueType || '').toUpperCase();
+  if (type.includes('PRICE') || type.includes('PTA')) return { href: '/admin/price-tracker', label: 'Price' };
+  if (type.includes('IMAGE')) return { href: '/admin/image-intelligence', label: 'Images' };
+  if (type.includes('SPEC')) return { href: '/admin/specs-intelligence', label: 'Specs' };
+  if (type.includes('RATING') || type.includes('BENCHMARK') || type.includes('SCORE')) return { href: '/admin/review-engine', label: 'Ratings' };
+  if (type.includes('LAUNCH') || type.includes('LIFECYCLE') || type.includes('UPCOMING') || type.includes('AVAILABILITY')) return { href: '/admin/launch-center', label: 'Lifecycle' };
+  if (type.includes('IMPORT')) return { href: '/admin/import-v2', label: 'Import' };
+  return null;
+}
 
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-blue-50 text-blue-700',
@@ -737,12 +748,13 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
           </div>
           <Link href="/admin/data-quality?tab=issues" className="text-xs font-semibold text-blue-600 hover:text-blue-700">View all issues</Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
           {[
             { label: 'Prices', value: summary.queues.missingPrices + summary.queues.stalePrices, href: '/admin/price-tracker', icon: DollarSign, detail: 'PTA / Non-PTA / USA, overrides & history' },
             { label: 'Specifications', value: summary.queues.missingSpecs, href: '/admin/specs-intelligence', icon: Smartphone, detail: 'Missing and conflicting specs' },
             { label: 'Images', value: summary.queues.missingImages, href: '/admin/image-intelligence', icon: Image, detail: 'Missing, broken and duplicate images' },
-            { label: 'Lifecycle', value: 0, href: '/admin/launch-center', icon: Clock, detail: 'Upcoming, released and discontinued' },
+            { label: 'Ratings', value: summary.queues.ratingIssues, href: '/admin/review-engine', icon: ShieldCheck, detail: 'Editorial scores and benchmark review' },
+            { label: 'Lifecycle', value: summary.queues.lifecycleIssues, href: '/admin/launch-center', icon: Clock, detail: 'Coming Soon, released and discontinued' },
             { label: 'Incoming data', value: summary.severity.total, href: '/admin/collector/review', icon: ScanSearch, detail: 'Review collected changes before apply' },
           ].map(item => (
             <Link key={item.label} href={item.href} className="group rounded-xl border border-gray-100 p-4 hover:border-blue-200 hover:bg-blue-50/40 transition-colors">
@@ -803,6 +815,8 @@ function OverviewTab({ summary, loading, onRefresh }: { summary: SummaryData | n
               { label: 'Duplicate Candidates', count: summary.queues.duplicates, icon: Copy, tab: 'duplicates' },
               { label: 'Orphan Records', count: summary.queues.orphans, icon: Ghost, tab: 'orphans' },
               { label: 'Stale Prices', count: summary.queues.stalePrices, icon: Clock, tab: 'stale-prices', href: '/admin/price-tracker' },
+              { label: 'Lifecycle Review', count: summary.queues.lifecycleIssues, icon: Clock, tab: 'lifecycle', href: '/admin/launch-center' },
+              { label: 'Ratings / Scores', count: summary.queues.ratingIssues, icon: ShieldCheck, tab: 'ratings', href: '/admin/review-engine' },
               { label: 'Failed Imports', count: summary.queues.failedImports, icon: Upload, tab: 'import-warnings', href: '/admin/import-v2' },
             ].map(q => (
               <button
@@ -1142,6 +1156,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
           {issues.map(issue => {
             const sev = SEVERITY_CONFIG[issue.severity || 'info'] || SEVERITY_CONFIG.info;
             const SevIcon = sev.icon;
+            const workspace = workspaceForIssue(issue.issueType);
             return (
               <div key={issue.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center px-4 py-3 bg-white border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
                 <div className="sm:col-span-1">
@@ -1172,6 +1187,7 @@ function IssuesTab({ summary, onRefresh, defaultFilter }: { summary: SummaryData
                   <button onClick={() => setDetailIssue(issue)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="View Details">
                     <Eye className="w-3.5 h-3.5" />
                   </button>
+                  {workspace && <a href={workspace.href} className="rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 hover:bg-blue-100" title={`Open ${workspace.label} workspace`}>{workspace.label}</a>}
                   {issue.status === 'open' && (
                     <>
                       {issue.canAutoFix && (

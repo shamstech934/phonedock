@@ -43,6 +43,13 @@ interface PhoneViewData {
   featured?: boolean;
   trending?: boolean;
   upcoming?: boolean;
+  availabilityStatus?: string;
+  announcedAt?: string;
+  expectedLaunchAt?: string;
+  pakistanLaunchAt?: string;
+  availableFrom?: string;
+  discontinuedAt?: string;
+  lifecycleManualLock?: boolean;
   pricePKR?: number;
   thumbnail?: string;
   images?: string[];
@@ -82,13 +89,14 @@ export default function AdminPhoneViewPage() {
   const hasPrice = Number(phone.pricePKR || 0) > 0 || Boolean(phone.prices?.some(row => Number(row.price || 0) > 0));
   const hasImages = Boolean(phone.thumbnail || phone.images?.some(Boolean));
   const hasRatings = Number(phone.overallRating || 0) > 0 || [phone.cameraScore, phone.performanceScore, phone.batteryScore, phone.displayScore, phone.valueScore].some(value => Number(value || 0) > 0);
-  const lifecycleReady = Boolean(phone.releaseDate || phone.upcoming || phone.status);
+  const lifecycleState = phone.availabilityStatus || (phone.upcoming ? 'coming_soon' : 'available');
+  const lifecycleReady = lifecycleState === 'available' ? Boolean(phone.releaseDate || phone.availableFrom) : lifecycleState === 'discontinued' ? Boolean(phone.discontinuedAt) : Boolean(phone.expectedLaunchAt || phone.releaseDate || phone.announcedAt);
   const healthItems = [
     { label: 'Price', ready: hasPrice, detail: hasPrice ? 'Price data available' : 'Needs price review', href: '/admin/price-tracker', icon: DollarSign },
     { label: 'Specs', ready: specValues.length >= 8, detail: `${specValues.length} filled fields`, href: '/admin/specs-intelligence', icon: ListChecks },
     { label: 'Images', ready: hasImages, detail: hasImages ? 'Image available' : 'Missing primary image', href: '/admin/image-intelligence', icon: ImageIcon },
     { label: 'Ratings', ready: hasRatings, detail: hasRatings ? 'Rating data available' : 'No rating yet', href: '/admin/review-engine', icon: ShieldCheck },
-    { label: 'Lifecycle', ready: lifecycleReady, detail: phone.upcoming ? 'Upcoming' : (phone.releaseDate ? 'Release date set' : 'Needs lifecycle review'), href: '/admin/launch-center', icon: Rocket },
+    { label: 'Lifecycle', ready: lifecycleReady, detail: `${lifecycleState.replace('_', ' ')}${phone.lifecycleManualLock ? ' · locked' : ''}`, href: '/admin/launch-center', icon: Rocket },
   ];
 
   return (
