@@ -10,7 +10,8 @@ import { connectDB } from '@/lib/mongodb';
 import { News } from '@/lib/models';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 interface NewsArticle {

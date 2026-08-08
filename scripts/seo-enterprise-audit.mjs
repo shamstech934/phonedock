@@ -8,7 +8,7 @@ const checks = [
   ['product schema', read('src/app/phones/[slug]/page.tsx').includes("'@type': 'Product'")],
   ['brand item list schema', read('src/app/brands/[slug]/page.tsx').includes("'@type': 'ItemList'")],
   ['brand empty-page noindex', read('src/app/brands/[slug]/layout.tsx').includes('indexEmptyBrands')],
-  ['published-only phone sitemap', read('src/app/phones-sitemap.xml/route.ts').includes("status: 'published'")],
+  ['published-only phone sitemap', read('src/app/phones-sitemap.xml/route.ts').includes('getIndexReadyPhoneFilter')],
   ['empty brands excluded from sitemap', read('src/app/brands-sitemap.xml/route.ts').includes("Phone.distinct('brandId'")],
   ['admin private robots', read('src/app/robots.ts').includes("'/admin/'")],
   ['search noindex/disallow', read('src/app/robots.ts').includes("'/search'")],

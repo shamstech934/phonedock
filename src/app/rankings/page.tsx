@@ -8,7 +8,8 @@ import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import Link from 'next/link';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 const CURRENT_YEAR = new Date().getFullYear();
 
 // Rankings depend on live MongoDB data. Render this route only at request time so

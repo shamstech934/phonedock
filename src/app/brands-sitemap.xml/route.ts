@@ -2,6 +2,7 @@ import { connectDBSafe } from '@/lib/mongodb';
 import { Brand, Phone } from '@/lib/models';
 import { getBaseUrl } from '@/lib/urls';
 import { escapeXml, formatDate, xmlResponse } from '@/lib/seo-sitemaps/xml';
+import { getIndexReadyPhoneFilter } from '@/lib/phone-publication';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,7 +13,7 @@ export async function GET() {
   try {
     const conn = await connectDBSafe();
     if (conn) {
-      const brandIds = await Phone.distinct('brandId', { active: true, status: 'published', deletedAt: null });
+      const brandIds = await Phone.distinct('brandId', getIndexReadyPhoneFilter());
       const brands = await Brand.find({ _id: { $in: brandIds }, active: true }).select('slug updatedAt').lean();
       rows.push(...brands.filter((b) => b.slug).map((b) => `  <url><loc>${escapeXml(`${base}/brands/${b.slug}`)}</loc><lastmod>${formatDate(b.updatedAt)}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>`));
     }

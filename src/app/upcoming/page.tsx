@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { Clock } from 'lucide-react';
 import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'Upcoming Phones in Pakistan 2026',

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
+import { getBaseUrl } from '@/lib/urls';
   Star, ChevronRight, MessageSquare, ArrowLeft, Camera, Cpu,
   Battery, Monitor, DollarSign, ThumbsUp, ThumbsDown,
 } from 'lucide-react';
@@ -19,7 +20,7 @@ import { Phone as PhoneModel, PhoneSpecs, UserReview, Brand } from '@/lib/models
 import { phoneToJSON, buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+const BASE_URL = getBaseUrl();
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 interface PhoneData {

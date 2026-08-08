@@ -3,6 +3,7 @@ import { Phone } from '@/lib/models';
 import { getBaseUrl } from '@/lib/urls';
 import { escapeXml, formatDate, xmlResponse } from '@/lib/seo-sitemaps/xml';
 import { SEO_SPEC_LANDINGS } from '@/lib/seo-growth';
+import { getIndexReadyPhoneFilter } from '@/lib/phone-publication';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,7 +16,7 @@ export async function GET() {
   try {
     const conn = await connectDBSafe();
     if (conn) {
-      const phones = await Phone.find({ active: true, status: 'published', deletedAt: null }).select('slug updatedAt').lean();
+      const phones = await Phone.find(getIndexReadyPhoneFilter()).select('slug updatedAt').lean();
       rows = rows.concat(phones.filter((p) => p.slug).map((p) => `  <url><loc>${escapeXml(`${base}/phones/${p.slug}`)}</loc><lastmod>${formatDate(p.updatedAt)}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`));
     }
   } catch (error) {

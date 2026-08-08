@@ -4,7 +4,8 @@ import { BatteryCharging, Camera, Gamepad2, ShieldCheck, Sparkles, WalletCards }
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 export const metadata: Metadata = {
   title: 'Phone Buying Guides for Pakistan | SpecsDekh',
   description: 'Simple smartphone buying guides for gaming, camera, battery, value and PTA-approved phones in Pakistan.',

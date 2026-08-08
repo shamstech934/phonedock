@@ -5,6 +5,7 @@ import { fetchPhoneDetail, fetchPhoneDetailForMetadata } from '@/lib/fetch-phone
 import { serializeJsonLd } from '@/lib/json-ld';
 import { applySeoTemplate, buildPageMetadata, isIndexablePhone } from '@/lib/seo';
 import { getSettings } from '@/lib/models/Settings';
+import { getBaseUrl } from '@/lib/urls';
 
 // Render on demand and refresh cached phone pages hourly. This avoids a database
 // round-trip on every visit while still keeping prices and specifications fresh.
@@ -60,7 +61,8 @@ export default async function PhoneDetailPage({ params }: Props) {
   const brand = (phone?.brand as { name?: string; slug?: string } | null)?.name || '';
   const brandSlug = (phone?.brand as { name?: string; slug?: string } | null)?.slug || '';
   const model = phone?.modelName || '';
-  const canonicalUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/phones/${slug}`;
+  const baseUrl = getBaseUrl();
+  const canonicalUrl = `${baseUrl}/phones/${slug}`;
 
   const structuredPrice = Number(phone?.currentPrice || phone?.pricePKR || 0);
 
@@ -116,9 +118,9 @@ export default async function PhoneDetailPage({ params }: Props) {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home', item: process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com' },
-      { '@type': 'ListItem', position: 2, name: 'Phones', item: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/phones` },
-      ...(brand && brandSlug ? [{ '@type': 'ListItem', position: 3, name: brand, item: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com'}/brands/${brandSlug}` }] : []),
+      { '@type': 'ListItem', position: 1, name: 'Home', item: baseUrl },
+      { '@type': 'ListItem', position: 2, name: 'Phones', item: `${baseUrl}/phones` },
+      ...(brand && brandSlug ? [{ '@type': 'ListItem', position: 3, name: brand, item: `${baseUrl}/brands/${brandSlug}` }] : []),
       { '@type': 'ListItem', position: brand && brandSlug ? 4 : 3, name: `${brand} ${model}`.trim(), item: canonicalUrl },
     ],
   } : null;

@@ -47,6 +47,7 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
 
+
   // Recover malformed nested admin authentication URLs from stale bookmarks
   // or historical relative links, e.g. /compare/admin/login.
   const nestedAdminAuthRoutes = [
@@ -88,6 +89,19 @@ export async function proxy(req: NextRequest) {
     if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
       response.headers.set('Cache-Control', 'no-store, max-age=0');
       response.headers.set('Pragma', 'no-cache');
+    }
+    if (
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/api') ||
+      pathname.startsWith('/account') ||
+      pathname.startsWith('/profile') ||
+      pathname.startsWith('/wishlist') ||
+      pathname.startsWith('/recently-viewed') ||
+      pathname.startsWith('/login') ||
+      pathname.startsWith('/signup') ||
+      pathname.startsWith('/search')
+    ) {
+      response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
     }
     return response;
   };
@@ -145,7 +159,7 @@ export const config = {
     // Public document requests still pass through maintenance mode, but APIs
     // and files served from /public must not pay for an extra Proxy invocation.
     // Admin API protection is included explicitly below.
-    '/((?!api(?:/|$)|_next(?:/|$)|favicon\.ico$|robots\.txt$|sitemap\.xml$|.*-sitemap\.xml$|.*\.[^/]+$).*)',
+    '/((?!api(?:/|$)|_next(?:/|$)|favicon\.ico$|robots\.txt$|sitemap\.xml|.*-sitemap\.xml|.*\.[^/]+$).*)',
     '/api/admin/:path*',
   ],
 };

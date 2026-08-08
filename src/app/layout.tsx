@@ -26,7 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const description = settings?.metaDescription || "Compare smartphones, check PTA status, read expert reviews, and find the best prices in Pakistan. Complete specs, benchmarks, and price tracking for all brands.";
   const ogImage = settings?.ogImage || "/og-image.png";
   const favicon = settings?.favicon || "/favicon.svg";
-  const canonicalBase = String(settings?.canonicalDomain || BASE_URL).replace(/\/$/, '');
+  const canonicalBase = BASE_URL;
 
   return {
     metadataBase: new URL(canonicalBase),
@@ -59,7 +59,6 @@ export async function generateMetadata(): Promise<Metadata> {
       follow: true,
       googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
     },
-    alternates: { canonical: canonicalBase },
     applicationName: siteName,
     category: "technology",
     manifest: "/manifest.webmanifest",

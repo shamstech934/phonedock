@@ -7,7 +7,8 @@ import { PhoneCard } from '@/components/shared/PhoneCard';
 import { formatPrice } from '@/components/shared/formatPrice';
 import type { Phone } from '@/components/shared/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 export const revalidate = 300;
 

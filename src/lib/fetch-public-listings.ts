@@ -6,7 +6,7 @@ import { escapeRegex } from '@/lib/sanitize';
 import { buildSpecsMap, attachSpecsToRawPhones } from '@/app/api/[[...path]]/handlers/helpers';
 import type { Brand as BrandType, Phone as PhoneType } from '@/components/shared/types';
 import { getPriceCategory } from '@/lib/price-categories';
-import { getPublicPhoneFilter } from '@/lib/phone-publication';
+import { getIndexReadyPhoneFilter, getPublicPhoneFilter } from '@/lib/phone-publication';
 import { numericSpecClause } from '@/lib/spec-filter-fallback';
 
 export interface PhoneListParams {
@@ -53,7 +53,7 @@ const loadPublicBrands = cache(async (): Promise<BrandType[]> => {
       .sort({ sortOrder: 1, name: 1 })
       .lean(),
     Phone.aggregate([
-      { $match: { active: true, status: 'published' } },
+      { $match: { active: true, status: 'published', thumbnail: { $type: 'string', $nin: ['', null] }, $or: [{ upcoming: true }, { upcoming: { $ne: true }, pricePKR: { $gt: 0 } }] } },
       { $group: { _id: '$brandId', phones: { $sum: 1 } } },
     ]),
   ]);
@@ -87,7 +87,7 @@ async function loadPublicBrandDetail(slug: string): Promise<{ brand: BrandType |
   if (!rawBrand) return { brand: null, phones: [] };
 
   const rawPhones = await Phone.find({
-    ...getPublicPhoneFilter(),
+    ...getIndexReadyPhoneFilter(),
     brandId: rawBrand._id,
   })
     .sort({ createdAt: -1 })
@@ -123,10 +123,11 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
   const requestedLimit = Number.parseInt(params.limit || '20', 10);
   const limit = [12, 20, 32].includes(requestedLimit) ? requestedLimit : 20;
   const collection = params.collection || '';
-  const filter: Record<string, unknown> = getPublicPhoneFilter({
-    cardReady: ['latest', 'trending', 'featured', 'upcoming'].includes(collection),
-    upcoming: collection === 'upcoming',
-  });
+  const category = getPriceCategory(params.priceCategory);
+  const allowExplicitIncompletePrices = Boolean(category?.missing);
+  const filter: Record<string, unknown> = allowExplicitIncompletePrices
+    ? getPublicPhoneFilter({ upcoming: collection === 'upcoming' })
+    : getIndexReadyPhoneFilter({ upcoming: collection === 'upcoming' });
   const andFilters: Record<string, unknown>[] = [];
   if (collection === 'trending') filter.trending = true;
   if (collection === 'featured') filter.featured = true;
@@ -159,7 +160,6 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     if (brand) filter.brandId = brand._id;
   }
   const range = params.price ? PRICE_RANGES[params.price] : undefined;
-  const category = getPriceCategory(params.priceCategory);
   const directPriceMin = Number.parseFloat(params.priceMin || '');
   const directPriceMax = Number.parseFloat(params.priceMax || '');
   if (category?.missing) {
@@ -213,7 +213,10 @@ async function loadPhoneListing(params: PhoneListParams): Promise<{ phones: Phon
     const ids = await PhoneSpecs.find(specFilter).distinct('phoneId');
     filter._id = { $in: ids };
   }
-  if (andFilters.length > 0) filter.$and = andFilters;
+  if (andFilters.length > 0) {
+    const existingAnd = Array.isArray(filter.$and) ? filter.$and as Record<string, unknown>[] : [];
+    filter.$and = [...existingAnd, ...andFilters];
+  }
 
   const sortMap: Record<string, { field: string; order: 1 | -1 }> = {
     newest: { field: 'releaseDate', order: -1 },

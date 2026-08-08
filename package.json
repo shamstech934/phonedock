@@ -79,7 +79,8 @@
     "audit:search-compare-performance": "node scripts/search-compare-performance-audit.mjs",
     "test:collector-classifier": "tsx scripts/__tests__/collector-product-classifier.test.ts",
     "data:report-non-products": "tsx scripts/report-non-product-phones.ts",
-    "data:delete-confirmed-non-products": "tsx scripts/delete-confirmed-non-product-phones.ts"
+    "data:delete-confirmed-non-products": "tsx scripts/delete-confirmed-non-product-phones.ts",
+    "audit:indexing-recovery": "node scripts/google-indexing-recovery-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.11",

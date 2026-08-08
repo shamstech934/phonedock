@@ -1,3 +1,4 @@
+import { getBaseUrl } from '@/lib/urls';
 export const revalidate = 900;
 import Link from 'next/link';
 import { Tag, ChevronRight, BadgeDollarSign, ShieldCheck } from 'lucide-react';
@@ -5,7 +6,7 @@ import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
-const BASE_URL = (process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com').replace(/\/$/, '');
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'Phones by Price Range in Pakistan',

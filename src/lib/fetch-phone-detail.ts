@@ -48,7 +48,9 @@ const loadPhoneDetail = cache(async (slug: string): Promise<PhoneDetailData | nu
     Phone.find({
       active: true,
       status: 'published',
+      thumbnail: { $type: 'string', $nin: ['', null] },
       _id: { $ne: phone._id },
+      $or: [{ upcoming: true }, { upcoming: { $ne: true }, pricePKR: { $gt: 0 } }],
       modelName: { $not: /\b(tablet|tab|pad)\b/i },
       ...(Number(phone.pricePKR) > 0
         ? {

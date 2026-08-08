@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { Wallet } from 'lucide-react';
 import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'Best Budget Phones in Pakistan 2026',

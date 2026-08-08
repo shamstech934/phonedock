@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 import HomeContent from './HomeContent';
@@ -7,6 +8,11 @@ import type { HomeData } from '@/components/shared/types';
 import type { HeroPhone } from '@/components/shared/HeroPhoneShowcase';
 
 export const revalidate = 300;
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+};
+
 
 export default async function HomePage() {
   let homeData: HomeData | null = null;

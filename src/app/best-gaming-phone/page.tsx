@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { Gamepad2 } from 'lucide-react';
 import { TopPhonesClientPage } from '@/components/shared/TopPhonesClientPage';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'Best Gaming Phones in Pakistan 2026',

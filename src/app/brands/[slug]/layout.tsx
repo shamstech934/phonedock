@@ -4,7 +4,8 @@ import { getSettings } from '@/lib/models/Settings';
 import { applySeoTemplate, buildPageMetadata } from '@/lib/seo';
 import { connectDBSafe } from '@/lib/mongodb';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://specsdekh.com';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 
 export async function generateMetadata({
   params,

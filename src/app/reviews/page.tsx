@@ -1,3 +1,4 @@
+import { getBaseUrl } from '@/lib/urls';
 export const revalidate = 900;
 
 import { Star, MessageSquare, Smartphone, PenLine, ArrowRight } from 'lucide-react';
@@ -6,7 +7,7 @@ import type { Metadata } from 'next';
 import { Header } from '@/components/shared/Header';
 import { Footer } from '@/components/shared/Footer';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+const BASE_URL = getBaseUrl();
 
 export const metadata: Metadata = {
   title: 'User Reviews',

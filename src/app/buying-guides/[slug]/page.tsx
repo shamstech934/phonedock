@@ -12,7 +12,8 @@ import { connectDB } from '@/lib/mongodb';
 import type { Phone as PhoneType } from '@/components/shared/types';
 import { serializeJsonLd } from '@/lib/json-ld';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || '';
+import { getBaseUrl } from '@/lib/urls';
+const BASE_URL = getBaseUrl();
 const guides = {
   'gaming-phones': { title: 'Best Gaming Phones in Pakistan', intro: 'Prioritize chipset performance, stable FPS, cooling, refresh rate and battery endurance.', sort: 'performanceScore', tips: ['Prefer a strong recent chipset', 'Look for 120Hz or faster display', 'Check gaming battery endurance', 'Do not judge gaming performance from RAM alone'] },
   'camera-phones': { title: 'Best Camera Phones in Pakistan', intro: 'A good camera phone combines sensor quality, image processing, OIS and useful lenses.', sort: 'cameraScore', tips: ['OIS helps in low light and video', 'Sensor quality matters more than megapixels alone', 'Check ultrawide and telephoto quality', 'Review video stabilization and microphone quality'] },

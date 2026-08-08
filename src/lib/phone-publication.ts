@@ -35,3 +35,25 @@ export function getPublicPhoneFilter(options: { cardReady?: boolean; upcoming?: 
   }
   return filter;
 }
+
+
+/**
+ * Public crawl/index surfaces should expose only phones that can produce a
+ * useful canonical detail page. Upcoming phones may omit price, but still
+ * require a thumbnail; released phones require both thumbnail and price.
+ */
+export function getIndexReadyPhoneFilter(options: { upcoming?: boolean } = {}) {
+  const filter: Record<string, unknown> = getPublicPhoneFilter({ upcoming: options.upcoming });
+  filter.thumbnail = { $type: 'string', $nin: ['', null] };
+  if (options.upcoming) {
+    filter.upcoming = true;
+  } else {
+    filter.$and = [{
+      $or: [
+        { upcoming: true },
+        { upcoming: { $ne: true }, pricePKR: { $gt: 0 } },
+      ],
+    }];
+  }
+  return filter;
+}
