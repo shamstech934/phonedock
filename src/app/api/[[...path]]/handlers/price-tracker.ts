@@ -309,13 +309,18 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         // in the admin. priceMode is the operator's explicit choice; the
         // listing only makes that choice executable by the sync worker.
         const automatic = p.priceMode === 'automatic' && listing?.verificationStatus === 'verified' && p.manualLock !== true;
+        const brandName = String(p.brand?.name || '').trim();
+        const modelName = String(p.modelName || '').trim();
+        const displayName = brandName && !modelName.toLowerCase().startsWith(brandName.toLowerCase())
+          ? `${brandName} ${modelName}`.trim()
+          : modelName;
         return {
           id: p._id.toString(),
           phoneId: p._id.toString(),
-          phoneName: p.modelName,
-          name: p.modelName,
+          phoneName: displayName,
+          name: displayName,
           slug: p.slug,
-          brand: p.brand?.name || '',
+          brand: brandName,
           currentPrice: Number(p.currentPrice || 0),
           previousPrice: Number(p.previousPrice || 0),
           difference: Number(p.priceChange || 0),
@@ -1126,7 +1131,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       return NextResponse.json({ error: 'newPrice must be a positive number' }, { status: 400 });
     }
 
-    const phone = await Phone.findById(phoneId);
+    const phone = await Phone.findById(phoneId).populate('brandId', 'name');
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
     const normalizedMarket = normalizePriceMarket(market);
@@ -1459,11 +1464,11 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
           clearTimeout(timeout);
           if (response.ok) {
             const html = await response.text();
-            const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; ptaStatus?: string };
+            const phoneIdentity = phone as unknown as { modelName?: string; brandName?: string; brandId?: { name?: string } | null; ptaStatus?: string };
             const validation = validateRetailListingPage({
               html,
               phoneModel: phoneIdentity.modelName || '',
-              brandName: phoneIdentity.brandName || '',
+              brandName: phoneIdentity.brandId?.name || phoneIdentity.brandName || '',
               expectedRam: ram || '',
               expectedStorage: storage || '',
               expectedPtaStatus: listingMarket === 'PK' ? (ptaStatus || phoneIdentity.ptaStatus || '') : '',

@@ -57,12 +57,23 @@ function modelMatches(title: string, phoneModel: string, brandName?: string): bo
   const titleNormalized = normalize(title);
   const modelNormalized = normalize(phoneModel);
   if (!titleNormalized || !modelNormalized) return true;
-  if (titleNormalized.includes(modelNormalized)) return true;
 
+  const titleTokens = titleNormalized.split(' ');
+  const brandTokens = normalize(brandName || '').split(' ').filter(Boolean);
+  const brandMatches = brandTokens.length === 0 || brandTokens.some(token => titleTokens.includes(token));
+  if (!brandMatches) return false;
+
+  // Never validate an obvious non-phone product just because a model number
+  // such as "14" appears in its title (e.g. a 14-inch laptop).
+  if (/\b(laptop|notebook|monitor|desktop|television)\b/i.test(title)) return false;
+
+  if (titleNormalized.includes(modelNormalized)) return true;
   const tokens = significantTokens(phoneModel, brandName);
-  if (tokens.length === 0) return true;
-  const matched = tokens.filter(token => titleNormalized.split(' ').includes(token)).length;
-  return matched / tokens.length >= 0.75;
+  if (tokens.length === 0) return false;
+  const matched = tokens.filter(token => titleTokens.includes(token)).length;
+  const alphaTokens = tokens.filter(token => /[a-z]/.test(token));
+  const alphaMatched = alphaTokens.length === 0 || alphaTokens.some(token => titleTokens.includes(token));
+  return alphaMatched && matched / tokens.length >= 0.75;
 }
 
 function capacityTokens(value?: string): string[] {

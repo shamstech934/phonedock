@@ -170,6 +170,25 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
   return { sourcesChecked: sources.length, urlsFound, listingsAdded, errors: errorCount };
 }
 
+
+export async function demoteObviousNonPhoneListings(now = new Date()): Promise<number> {
+  const result = await PhoneRetailListing.updateMany(
+    {
+      enabled: true,
+      verificationStatus: 'verified',
+      sourceTitle: { $regex: /\b(laptop|notebook|monitor|desktop|television)\b/i },
+    },
+    {
+      $set: {
+        verificationStatus: 'pending',
+        lastCheckedAt: now,
+        lastError: 'Listing title indicates a non-phone product. Re-link this phone to the correct retailer product page.',
+      },
+    },
+  );
+  return Number(result.modifiedCount || 0);
+}
+
 export async function verifyPendingCatalogListings(now = new Date()): Promise<{
   checked: number;
   verified: number;

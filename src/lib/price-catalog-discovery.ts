@@ -205,18 +205,33 @@ function normalizedTokens(value: string): string[] {
   return decodeURIComponent(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(token => token.length > 1);
 }
 
-export function matchProductUrlToPhone<T extends { slug?: string; modelName?: string }>(url: string, phones: T[]): T | null {
+export function matchProductUrlToPhone<T extends { slug?: string; modelName?: string; brandName?: string; brandId?: { name?: string } | null }>(url: string, phones: T[]): T | null {
   let path = '';
   try { path = new URL(url).pathname; } catch { return null; }
   const pathTokens = new Set(normalizedTokens(path));
+
+  // Price catalog discovery must never attach generic screen-size/product URLs
+  // (for example "14-inch laptop") to phones whose model happens to be "14".
+  // These categories are not phone product pages and numeric-only overlap is unsafe.
+  const nonPhoneTokens = new Set(['laptop', 'laptops', 'notebook', 'notebooks', 'monitor', 'monitors', 'desktop', 'desktops', 'television', 'televisions']);
+  if ([...pathTokens].some(token => nonPhoneTokens.has(token))) return null;
+
   const scored = phones.map(phone => {
-    const phoneTokens = [...new Set(normalizedTokens(`${phone.slug || ''} ${phone.modelName || ''}`))];
-    const significant = phoneTokens.filter(token => !['samsung', 'apple', 'xiaomi', 'phone', 'mobile', 'galaxy'].includes(token));
+    const brandName = phone.brandName || phone.brandId?.name || '';
+    const brandTokens = [...new Set(normalizedTokens(brandName))].filter(token => token.length > 1);
+    const slugTokens = [...new Set(normalizedTokens(phone.slug || ''))];
+    const modelTokens = [...new Set(normalizedTokens(phone.modelName || ''))];
+    const generic = new Set(['phone', 'phones', 'mobile', 'mobiles', 'smartphone', 'smartphones', 'galaxy']);
+    const significant = [...new Set([...slugTokens, ...modelTokens])].filter(token => !generic.has(token) && !brandTokens.includes(token));
     const matched = significant.filter(token => pathTokens.has(token));
     const digitTokens = significant.filter(token => /\d/.test(token));
+    const alphaTokens = significant.filter(token => /[a-z]/.test(token));
     const digitsMatch = digitTokens.length === 0 || digitTokens.every(token => pathTokens.has(token));
-    return { phone, score: significant.length ? matched.length / significant.length : 0, matched: matched.length, digitsMatch };
-  }).filter(item => item.digitsMatch && item.matched >= 1 && item.score >= 0.6)
+    const brandMatch = brandTokens.length === 0 || brandTokens.some(token => pathTokens.has(token));
+    const alphaMatch = alphaTokens.length === 0 || alphaTokens.some(token => pathTokens.has(token));
+    const score = significant.length ? matched.length / significant.length : 0;
+    return { phone, score, matched: matched.length, digitsMatch, brandMatch, alphaMatch };
+  }).filter(item => item.brandMatch && item.digitsMatch && item.alphaMatch && item.matched >= 1 && item.score >= 0.6)
     .sort((a, b) => b.score - a.score || b.matched - a.matched);
   if (!scored[0]) return null;
   if (scored[1] && scored[0].score === scored[1].score && scored[0].matched === scored[1].matched) return null;

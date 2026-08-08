@@ -12,7 +12,7 @@ import { validateRetailListingPage } from '@/lib/retailer-listing-validation';
 import { normalizePtaPriceClass } from '@/lib/price-tracker-intelligence';
 import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import { recomputeBestPriceForPhone } from '@/lib/price-offer-service';
-import { discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
+import { demoteObviousNonPhoneListings, discoverDuePriceListings, verifyPendingCatalogListings } from '@/lib/price-catalog-sync';
 import { buildPriceVariantKey, inferRetailVariantIdentity, normalizeMemoryLabel } from '@/lib/price-variant';
 
 const LOCK_KEY = 'cron_update_prices_lock';
@@ -116,6 +116,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
     summary.discoverySources = discovery.sourcesChecked;
     summary.discoveredUrls = discovery.urlsFound;
     summary.discoveredListings = discovery.listingsAdded;
+    await demoteObviousNonPhoneListings(now);
     const verification = await verifyPendingCatalogListings(now);
     summary.autoVerifiedListings = verification.verified;
 
@@ -147,7 +148,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       .sort({ lastCheckedAt: 1, _id: 1 })
       .limit(Math.max(1, Math.min(BATCH_SIZE, 50)))
       .populate('sourceId')
-      .populate('phoneId')
+      .populate({ path: 'phoneId', populate: { path: 'brandId', select: 'name' } })
       .lean();
 
     if (listings.length === 0) {
@@ -165,7 +166,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
       for (const listing of batch) {
         summary.processed++;
         const listingId = listing._id;
-        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; ptaStatus?: string; ptaApproved?: boolean } | null;
+        const phone = listing.phoneId as unknown as { _id: { toString(): string }; manualLock?: boolean; modelName?: string; brandName?: string; brandId?: { name?: string } | null; ptaStatus?: string; ptaApproved?: boolean } | null;
         const source = listing.sourceId as unknown as { _id: { toString(): string }; allowedDomains?: string[]; name?: string; market?: string; currency?: string; defaultPriceType?: string } | null;
 
         if (!phone || !source) {
@@ -227,7 +228,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             const preliminary = validateRetailListingPage({
               html,
               phoneModel: phone.modelName || '',
-              brandName: phone.brandName || '',
+              brandName: phone.brandId?.name || phone.brandName || '',
             });
             resolvedVariant = inferRetailVariantIdentity({
               title: preliminary.title,
@@ -237,7 +238,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             const validation = validateRetailListingPage({
               html,
               phoneModel: phone.modelName || '',
-              brandName: phone.brandName || '',
+              brandName: phone.brandId?.name || phone.brandName || '',
               expectedRam: resolvedVariant.ram,
               expectedStorage: resolvedVariant.storage,
               expectedPtaStatus: resolvedVariant.ptaStatus,
