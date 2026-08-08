@@ -30,6 +30,10 @@ export interface IPhone extends Document {
   pakistanLaunchAt: string;
   availableFrom: string;
   discontinuedAt: string;
+  lifecycleManualLock: boolean;
+  lifecycleLockReason: string;
+  lifecycleUpdatedAt: Date | null;
+  lifecycleUpdatedBy: Types.ObjectId | null;
   thumbnail: string;
   description: string;
   cameraScore: number;
@@ -105,6 +109,10 @@ const PhoneSchema = new Schema<IPhone>({
   pakistanLaunchAt: { type: String, default: '' },
   availableFrom: { type: String, default: '' },
   discontinuedAt: { type: String, default: '' },
+  lifecycleManualLock: { type: Boolean, default: false },
+  lifecycleLockReason: { type: String, default: '' },
+  lifecycleUpdatedAt: { type: Date, default: null },
+  lifecycleUpdatedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
   thumbnail: { type: String, default: '' },
   description: { type: String, default: '' },
   cameraScore: { type: Number, default: 0 },

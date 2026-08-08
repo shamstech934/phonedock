@@ -90,7 +90,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
     const imagePhoneIdSet = new Set(phonesWithImages.map(id => id.toString()));
 
     const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [catalogPhoneRows, duplicates, orphans, stalePrices] = await Promise.all([
+    const [catalogPhoneRows, duplicates, orphans, stalePrices, lifecycleIssues, ratingIssues] = await Promise.all([
       Phone.find({ _id: { $in: catalogPhoneIds } })
         .select('_id thumbnail pricePKR lastPriceCheckedAt')
         .lean(),
@@ -101,6 +101,14 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
         { lastPriceCheckedAt: null },
         { lastPriceCheckedAt: { $lt: staleBefore } },
       ] }),
+      Phone.countDocuments({ ...catalogScope, $or: [
+        { availabilityStatus: { $in: ['rumored', 'announced', 'coming_soon'] }, expectedLaunchAt: '' },
+        { availabilityStatus: 'available', releaseDate: '', availableFrom: '' },
+        { availabilityStatus: 'discontinued', discontinuedAt: '' },
+        { availabilityStatus: { $in: ['rumored', 'announced', 'coming_soon'] }, upcoming: { $ne: true } },
+        { availabilityStatus: { $in: ['available', 'limited', 'discontinued', 'cancelled'] }, upcoming: true },
+      ] }),
+      Phone.countDocuments({ ...catalogScope, overallRating: { $lte: 0 }, cameraScore: { $lte: 0 }, performanceScore: { $lte: 0 }, batteryScore: { $lte: 0 }, displayScore: { $lte: 0 }, valueScore: { $lte: 0 } }),
     ]);
 
     const missingSpecs = catalogPhoneRows.filter(phone => !specPhoneIdSet.has(phone._id.toString())).length;
@@ -166,7 +174,7 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
       health,
       totals: { totalPhones, publishedPhones, draftPhones, archivedPhones, totalBrands },
       specs: { withSpecs: specsComplete, completeSpecs, publishedPhones, catalogPhones: totalPhones },
-      queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports },
+      queues: { missingSpecs, missingImages, missingPrices, duplicates, orphans, stalePrices, failedImports, lifecycleIssues, ratingIssues },
       severity: { critical, high, medium, low, info, total: totalOpen },
       trends: { discoveredToday, fixedToday, newLast7Days },
       database: {

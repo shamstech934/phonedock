@@ -913,7 +913,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       active: true,
       status: 'published',
       upcoming: { $ne: true },
-      availabilityStatus: { $nin: ['discontinued'] },
+      availabilityStatus: { $nin: ['discontinued', 'cancelled'] },
       [sort]: { $gt: 0 },
     })
       .select('-description -pros -cons -reviewSummary -reviewVerdict -seoTitle -seoDescription -keywords -sourceName -sourceUrl')
@@ -935,7 +935,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
   // ---- /api/upcoming-phones ----
   if (segments.length === 1 && segments[0] === 'upcoming-phones') {
     await connectDB();
-    const raw = await Phone.find({ active: true, upcoming: true })
+    const raw = await Phone.find({ active: true, status: 'published', upcoming: true, availabilityStatus: { $in: ['rumored', 'announced', 'coming_soon'] } })
       .sort({ ...PHONE_NEWEST_SORT, expectedLaunchAt: 1 }).limit(20).lean();
     // Manual brand lookup — avoids .populate('brand').lean() virtual incompatibility
     const brandIds = [...new Set(raw.map(p => p.brandId?.toString()).filter(Boolean))];

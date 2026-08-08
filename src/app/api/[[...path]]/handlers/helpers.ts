@@ -93,6 +93,8 @@ export interface PhoneJson {
   pakistanLaunchAt?: string;
   availableFrom?: string;
   discontinuedAt?: string;
+  lifecycleManualLock?: boolean;
+  lifecycleLockReason?: string;
   featured?: boolean;
   pros?: string;
   cons?: string;
@@ -159,6 +161,8 @@ interface RawPhoneObject {
   pakistanLaunchAt?: string;
   availableFrom?: string;
   discontinuedAt?: string;
+  lifecycleManualLock?: boolean;
+  lifecycleLockReason?: string;
   featured?: boolean;
   pros?: string;
   cons?: string;
@@ -450,6 +454,8 @@ export function phoneToJSON(p: PhoneDocOrJson, specs?: Record<string, unknown>, 
     pakistanLaunchAt: r.pakistanLaunchAt || '',
     availableFrom: r.availableFrom || '',
     discontinuedAt: r.discontinuedAt || '',
+    lifecycleManualLock: r.lifecycleManualLock || false,
+    lifecycleLockReason: r.lifecycleLockReason || '',
     featured: r.featured || false,
     pros: r.pros || '',
     cons: r.cons || '',
