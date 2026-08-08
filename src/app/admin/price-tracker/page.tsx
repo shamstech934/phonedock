@@ -303,11 +303,12 @@ export default function AdminPriceTrackerPage() {
   const [selectedPhoneIds, setSelectedPhoneIds] = useState<string[]>([]);
   const [phonesTotal, setPhonesTotal] = useState(0);
   const [phoneModeTotals, setPhoneModeTotals] = useState({ manual: 0, automatic: 0 });
+  const [phoneCatalogStats, setPhoneCatalogStats] = useState({ allPublished: 0, matching: 0, ptaApproved: 0, nonPta: 0, usRetail: 0, unclassified: 0 });
   const [phonesPage, setPhonesPage] = useState(1);
   const [phonesSearch, setPhonesSearch] = useState('');
   const [phonesDebouncedSearch, setPhonesDebouncedSearch] = useState('');
   const [phonesModeFilter, setPhonesModeFilter] = useState('all');
-  const [phonesPriceBucket, setPhonesPriceBucket] = useState<'all' | 'pta-approved' | 'non-pta' | 'us-retail'>('all');
+  const [phonesPriceBucket, setPhonesPriceBucket] = useState<'all' | 'pta-approved' | 'non-pta' | 'us-retail' | 'unclassified'>('all');
   const [phonesSort, setPhonesSort] = useState('name-az');
   const searchTimer = useRef<NodeJS.Timeout>(undefined);
 
@@ -440,6 +441,14 @@ export default function AdminPriceTrackerPage() {
       setPhoneModeTotals({
         manual: Number(d.modeTotals?.manual || 0),
         automatic: Number(d.modeTotals?.automatic || 0),
+      });
+      setPhoneCatalogStats({
+        allPublished: Number(d.catalogStats?.allPublished || 0),
+        matching: Number(d.catalogStats?.matching ?? d.total ?? 0),
+        ptaApproved: Number(d.catalogStats?.ptaApproved || 0),
+        nonPta: Number(d.catalogStats?.nonPta || 0),
+        usRetail: Number(d.catalogStats?.usRetail || 0),
+        unclassified: Number(d.catalogStats?.unclassified || 0),
       });
     } catch (e: unknown) {
       setError(networkError(e, 'Phone prices'));
@@ -1183,7 +1192,7 @@ export default function AdminPriceTrackerPage() {
      TAB 1: OVERVIEW
      ═══════════════════════════════════════════════════════════ */
 
-  const openPhonePrices = (bucket: 'all' | 'pta-approved' | 'non-pta' | 'us-retail' = 'all') => {
+  const openPhonePrices = (bucket: 'all' | 'pta-approved' | 'non-pta' | 'us-retail' | 'unclassified' = 'all') => {
     setPhonesPriceBucket(bucket);
     setPhonesPage(1);
     setSelectedPhoneIds([]);
@@ -1347,11 +1356,11 @@ export default function AdminPriceTrackerPage() {
 
     return (
       <div>
-        {/* Stats Bar */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        {/* Stats Bar — global catalog totals stay separate from the active filter. */}
+        <div className="grid grid-cols-2 gap-3 mb-4 lg:grid-cols-4">
           <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
-            <p className="text-xs text-gray-500">Total</p>
-            <p className="text-sm font-bold text-gray-900">{phonesTotal}</p>
+            <p className="text-xs text-gray-500">All published phones</p>
+            <p className="text-sm font-bold text-gray-900">{phoneCatalogStats.allPublished}</p>
           </div>
           <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
             <p className="text-xs text-gray-500">Manual (all)</p>
@@ -1360,6 +1369,10 @@ export default function AdminPriceTrackerPage() {
           <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
             <p className="text-xs text-gray-500">Automatic (all)</p>
             <p className="text-sm font-bold text-purple-600">{autoCount}</p>
+          </div>
+          <div className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm text-center">
+            <p className="text-xs text-gray-500">{phonesPriceBucket === 'all' ? 'Unclassified prices' : 'Matching current filter'}</p>
+            <p className={`text-sm font-bold ${phonesPriceBucket === 'all' && phoneCatalogStats.unclassified > 0 ? 'text-amber-600' : 'text-gray-900'}`}>{phonesPriceBucket === 'all' ? phoneCatalogStats.unclassified : phoneCatalogStats.matching}</p>
           </div>
         </div>
 
@@ -1394,7 +1407,7 @@ export default function AdminPriceTrackerPage() {
             </div>
             <select
               value={phonesPriceBucket}
-              onChange={e => { setPhonesPriceBucket(e.target.value as 'all' | 'pta-approved' | 'non-pta' | 'us-retail'); setPhonesPage(1); }}
+              onChange={e => { setPhonesPriceBucket(e.target.value as 'all' | 'pta-approved' | 'non-pta' | 'us-retail' | 'unclassified'); setPhonesPage(1); }}
               className="h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
               aria-label="Price bucket"
             >
@@ -1402,6 +1415,7 @@ export default function AdminPriceTrackerPage() {
               <option value="pta-approved">Pakistan PTA</option>
               <option value="non-pta">Pakistan Non-PTA</option>
               <option value="us-retail">USA Retail</option>
+              <option value="unclassified">Unclassified / Needs Review</option>
             </select>
             <select
               value={phonesModeFilter}
@@ -1424,14 +1438,15 @@ export default function AdminPriceTrackerPage() {
           </div>
         </div>
 
-        {phonesPriceBucket !== 'all' && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800"><span><strong>Filtered:</strong> {phonesPriceBucket === 'pta-approved' ? 'Pakistan PTA' : phonesPriceBucket === 'non-pta' ? 'Pakistan Non-PTA' : 'USA Retail'} price records only.</span><button type="button" onClick={() => { setPhonesPriceBucket('all'); setPhonesPage(1); }} className="font-semibold text-blue-700 hover:underline">Show all price types</button></div>}
+        {phonesPriceBucket !== 'all' && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800"><span><strong>Filtered:</strong> {phonesPriceBucket === 'pta-approved' ? 'Pakistan PTA' : phonesPriceBucket === 'non-pta' ? 'Pakistan Non-PTA' : phonesPriceBucket === 'us-retail' ? 'USA Retail' : 'Unclassified / Needs Review'} price records only. <strong>{phoneCatalogStats.matching}</strong> phone{phoneCatalogStats.matching === 1 ? '' : 's'} match.</span><div className="flex items-center gap-3">{phonesPriceBucket !== 'unclassified' && phoneCatalogStats.matching === 0 && phoneCatalogStats.unclassified > 0 && <button type="button" onClick={() => { setPhonesPriceBucket('unclassified'); setPhonesPage(1); }} className="font-semibold text-amber-700 hover:underline">Review {phoneCatalogStats.unclassified} unclassified</button>}<button type="button" onClick={() => { setPhonesPriceBucket('all'); setPhonesPage(1); }} className="font-semibold text-blue-700 hover:underline">Show all price types</button></div></div>}
 
         {selectedPhoneIds.length > 0 && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3"><div><p className="text-xs font-bold text-blue-900">{selectedPhoneIds.length} phone{selectedPhoneIds.length === 1 ? '' : 's'} selected</p><p className="text-[11px] text-blue-700">Bulk reset removes admin overrides for selected phones; history remains.</p></div><div className="flex gap-2"><button onClick={() => handleBulkOverrides('unlock')} disabled={Boolean(actionLoading)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700">Unlock overrides</button><button onClick={() => handleBulkOverrides('reset-to-auto')} disabled={Boolean(actionLoading)} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white">Reset selected to Auto</button><button onClick={() => setSelectedPhoneIds([])} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600">Clear</button></div></div>}
 
         {/* Table */}
         {phones.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-sm text-gray-400">
-            No published phones matched the current filters.
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+            <p className="text-sm font-semibold text-gray-700">{phonesPriceBucket === 'pta-approved' ? 'No prices are classified as Pakistan PTA yet.' : phonesPriceBucket === 'non-pta' ? 'No prices are classified as Pakistan Non-PTA yet.' : phonesPriceBucket === 'us-retail' ? 'No prices are classified as USA Retail yet.' : phonesPriceBucket === 'unclassified' ? 'No unclassified priced phones need review.' : 'No published phones matched the current filters.'}</p>
+            {phonesPriceBucket !== 'all' && phonesPriceBucket !== 'unclassified' && phoneCatalogStats.unclassified > 0 && <button type="button" onClick={() => { setPhonesPriceBucket('unclassified'); setPhonesPage(1); }} className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Review {phoneCatalogStats.unclassified} unclassified prices</button>}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

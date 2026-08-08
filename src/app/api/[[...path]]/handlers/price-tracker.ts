@@ -243,6 +243,32 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     else if (mode === 'automatic') filter.priceMode = 'automatic';
 
     const validPriceTypes = new Set(['pta-approved', 'non-pta', 'us-retail']);
+    const classifiedPriceFilter = { price: { $gt: 0 }, priceType: { $in: Array.from(validPriceTypes) } };
+    const [classifiedPhoneIdsRaw, explicitUnclassifiedPhoneIdsRaw] = await Promise.all([
+      PhonePrice.find(classifiedPriceFilter).distinct('phoneId').then(ids => ids as Types.ObjectId[]),
+      PhonePrice.find({
+        price: { $gt: 0 },
+        $or: [
+          { priceType: { $exists: false } },
+          { priceType: null },
+          { priceType: '' },
+          { priceType: 'unknown' },
+          { priceType: { $nin: Array.from(validPriceTypes) } },
+        ],
+      }).distinct('phoneId').then(ids => ids as Types.ObjectId[]),
+    ]);
+    const legacyUnclassifiedIds = await Phone.find({
+      ...basePhoneFilter,
+      currentPrice: { $gt: 0 },
+      _id: { $nin: classifiedPhoneIdsRaw },
+    }).distinct('_id') as Types.ObjectId[];
+    // A phone still needs review when even one priced variant is unclassified,
+    // even if another variant for the same phone is already PTA/Non-PTA/US.
+    const unclassifiedPhoneIds = Array.from(new Map(
+      [...explicitUnclassifiedPhoneIdsRaw, ...legacyUnclassifiedIds]
+        .map(id => [String(id), id]),
+    ).values());
+
     let bucketPhoneIds: Types.ObjectId[] | null = null;
     if (validPriceTypes.has(priceType)) {
       const bucketMarket = priceType === 'us-retail' ? 'US' : 'PK';
@@ -251,6 +277,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         market: bucketMarket,
         priceType,
       }).distinct('phoneId') as Types.ObjectId[];
+      filter._id = { $in: bucketPhoneIds };
+    } else if (priceType === 'unclassified') {
+      bucketPhoneIds = unclassifiedPhoneIds;
       filter._id = { $in: bucketPhoneIds };
     }
 
@@ -274,9 +303,10 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     else if (sort === 'change-asc') sortObj = { percentageChange: -1 };
     else if (sort === 'updated') sortObj = { lastPriceCheckedAt: -1, modelName: 1 };
 
-    const [phones, total, automaticTotal, manualTotal] = await Promise.all([
+    const [phones, total, allPublishedTotal, automaticTotal, manualTotal, ptaPhoneIds, nonPtaPhoneIds, usRetailPhoneIds] = await Promise.all([
       Phone.find(filter).sort(sortObj).skip(skip).limit(limit).populate('brand').lean(),
       Phone.countDocuments(filter),
+      Phone.countDocuments(basePhoneFilter),
       Phone.countDocuments({ ...basePhoneFilter, priceMode: 'automatic', manualLock: { $ne: true } }),
       Phone.countDocuments({
         ...basePhoneFilter,
@@ -285,6 +315,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
           { manualLock: true },
         ],
       }),
+      PhonePrice.find({ price: { $gt: 0 }, market: 'PK', priceType: 'pta-approved' }).distinct('phoneId').then(ids => ids as Types.ObjectId[]),
+      PhonePrice.find({ price: { $gt: 0 }, market: 'PK', priceType: 'non-pta' }).distinct('phoneId').then(ids => ids as Types.ObjectId[]),
+      PhonePrice.find({ price: { $gt: 0 }, market: 'US', priceType: 'us-retail' }).distinct('phoneId').then(ids => ids as Types.ObjectId[]),
     ]);
 
     const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
@@ -292,6 +325,14 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     if (validPriceTypes.has(priceType)) {
       bucketPriceFilter.market = priceType === 'us-retail' ? 'US' : 'PK';
       bucketPriceFilter.priceType = priceType;
+    } else if (priceType === 'unclassified') {
+      bucketPriceFilter.$or = [
+        { priceType: { $exists: false } },
+        { priceType: null },
+        { priceType: '' },
+        { priceType: 'unknown' },
+        { priceType: { $nin: Array.from(validPriceTypes) } },
+      ];
     }
     const [listingRows, overrideRows, bucketPriceRows] = await Promise.all([
       PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
@@ -367,6 +408,14 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       }),
       total,
       modeTotals: { manual: manualTotal, automatic: automaticTotal },
+      catalogStats: {
+        allPublished: allPublishedTotal,
+        matching: total,
+        ptaApproved: ptaPhoneIds.length,
+        nonPta: nonPtaPhoneIds.length,
+        usRetail: usRetailPhoneIds.length,
+        unclassified: unclassifiedPhoneIds.length,
+      },
       page,
       limit,
       totalPages: Math.ceil(total / limit),
