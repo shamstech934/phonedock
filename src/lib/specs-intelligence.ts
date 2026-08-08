@@ -43,7 +43,7 @@ export async function scanSpecsIntelligence({ limit = 200 }: { limit?: number } 
           currentValue: current,
           recommendedValue: recommended,
           sourceName: String(dataset?.sourceName || ''), sourceUrl: String(dataset?.sourceUrl || ''),
-          confidence: recommended ? (valuesConflict ? 80 : 85) : 25,
+          confidence: recommended ? (valuesConflict ? 80 : 85) : 0,
           evidence: { datasetMatched: Boolean(dataset), brand, model, issueKind, valuesConflict },
           lastSeenAt: new Date(), resolvedAt: null, resolvedBy: null,
         }, $setOnInsert: { detectedAt: new Date() } }, { upsert: true, new: true },
