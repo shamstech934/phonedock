@@ -33,3 +33,9 @@ assert.equal(matchProductUrlToPhone('https://www.whatmobile.com.pk/Infinix_GT-50
 assert.equal(matchProductUrlToPhone('https://www.whatmobile.com.pk/Vivo_X300-FE', [{ slug: 'vivo-x300-fe', modelName: 'X300 FE' }])?.modelName, 'X300 FE');
 
 console.log('Price catalog discovery tests passed');
+
+// Numeric-only model names must still require their brand in the URL; a
+// generic 14-inch laptop page must never auto-link to a phone model "14".
+const numericPhone = [{ slug: 'xiaomi-14', modelName: '14', brandName: 'Xiaomi' }];
+assert.equal(matchProductUrlToPhone('https://shop.test/laptops/14-inch-display-laptop', numericPhone), null);
+assert.equal(matchProductUrlToPhone('https://shop.test/mobiles/xiaomi-14-5g', numericPhone)?.modelName, '14');

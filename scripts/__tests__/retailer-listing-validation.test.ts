@@ -45,3 +45,11 @@ assert.equal(wrongPta.valid, false);
 assert.match(wrongPta.reasons.join(' '), /non-PTA/i);
 
 console.log('retailer-listing-validation tests passed');
+
+const laptopFalsePositive = validateRetailListingPage({
+  html: '<title>14-inch Display Laptop 16GB 512GB</title>',
+  phoneModel: '14',
+  brandName: 'Xiaomi',
+});
+assert.equal(laptopFalsePositive.valid, false);
+assert.match(laptopFalsePositive.reasons.join(' '), /does not match/i);

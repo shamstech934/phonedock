@@ -241,7 +241,7 @@ function formatMoney(price: unknown, currency: string = 'PKR'): string {
 
 function formatPKR(price: unknown): string {
   const numericPrice = toFiniteNumber(price);
-  return numericPrice === null ? '—' : `PKR ${numericPrice.toLocaleString('en-PK')}`;
+  return numericPrice === null || numericPrice <= 0 ? 'Price unavailable' : `PKR ${numericPrice.toLocaleString('en-PK')}`;
 }
 
 function formatDiff(diff: unknown): string {
@@ -1057,14 +1057,37 @@ export default function AdminPriceTrackerPage() {
 
   const openEditPriceModal = async (phone: PhonePrice) => {
     setEditingPhone(phone);
-    setEditForm({ price: String(phone.currentPrice), regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
+    setEditForm({ price: phone.currentPrice > 0 ? String(phone.currentPrice) : '', regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
     setPriceControlRows({ manual: [], automatic: [] });
     setEditPriceModal(true);
     setPriceControlLoading(true);
     try {
       const res = await fetch(`/api/admin/price-tracker/price-control/${phone.phoneId}`, { credentials: 'include' });
       const data = await readApiResponse(res) as { manual?: Array<Record<string, any>>; automatic?: Array<Record<string, any>>; error?: string };
-      if (res.ok) setPriceControlRows({ manual: data.manual || [], automatic: data.automatic || [] });
+      if (res.ok) {
+        const manual = data.manual || [];
+        const automatic = data.automatic || [];
+        setPriceControlRows({ manual, automatic });
+        const preferred = manual[0] || automatic[0];
+        if (preferred) {
+          setEditForm(f => ({
+            ...f,
+            price: Number(preferred.price || 0) > 0 ? String(preferred.price) : f.price,
+            regularPrice: Number(preferred.regularPrice || 0) > 0 ? String(preferred.regularPrice) : '',
+            discountStartAt: preferred.discountStartAt ? String(preferred.discountStartAt).slice(0, 10) : '',
+            discountEndAt: preferred.discountEndAt ? String(preferred.discountEndAt).slice(0, 10) : '',
+            market: preferred.market === 'US' ? 'US' : 'PK',
+            currency: preferred.currency === 'USD' ? 'USD' : 'PKR',
+            priceType: preferred.priceType || (preferred.market === 'US' ? 'us-retail' : 'pta-approved'),
+            ptaStatus: preferred.ptaStatus || (preferred.market === 'US' ? '' : 'PTA Approved'),
+            ram: preferred.ram || '', storage: preferred.storage || '', color: preferred.color || '',
+            condition: preferred.condition || 'new', warrantyType: preferred.warrantyType || '',
+            reason: preferred.reason || '', lockOverride: preferred.locked !== false,
+          }));
+        }
+      } else if (data.error) {
+        setError(data.error);
+      }
     } finally { setPriceControlLoading(false); }
   };
 
