@@ -87,7 +87,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
 
   // ── Process listings ──
   const summary = {
-    processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0,
+    processed: 0, updated: 0, unchanged: 0, unavailable: 0, failed: 0, pending: 0, pendingPriceChanges: 0, pendingListings: 0,
     discoverySources: 0, discoveredUrls: 0, discoveredListings: 0, autoVerifiedListings: 0,
   };
   const runStartedAt = new Date();
@@ -273,6 +273,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
                 },
               });
               summary.pending++;
+              summary.pendingListings++;
               console.warn(`[cron:prices] Listing moved to pending review: ${listing.productUrl} — ${reasons.join('; ')}`);
               continue;
             }
@@ -507,6 +508,7 @@ export async function handleCronUpdatePrices(req: NextRequest): Promise<NextResp
             // Don't apply to phone — wait for manual approval
             // But if manual lock, save detected price in history only (already done above)
             summary.pending++;
+            summary.pendingPriceChanges++;
           }
 
           // Update source health

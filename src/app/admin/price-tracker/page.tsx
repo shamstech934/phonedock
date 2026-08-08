@@ -109,6 +109,10 @@ interface PriceChange {
   source: string;
   date: string;
   status: 'approved' | 'rejected' | 'pending';
+  reviewType?: 'price-change' | 'listing-verification';
+  listingId?: string;
+  sourceUrl?: string;
+  ptaStatus?: string;
   reason?: string;
   priceClass?: 'pta-approved' | 'non-pta' | 'us-retail' | 'unknown';
   market?: 'PK' | 'US';
@@ -331,6 +335,9 @@ export default function AdminPriceTrackerPage() {
 
   // ── Pending Tab ──
   const [pending, setPending] = useState<PriceChange[]>([]);
+  const [pendingCounts, setPendingCounts] = useState({ priceChanges: 0, listingVerification: 0, total: 0 });
+  const [reviewListing, setReviewListing] = useState<PriceChange | null>(null);
+  const [reviewListingForm, setReviewListingForm] = useState({ ram: '', storage: '', color: '', condition: 'new', ptaStatus: '', warrantyType: '' });
 
   // ── History Tab ──
   const [phoneOptions, setPhoneOptions] = useState<PhoneOption[]>([]);
@@ -496,7 +503,9 @@ export default function AdminPriceTrackerPage() {
       const res = await fetch('/api/admin/price-tracker/pending', { credentials: 'include' });
       if (!res.ok) throw new Error(await responseError(res, 'Failed to load pending price reviews'));
       const d = await readApiResponse(res);
-      setPending(d.pending || d.data || []);
+      const rows = d.pending || d.data || [];
+      setPending(rows);
+      setPendingCounts(d.counts || { priceChanges: rows.filter((item: PriceChange) => item.reviewType !== 'listing-verification').length, listingVerification: rows.filter((item: PriceChange) => item.reviewType === 'listing-verification').length, total: rows.length });
     } catch (e) { setError(networkError(e, 'Review queue')); }
   }, []);
 
@@ -550,7 +559,7 @@ export default function AdminPriceTrackerPage() {
       });
       const result = await readApiResponse(response);
       if (!response.ok) throw new Error(result.error || 'Price sync failed');
-      setActionMessage(`Sync complete: ${result.discoveredListings || 0} catalog links added, ${result.autoVerifiedListings || 0} auto-verified, ${result.processed || 0} prices checked, ${result.updated || 0} updated, ${result.pending || 0} awaiting review, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
+      setActionMessage(`Sync complete: ${result.discoveredListings || 0} catalog links added, ${result.autoVerifiedListings || 0} auto-verified, ${result.processed || 0} prices checked, ${result.updated || 0} updated, ${result.pendingPriceChanges || 0} price change${Number(result.pendingPriceChanges || 0) === 1 ? '' : 's'} awaiting approval, ${result.pendingListings || 0} listing${Number(result.pendingListings || 0) === 1 ? '' : 's'} awaiting verification, ${result.failed || 0} failed.${result.hasMore ? ' More eligible listings remain for the next run.' : ''}`);
       await Promise.all([fetchOverview(), fetchPhones(), fetchSources(), fetchChanges(), fetchPending()]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Price sync failed');
@@ -960,6 +969,39 @@ export default function AdminPriceTrackerPage() {
       fetchPending();
       if (activeTab === 'overview') fetchOverview();
     } catch (e) { setError(e instanceof Error ? e.message : `Failed to ${action} price change`); } finally { setActionLoading(''); }
+  };
+
+  const openListingReview = (item: PriceChange) => {
+    setReviewListing(item);
+    setReviewListingForm({
+      ram: item.ram || '', storage: item.storage || '', color: item.color || '',
+      condition: item.condition || 'new', ptaStatus: item.ptaStatus || '', warrantyType: item.warrantyType || '',
+    });
+  };
+
+  const saveListingReview = async (verify: boolean) => {
+    if (!reviewListing?.listingId) return;
+    setActionLoading(`listing-${reviewListing.listingId}`);
+    setActionError('');
+    try {
+      const payload = verify
+        ? { ...reviewListingForm, verificationStatus: 'verified', enabled: true }
+        : { verificationStatus: 'rejected', enabled: false };
+      if (verify && reviewListing.market === 'PK' && !['PTA Approved', 'Non-PTA'].includes(reviewListingForm.ptaStatus)) {
+        throw new Error('Choose PTA Approved or Non-PTA before verifying a Pakistan listing.');
+      }
+      const res = await fetch(`/api/admin/price-tracker/listings/${reviewListing.listingId}`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await responseError(res, verify ? 'Failed to verify listing' : 'Failed to reject listing'));
+      setActionMessage(verify ? 'Retail listing verified. It can now participate in automatic price checks.' : 'Retail listing rejected and disabled.');
+      setReviewListing(null);
+      await Promise.all([fetchPending(), fetchOverview(), fetchSources(), fetchPhones()]);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to review listing');
+    } finally {
+      setActionLoading('');
+    }
   };
 
   const handleToggleTracking = async (phoneId: string) => {
@@ -2013,56 +2055,87 @@ export default function AdminPriceTrackerPage() {
       return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
           <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-3" />
-          <p className="text-sm text-gray-500">All caught up! No pending price changes to review.</p>
+          <p className="text-sm text-gray-500">All caught up! No pending price changes or retail listings need review.</p>
         </div>
       );
     }
 
     return (
       <div className="space-y-3">
-        {pending.map((item) => (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <Badge className="bg-amber-100 text-amber-800">{pendingCounts.priceChanges} price changes</Badge>
+          <Badge className="bg-blue-100 text-blue-800">{pendingCounts.listingVerification} listing verifications</Badge>
+          <span className="self-center text-gray-500">Admin approval remains final authority. Automatic sync cannot publish an unverified listing.</span>
+        </div>
+        {pending.map((item) => {
+          const listingReview = item.reviewType === 'listing-verification';
+          return (
           <div key={item.id} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h3 className="text-sm font-semibold text-gray-900 truncate">{item.phoneName}</h3>
                   <Badge className="bg-yellow-100 text-yellow-700">pending</Badge>
+                  <Badge className={listingReview ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}>
+                    {listingReview ? 'Listing verification' : 'Price change'}
+                  </Badge>
                 </div>
                 {variantLabel(item) ? <p className="mb-1 text-[10px] font-medium text-blue-600">{variantLabel(item)}</p> : null}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-                  <span>Detected: <span className="font-medium text-gray-700">{formatMoney(item.newPrice, item.currency)}</span></span>
-                  <span>Current: <span className="font-medium text-gray-700">{formatMoney(item.oldPrice, item.currency)}</span></span>
-                  <span className={item.changeType === 'decrease' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                    {formatDiff(item.difference)} ({formatPercentChange(item.percentChange)})
-                  </span>
-                  <span>Source: {item.source}</span>
+                  {listingReview ? (
+                    <>
+                      <span>Listing price: <span className="font-medium text-gray-700">{formatMoney(item.newPrice, item.currency)}</span></span>
+                      <span>Source: {item.source || 'Unknown source'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Detected: <span className="font-medium text-gray-700">{formatMoney(item.newPrice, item.currency)}</span></span>
+                      <span>Current: <span className="font-medium text-gray-700">{formatMoney(item.oldPrice, item.currency)}</span></span>
+                      <span className={item.changeType === 'decrease' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                        {formatDiff(item.difference)} ({formatPercentChange(item.percentChange)})
+                      </span>
+                      <span>Source: {item.source}</span>
+                    </>
+                  )}
                   <span>{formatDateTime(item.date)}</span>
                 </div>
-                {item.reason && (
-                  <p className="text-xs text-gray-400 mt-1.5 italic">Reason: {item.reason}</p>
-                )}
+                {item.reason && <p className="text-xs text-gray-500 mt-1.5">Reason: {item.reason}</p>}
+                {listingReview && item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-blue-600 hover:underline">Open retailer page ↗</a>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => handleApproveReject(item.id, 'approve')}
-                  disabled={actionLoading === item.id}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  <CheckCircle className="w-3 h-3" />
-                  Approve
-                </button>
-                <button
-                  onClick={() => handleApproveReject(item.id, 'reject')}
-                  disabled={actionLoading === item.id}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                >
-                  <XCircle className="w-3 h-3" />
-                  Reject
-                </button>
+                {listingReview ? (
+                  <button
+                    onClick={() => openListingReview(item)}
+                    disabled={actionLoading === `listing-${item.listingId}`}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Review listing
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleApproveReject(item.id, 'approve')}
+                      disabled={actionLoading === item.id}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      <CheckCircle className="w-3 h-3" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleApproveReject(item.id, 'reject')}
+                      disabled={actionLoading === item.id}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      <XCircle className="w-3 h-3" />
+                      Reject
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
-        ))}
+        )})}
       </div>
     );
   };
@@ -2945,6 +3018,40 @@ export default function AdminPriceTrackerPage() {
     );
   };
 
+  const renderListingReviewModal = () => {
+    if (!reviewListing?.listingId) return null;
+    const saving = actionLoading === `listing-${reviewListing.listingId}`;
+    return (
+      <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Review retail listing</h2>
+              <p className="mt-1 text-xs text-slate-500">{reviewListing.phoneName} · {reviewListing.source || 'Unknown source'}</p>
+            </div>
+            <button onClick={() => { setReviewListing(null); setActionError(''); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+          </div>
+          {reviewListing.reason && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Why it needs review:</strong> {reviewListing.reason}</div>}
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-slate-600">RAM<input value={reviewListingForm.ram} onChange={e=>setReviewListingForm(f=>({...f,ram:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm" placeholder="12GB" /></label>
+            <label className="text-xs font-semibold text-slate-600">Storage<input value={reviewListingForm.storage} onChange={e=>setReviewListingForm(f=>({...f,storage:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm" placeholder="256GB" /></label>
+            <label className="text-xs font-semibold text-slate-600">Color<input value={reviewListingForm.color} onChange={e=>setReviewListingForm(f=>({...f,color:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm" /></label>
+            <label className="text-xs font-semibold text-slate-600">Condition<select value={reviewListingForm.condition} onChange={e=>setReviewListingForm(f=>({...f,condition:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"><option value="new">New</option><option value="used">Used</option><option value="refurbished">Refurbished</option><option value="open-box">Open box</option></select></label>
+            <label className="text-xs font-semibold text-slate-600">PTA status<select value={reviewListingForm.ptaStatus} onChange={e=>setReviewListingForm(f=>({...f,ptaStatus:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"><option value="">Unknown / not set</option><option value="PTA Approved">PTA Approved</option><option value="Non-PTA">Non-PTA</option><option value="N/A">N/A (non-Pakistan)</option></select></label>
+            <label className="text-xs font-semibold text-slate-600">Warranty<input value={reviewListingForm.warrantyType} onChange={e=>setReviewListingForm(f=>({...f,warrantyType:e.target.value}))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm" placeholder="Official / shop / none" /></label>
+          </div>
+          {reviewListing.sourceUrl && <a href={reviewListing.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex text-xs font-semibold text-blue-600 hover:underline">Verify against retailer page ↗</a>}
+          {actionError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</div>}
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button onClick={() => void saveListingReview(false)} disabled={saving} className="h-10 rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">Reject & disable</button>
+            <button onClick={() => { setReviewListing(null); setActionError(''); }} disabled={saving} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700">Cancel</button>
+            <button onClick={() => void saveListingReview(true)} disabled={saving} className="h-10 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save & verify'}</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   /* ═══════════════════════════════════════════════════════════
      MAIN RENDER
      ═══════════════════════════════════════════════════════════ */
@@ -2972,6 +3079,7 @@ export default function AdminPriceTrackerPage() {
       {renderEditSourceModal()}
       {renderSourceTestModal()}
       {renderDeleteSourceModal()}
+      {renderListingReviewModal()}
     </div>
   );
 }

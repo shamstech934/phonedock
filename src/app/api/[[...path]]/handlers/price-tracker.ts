@@ -158,7 +158,8 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       automaticCount,
       priceDropsToday,
       priceIncreasesToday,
-      pendingReview,
+      pendingPriceChanges,
+      pendingListingReviews,
       failedListings,
       failedSources,
       lastRunState,
@@ -175,6 +176,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       PriceTrackerHistory.countDocuments({ changeType: 'decrease', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ changeType: 'increase', capturedAt: { $gte: todayStart } }),
       PriceTrackerHistory.countDocuments({ verificationStatus: 'pending' }),
+      PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'pending' }),
       PhoneRetailListing.countDocuments({ enabled: true, verificationStatus: 'failed' }),
       PriceSource.countDocuments({ status: 'failed' }),
       SystemState.findOne({ key: PT_LAST_RUN_KEY }).lean(),
@@ -198,7 +200,9 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       automaticPrices: automaticCount,
       dropsToday: priceDropsToday,
       increasesToday: priceIncreasesToday,
-      pendingReview,
+      pendingReview: pendingPriceChanges + pendingListingReviews,
+      pendingPriceChanges,
+      pendingListingReviews,
       failedChecks: failedListings + failedSources,
       lastSuccessfulUpdate: (lastRunState?.metadata as { lastSuccessAt?: string } | undefined)?.lastSuccessAt || null,
       lastRunSummary: (lastRunState?.metadata as Record<string, unknown> | undefined) || null,
@@ -534,15 +538,22 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const permCheck = requirePermission(admin, 'prices:read'); if (permCheck) return permCheck;
     await connectDB();
 
-    const pending = await PriceTrackerHistory.find({ verificationStatus: 'pending' })
-      .sort({ capturedAt: -1 })
-      .populate('phoneId', 'modelName slug thumbnail currentPrice brand')
-      .populate('sourceId', 'name sourceType')
-      .lean();
+    const [pendingChanges, pendingListings] = await Promise.all([
+      PriceTrackerHistory.find({ verificationStatus: 'pending' })
+        .sort({ capturedAt: -1 })
+        .populate('phoneId', 'modelName slug thumbnail currentPrice brand')
+        .populate('sourceId', 'name sourceType')
+        .lean(),
+      PhoneRetailListing.find({ enabled: true, verificationStatus: 'pending' })
+        .sort({ pendingDetectedAt: -1, lastCheckedAt: -1, updatedAt: -1 })
+        .populate('phoneId', 'modelName slug thumbnail currentPrice brand')
+        .populate('sourceId', 'name sourceType')
+        .lean(),
+    ]);
 
-    return NextResponse.json({
-      pending: pending.map((c: LeanHistoryDoc) => ({
+    const historyItems = pendingChanges.map((c: LeanHistoryDoc) => ({
         id: c._id?.toString(),
+        reviewType: 'price-change' as const,
         phoneId: c.phoneId?._id?.toString(),
         phoneName: c.phoneId?.modelName || '',
         phoneSlug: c.phoneId?.slug || '',
@@ -571,7 +582,51 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         variantKey: c.variantKey || '',
         capturedAt: c.capturedAt || c.createdAt || null,
         date: c.capturedAt || c.createdAt || null,
-      })),
+      }));
+
+    const listingItems = pendingListings.map((listing: any) => ({
+      id: `listing:${listing._id?.toString()}`,
+      listingId: listing._id?.toString(),
+      reviewType: 'listing-verification' as const,
+      phoneId: listing.phoneId?._id?.toString() || '',
+      phoneName: listing.phoneId?.modelName || 'Unknown phone',
+      phoneSlug: listing.phoneId?.slug || '',
+      phoneThumbnail: listing.phoneId?.thumbnail || '',
+      phoneCurrentPrice: Number(listing.phoneId?.currentPrice || 0),
+      brandName: listing.phoneId?.brand?.name || '',
+      oldPrice: Number(listing.currentSourcePrice || 0),
+      newPrice: Number(listing.pendingSourcePrice || listing.currentSourcePrice || 0),
+      difference: Number(listing.pendingSourcePrice || 0) > 0
+        ? Number(listing.pendingSourcePrice || 0) - Number(listing.currentSourcePrice || 0)
+        : 0,
+      percentageChange: 0,
+      percentChange: 0,
+      changeType: 'correction' as const,
+      sourceType: listing.sourceId?.sourceType || 'retailer',
+      sourceName: listing.sourceId?.name || '',
+      source: listing.sourceId?.name || '',
+      sourceUrl: listing.productUrl || '',
+      priceClass: listing.priceType || 'unknown',
+      market: normalizePriceMarket(listing.market),
+      currency: normalizePriceCurrency(listing.currency, listing.market),
+      priceType: normalizeMarketPriceType({ market: listing.market, priceType: listing.priceType, ptaStatus: listing.ptaStatus }),
+      ptaStatus: listing.ptaStatus || '',
+      ram: listing.ram || '',
+      storage: listing.storage || '',
+      color: listing.color || '',
+      condition: listing.condition || 'new',
+      warrantyType: listing.warrantyType || '',
+      variantKey: listing.variantKey || '',
+      verificationStatus: listing.verificationStatus || 'pending',
+      status: 'pending' as const,
+      reason: listing.lastError || 'Retail listing requires administrator verification before automatic price updates can continue.',
+      capturedAt: listing.pendingDetectedAt || listing.lastCheckedAt || listing.updatedAt || listing.createdAt || null,
+      date: listing.pendingDetectedAt || listing.lastCheckedAt || listing.updatedAt || listing.createdAt || null,
+    }));
+
+    return NextResponse.json({
+      pending: [...historyItems, ...listingItems].sort((a, b) => new Date(String(b.date || 0)).getTime() - new Date(String(a.date || 0)).getTime()),
+      counts: { priceChanges: historyItems.length, listingVerification: listingItems.length, total: historyItems.length + listingItems.length },
     });
   }
 
@@ -2143,6 +2198,26 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
         },
       });
       Object.assign(updates, { ram: resolved.ram, storage: resolved.storage, color: resolved.color, condition: resolved.condition, ptaStatus: resolved.ptaStatus, warrantyType: resolved.warrantyType, market: resolved.market, currency: resolved.currency, priceType: resolved.priceType, variantKey: resolved.variantKey });
+    }
+
+    if (updates.verificationStatus === 'verified') {
+      const sourceForValidation = await PriceSource.findById(listing.sourceId).select('market currency defaultPriceType').lean();
+      const finalMarket = normalizePriceMarket(String(updates.market || listing.market || sourceForValidation?.market || 'PK'));
+      const finalPtaStatus = String(updates.ptaStatus !== undefined ? updates.ptaStatus : listing.ptaStatus || '');
+      const finalPriceType = normalizeMarketPriceType({
+        market: finalMarket,
+        priceType: String(updates.priceType || listing.priceType || sourceForValidation?.defaultPriceType || 'unknown'),
+        ptaStatus: finalPtaStatus,
+      });
+      if (finalMarket === 'PK' && normalizePtaPriceClass(finalPtaStatus) === 'unknown') {
+        return NextResponse.json({ error: 'Pakistan listings require an explicit PTA Approved or Non-PTA classification before verification.' }, { status: 400 });
+      }
+      if (finalPriceType === 'unknown') {
+        return NextResponse.json({ error: 'Listing price type is still unknown. Correct its market/PTA identity before verification.' }, { status: 400 });
+      }
+      updates.market = finalMarket;
+      updates.priceType = finalPriceType;
+      updates.lastError = '';
     }
 
     if (Object.keys(updates).length === 0) {
