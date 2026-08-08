@@ -3,6 +3,7 @@ import { ImageIntelligenceSignal, Phone, PhoneImage } from '@/lib/models';
 
 const normalizeUrl = (value: unknown) => String(value || '').trim().replace(/^http:\/\//i, 'https://').replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase();
 const hashUrl = (url: string) => createHash('sha1').update(normalizeUrl(url)).digest('hex');
+const METADATA_SIGNAL_TYPES = new Set(['missing_all_images','missing_thumbnail','insecure_thumbnail','invalid_image_url','insecure_image_url','missing_alt_text','duplicate_image','thumbnail_not_in_gallery','cross_phone_duplicate','multiple_primary_images','gallery_order_collision']);
 
 export async function scanImageIntelligence(options?: { limit?: number }) {
   const limit = Math.min(500, Math.max(10, Number(options?.limit || 150)));
@@ -36,7 +37,8 @@ export async function scanImageIntelligence(options?: { limit?: number }) {
     if (!phone.thumbnail && validImages.length === 0) {
       signals.push({ type: 'missing_all_images', severity: phone.status === 'published' ? 'critical' : 'warning', title: 'Phone has no usable images', details: `${phone.modelName} has neither a thumbnail nor gallery images.` });
     } else if (!phone.thumbnail && validImages.length > 0) {
-      signals.push({ type: 'missing_thumbnail', severity: 'warning', title: 'Thumbnail is missing', details: 'A gallery image can be selected as the thumbnail.', recommendedValue: validImages[0].url, evidence: { imageId: String(validImages[0]._id) } });
+      const preferred = validImages.find((image: any) => image.verified) || validImages.find((image: any) => ['thumbnail','front'].includes(String(image.role || ''))) || validImages[0];
+      signals.push({ type: 'missing_thumbnail', severity: 'warning', title: 'Thumbnail is missing', details: 'A verified or primary gallery image can be selected as the thumbnail.', recommendedValue: preferred.url, evidence: { imageId: String(preferred._id), verified: Boolean(preferred.verified), role: preferred.role || 'unknown' } });
     }
 
     if (phone.thumbnail && !/^https:\/\//i.test(String(phone.thumbnail))) {
@@ -98,7 +100,7 @@ export async function scanImageIntelligence(options?: { limit?: number }) {
       signalsSeen += 1;
     }
 
-    const existing = await ImageIntelligenceSignal.find({ phoneId: phone._id, status: 'open' }).select('_id type imageId').lean();
+    const existing = await ImageIntelligenceSignal.find({ phoneId: phone._id, status: 'open', type: { $in: Array.from(METADATA_SIGNAL_TYPES) } }).select('_id type imageId').lean();
     for (const item of existing as any[]) {
       const key = `${item.type}:${item.imageId ? String(item.imageId) : 'phone'}`;
       if (!activeKeys.has(key)) {
@@ -118,15 +120,19 @@ export async function verifyRemoteImageUrls(options?: { limit?: number }) {
     .select('_id phoneId url').sort({ updatedAt: -1 }).limit(limit).lean();
   let checked = 0, broken = 0, unreachable = 0, cleared = 0;
 
+  const openReviewSignal = async (image: any, title: string, details: string, evidence: Record<string, unknown>, severity: 'info'|'warning' = 'warning') => {
+    await ImageIntelligenceSignal.findOneAndUpdate(
+      { phoneId: image.phoneId, imageId: image._id, type: 'remote_unreachable' },
+      { $set: { severity, status: 'open', title, details, lastSeenAt: new Date(), evidence }, $setOnInsert: { detectedAt: new Date() } },
+      { upsert: true },
+    );
+  };
+
   const checkOne = async (image: any) => {
     const url = String(image.url || '').trim();
     const safety = await validateUrlForFetch(url);
     if (!safety.safe) {
-      await ImageIntelligenceSignal.findOneAndUpdate(
-        { phoneId: image.phoneId, imageId: image._id, type: 'remote_unreachable' },
-        { $set: { severity: 'warning', status: 'open', title: 'Image URL failed safety check', details: safety.reason || 'Remote image URL is not safe to fetch.', lastSeenAt: new Date(), evidence: { reason: safety.reason || 'unsafe_url' } }, $setOnInsert: { detectedAt: new Date() } },
-        { upsert: true },
-      );
+      await openReviewSignal(image, 'Image URL failed safety check', safety.reason || 'Remote image URL is not safe to fetch.', { reason: safety.reason || 'unsafe_url' });
       unreachable++; return;
     }
     const controller = new AbortController();
@@ -134,24 +140,37 @@ export async function verifyRemoteImageUrls(options?: { limit?: number }) {
     try {
       const response = await fetch(url, { method: 'HEAD', redirect: 'manual', cache: 'no-store', signal: controller.signal, headers: { 'User-Agent': 'PhoneDock-ImageHealth/1.0' } });
       checked++;
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
       if (response.status === 404 || response.status === 410) {
         broken++;
         await ImageIntelligenceSignal.findOneAndUpdate(
           { phoneId: image.phoneId, imageId: image._id, type: 'broken_remote_url' },
-          { $set: { severity: 'critical', status: 'open', title: 'Remote image is broken', details: `Remote image returned HTTP ${response.status}. Replace or remove this gallery image.`, lastSeenAt: new Date(), evidence: { httpStatus: response.status } }, $setOnInsert: { detectedAt: new Date() } },
+          { $set: { severity: 'critical', status: 'open', title: 'Remote image is broken', details: `Remote image returned HTTP ${response.status}. Replace or remove this gallery image after source review.`, lastSeenAt: new Date(), evidence: { httpStatus: response.status } }, $setOnInsert: { detectedAt: new Date() } },
           { upsert: true },
         );
-      } else {
-        const result = await ImageIntelligenceSignal.updateMany({ phoneId: image.phoneId, imageId: image._id, type: { $in: ['broken_remote_url','remote_unreachable'] }, status: 'open' }, { $set: { status: 'resolved', resolvedAt: new Date(), resolutionNotes: `Remote image responded with HTTP ${response.status}.` } });
-        cleared += result.modifiedCount || 0;
+        return;
       }
+      if (response.status >= 200 && response.status < 300 && contentType && !contentType.startsWith('image/')) {
+        await ImageIntelligenceSignal.findOneAndUpdate(
+          { phoneId: image.phoneId, imageId: image._id, type: 'non_image_content' },
+          { $set: { severity: 'critical', status: 'open', title: 'URL does not return an image', details: `The URL responded with content type ${contentType}. Verify that the linked asset is actually an image for this phone.`, lastSeenAt: new Date(), evidence: { httpStatus: response.status, contentType } }, $setOnInsert: { detectedAt: new Date() } },
+          { upsert: true },
+        );
+        return;
+      }
+      if (response.status >= 200 && response.status < 300) {
+        const result = await ImageIntelligenceSignal.updateMany(
+          { phoneId: image.phoneId, imageId: image._id, type: { $in: ['broken_remote_url','remote_unreachable','non_image_content'] }, status: 'open' },
+          { $set: { status: 'resolved', resolvedAt: new Date(), resolutionNotes: `Remote image responded successfully with HTTP ${response.status}.` } },
+        );
+        cleared += result.modifiedCount || 0;
+        return;
+      }
+      unreachable++;
+      await openReviewSignal(image, 'Remote image needs manual verification', `Remote image returned HTTP ${response.status}. This is not treated as definitely broken because the source may block HEAD requests or require a redirect.`, { httpStatus: response.status }, 'info');
     } catch (error) {
       unreachable++;
-      await ImageIntelligenceSignal.findOneAndUpdate(
-        { phoneId: image.phoneId, imageId: image._id, type: 'remote_unreachable' },
-        { $set: { severity: 'info', status: 'open', title: 'Remote image could not be verified', details: 'The bounded remote health check timed out or could not reach this image. Review manually before deleting it.', lastSeenAt: new Date(), evidence: { error: error instanceof Error ? error.message : 'network_error' } }, $setOnInsert: { detectedAt: new Date() } },
-        { upsert: true },
-      );
+      await openReviewSignal(image, 'Remote image could not be verified', 'The bounded remote health check timed out or could not reach this image. Review manually before deleting it.', { error: error instanceof Error ? error.message : 'network_error' }, 'info');
     } finally { clearTimeout(timer); }
   };
 

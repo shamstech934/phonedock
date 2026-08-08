@@ -158,7 +158,7 @@ export default function SpecsIntelligencePage() {
       <div className="grid gap-3 sm:grid-cols-3">
         {Object.entries(data.summary || {}).map(([k, v]) => (
           <div key={k} className="rounded-xl border bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{k.replaceAll('_', ' ')}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{k.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2')}</div>
             <div className="mt-1 text-2xl font-bold">{v}</div>
           </div>
         ))}
