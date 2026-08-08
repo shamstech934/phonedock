@@ -234,12 +234,25 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     const skip = (page - 1) * limit;
     const search = (url.searchParams.get('search') || '').trim();
     const mode = url.searchParams.get('mode') || 'all';
+    const priceType = url.searchParams.get('priceType') || 'all';
     const sort = url.searchParams.get('sort') || 'name-az';
 
     const basePhoneFilter: Record<string, unknown> = { active: true, status: 'published' };
     const filter: Record<string, unknown> = { ...basePhoneFilter };
     if (mode === 'manual') filter.priceMode = { $ne: 'automatic' };
     else if (mode === 'automatic') filter.priceMode = 'automatic';
+
+    const validPriceTypes = new Set(['pta-approved', 'non-pta', 'us-retail']);
+    let bucketPhoneIds: Types.ObjectId[] | null = null;
+    if (validPriceTypes.has(priceType)) {
+      const bucketMarket = priceType === 'us-retail' ? 'US' : 'PK';
+      bucketPhoneIds = await PhonePrice.find({
+        price: { $gt: 0 },
+        market: bucketMarket,
+        priceType,
+      }).distinct('phoneId') as Types.ObjectId[];
+      filter._id = { $in: bucketPhoneIds };
+    }
 
     if (search.length >= 2) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -275,7 +288,12 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
     ]);
 
     const phoneIds = phones.map((phone: LeanPhoneDoc) => phone._id);
-    const [listingRows, overrideRows] = await Promise.all([
+    const bucketPriceFilter: Record<string, unknown> = { phoneId: { $in: phoneIds }, price: { $gt: 0 } };
+    if (validPriceTypes.has(priceType)) {
+      bucketPriceFilter.market = priceType === 'us-retail' ? 'US' : 'PK';
+      bucketPriceFilter.priceType = priceType;
+    }
+    const [listingRows, overrideRows, bucketPriceRows] = await Promise.all([
       PhoneRetailListing.find({ phoneId: { $in: phoneIds }, enabled: true })
         .sort({ verificationStatus: 1, lastSuccessAt: -1, createdAt: 1 })
         .populate('sourceId', 'name sourceType')
@@ -283,7 +301,16 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
       PhonePrice.find({ phoneId: { $in: phoneIds }, manualOverride: true, price: { $gt: 0 } })
         .select('phoneId overrideLocked market priceType variantKey')
         .lean(),
+      PhonePrice.find(bucketPriceFilter)
+        .sort({ overrideLocked: -1, updatedAt: -1, createdAt: -1 })
+        .select('phoneId price regularPrice market currency priceType manualOverride overrideLocked updatedAt createdAt')
+        .lean(),
     ]);
+    const bucketPriceByPhone = new Map<string, typeof bucketPriceRows[number]>();
+    for (const row of bucketPriceRows) {
+      const key = String(row.phoneId);
+      if (!bucketPriceByPhone.has(key)) bucketPriceByPhone.set(key, row);
+    }
     const overrideStats = new Map<string, { total: number; locked: number }>();
     for (const row of overrideRows as Array<{ phoneId: Types.ObjectId; overrideLocked?: boolean }>) {
       const key = String(row.phoneId); const current = overrideStats.get(key) || { total: 0, locked: 0 };
@@ -321,7 +348,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
           name: displayName,
           slug: p.slug,
           brand: brandName,
-          currentPrice: Number(p.currentPrice || 0),
+          currentPrice: Number(bucketPriceByPhone.get(p._id.toString())?.price || p.currentPrice || 0),
           previousPrice: Number(p.previousPrice || 0),
           difference: Number(p.priceChange || 0),
           percentChange: Number(p.percentageChange || 0),
@@ -331,7 +358,7 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
           linked: Boolean(listing),
           verificationStatus: listing?.verificationStatus || 'unlinked',
           availability: listing?.availability || 'unknown',
-          lastUpdated: (listing?.lastSuccessAt || listing?.lastCheckedAt || p.lastPriceCheckedAt || p.lastPriceChangedAt || '').toString(),
+          lastUpdated: (bucketPriceByPhone.get(p._id.toString())?.updatedAt || listing?.lastSuccessAt || listing?.lastCheckedAt || p.lastPriceCheckedAt || p.lastPriceChangedAt || '').toString(),
           status: listing?.enabled === false ? 'inactive' : 'active',
           manualLock: Boolean(p.manualLock),
           manualOverrideCount: overrideStats.get(p._id.toString())?.total || 0,

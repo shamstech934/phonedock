@@ -307,6 +307,7 @@ export default function AdminPriceTrackerPage() {
   const [phonesSearch, setPhonesSearch] = useState('');
   const [phonesDebouncedSearch, setPhonesDebouncedSearch] = useState('');
   const [phonesModeFilter, setPhonesModeFilter] = useState('all');
+  const [phonesPriceBucket, setPhonesPriceBucket] = useState<'all' | 'pta-approved' | 'non-pta' | 'us-retail'>('all');
   const [phonesSort, setPhonesSort] = useState('name-az');
   const searchTimer = useRef<NodeJS.Timeout>(undefined);
 
@@ -430,6 +431,7 @@ export default function AdminPriceTrackerPage() {
       });
       if (phonesDebouncedSearch.length >= 2) params.set('search', phonesDebouncedSearch);
       if (phonesModeFilter !== 'all') params.set('mode', phonesModeFilter);
+      if (phonesPriceBucket !== 'all') params.set('priceType', phonesPriceBucket);
       const res = await fetch(`/api/admin/price-tracker/phones?${params}`, { credentials: 'include' });
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to fetch phones');
@@ -442,7 +444,7 @@ export default function AdminPriceTrackerPage() {
     } catch (e: unknown) {
       setError(networkError(e, 'Phone prices'));
     } finally { setLoading(false); }
-  }, [phonesPage, phonesSort, phonesDebouncedSearch, phonesModeFilter]);
+  }, [phonesPage, phonesSort, phonesDebouncedSearch, phonesModeFilter, phonesPriceBucket]);
 
   const fetchSources = useCallback(async () => {
     try {
@@ -1181,6 +1183,13 @@ export default function AdminPriceTrackerPage() {
      TAB 1: OVERVIEW
      ═══════════════════════════════════════════════════════════ */
 
+  const openPhonePrices = (bucket: 'all' | 'pta-approved' | 'non-pta' | 'us-retail' = 'all') => {
+    setPhonesPriceBucket(bucket);
+    setPhonesPage(1);
+    setSelectedPhoneIds([]);
+    setActiveTab('phones');
+  };
+
   const renderOverview = () => {
     const s = overviewStats;
     const stats = s ? [
@@ -1203,12 +1212,12 @@ export default function AdminPriceTrackerPage() {
               <h2 className="mt-1 text-lg font-bold text-gray-900">Public Price Control Center</h2>
               <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">Every public price belongs to one exact identity: market + PTA bucket + RAM + storage + color + condition + warranty. Automatic offers may update in the background; a locked admin override always wins for that exact identity.</p>
             </div>
-            <button onClick={() => setActiveTab('phones')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700"><Pencil className="h-4 w-4"/>Control a phone</button>
+            <button onClick={() => openPhonePrices('all')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white hover:bg-blue-700"><Pencil className="h-4 w-4"/>Control a phone</button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <button onClick={() => setActiveTab('phones')} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-left hover:bg-emerald-100"><p className="text-xs font-bold text-emerald-900">Pakistan PTA</p><p className="mt-1 text-[11px] text-emerald-700">PKR · exact RAM/storage/color</p></button>
-            <button onClick={() => setActiveTab('phones')} className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-left hover:bg-amber-100"><p className="text-xs font-bold text-amber-900">Pakistan Non-PTA</p><p className="mt-1 text-[11px] text-amber-700">PKR · never overwrites PTA</p></button>
-            <button onClick={() => setActiveTab('phones')} className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-left hover:bg-indigo-100"><p className="text-xs font-bold text-indigo-900">USA Retail</p><p className="mt-1 text-[11px] text-indigo-700">USD · separate US market bucket</p></button>
+            <button onClick={() => openPhonePrices('pta-approved')} className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-left hover:bg-emerald-100"><p className="text-xs font-bold text-emerald-900">Pakistan PTA</p><p className="mt-1 text-[11px] text-emerald-700">PKR · exact RAM/storage/color</p></button>
+            <button onClick={() => openPhonePrices('non-pta')} className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-left hover:bg-amber-100"><p className="text-xs font-bold text-amber-900">Pakistan Non-PTA</p><p className="mt-1 text-[11px] text-amber-700">PKR · never overwrites PTA</p></button>
+            <button onClick={() => openPhonePrices('us-retail')} className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-left hover:bg-indigo-100"><p className="text-xs font-bold text-indigo-900">USA Retail</p><p className="mt-1 text-[11px] text-indigo-700">USD · separate US market bucket</p></button>
             <button onClick={() => setActiveTab('pending')} className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-left hover:bg-rose-100"><p className="text-xs font-bold text-rose-900">Conflicts & Review</p><p className="mt-1 text-[11px] text-rose-700">Suspicious changes require approval</p></button>
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -1219,7 +1228,7 @@ export default function AdminPriceTrackerPage() {
         </div>
 
         {phones.length > 0 && <div className="mb-6 rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4"><div><h2 className="text-sm font-bold text-gray-900">Quick price control</h2><p className="text-xs text-gray-500">Open any phone and manage exact market/variant prices.</p></div><button onClick={() => setActiveTab('phones')} className="text-xs font-semibold text-blue-600">View all →</button></div>
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4"><div><h2 className="text-sm font-bold text-gray-900">Quick price control</h2><p className="text-xs text-gray-500">Open any phone and manage exact market/variant prices.</p></div><button onClick={() => openPhonePrices('all')} className="text-xs font-semibold text-blue-600">View all →</button></div>
           <div className="divide-y divide-gray-50">{phones.slice(0,6).map(p => <div key={p.phoneId} className="flex items-center justify-between gap-3 px-5 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-gray-900">{p.phoneName}</p><p className="text-[11px] text-gray-500">{p.brand} · {p.lockedOverrideCount || 0} locked · {p.mode}</p></div><div className="flex items-center gap-3"><span className="text-sm font-bold text-gray-900">{formatPKR(p.currentPrice)}</span><button onClick={() => openEditPriceModal(p)} className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Control</button></div></div>)}</div>
         </div>}
 
@@ -1384,6 +1393,17 @@ export default function AdminPriceTrackerPage() {
               />
             </div>
             <select
+              value={phonesPriceBucket}
+              onChange={e => { setPhonesPriceBucket(e.target.value as 'all' | 'pta-approved' | 'non-pta' | 'us-retail'); setPhonesPage(1); }}
+              className="h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+              aria-label="Price bucket"
+            >
+              <option value="all">All Price Types</option>
+              <option value="pta-approved">Pakistan PTA</option>
+              <option value="non-pta">Pakistan Non-PTA</option>
+              <option value="us-retail">USA Retail</option>
+            </select>
+            <select
               value={phonesModeFilter}
               onChange={e => { setPhonesModeFilter(e.target.value); setPhonesPage(1); }}
               className="h-9 px-3 rounded-lg border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
@@ -1403,6 +1423,8 @@ export default function AdminPriceTrackerPage() {
             </select>
           </div>
         </div>
+
+        {phonesPriceBucket !== 'all' && <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800"><span><strong>Filtered:</strong> {phonesPriceBucket === 'pta-approved' ? 'Pakistan PTA' : phonesPriceBucket === 'non-pta' ? 'Pakistan Non-PTA' : 'USA Retail'} price records only.</span><button type="button" onClick={() => { setPhonesPriceBucket('all'); setPhonesPage(1); }} className="font-semibold text-blue-700 hover:underline">Show all price types</button></div>}
 
         {selectedPhoneIds.length > 0 && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3"><div><p className="text-xs font-bold text-blue-900">{selectedPhoneIds.length} phone{selectedPhoneIds.length === 1 ? '' : 's'} selected</p><p className="text-[11px] text-blue-700">Bulk reset removes admin overrides for selected phones; history remains.</p></div><div className="flex gap-2"><button onClick={() => handleBulkOverrides('unlock')} disabled={Boolean(actionLoading)} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700">Unlock overrides</button><button onClick={() => handleBulkOverrides('reset-to-auto')} disabled={Boolean(actionLoading)} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white">Reset selected to Auto</button><button onClick={() => setSelectedPhoneIds([])} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600">Clear</button></div></div>}
 
