@@ -1762,7 +1762,8 @@ export default function AdminPriceTrackerPage() {
   const renderMatchCandidates = () => (
     <div className="space-y-4">
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-        <p className="text-sm font-semibold text-blue-900">How this queue works</p>
+        <p className="text-sm font-semibold text-blue-900">Source Gaps</p>
+        <p className="mt-1 text-xs font-medium text-blue-800">How this queue works</p>
         <p className="mt-1 text-xs leading-5 text-blue-700">
           Auto-link scans imported retailer URLs. Add and test the missing retailer in Sources, then run Auto-link again.
         </p>

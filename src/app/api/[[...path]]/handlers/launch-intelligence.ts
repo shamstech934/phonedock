@@ -124,7 +124,9 @@ export async function handleLaunchIntelligencePost(req: NextRequest): Promise<Ne
   }
 
   if (action === 'bulk_update') {
-    const ids = Array.isArray(body.ids) ? Array.from(new Set(body.ids.map((value: unknown) => String(value || '')).filter(Boolean))).slice(0, 100) : [];
+    const ids: string[] = Array.isArray(body.ids)
+      ? Array.from(new Set<string>(body.ids.map((value: unknown) => String(value || '')).filter(Boolean))).slice(0, 100)
+      : [];
     const availabilityStatus = String(body.availabilityStatus || '');
     if (!ids.length || !isLifecycleStatus(availabilityStatus)) return NextResponse.json({ error: 'Select phones and a valid lifecycle status' }, { status: 400 });
     const result = await Phone.updateMany({ _id: { $in: ids }, deletedAt: null }, { $set: {
