@@ -575,7 +575,14 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     const base = phoneToJSON(phone, specs, benchmarks, images, prices);
     const specFilled = specs ? Object.entries(specs).filter(([key, value]) => !['_id','__v','phoneId','createdAt','updatedAt'].includes(key) && String(value || '').trim()).length : 0;
     const benchmarkFilled = benchmarks ? ['antutu','geekbenchSingle','geekbenchMulti','gamingScore','pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery'].filter((key) => { const value = (benchmarks as Record<string, unknown>)[key]; return typeof value === 'number' ? value > 0 : Boolean(String(value || '').trim()); }).length : 0;
-    const ratingFilled = ['cameraScore','performanceScore','batteryScore','displayScore','valueScore','overallRating'].filter((key) => Number((phone as Record<string, unknown>)[key] || 0) > 0).length;
+    const ratingFilled = [
+      phone.cameraScore,
+      phone.performanceScore,
+      phone.batteryScore,
+      phone.displayScore,
+      phone.valueScore,
+      phone.overallRating,
+    ].filter((value) => Number(value || 0) > 0).length;
     return NextResponse.json({ ...base, dataHealth: {
       price: { openIssues: openPriceIssues, records: prices.length, ready: prices.some((row: any) => Number(row.price || 0) > 0) && openPriceIssues === 0 },
       specs: { openIssues: openSpecsIssues, filledFields: specFilled, ready: specFilled >= 8 && openSpecsIssues === 0 },
