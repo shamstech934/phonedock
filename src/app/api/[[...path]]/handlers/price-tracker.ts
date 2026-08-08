@@ -1032,7 +1032,15 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
     await connectDB();
     const body = await req.json();
-    const phoneIds = Array.isArray(body.phoneIds) ? [...new Set(body.phoneIds.map((v: unknown) => String(v || '').trim()).filter(Boolean))].slice(0, 500) : [];
+    const phoneIds: string[] = Array.isArray(body.phoneIds)
+      ? Array.from(
+          new Set<string>(
+            body.phoneIds
+              .map((v: unknown) => String(v ?? '').trim())
+              .filter((v: string) => v.length > 0),
+          ),
+        ).slice(0, 500)
+      : [];
     const action = String(body.action || '');
     if (phoneIds.length === 0) return NextResponse.json({ error: 'Select at least one phone' }, { status: 400 });
     if (!['unlock', 'reset-to-auto'].includes(action)) return NextResponse.json({ error: 'Invalid bulk action' }, { status: 400 });
