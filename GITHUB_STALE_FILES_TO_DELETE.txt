@@ -1,0 +1,9 @@
+These files are intentionally absent from the clean PhoneDock build and must also be deleted from the GitHub main branch if they still exist:
+
+src/app/api/[[...path]]/handlers/ai-research.ts
+src/lib/ai-research-worker.ts
+src/lib/ai-research-policy.ts
+src/lib/ai-enrichment.ts
+src/app/admin/ai-research/
+
+Reason: AI Research was removed, but old tracked GitHub files can survive when new ZIP contents are copied over without staging deletions. Their imports of AIResearchJob / AIResearchDraft cause TypeScript TS2305 failures.
