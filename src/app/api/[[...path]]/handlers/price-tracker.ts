@@ -1011,6 +1011,23 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
       for (const candidate of candidates) {
         const sourceUrl = candidate.url;
         if (!isLikelyProductPageUrl(sourceUrl)) { rejectedHomepageUrls++; continue; }
+        // Never auto-link a legacy/source URL merely because it already belongs
+        // to this phone record. The URL itself must safely encode the same phone
+        // identity. This blocks stale data such as model "14" pointing to a
+        // 14-inch laptop category. Opaque/manual URLs can still be reviewed and
+        // linked explicitly by an admin; automatic linking stays conservative.
+        if (!matchProductUrlToPhone(sourceUrl, [phone])) {
+          unmatched++;
+          let unsafeHost = '';
+          try { unsafeHost = new URL(sourceUrl).hostname.toLowerCase(); } catch { /* handled below */ }
+          await PriceMatchCandidate.findOneAndUpdate(
+            { phoneId: phone._id, sourceUrl },
+            { $set: { hostname: unsafeHost, status: 'pending', reason: 'Retailer URL does not safely match this phone brand/model identity.', resolvedSourceId: null, resolvedAt: null } },
+            { upsert: true, setDefaultsOnInsert: true },
+          );
+          if (examples.length < 5) examples.push(`${phone.modelName}: unsafe identity ${sourceUrl}`);
+          continue;
+        }
         let hostname = '';
         try { hostname = new URL(sourceUrl).hostname.toLowerCase(); } catch { unmatched++; continue; }
         const source = sources.find(item => (item.allowedDomains || []).some((domain: string) => {
@@ -2234,6 +2251,15 @@ export async function handlePriceTrackerPut(req: NextRequest, segments: string[]
     }
 
     if (updates.verificationStatus === 'verified') {
+      const finalProductUrl = String(updates.productUrl || listing.productUrl || '');
+      let finalProductPath = finalProductUrl;
+      try { finalProductPath = decodeURIComponent(new URL(finalProductUrl).pathname.replace(/[-_]+/g, ' ')); } catch { /* invalid URL handled above when edited */ }
+      if (/\b(laptop|laptops|notebook|notebooks|monitor|monitors|desktop|desktops|television|televisions|tv|tablet|tablets)\b/i.test(finalProductPath)) {
+        return NextResponse.json({ error: 'This URL is clearly a non-phone product page and cannot be verified for a phone.' }, { status: 400 });
+      }
+      if (/\b(laptop|notebook|monitor|desktop|television|tablet)\b/i.test(String(listing.sourceTitle || ''))) {
+        return NextResponse.json({ error: 'The fetched retailer title is a non-phone product. Replace the retailer URL before verification.' }, { status: 400 });
+      }
       const sourceForValidation = await PriceSource.findById(listing.sourceId).select('market currency defaultPriceType').lean();
       const finalMarket = normalizePriceMarket(String(updates.market || listing.market || sourceForValidation?.market || 'PK'));
       const finalPtaStatus = String(updates.ptaStatus !== undefined ? updates.ptaStatus : listing.ptaStatus || '');

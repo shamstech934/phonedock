@@ -172,17 +172,29 @@ export async function discoverDuePriceListings(now = new Date()): Promise<{
 
 
 export async function demoteObviousNonPhoneListings(now = new Date()): Promise<number> {
+  // Hard-quarantine stale catalog links that are clearly not phone product pages.
+  // Older matching logic could attach numeric models such as "14" to a 14-inch
+  // laptop category. Keeping those rows pending still exposes the bad retailer
+  // link in Review Queue, so reject + disable them instead.
+  const nonPhonePattern = /\b(laptop|laptops|notebook|notebooks|monitor|monitors|desktop|desktops|television|televisions|tv|tablet|tablets)\b/i;
   const result = await PhoneRetailListing.updateMany(
     {
       enabled: true,
-      verificationStatus: 'verified',
-      sourceTitle: { $regex: /\b(laptop|notebook|monitor|desktop|television)\b/i },
+      verificationStatus: { $in: ['verified', 'pending'] },
+      $or: [
+        { sourceTitle: { $regex: nonPhonePattern } },
+        { productUrl: { $regex: nonPhonePattern } },
+      ],
     },
     {
       $set: {
-        verificationStatus: 'pending',
+        enabled: false,
+        verificationStatus: 'rejected',
+        currentSourcePrice: 0,
+        pendingSourcePrice: 0,
+        availability: 'unknown',
         lastCheckedAt: now,
-        lastError: 'Listing title indicates a non-phone product. Re-link this phone to the correct retailer product page.',
+        lastError: 'Rejected automatically: retailer URL/title is an obvious non-phone product. Link the correct phone product page before enabling price tracking.',
       },
     },
   );
@@ -234,6 +246,24 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
     const source = listing.sourceId;
     const phone = listing.phoneId;
     let failure = '';
+    const obviousNonPhoneUrl = /\b(laptop|laptops|notebook|notebooks|monitor|monitors|desktop|desktops|television|televisions|tv|tablet|tablets)\b/i.test(
+      (() => { try { return decodeURIComponent(new URL(listing.productUrl).pathname.replace(/[-_]+/g, ' ')); } catch { return listing.productUrl; } })(),
+    );
+    if (obviousNonPhoneUrl) {
+      rejected++;
+      await PhoneRetailListing.findByIdAndUpdate(listing._id, {
+        $set: {
+          enabled: false,
+          verificationStatus: 'rejected',
+          currentSourcePrice: 0,
+          pendingSourcePrice: 0,
+          availability: 'unknown',
+          lastCheckedAt: now,
+          lastError: 'Rejected automatically: retailer URL is an obvious non-phone product.',
+        },
+      });
+      continue;
+    }
 
     if (!source?.enabled || !source.trusted || source.status !== 'active' || source.automaticFetchEnabled === false || source.accessMode === 'challenge_blocked' || !phone) {
       failure = 'Trusted source or phone reference is unavailable.';
@@ -286,6 +316,27 @@ export async function verifyPendingCatalogListings(now = new Date()): Promise<{
                 expectedStorage: variant.storage,
                 expectedPtaStatus: variant.ptaStatus,
               });
+              const hardIdentityMismatch = !pageValidation.valid && (
+                /does not match/i.test(pageValidation.reasons.join(' '))
+                || /\b(laptop|notebook|monitor|desktop|television|tablet)\b/i.test(pageValidation.title || '')
+              );
+              if (hardIdentityMismatch) {
+                rejected++;
+                await PhoneRetailListing.findByIdAndUpdate(listing._id, {
+                  $set: {
+                    enabled: false,
+                    verificationStatus: 'rejected',
+                    sourceTitle: pageValidation.title || preliminary.title,
+                    currentSourcePrice: 0,
+                    pendingSourcePrice: 0,
+                    availability: 'unknown',
+                    lastCheckedAt: now,
+                    lastError: `Rejected automatically: ${pageValidation.reasons.join('; ') || 'retailer page is not the linked phone product.'}`.slice(0, 1000),
+                  },
+                });
+                continue;
+              }
+
               const extracted = extractRetailPrice(html, normalizePriceCurrency(variant.currency, variant.market));
               if (!pageValidation.valid) failure = pageValidation.reasons.join('; ');
               else if (normalizePriceMarket(variant.market) === 'PK' && normalizePtaPriceClass(variant.ptaStatus) === 'unknown') {
