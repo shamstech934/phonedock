@@ -352,13 +352,13 @@ export async function handlePriceTrackerGet(req: NextRequest, segments: string[]
         .sort({ lastSuccessAt: -1, updatedAt: -1 }).lean(),
     ]);
     const manual = (manualRows as Array<Record<string, unknown>>).map(row => ({
-      id: String(row._id || ''), price: Number(row.price || 0), market: normalizePriceMarket(row.market),
+      id: String(row._id || ''), price: Number(row.price || 0), regularPrice: Number(row.regularPrice || 0), discountStartAt: row.discountStartAt || null, discountEndAt: row.discountEndAt || null, market: normalizePriceMarket(row.market),
       currency: normalizePriceCurrency(row.currency, row.market), priceType: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
       ptaStatus: String(row.ptaStatus || ''), ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''), condition: String(row.condition || 'new'), warrantyType: String(row.warrantyType || ''),
       variantKey: String(row.variantKey || ''), locked: row.overrideLocked === true, reason: String(row.overrideReason || ''), autoDetectedPrice: Number(row.autoDetectedPrice || 0), lastAutoDetectedAt: row.lastAutoDetectedAt || null, updatedAt: row.updatedAt || null,
     }));
     const automatic = (autoRows as Array<Record<string, any>>).map(row => { const source = row.sourceId || {}; return ({
-      id: String(row._id || ''), source: String(source.name || ''), trusted: source.trusted === true, verificationStatus: String(row.verificationStatus || ''), price: Number(row.currentSourcePrice || 0),
+      id: String(row._id || ''), source: String(source.name || ''), trusted: source.trusted === true, verificationStatus: String(row.verificationStatus || ''), price: Number(row.currentSourcePrice || 0), regularPrice: Number(row.regularSourcePrice || 0), discountStartAt: row.discountStartAt || null, discountEndAt: row.discountEndAt || null,
       market: normalizePriceMarket(row.market || source.market), currency: normalizePriceCurrency(row.currency || source.currency, row.market || source.market),
       priceType: normalizeMarketPriceType({ market: row.market || source.market, priceType: row.priceType || source.defaultPriceType, ptaStatus: row.ptaStatus }), ptaStatus: String(row.ptaStatus || ''),
       ram: String(row.ram || ''), storage: String(row.storage || ''), color: String(row.color || ''), condition: String(row.condition || 'new'), warrantyType: String(row.warrantyType || ''), variantKey: String(row.variantKey || ''),
@@ -1026,6 +1026,29 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     return NextResponse.json({ success: true, id: candidate._id.toString() });
   }
 
+  // ---- /api/admin/price-tracker/bulk-overrides ----
+  if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'bulk-overrides') {
+    const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
+    const permCheck = requirePermission(admin, 'prices:edit'); if (permCheck) return permCheck;
+    await connectDB();
+    const body = await req.json();
+    const phoneIds = Array.isArray(body.phoneIds) ? [...new Set(body.phoneIds.map((v: unknown) => String(v || '').trim()).filter(Boolean))].slice(0, 500) : [];
+    const action = String(body.action || '');
+    if (phoneIds.length === 0) return NextResponse.json({ error: 'Select at least one phone' }, { status: 400 });
+    if (!['unlock', 'reset-to-auto'].includes(action)) return NextResponse.json({ error: 'Invalid bulk action' }, { status: 400 });
+    let modified = 0;
+    if (action === 'unlock') {
+      const result = await PhonePrice.updateMany({ phoneId: { $in: phoneIds }, manualOverride: true, overrideLocked: true }, { $set: { overrideLocked: false } });
+      modified = result.modifiedCount || 0;
+    } else {
+      const result = await PhonePrice.deleteMany({ phoneId: { $in: phoneIds }, manualOverride: true });
+      modified = result.deletedCount || 0;
+      for (const phoneId of phoneIds) await recomputeBestPriceForPhone(phoneId).catch(() => null);
+    }
+    await ActivityLog.create({ adminId: admin._id, action: `bulk_price_${action.replace(/-/g, '_')}`, details: `${action} on ${phoneIds.length} selected phones; ${modified} override records affected.`, entityType: 'phone', entityId: phoneIds[0] || '' }).catch(() => null);
+    return NextResponse.json({ success: true, phones: phoneIds.length, modified });
+  }
+
   // ---- /api/admin/price-tracker/update-price ----
   if (segments.length === 3 && segments[0] === 'admin' && segments[1] === 'price-tracker' && segments[2] === 'update-price') {
     const authResult = await getAdminFromRequest(req); if (authResult.error) return authResult.error; const admin = authResult.admin;
@@ -1033,7 +1056,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await connectDB();
 
     const body = await req.json();
-    const { phoneId, newPrice, reason, ptaStatus, warrantyType, ram, storage, color, condition, market, currency, priceType, lockOverride = true } = body;
+    const { phoneId, newPrice, regularPrice = 0, discountStartAt = '', discountEndAt = '', reason, ptaStatus, warrantyType, ram, storage, color, condition, market, currency, priceType, lockOverride = true } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
     if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number') {
@@ -1082,7 +1105,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await PhonePrice.findOneAndUpdate(
       { phoneId: phone._id, storeName: 'Admin Override', market: normalizedMarket, currency: normalizedCurrency, variantKey: overrideVariantKey },
       { $set: {
-        price: newPrice, url: '', sourceUrl: '', inStock: true,
+        price: newPrice, regularPrice: Number(regularPrice || 0), discountStartAt: discountStartAt || null, discountEndAt: discountEndAt || null, url: '', sourceUrl: '', inStock: true,
         market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType,
         ptaStatus: normalizedPriceType === 'pta-approved' ? 'PTA Approved' : normalizedPriceType === 'non-pta' ? 'Non-PTA' : '',
         ram: normalizedRam, storage: normalizedStorage, color: normalizedColor, condition: normalizedCondition, warrantyType: normalizedWarranty,

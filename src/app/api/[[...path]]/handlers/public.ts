@@ -521,9 +521,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         verificationStatus: 'verified',
         availability: { $ne: 'unavailable' },
         currentSourcePrice: { $gt: 0 },
-      }).select('ram storage color condition warrantyType ptaStatus market currency priceType currentSourcePrice sourceId productUrl').populate('sourceId', 'name trusted enabled status priority market currency defaultPriceType').lean(),
+      }).select('ram storage color condition warrantyType ptaStatus market currency priceType currentSourcePrice regularSourcePrice discountStartAt discountEndAt sourceId productUrl').populate('sourceId', 'name trusted enabled status priority market currency defaultPriceType').lean(),
       PhonePrice.find({ phoneId: phone._id, price: { $gt: 0 }, inStock: { $ne: false } })
-        .select('storeName price url ram storage color condition warrantyType ptaStatus market currency priceType variantKey manualOverride overrideLocked overrideReason autoDetectedPrice lastAutoDetectedAt')
+        .select('storeName price regularPrice discountStartAt discountEndAt url ram storage color condition warrantyType ptaStatus market currency priceType variantKey manualOverride overrideLocked overrideReason autoDetectedPrice lastAutoDetectedAt')
         .lean(),
       PriceTrackerHistory.find({ phoneId: phone._id, verificationStatus: 'confirmed', newPrice: { $gt: 0 } })
         .sort({ capturedAt: -1 })
@@ -546,6 +546,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
         priceType: normalizeMarketPriceType({ market: row.market || row.sourceId?.market, priceType: row.priceType || row.sourceId?.defaultPriceType, ptaStatus: row.ptaStatus }),
         priceClass: normalizeMarketPriceType({ market: row.market || row.sourceId?.market, priceType: row.priceType || row.sourceId?.defaultPriceType, ptaStatus: row.ptaStatus }),
         price: Number(row.currentSourcePrice || 0),
+        regularPrice: Number(row.regularSourcePrice || 0),
+        discountStartAt: row.discountStartAt || null,
+        discountEndAt: row.discountEndAt || null,
         source: row.sourceId?.name || '',
         sourceUrl: row.productUrl || '',
         sourceKind: 'retailer' as const,
@@ -562,6 +565,9 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
       priceType: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
       priceClass: normalizeMarketPriceType({ market: row.market, priceType: row.priceType, ptaStatus: row.ptaStatus }),
       price: Number(row.price || 0),
+      regularPrice: Number(row.regularPrice || 0),
+      discountStartAt: row.discountStartAt || null,
+      discountEndAt: row.discountEndAt || null,
       source: row.storeName || 'Admin verified',
       sourceUrl: row.url || '',
       sourceKind: 'manual' as const,
