@@ -1221,14 +1221,38 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     const { phoneId, newPrice, regularPrice = 0, discountStartAt = '', discountEndAt = '', reason, ptaStatus, warrantyType, ram, storage, color, condition, market, currency, priceType, lockOverride = true } = body;
 
     if (!phoneId) return NextResponse.json({ error: 'phoneId is required' }, { status: 400 });
-    if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number') {
+    if (!newPrice || newPrice <= 0 || typeof newPrice !== 'number' || !Number.isFinite(newPrice)) {
       return NextResponse.json({ error: 'newPrice must be a positive number' }, { status: 400 });
+    }
+    const normalizedRegularPrice = Number(regularPrice || 0);
+    if (!Number.isFinite(normalizedRegularPrice) || normalizedRegularPrice < 0) {
+      return NextResponse.json({ error: 'regularPrice must be 0 or a positive number' }, { status: 400 });
+    }
+    if (normalizedRegularPrice > 0 && normalizedRegularPrice < newPrice) {
+      return NextResponse.json({ error: 'regularPrice cannot be lower than newPrice' }, { status: 400 });
+    }
+    if (discountStartAt && discountEndAt) {
+      const discountStart = new Date(discountStartAt);
+      const discountEnd = new Date(discountEndAt);
+      if (Number.isNaN(discountStart.getTime()) || Number.isNaN(discountEnd.getTime())) {
+        return NextResponse.json({ error: 'Discount dates must be valid dates' }, { status: 400 });
+      }
+      if (discountEnd.getTime() < discountStart.getTime()) {
+        return NextResponse.json({ error: 'Discount end date must be on or after the start date' }, { status: 400 });
+      }
     }
 
     const phone = await Phone.findById(phoneId).populate('brandId', 'name');
     if (!phone) return NextResponse.json({ error: 'Phone not found' }, { status: 404 });
 
     const normalizedMarket = normalizePriceMarket(market);
+    const requestedPriceType = String(priceType || '').trim();
+    if (normalizedMarket === 'PK' && requestedPriceType && !['pta-approved', 'non-pta'].includes(requestedPriceType)) {
+      return NextResponse.json({ error: 'Pakistan prices must use PTA Approved or Non-PTA' }, { status: 400 });
+    }
+    if (normalizedMarket === 'US' && requestedPriceType && requestedPriceType !== 'us-retail') {
+      return NextResponse.json({ error: 'USA prices must use USA Retail' }, { status: 400 });
+    }
     const normalizedCurrency = normalizePriceCurrency(currency, normalizedMarket);
     const normalizedPriceType = normalizeMarketPriceType({ market: normalizedMarket, priceType, ptaStatus: ptaStatus || phone.ptaStatus });
     if (normalizedMarket === 'PK' && normalizedPriceType === 'unknown') return NextResponse.json({ error: 'Choose PTA Approved or Non-PTA before saving a Pakistan price' }, { status: 400 });
@@ -1267,7 +1291,7 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     await PhonePrice.findOneAndUpdate(
       { phoneId: phone._id, storeName: 'Admin Override', market: normalizedMarket, currency: normalizedCurrency, variantKey: overrideVariantKey },
       { $set: {
-        price: newPrice, regularPrice: Number(regularPrice || 0), discountStartAt: discountStartAt || null, discountEndAt: discountEndAt || null, url: '', sourceUrl: '', inStock: true,
+        price: newPrice, regularPrice: normalizedRegularPrice, discountStartAt: discountStartAt || null, discountEndAt: discountEndAt || null, url: '', sourceUrl: '', inStock: true,
         market: normalizedMarket, currency: normalizedCurrency, priceType: normalizedPriceType,
         ptaStatus: normalizedPriceType === 'pta-approved' ? 'PTA Approved' : normalizedPriceType === 'non-pta' ? 'Non-PTA' : '',
         ram: normalizedRam, storage: normalizedStorage, color: normalizedColor, condition: normalizedCondition, warrantyType: normalizedWarranty,

@@ -666,8 +666,35 @@ export default function AdminPriceTrackerPage() {
   };
 
   const handleUpdatePrice = async () => {
-    if (!editingPhone || !editForm.price) return;
+    if (!editingPhone) return;
+    const newPrice = Number(editForm.price);
+    const regularPrice = editForm.regularPrice ? Number(editForm.regularPrice) : 0;
+    if (!Number.isFinite(newPrice) || newPrice <= 0) {
+      setActionError('Enter a valid new price greater than 0.');
+      return;
+    }
+    if (!Number.isFinite(regularPrice) || regularPrice < 0) {
+      setActionError('Regular price must be 0 or a positive number.');
+      return;
+    }
+    if (regularPrice > 0 && regularPrice < newPrice) {
+      setActionError('Regular price cannot be lower than the new/sale price.');
+      return;
+    }
+    if (editForm.discountStartAt && editForm.discountEndAt && editForm.discountStartAt > editForm.discountEndAt) {
+      setActionError('Discount end date must be on or after the start date.');
+      return;
+    }
+    if (editForm.market === 'PK' && !['pta-approved', 'non-pta'].includes(editForm.priceType)) {
+      setActionError('Pakistan prices must be classified as PTA Approved or Non-PTA.');
+      return;
+    }
+    if (editForm.market === 'US' && editForm.priceType !== 'us-retail') {
+      setActionError('USA prices must use the USA Retail price type.');
+      return;
+    }
     setActionLoading('update-price');
+    setActionError('');
     try {
       const res = await fetch('/api/admin/price-tracker/update-price', {
         method: 'POST',
@@ -675,8 +702,8 @@ export default function AdminPriceTrackerPage() {
         credentials: 'include',
         body: JSON.stringify({
           phoneId: editingPhone.phoneId,
-          newPrice: Number(editForm.price),
-          regularPrice: editForm.regularPrice ? Number(editForm.regularPrice) : 0,
+          newPrice,
+          regularPrice,
           discountStartAt: editForm.discountStartAt || '',
           discountEndAt: editForm.discountEndAt || '',
           reason: editForm.reason,
@@ -694,6 +721,7 @@ export default function AdminPriceTrackerPage() {
       });
       const d = await readApiResponse(res);
       if (!res.ok) throw new Error(d.error || 'Failed to update price');
+      setActionMessage(`${editForm.currency} ${newPrice.toLocaleString()} ${editForm.priceType === 'pta-approved' ? 'PTA' : editForm.priceType === 'non-pta' ? 'Non-PTA' : 'USA Retail'} price saved${editForm.lockOverride ? ' and locked' : ''} for this exact variant.`);
       setEditPriceModal(false);
       setEditForm({ price: '', regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
       setEditingPhone(null);
@@ -2588,6 +2616,36 @@ export default function AdminPriceTrackerPage() {
 
   const renderEditPriceModal = () => {
     if (!editPriceModal || !editingPhone) return null;
+    const parsedPrice = Number(editForm.price);
+    const parsedRegularPrice = editForm.regularPrice ? Number(editForm.regularPrice) : 0;
+    const priceError = !editForm.price.trim()
+      ? 'Enter a new price to save this override.'
+      : !Number.isFinite(parsedPrice) || parsedPrice <= 0
+        ? 'Enter a valid price greater than 0.'
+        : '';
+    const regularPriceError = editForm.regularPrice && (!Number.isFinite(parsedRegularPrice) || parsedRegularPrice < 0)
+      ? 'Regular price must be 0 or greater.'
+      : parsedRegularPrice > 0 && parsedRegularPrice < parsedPrice
+        ? 'Regular price cannot be lower than the new/sale price.'
+        : '';
+    const discountDateError = editForm.discountStartAt && editForm.discountEndAt && editForm.discountStartAt > editForm.discountEndAt
+      ? 'Discount end date must be on or after the start date.'
+      : '';
+    const marketTypeError = editForm.market === 'PK'
+      ? (!['pta-approved', 'non-pta'].includes(editForm.priceType) ? 'Choose PTA Approved or Non-PTA for Pakistan.' : '')
+      : (editForm.priceType !== 'us-retail' ? 'USA prices must use USA Retail.' : '');
+    const canSaveOverride = !priceError && !regularPriceError && !discountDateError && !marketTypeError && actionLoading !== 'update-price';
+    const normalized = (value: unknown) => String(value || '').trim().toLowerCase();
+    const hasExactManualOverride = priceControlRows.manual.some(row =>
+      normalized(row.market || 'PK') === normalized(editForm.market) &&
+      normalized(row.currency || (editForm.market === 'US' ? 'USD' : 'PKR')) === normalized(editForm.currency) &&
+      normalized(row.priceType || 'pta-approved') === normalized(editForm.priceType) &&
+      normalized(row.ram) === normalized(editForm.ram) &&
+      normalized(row.storage) === normalized(editForm.storage) &&
+      normalized(row.color) === normalized(editForm.color) &&
+      normalized(row.condition || 'new') === normalized(editForm.condition || 'new') &&
+      normalized(row.warrantyType) === normalized(editForm.warrantyType)
+    );
     return (
       <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/50 p-4">
         <div className="mx-auto my-4 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -2608,17 +2666,20 @@ export default function AdminPriceTrackerPage() {
               <input
                 type="number"
                 required
-                min={0}
+                min={1}
+                step="any"
                 value={editForm.price}
-                onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
+                onChange={e => { setEditForm(f => ({ ...f, price: e.target.value })); setActionError(''); }}
                 placeholder="Enter new price"
-                className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 bg-white"
+                aria-invalid={Boolean(priceError)}
+                className={`w-full h-10 px-4 rounded-xl border text-sm outline-none focus:ring-2 bg-white ${priceError ? 'border-red-300 focus:ring-red-500/20 focus:border-red-400' : 'border-gray-200 focus:ring-blue-500/30 focus:border-blue-300'}`}
               />
+              {priceError ? <p className="mt-1.5 text-[11px] font-medium text-red-600">{priceError}</p> : <p className="mt-1.5 text-[11px] text-gray-500">Required. Enter the public price for this exact market and variant.</p>}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Regular Price</label><input type="number" value={editForm.regularPrice} onChange={e => setEditForm(f => ({ ...f, regularPrice: e.target.value }))} placeholder="Before discount" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
-              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Discount Starts</label><input type="date" value={editForm.discountStartAt} onChange={e => setEditForm(f => ({ ...f, discountStartAt: e.target.value }))} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
-              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Discount Ends</label><input type="date" value={editForm.discountEndAt} onChange={e => setEditForm(f => ({ ...f, discountEndAt: e.target.value }))} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Regular Price</label><input type="number" min="0" step="any" value={editForm.regularPrice} onChange={e => { setEditForm(f => ({ ...f, regularPrice: e.target.value })); setActionError(''); }} placeholder="Before discount" aria-invalid={Boolean(regularPriceError)} className={`w-full h-10 px-3 rounded-xl border text-sm ${regularPriceError ? 'border-red-300' : 'border-gray-200'}`} />{regularPriceError && <p className="mt-1 text-[10px] font-medium text-red-600">{regularPriceError}</p>}</div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Discount Starts</label><input type="date" value={editForm.discountStartAt} onChange={e => { setEditForm(f => ({ ...f, discountStartAt: e.target.value })); setActionError(''); }} className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
+              <div><label className="text-xs text-gray-500 font-medium mb-1 block">Discount Ends</label><input type="date" min={editForm.discountStartAt || undefined} value={editForm.discountEndAt} onChange={e => { setEditForm(f => ({ ...f, discountEndAt: e.target.value })); setActionError(''); }} className={`w-full h-10 px-3 rounded-xl border text-sm ${discountDateError ? 'border-red-300' : 'border-gray-200'}`} />{discountDateError && <p className="mt-1 text-[10px] font-medium text-red-600">{discountDateError}</p>}</div>
             </div>
             {Number(editForm.regularPrice || 0) > Number(editForm.price || 0) && Number(editForm.price || 0) > 0 ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Discount: {Math.round(((Number(editForm.regularPrice) - Number(editForm.price)) / Number(editForm.regularPrice)) * 100)}% · Save {formatMoney(Number(editForm.regularPrice) - Number(editForm.price), editForm.currency)}</div> : null}
             <div>
@@ -2635,6 +2696,7 @@ export default function AdminPriceTrackerPage() {
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">Market</label><select value={editForm.market} onChange={e => { const market = e.target.value as 'PK' | 'US'; setEditForm(f => ({ ...f, market, currency: market === 'US' ? 'USD' : 'PKR', priceType: market === 'US' ? 'us-retail' : 'pta-approved', ptaStatus: market === 'US' ? '' : 'PTA Approved' })); }} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm bg-white"><option value="PK">Pakistan</option><option value="US">USA</option></select></div>
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">Price Type</label><select value={editForm.priceType} onChange={e => { const priceType = e.target.value as 'pta-approved' | 'non-pta' | 'us-retail'; setEditForm(f => ({ ...f, priceType, ptaStatus: priceType === 'pta-approved' ? 'PTA Approved' : priceType === 'non-pta' ? 'Non-PTA' : '' })); }} className="w-full h-10 px-4 rounded-xl border border-gray-200 text-sm bg-white">{editForm.market === 'US' ? <option value="us-retail">USA Retail</option> : <><option value="pta-approved">PTA Approved</option><option value="non-pta">Non-PTA</option></>}</select></div>
             </div>
+            {marketTypeError ? <p className="text-[11px] font-medium text-red-600">{marketTypeError}</p> : <p className="text-[11px] text-gray-500">{editForm.market === 'PK' ? 'Pakistan prices are stored in PKR and kept separate by PTA class.' : 'USA Retail prices are stored separately in USD.'}</p>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">RAM</label><input value={editForm.ram} onChange={e => setEditForm(f => ({ ...f, ram: e.target.value }))} placeholder="12GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
               <div><label className="text-xs text-gray-500 font-medium mb-1 block">Storage</label><input value={editForm.storage} onChange={e => setEditForm(f => ({ ...f, storage: e.target.value }))} placeholder="256GB" className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm" /></div>
@@ -2669,13 +2731,17 @@ export default function AdminPriceTrackerPage() {
               {priceControlRows.automatic.slice(0, 8).map((row, i) => <div key={`a-${row.id || i}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2"><span className="text-[11px] text-gray-600"><b>AUTO</b> · {row.source || 'source'} · {row.market}/{row.priceType} · {[row.ram,row.storage,row.color].filter(Boolean).join(' / ') || 'base'}</span><span className="text-[11px] font-semibold text-gray-800">{row.currency} {Number(row.price || 0).toLocaleString()}</span></div>)}
             </div>}
             <p className="mt-2 text-[10px] leading-4 text-gray-500">Click an existing manual row to edit that exact identity. Saving uses upsert, so the same variant is updated instead of duplicated.</p>
+            {!hasExactManualOverride && priceControlRows.manual.length > 0 && <p className="mt-1 text-[10px] font-medium text-amber-700">The currently selected identity has no manual override. Choose an existing manual row above if you want to reset or edit it.</p>}
           </div>
 
           </div>
-          <div className="grid shrink-0 grid-cols-1 gap-2 border-t border-gray-100 bg-white px-6 py-4 sm:grid-cols-3">
-            <button onClick={() => { setEditPriceModal(false); setEditingPhone(null); }} className="h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-            <button onClick={handleResetOverride} disabled={actionLoading === 'reset-override'} className="h-10 rounded-xl border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">{actionLoading === 'reset-override' ? 'Resetting...' : 'Reset to Auto'}</button>
-            <button onClick={handleUpdatePrice} disabled={actionLoading === 'update-price' || !editForm.price} className="h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{actionLoading === 'update-price' ? 'Saving...' : (editForm.lockOverride ? 'Save & Lock' : 'Save Override')}</button>
+          <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4">
+            {!canSaveOverride && <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">Save is unavailable until the highlighted price/discount fields are valid.</div>}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button onClick={() => { setEditPriceModal(false); setEditingPhone(null); setActionError(''); }} className="h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+              <button onClick={handleResetOverride} disabled={actionLoading === 'reset-override' || !hasExactManualOverride} title={hasExactManualOverride ? 'Remove the manual override for this exact identity' : 'No manual override exists for this exact identity'} className="h-10 rounded-xl border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40">{actionLoading === 'reset-override' ? 'Resetting...' : (hasExactManualOverride ? 'Reset to Auto' : 'No Override to Reset')}</button>
+              <button onClick={handleUpdatePrice} disabled={!canSaveOverride} title={canSaveOverride ? (editForm.lockOverride ? 'Save and lock this exact price identity' : 'Save this manual price without locking') : (priceError || regularPriceError || discountDateError || marketTypeError || 'Complete the required fields')} className="h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{actionLoading === 'update-price' ? 'Saving...' : (editForm.lockOverride ? 'Save & Lock' : 'Save Override')}</button>
+            </div>
           </div>
         </div>
       </div>
