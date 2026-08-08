@@ -1,24 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/sync-youtube",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/check-price-drops",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/automation-pipeline",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/collector-sync",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/continuous-monitoring",
-      "schedule": "30 3 * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs"
 }

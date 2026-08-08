@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBoundedInt } from '@/lib/http';
-import { Phone, Brand, News, PhoneSpecs, PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory, UserReview, PriceAlert, Video, PriceTrackerHistory, PhoneRetailListing, CollectedPhone, RateLimit } from '@/lib/models';
+import { Phone } from '@/lib/models/Phone';
+import { Brand } from '@/lib/models/Brand';
+import { PhoneSpecs } from '@/lib/models/PhoneSpecs';
+import { PhoneBenchmark, PhoneImage, PhonePrice, PriceHistory } from '@/lib/models/PhoneSub';
+import { News, UserReview, PriceAlert, RateLimit } from '@/lib/models/Other';
+import { Video } from '@/lib/models/Video';
+import { PriceTrackerHistory, PhoneRetailListing } from '@/lib/models/PriceTracker';
+import { CollectedPhone } from '@/lib/models/CollectedPhone';
 import { connectDB, connectDBSafe, phoneToJSON, Admin, sanitizeInput, isEmailConfigured, serializePhoneSpecs, buildSpecsMap, attachSpecsToRawPhones, attachSpecsToJsonPhones, checkIpRateLimit, type PhoneDocOrJson, type PhoneJson } from './helpers';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { fetchHomeData, fetchHeroPhones } from '@/lib/fetch-home-data';
@@ -876,7 +883,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
   // ---- /api/settings (public, read-only) ----
   if (segments.length === 1 && segments[0] === 'settings') {
-    const { getSettings } = await import('@/lib/models');
+    const { getSettings } = await import('@/lib/models/Settings');
     const settings = await getSettings();
     const { maintenanceMode, ...publicSettings } = settings;
     return cached({ settings: { id: publicSettings._id?.toString(), ...publicSettings, _id: undefined } }, 300, 600);
@@ -884,7 +891,7 @@ export async function handlePublicGet(req: NextRequest, segments: string[], ip: 
 
   // ---- /api/mobile/config (public, strictly allowlisted remote configuration) ----
   if (segments.length === 2 && segments[0] === 'mobile' && segments[1] === 'config') {
-    const { getSettings } = await import('@/lib/models');
+    const { getSettings } = await import('@/lib/models/Settings');
     const settings = await getSettings();
     const mobileApp = settings.mobileApp && typeof settings.mobileApp === 'object' ? settings.mobileApp : {};
     return cached({

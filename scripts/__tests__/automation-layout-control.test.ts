@@ -16,8 +16,8 @@ assert.match(pipeline, /handleCronUpdatePrices/);
 assert.match(pipeline, /syncRumourFeeds/);
 assert.match(pipeline, /availabilityStatus: 'discontinued'/);
 assert.match(route, /automation-pipeline/);
-assert.match(vercel, /\/api\/cron\/automation-pipeline/);
-assert.doesNotMatch(vercel, /\/api\/cron\/sync-rumours/);
+assert.doesNotMatch(vercel, /\"crons\"\s*:/);
+assert.match(route, /segments\[1\] === 'automation-pipeline'/);
 
 assert.match(settings, /catalogLayout/);
 assert.match(layout, /desktop: number; tablet: number; mobile: number/);

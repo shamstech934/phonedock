@@ -98,9 +98,8 @@ export async function handleCollectorGet(req: NextRequest, segments: string[]): 
       config: {
         pagesPerInvocation: pagesPerInvocationEnv > 0 ? pagesPerInvocationEnv : 'unlimited',
         maxCollectPerJob: 2000,
-        schedulerEnabled: true,
+        schedulerEnabled: false,
         deterministicOnly: true,
-        aiDiscoverConfigured: false,
       },
     });
   }

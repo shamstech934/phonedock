@@ -11,7 +11,11 @@ const generatedPaths = [
   'dev.log',
   'build-output.txt',
   'tsconfig.tsbuildinfo',
-  '.zscripts/dev.pid',
+  '.zscripts',
+  '.npm-cache',
+  'audit-output',
+  'e2e-server.err',
+  'e2e-server.out',
 ];
 
 for (const path of generatedPaths) {

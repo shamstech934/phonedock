@@ -3,10 +3,10 @@ const price = fs.readFileSync('src/app/api/[[...path]]/handlers/price-tracker.ts
 const collector = fs.readFileSync('src/app/api/[[...path]]/handlers/collector.ts','utf8');
 const checks = [
   ['price product-page guard', price.includes('isLikelyProductPageUrl')],
-  ['price shared extractor', price.includes('extractRetailPrice(html)')],
+  ['price shared extractor', price.includes('extractRetailPrice(html,')],
   ['price readiness diagnostics', price.includes('missingProductUrls') && price.includes('rejectedHomepageUrls')],
   ['collector deterministic mode', collector.includes('deterministicOnly: true')],
-  ['collector AI discovery disabled', !collector.includes("from '@/lib/ai-enrichment'")],
+  ['collector provider-free mode', !/openai|openrouter|tavily|ai-enrichment/i.test(collector)],
   ['collector configured-source guard', collector.includes('No configured enabled sources to run')],
 ];
 let failed=0;

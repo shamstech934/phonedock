@@ -9,7 +9,6 @@ interface CollectorConfig {
   pagesPerInvocation: number | 'unlimited';
   maxCollectPerJob: number;
   schedulerEnabled: boolean;
-  aiDiscoverConfigured: boolean;
 }
 
 export default function AdminCollectorSettingsPage() {
@@ -66,12 +65,7 @@ export default function AdminCollectorSettingsPage() {
             <div className="p-3 bg-gray-50 rounded-xl">
               <p className="text-[11px] text-gray-500">Scheduler</p>
               <p className="text-lg font-semibold text-gray-900">{config.schedulerEnabled ? 'Active (daily check)' : 'Inactive'}</p>
-              <p className="text-[10px] text-gray-400 mt-1">Vercel Cron checks every hour for sources whose <code>syncFrequencyHours</code> is due.</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-xl">
-              <p className="text-[11px] text-gray-500">AI Discover</p>
-              <p className="text-lg font-semibold text-gray-900">{config.aiDiscoverConfigured ? 'Ready' : 'Needs API keys'}</p>
-              <p className="text-[10px] text-gray-400 mt-1">Requires <code>TAVILY_API_KEY</code> and an AI provider key (<code>AI_PROVIDER</code>).</p>
+              <p className="text-[10px] text-gray-400 mt-1">Automatic Vercel cron is disabled in the free-plan profile. Run due sources from the Collector/Sync workspace when needed.</p>
             </div>
           </div>
         </div>

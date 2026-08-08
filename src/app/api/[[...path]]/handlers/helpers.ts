@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Admin, AdminSession } from '@/lib/models';
+import { Admin } from '@/lib/models/Other';
+import { AdminSession } from '@/lib/models/AdminSession';
 import { getSessionFromRequest, validateSessionVersion, createSignedSession } from '@/lib/auth';
 import { hasPermission, type AdminRole, type Permission } from '@/lib/permissions';
 import { connectDB } from '@/lib/mongodb';
@@ -8,7 +9,7 @@ import { connectDB } from '@/lib/mongodb';
 export { verifyPassword, hashPassword, verifyToken, createSignedSession, getSessionFromRequest, validateSessionVersion, checkLoginRateLimitFromDB, recordFailedLoginDB, resetFailedAttempts, isStrongPassword, sanitizeInput, checkIpRateLimit, hashResetToken, verifyResetToken, sanitizeCsvValue, getCookieOptions } from '@/lib/auth';
 export { hasPermission } from '@/lib/permissions';
 export { connectDB, connectDBSafe } from '@/lib/mongodb';
-export { Admin } from '@/lib/models';
+export { Admin } from '@/lib/models/Other';
 
 // ============ CONSTANTS ============
 

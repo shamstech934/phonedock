@@ -645,8 +645,6 @@ export async function handleDataQualityGet(req: NextRequest, segments: string[])
   }
 
   // GET /api/admin/data-quality/ai-jobs and ai-drafts were removed — this project
-  // already has a complete, dedicated AI Research module at
-  // src/app/api/[[...path]]/handlers/ai-research.ts + /admin/ai-research. Use that
   // instead of duplicating it here.
 
   return undefined;

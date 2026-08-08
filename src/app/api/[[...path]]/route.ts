@@ -34,7 +34,6 @@ import { verifyTurnstile } from '@/lib/turnstile';
 import { handleAdminAuthGet, handleAdminAuthPost, handleAdminAuthDelete } from './handlers/admin-auth';
 import { handleFirstSetupGet, handleFirstSetupPost } from './handlers/first-setup';
 import { handleAdminCrudGet, handleAdminCrudPost, handleAdminCrudPut, handleAdminCrudDelete } from './handlers/admin-crud';
-import { handleAiResearchGet, handleAiResearchPost } from './handlers/ai-research';
 import { handleCollectorGet, handleCollectorPost, handleCollectorPut, handleCollectorDelete } from './handlers/collector';
 import { handleImportGet, handleImportPost } from './handlers/import';
 import { handleImportV2Upload, handleImportV2Config, handleImportV2Start, handleImportV2Batch, handleImportV2Retry, handleImportV2Cancel, handleImportV2Rollback, handleImportV2QualityScan, handleImportV2Validate, handleImportV2GetJob, handleImportV2History, handleImportV2ErrorsCsv, handleImportV2Reconcile } from './handlers/import-v2';
@@ -412,10 +411,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     const crudResult = await handleAdminCrudGet(req, segments);
     if (crudResult) return crudResult;
 
-    // AI Research routes (status, jobs, drafts)
-    const aiResearchResult = await handleAiResearchGet(req, segments);
-    if (aiResearchResult) return aiResearchResult;
-
     // Collector routes (dashboard, sources, jobs)
     const collectorResult = await handleCollectorGet(req, segments);
     if (collectorResult) return collectorResult;
@@ -687,10 +682,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     // Admin CRUD routes (users create, phones create, brands create, news create, bulk-import, seed)
     const crudResult = await handleAdminCrudPost(req, segments);
     if (crudResult) return crudResult;
-
-    // AI Research routes (create job, approve/reject drafts)
-    const aiResearchResult = await handleAiResearchPost(req, segments);
-    if (aiResearchResult) return aiResearchResult;
 
     // Collector routes (sources, jobs, review, test)
     const collectorResult = await handleCollectorPost(req, segments);

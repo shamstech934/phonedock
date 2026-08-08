@@ -32,9 +32,7 @@ export type Permission =
   // Price Tracker
   | 'prices:read' | 'prices:edit'
   // Data Quality
-  | 'data-quality:read' | 'data-quality:scan' | 'data-quality:fix' | 'data-quality:delete'
-  // AI Research
-  | 'ai-research:read' | 'ai-research:execute';
+  | 'data-quality:read' | 'data-quality:scan' | 'data-quality:fix' | 'data-quality:delete';
 
 // ============ PERMISSION MAPS ============
 
@@ -54,7 +52,6 @@ const ALL_PERMISSIONS: Permission[] = [
   'videos:read', 'videos:edit', 'videos:manage',
   'prices:read', 'prices:edit',
   'data-quality:read', 'data-quality:scan', 'data-quality:fix', 'data-quality:delete',
-  'ai-research:read', 'ai-research:execute',
 ];
 
 const rolePermissions: Record<AdminRole, Set<Permission>> = {
@@ -75,7 +72,6 @@ const rolePermissions: Record<AdminRole, Set<Permission>> = {
     'videos:read', 'videos:edit', 'videos:manage',
     'prices:read', 'prices:edit',
     'data-quality:read', 'data-quality:scan', 'data-quality:fix', 'data-quality:delete',
-    'ai-research:read', 'ai-research:execute',
   ]),
   editor: new Set<Permission>([
     'dashboard:read',
