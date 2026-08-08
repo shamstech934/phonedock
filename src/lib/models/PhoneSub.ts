@@ -33,6 +33,10 @@ const PhoneBenchmarkSchema = new Schema({
   videoPlayback: { type: String, default: '' },
   gamingBattery: { type: String, default: '' },
   browsingBattery: { type: String, default: '' },
+  sourceName: { type: String, default: '' },
+  sourceUrl: { type: String, default: '' },
+  verifiedAt: { type: Date, default: null },
+  verifiedBy: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },
 }, { timestamps: true });
 
 PhoneBenchmarkSchema.index({ phoneId: 1 }, { unique: true });
