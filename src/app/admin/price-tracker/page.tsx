@@ -1008,7 +1008,7 @@ export default function AdminPriceTrackerPage() {
 
   const openEditPriceModal = async (phone: PhonePrice) => {
     setEditingPhone(phone);
-    setEditForm({ price: String(phone.currentPrice), reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
+    setEditForm({ price: String(phone.currentPrice), regularPrice: '', discountStartAt: '', discountEndAt: '', reason: '', market: 'PK', currency: 'PKR', priceType: 'pta-approved', ptaStatus: 'PTA Approved', warrantyType: '', ram: '', storage: '', color: '', condition: 'new', lockOverride: true });
     setPriceControlRows({ manual: [], automatic: [] });
     setEditPriceModal(true);
     setPriceControlLoading(true);
