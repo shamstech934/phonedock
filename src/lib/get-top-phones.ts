@@ -76,7 +76,7 @@ async function loadTopPhones(
     active: true,
     status: 'published',
     upcoming: { $ne: true },
-    availabilityStatus: { $nin: ['discontinued'] },
+    availabilityStatus: { $nin: ['discontinued', 'cancelled'] },
     [field]: { $gt: 0 },
   })
     .select(CARD_SELECT)

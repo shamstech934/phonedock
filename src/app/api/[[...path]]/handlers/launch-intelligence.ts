@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Types } from 'mongoose';
 import { ActivityLog, LaunchCandidate, Phone } from '@/lib/models';
 import { approveLaunchCandidate } from '@/lib/launch-intelligence';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
@@ -124,8 +125,11 @@ export async function handleLaunchIntelligencePost(req: NextRequest): Promise<Ne
   }
 
   if (action === 'bulk_update') {
-    const ids: string[] = Array.isArray(body.ids)
-      ? Array.from(new Set<string>(body.ids.map((value: unknown) => String(value || '')).filter(Boolean))).slice(0, 100)
+    const ids: Types.ObjectId[] = Array.isArray(body.ids)
+      ? Array.from(new Set<string>(body.ids.map((value: unknown) => String(value || '').trim()).filter(Boolean)))
+          .filter((value) => Types.ObjectId.isValid(value))
+          .slice(0, 100)
+          .map((value) => new Types.ObjectId(value))
       : [];
     const availabilityStatus = String(body.availabilityStatus || '');
     if (!ids.length || !isLifecycleStatus(availabilityStatus)) return NextResponse.json({ error: 'Select phones and a valid lifecycle status' }, { status: 400 });

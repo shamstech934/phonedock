@@ -14,7 +14,7 @@ assert.match(shared, /hideOverallRating=\{Boolean\(rankingCategory \|\| badgeFie
 assert.match(shared, /\{rankingCategory && \(\s*<span[\s\S]*#\{item\.rank\}/);
 for (const source of [publicApi, serverRankings]) {
   assert.match(source, /upcoming: \{ \$ne: true \}/);
-  assert.match(source, /availabilityStatus: \{ \$nin: \['discontinued'\] \}/);
+  assert.match(source, /availabilityStatus: \{ \$nin: \['discontinued', 'cancelled'\] \}/);
 }
 
 const expectations = [
