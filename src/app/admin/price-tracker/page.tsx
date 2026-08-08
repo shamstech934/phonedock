@@ -2412,14 +2412,15 @@ export default function AdminPriceTrackerPage() {
   const renderEditPriceModal = () => {
     if (!editPriceModal || !editingPhone) return null;
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-xl">
-          <div className="flex items-center justify-between mb-4">
+      <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/50 p-4">
+        <div className="mx-auto my-4 flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
             <h2 className="text-sm font-bold text-gray-900">Price Control</h2>
             <button onClick={() => setEditPriceModal(false)} className="text-gray-400 hover:text-gray-600">
               <X className="w-4 h-4" />
             </button>
           </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
           <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3">
             <p className="text-xs font-semibold text-blue-900">{editingPhone.phoneName} — Current public: {formatPKR(editingPhone.currentPrice)}</p>
             <p className="mt-1 text-[11px] leading-5 text-blue-700">Admin override has final authority for the exact market + PTA class + RAM + storage + color variant. Saving the same identity updates it; it does not create a duplicate.</p>
@@ -2493,7 +2494,8 @@ export default function AdminPriceTrackerPage() {
             <p className="mt-2 text-[10px] leading-4 text-gray-500">Click an existing manual row to edit that exact identity. Saving uses upsert, so the same variant is updated instead of duplicated.</p>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          </div>
+          <div className="grid shrink-0 grid-cols-1 gap-2 border-t border-gray-100 bg-white px-6 py-4 sm:grid-cols-3">
             <button onClick={() => { setEditPriceModal(false); setEditingPhone(null); }} className="h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
             <button onClick={handleResetOverride} disabled={actionLoading === 'reset-override'} className="h-10 rounded-xl border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50">{actionLoading === 'reset-override' ? 'Resetting...' : 'Reset to Auto'}</button>
             <button onClick={handleUpdatePrice} disabled={actionLoading === 'update-price' || !editForm.price} className="h-10 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{actionLoading === 'update-price' ? 'Saving...' : (editForm.lockOverride ? 'Save & Lock' : 'Save Override')}</button>
