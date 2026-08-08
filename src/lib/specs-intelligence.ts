@@ -13,22 +13,39 @@ export async function scanSpecsIntelligence({ limit = 200 }: { limit?: number } 
     const specs: any = await PhoneSpecs.findOne({ phoneId: phone._id }).lean();
     const brand = String(phone.brandId?.name || '');
     const model = String(phone.modelName || '');
-    const dataset: any = await DeviceSpecDataset.findOne({ normalizedModel: normalize(model), ...(brand ? { normalizedBrand: normalize(brand) } : {}) }).lean()
-      || await DeviceSpecDataset.findOne({ normalizedModel: normalize(model) }).lean();
+    const normalizedModel = normalize(model);
+    const normalizedBrand = normalize(brand);
+    // Identity safety: when a phone has a brand, never fall back to model-only matching.
+    // Numeric/short models such as "14", "10" or "1" are otherwise easy to cross-link.
+    const dataset: any = brand
+      ? await DeviceSpecDataset.findOne({ normalizedModel, normalizedBrand }).lean()
+      : await DeviceSpecDataset.findOne({ normalizedModel }).lean();
     for (const field of FIELDS) {
       const current = String(specs?.[field] || '').trim();
-      if (current) {
-        await SpecsIntelligenceSignal.updateOne({ phoneId: phone._id, field }, { $set: { status: 'resolved', resolvedAt: new Date(), resolutionNotes: 'Field is now populated.' } }).catch(() => {});
+      const recommended = String(dataset?.[field] || '').trim();
+      const valuesConflict = Boolean(current && recommended && normalize(current) !== normalize(recommended));
+
+      if (current && !valuesConflict) {
+        await SpecsIntelligenceSignal.updateOne(
+          { phoneId: phone._id, field },
+          { $set: { status: 'resolved', currentValue: current, recommendedValue: recommended, resolvedAt: new Date(), resolutionNotes: recommended ? 'Saved value agrees with the verified local dataset.' : 'Field is populated; no verified comparison source is available.' } },
+        ).catch(() => {});
         continue;
       }
-      const recommended = String(dataset?.[field] || '').trim();
+
       if (recommended) withRecommendation++;
+      const issueKind = valuesConflict ? 'conflict' : 'missing';
       await SpecsIntelligenceSignal.findOneAndUpdate(
         { phoneId: phone._id, field },
         { $set: {
-          status: 'open', severity: CRITICAL.has(field) ? 'critical' : 'warning', currentValue: '', recommendedValue: recommended,
-          sourceName: String(dataset?.sourceName || ''), sourceUrl: String(dataset?.sourceUrl || ''), confidence: recommended ? 85 : 25,
-          evidence: { datasetMatched: Boolean(dataset), brand, model }, lastSeenAt: new Date(),
+          status: 'open',
+          severity: valuesConflict ? 'warning' : (CRITICAL.has(field) ? 'critical' : 'warning'),
+          currentValue: current,
+          recommendedValue: recommended,
+          sourceName: String(dataset?.sourceName || ''), sourceUrl: String(dataset?.sourceUrl || ''),
+          confidence: recommended ? (valuesConflict ? 80 : 85) : 25,
+          evidence: { datasetMatched: Boolean(dataset), brand, model, issueKind, valuesConflict },
+          lastSeenAt: new Date(), resolvedAt: null, resolvedBy: null,
         }, $setOnInsert: { detectedAt: new Date() } }, { upsert: true, new: true },
       );
       opened++;

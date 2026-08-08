@@ -51,6 +51,7 @@ import { handleIntelligenceCenterGet } from './handlers/intelligence-center';
 import { handlePakistanIntelligenceGet, handlePakistanIntelligencePost } from './handlers/pakistan-intelligence';
 import { handleImageIntelligenceGet, handleImageIntelligencePost } from './handlers/image-intelligence';
 import { handleSpecsIntelligenceGet, handleSpecsIntelligencePost } from './handlers/specs-intelligence';
+import { handleRatingsBenchmarksGet, handleRatingsBenchmarksPost } from './handlers/ratings-benchmarks';
 import { handlePriceIntelligenceV2Get, handlePriceIntelligenceV2Post } from './handlers/price-intelligence-v2';
 import { handleYouTubeIntelligenceGet, handleYouTubeIntelligencePost } from './handlers/youtube-intelligence';
 import { handleContinuousMonitoringGet, handleContinuousMonitoringPost } from './handlers/continuous-monitoring';
@@ -383,6 +384,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return handleSpecsIntelligenceGet(req);
     }
 
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'ratings-benchmarks') {
+      return handleRatingsBenchmarksGet(req);
+    }
+
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {
       return handlePriceIntelligenceV2Get(req);
     }
@@ -712,6 +717,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'specs-intelligence') {
       return handleSpecsIntelligencePost(req);
+    }
+
+    if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'ratings-benchmarks') {
+      return handleRatingsBenchmarksPost(req);
     }
 
     if (segments.length === 2 && segments[0] === 'admin' && segments[1] === 'price-intelligence-v2') {

@@ -205,7 +205,27 @@ function normalizedTokens(value: string): string[] {
   return decodeURIComponent(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(token => token.length > 1);
 }
 
-export function matchProductUrlToPhone<T extends { slug?: string; modelName?: string; brandName?: string; brandId?: { name?: string } | null }>(url: string, phones: T[]): T | null {
+type ProductMatchPhone = {
+  slug?: string;
+  modelName?: string;
+  brandName?: string;
+  // Mongoose returns brandId as an ObjectId when it is not populated and as a
+  // brand document when it is populated. Accept both shapes so catalog matching
+  // can be used safely from either query path.
+  brandId?: unknown;
+};
+
+function matchingBrandName(phone: ProductMatchPhone): string {
+  if (phone.brandName) return phone.brandName;
+  const brand = phone.brandId;
+  if (brand && typeof brand === 'object' && 'name' in brand) {
+    const name = (brand as { name?: unknown }).name;
+    return typeof name === 'string' ? name : '';
+  }
+  return '';
+}
+
+export function matchProductUrlToPhone<T extends ProductMatchPhone>(url: string, phones: T[]): T | null {
   let path = '';
   try { path = new URL(url).pathname; } catch { return null; }
   const pathTokens = new Set(normalizedTokens(path));
@@ -217,7 +237,7 @@ export function matchProductUrlToPhone<T extends { slug?: string; modelName?: st
   if ([...pathTokens].some(token => nonPhoneTokens.has(token))) return null;
 
   const scored = phones.map(phone => {
-    const brandName = phone.brandName || phone.brandId?.name || '';
+    const brandName = matchingBrandName(phone);
     const brandTokens = [...new Set(normalizedTokens(brandName))].filter(token => token.length > 1);
     const slugTokens = [...new Set(normalizedTokens(phone.slug || ''))];
     const modelTokens = [...new Set(normalizedTokens(phone.modelName || ''))];

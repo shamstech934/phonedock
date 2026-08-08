@@ -67,6 +67,13 @@ interface PhoneViewData {
   specs?: Record<string, string>;
   benchmarks?: { antutu?: number; geekbenchSingle?: number; geekbenchMulti?: number };
   prices?: Array<{ storeName: string; price: number; inStock: boolean }>;
+  dataHealth?: {
+    price?: { openIssues: number; records: number; ready: boolean };
+    specs?: { openIssues: number; filledFields: number; ready: boolean };
+    images?: { openIssues: number; records: number; ready: boolean };
+    ratings?: { filledScores: number; filledBenchmarks: number; ready: boolean };
+    lifecycle?: { pendingChanges: number; ready: boolean };
+  };
 }
 
 export default function AdminPhoneViewPage() {
@@ -85,18 +92,19 @@ export default function AdminPhoneViewPage() {
   if (loading) return <div className="space-y-3">{Array(6).fill(0).map((_, i) => <div key={i} className="skeleton-shimmer h-12 rounded-xl" />)}</div>;
   if (!phone) return <div className="text-center py-12 text-muted-foreground">Phone not found</div>;
 
+  const health = phone.dataHealth;
   const specValues = Object.values(phone.specs || {}).filter(value => String(value || '').trim());
-  const hasPrice = Number(phone.pricePKR || 0) > 0 || Boolean(phone.prices?.some(row => Number(row.price || 0) > 0));
-  const hasImages = Boolean(phone.thumbnail || phone.images?.some(Boolean));
-  const hasRatings = Number(phone.overallRating || 0) > 0 || [phone.cameraScore, phone.performanceScore, phone.batteryScore, phone.displayScore, phone.valueScore].some(value => Number(value || 0) > 0);
+  const hasPrice = health?.price?.ready ?? (Number(phone.pricePKR || 0) > 0 || Boolean(phone.prices?.some(row => Number(row.price || 0) > 0)));
+  const hasImages = health?.images?.ready ?? Boolean(phone.thumbnail || phone.images?.some(Boolean));
+  const hasRatings = health?.ratings?.ready ?? (Number(phone.overallRating || 0) > 0 || [phone.cameraScore, phone.performanceScore, phone.batteryScore, phone.displayScore, phone.valueScore].some(value => Number(value || 0) > 0));
   const lifecycleState = phone.availabilityStatus || (phone.upcoming ? 'coming_soon' : 'available');
-  const lifecycleReady = lifecycleState === 'available' ? Boolean(phone.releaseDate || phone.availableFrom) : lifecycleState === 'discontinued' ? Boolean(phone.discontinuedAt) : Boolean(phone.expectedLaunchAt || phone.releaseDate || phone.announcedAt);
+  const lifecycleReady = health?.lifecycle?.ready ?? (lifecycleState === 'available' ? Boolean(phone.releaseDate || phone.availableFrom) : lifecycleState === 'discontinued' ? Boolean(phone.discontinuedAt) : Boolean(phone.expectedLaunchAt || phone.releaseDate || phone.announcedAt));
   const healthItems = [
-    { label: 'Price', ready: hasPrice, detail: hasPrice ? 'Price data available' : 'Needs price review', href: '/admin/price-tracker', icon: DollarSign },
-    { label: 'Specs', ready: specValues.length >= 8, detail: `${specValues.length} filled fields`, href: '/admin/specs-intelligence', icon: ListChecks },
-    { label: 'Images', ready: hasImages, detail: hasImages ? 'Image available' : 'Missing primary image', href: '/admin/image-intelligence', icon: ImageIcon },
-    { label: 'Ratings', ready: hasRatings, detail: hasRatings ? 'Rating data available' : 'No rating yet', href: '/admin/review-engine', icon: ShieldCheck },
-    { label: 'Lifecycle', ready: lifecycleReady, detail: `${lifecycleState.replace('_', ' ')}${phone.lifecycleManualLock ? ' · locked' : ''}`, href: '/admin/launch-center', icon: Rocket },
+    { label: 'Price', ready: hasPrice, detail: health?.price ? `${health.price.records} records · ${health.price.openIssues} open issues` : (hasPrice ? 'Price data available' : 'Needs price review'), href: '/admin/price-tracker', icon: DollarSign },
+    { label: 'Specs', ready: health?.specs?.ready ?? specValues.length >= 8, detail: health?.specs ? `${health.specs.filledFields} fields · ${health.specs.openIssues} open issues` : `${specValues.length} filled fields`, href: `/admin/specs-intelligence?phoneId=${id}`, icon: ListChecks },
+    { label: 'Images', ready: hasImages, detail: health?.images ? `${health.images.records} images · ${health.images.openIssues} open issues` : (hasImages ? 'Image available' : 'Missing primary image'), href: `/admin/image-intelligence?phoneId=${id}`, icon: ImageIcon },
+    { label: 'Ratings', ready: hasRatings, detail: health?.ratings ? `${health.ratings.filledScores} scores · ${health.ratings.filledBenchmarks} benchmark fields` : (hasRatings ? 'Rating data available' : 'No rating yet'), href: `/admin/ratings-benchmarks?q=${encodeURIComponent(phone.modelName)}`, icon: ShieldCheck },
+    { label: 'Lifecycle', ready: lifecycleReady, detail: `${lifecycleState.replace('_', ' ')}${health?.lifecycle?.pendingChanges ? ` · ${health.lifecycle.pendingChanges} pending` : ''}${phone.lifecycleManualLock ? ' · locked' : ''}`, href: `/admin/launch-center?phoneId=${id}`, icon: Rocket },
   ];
 
   return (

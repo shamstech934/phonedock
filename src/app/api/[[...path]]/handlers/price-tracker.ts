@@ -890,7 +890,8 @@ export async function handlePriceTrackerPost(req: NextRequest, segments: string[
     );
 
     const phones = await Phone.find({ active: true, status: 'published' })
-      .select('_id modelName slug sourceUrl')
+      .select('_id modelName slug sourceUrl brandId')
+      .populate({ path: 'brandId', select: 'name' })
       .lean();
     const collectorBridge = await bridgeCollectedPricesToTracker();
 

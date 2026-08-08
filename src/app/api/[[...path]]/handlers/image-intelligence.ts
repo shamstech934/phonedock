@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ActivityLog, ImageIntelligenceSignal, Phone, PhoneImage } from '@/lib/models';
 import { connectDB, getAdminFromRequest, requirePermission } from './helpers';
-import { scanImageIntelligence } from '@/lib/image-intelligence';
+import { scanImageIntelligence, verifyRemoteImageUrls } from '@/lib/image-intelligence';
 import { revalidatePublicContent } from '@/lib/revalidate';
 
 export async function handleImageIntelligenceGet(req: NextRequest): Promise<NextResponse> {
@@ -46,6 +46,11 @@ export async function handleImageIntelligencePost(req: NextRequest): Promise<Nex
   if (action === 'scan') {
     const result = await scanImageIntelligence({ limit: Number(body.limit || 150) });
     await ActivityLog.create({ adminId: auth.admin._id, action: 'image_intelligence_scan', entityType: 'image_intelligence', details: JSON.stringify(result) });
+    return NextResponse.json({ success: true, ...result });
+  }
+  if (action === 'verify_remote') {
+    const result = await verifyRemoteImageUrls({ limit: Number(body.limit || 20) });
+    await ActivityLog.create({ adminId: auth.admin._id, action: 'image_intelligence_remote_check', entityType: 'image_intelligence', details: JSON.stringify(result) });
     return NextResponse.json({ success: true, ...result });
   }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone, ImportJob, SyncJob, CollectorJob, MonitoringRun } from '@/lib/models';
+import { Phone, Brand, News, Admin, AdminSession, ActivityLog, PhoneSpecs, PhoneImage, PhoneBenchmark, PhonePrice, PriceHistory, UserReview, Video, Sponsor, PriceAlert, PriceSource, PhoneRetailListing, PriceTrackerHistory, CollectedPhone, ImportJob, SyncJob, CollectorJob, MonitoringRun, SpecsIntelligenceSignal, ImageIntelligenceSignal, PriceIntelligenceSignal, LaunchCandidate } from '@/lib/models';
 import { buildPriceVariantKey, normalizeMemoryLabel } from '@/lib/price-variant';
 import { normalizeMarketPriceType, normalizePriceCurrency, normalizePriceMarket } from '@/lib/price-market';
 import { connectDB, getAdminFromRequest, requirePermission, phoneToJSON, hashPassword, isStrongPassword, MAX_UPLOAD_RECORDS, revokeAllSessions, getActiveSessions, revokeSession } from './helpers';
@@ -562,13 +562,27 @@ export async function handleAdminCrudGet(req: NextRequest, segments: string[]): 
     await connectDB();
     const phone = await Phone.findById(segments[2]).populate('brand').lean();
     if (!phone) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const [specs, benchmarks, images, prices] = await Promise.all([
+    const [specs, benchmarks, images, prices, openSpecsIssues, openImageIssues, openPriceIssues, pendingLifecycleChanges] = await Promise.all([
       PhoneSpecs.findOne({ phoneId: phone._id }).lean(),
       PhoneBenchmark.findOne({ phoneId: phone._id }).lean(),
       PhoneImage.find({ phoneId: phone._id }).sort({ sortOrder: 1 }).lean(),
-      PhonePrice.find({ phoneId: phone._id, manualOverride: { $ne: true } }).limit(50).lean(),
+      PhonePrice.find({ phoneId: phone._id }).limit(50).lean(),
+      SpecsIntelligenceSignal.countDocuments({ phoneId: phone._id, status: 'open' }),
+      ImageIntelligenceSignal.countDocuments({ phoneId: phone._id, status: 'open' }),
+      PriceIntelligenceSignal.countDocuments({ phoneId: phone._id, status: 'open' }),
+      LaunchCandidate.countDocuments({ linkedPhoneId: phone._id, status: 'pending' }),
     ]);
-    return NextResponse.json(phoneToJSON(phone, specs, benchmarks, images, prices));
+    const base = phoneToJSON(phone, specs, benchmarks, images, prices);
+    const specFilled = specs ? Object.entries(specs).filter(([key, value]) => !['_id','__v','phoneId','createdAt','updatedAt'].includes(key) && String(value || '').trim()).length : 0;
+    const benchmarkFilled = benchmarks ? ['antutu','geekbenchSingle','geekbenchMulti','gamingScore','pubgFps','codMobileFps','genshinFps','videoPlayback','gamingBattery','browsingBattery'].filter((key) => { const value = (benchmarks as Record<string, unknown>)[key]; return typeof value === 'number' ? value > 0 : Boolean(String(value || '').trim()); }).length : 0;
+    const ratingFilled = ['cameraScore','performanceScore','batteryScore','displayScore','valueScore','overallRating'].filter((key) => Number((phone as Record<string, unknown>)[key] || 0) > 0).length;
+    return NextResponse.json({ ...base, dataHealth: {
+      price: { openIssues: openPriceIssues, records: prices.length, ready: prices.some((row: any) => Number(row.price || 0) > 0) && openPriceIssues === 0 },
+      specs: { openIssues: openSpecsIssues, filledFields: specFilled, ready: specFilled >= 8 && openSpecsIssues === 0 },
+      images: { openIssues: openImageIssues, records: images.length, ready: Boolean(phone.thumbnail || images.length) && openImageIssues === 0 },
+      ratings: { filledScores: ratingFilled, filledBenchmarks: benchmarkFilled, ready: ratingFilled > 0 && benchmarkFilled > 0 },
+      lifecycle: { pendingChanges: pendingLifecycleChanges, ready: pendingLifecycleChanges === 0 },
+    } });
   }
 
   // ---- /api/admin/brands/stats ----
